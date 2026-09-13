@@ -1,1 +1,4 @@
-z
+.DS_Store
+.build/
+.idea/
+.claude/
