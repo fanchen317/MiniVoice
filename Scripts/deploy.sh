@@ -18,6 +18,7 @@ codesign --verify --deep --strict "$STAGING"
 
 if pgrep -x "$APP_NAME" >/dev/null; then
   osascript -e "tell application id \"${APP_ID}\" to quit" >/dev/null 2>&1 || true
+  osascript -e 'tell application id "com.local.minivoice" to quit' >/dev/null 2>&1 || true
   sleep 2
 fi
 if pgrep -x "$APP_NAME" >/dev/null; then

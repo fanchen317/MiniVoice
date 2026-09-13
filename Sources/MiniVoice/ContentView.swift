@@ -2,6 +2,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ContentView: View {
+    let statusBar: StatusBarController
+    @Environment(\.openWindow) private var openWindow
     @EnvironmentObject private var library: MusicLibrary
     @State private var importing = false
     @State private var editing = false
@@ -31,6 +33,7 @@ struct ContentView: View {
                 PlayerDetail(track: track, onEdit: { editing = true })
             } else { EmptyLibraryView(onImport: { importing = true }) }
         }
+        .onAppear { statusBar.start(library: library, openMainWindow: { openWindow(id: "main") }) }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls): library.importFiles(urls)

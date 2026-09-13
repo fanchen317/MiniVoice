@@ -53,6 +53,11 @@ cp "$EXECUTABLE" "$APP_PATH/Contents/MacOS/$APP_NAME"
 printf 'APPL????' > "$APP_PATH/Contents/PkgInfo"
 chmod +x "$APP_PATH/Contents/MacOS/$APP_NAME"
 
+echo "==> 生成应用图标..."
+swiftc "$ROOT/Sources/MiniVoice/BrandIcon.swift" "$ROOT/Scripts/IconGenerator.swift" -o "$ROOT/.build/icon-generator" -framework AppKit
+"$ROOT/.build/icon-generator" "$ROOT/.build/MiniVoice.iconset"
+iconutil -c icns "$ROOT/.build/MiniVoice.iconset" -o "$APP_PATH/Contents/Resources/MiniVoice.icns"
+
 echo "==> 签名..."
 codesign --force --sign - \
   --requirements "=designated => identifier \"$APP_IDENTIFIER\"" \
