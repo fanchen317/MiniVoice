@@ -16,6 +16,8 @@ struct MetadataEditor: View {
     @State private var album: String
     @State private var lyrics: String
     @State private var artwork: NSImage?
+    @State private var timingIndex = 0
+    @State private var artworkChanged = false
     @State private var choosingArtwork = false
     @State private var choosingLyrics = false
     @State private var isSaving = false
@@ -58,21 +60,29 @@ struct MetadataEditor: View {
                         ArtworkPreview(image: artwork)
                         VStack(alignment: .leading) {
                             Button("选择自定义封面") { choosingArtwork = true }
-                            if artwork != nil { Button("移除封面", role: .destructive) { artwork = nil } }
+                            if artwork != nil { Button("移除封面", role: .destructive) { artwork = nil; artworkChanged = true } }
                         }
                     }
                 }
                 Section {
-                    Button("导入歌词文件（LRC / TXT）") { choosingLyrics = true }
+                    Button("导入歌词文件（LRC / SRT / TXT）") { choosingLyrics = true }
+                    let timed = LRCParser.parse(lyrics).filter { $0.timestamp != nil }.count
+                    Text(timed > 0 ? "已识别 \(timed) 行时间标签，保存后可自动滚动。" : "纯文本无时间标签；可播放歌曲并逐行打点。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button(library.isPlaying ? "暂停试听" : "播放试听") {
+                            if library.selectedID != track.id { library.select(track.id) }
+                            library.togglePlayback()
+                        }
+                        Button("标记第 \(timingIndex + 1) 行时间") { stampNextLine() }
+                            .disabled(lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || timingIndex >= LRCParser.parse(lyrics).count || library.selectedID != track.id)
+                        Button("从第一行重新打点") { timingIndex = 0 }
+                    }
                     TextEditor(text: $lyrics)
                         .font(.body)
                         .frame(minHeight: 210)
                 } header: {
                     Text("歌词（支持 LRC 时间标签，例如 [00:12.50]）")
-                } footer: {
-                    Button("生成示例时间标签（每行 4 秒，需手动校准）") { lyrics = LRCParser.timestamped(lyrics) }
-                        .disabled(lyrics.contains("["))
-                        .font(.caption)
                 }
             }.formStyle(.grouped).padding(.horizontal, 12).disabled(isSaving)
             Text(track.canWriteTags ? "保存会写回原歌曲，并在同目录保留 .minivoice-backup 备份。" : "此格式可播放；完整信息编辑支持 MP3、FLAC、M4A。")
@@ -82,18 +92,30 @@ struct MetadataEditor: View {
         .interactiveDismissDisabled(isSaving)
         .fileImporter(isPresented: $choosingArtwork, allowedContentTypes: [.image]) { result in
             guard case .success(let url) = result else { return }
-            if let image = NSImage(contentsOf: url) { artwork = image }
+            if let image = NSImage(contentsOf: url) { artwork = image; artworkChanged = true }
             else { saveError = "无法读取这张图片，请选择 PNG 或 JPEG。" }
         }
-        .fileImporter(isPresented: $choosingLyrics, allowedContentTypes: [UTType(filenameExtension: "lrc") ?? .plainText, .plainText]) { result in
+        .fileImporter(isPresented: $choosingLyrics, allowedContentTypes: [UTType(filenameExtension: "lrc") ?? .plainText, UTType(filenameExtension: "srt") ?? .plainText, .plainText]) { result in
             do {
                 let url = try result.get()
-                lyrics = try String(contentsOf: url, encoding: .utf8)
+                var encoding = String.Encoding.utf8
+                lyrics = LRCParser.imported(try String(contentsOf: url, usedEncoding: &encoding))
+                timingIndex = 0
             } catch { saveError = "无法读取歌词，请使用 UTF-8 编码：\(error.localizedDescription)" }
         }
         .alert("操作失败", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
             Button("好", role: .cancel) { saveError = nil }
         } message: { Text(saveError ?? "") }
+    }
+
+    private func stampNextLine() {
+        var lines = LRCParser.parse(lyrics)
+        guard lines.indices.contains(timingIndex) else { return }
+        lines[timingIndex].timestamp = library.playbackTime
+        lyrics = lines.map { line in
+            line.timestamp.map { LRCParser.stamp($0, text: line.text) } ?? line.text
+        }.joined(separator: "\n")
+        timingIndex += 1
     }
 
     private func save() {
@@ -103,6 +125,7 @@ struct MetadataEditor: View {
         updated.album = album
         updated.lyrics = lyrics
         updated.artwork = artwork
+        updated.artworkWasEdited = artworkChanged
         isSaving = true
         Task {
             do { try await library.save(updated); dismiss() }

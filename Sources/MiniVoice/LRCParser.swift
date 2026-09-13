@@ -9,7 +9,7 @@ enum LRCParser {
            let range = Range(match.range(at: 1), in: source) { offset = (Double(source[range]) ?? 0) / 1000 }
         var parsed: [LyricLine] = []
         for raw in source.components(separatedBy: .newlines) {
-            let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let line = raw.replacingOccurrences(of: #"<\d+:\d{2}(?:\.\d{1,3})?>"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
             if line.isEmpty { continue }
             let matches = timestamp.matches(in: line, range: NSRange(line.startIndex..., in: line))
             if matches.isEmpty {
@@ -32,6 +32,26 @@ enum LRCParser {
             }.map(\.element)
         }
         return parsed.isEmpty ? [LyricLine(timestamp: nil, text: "尚未添加歌词")] : parsed
+    }
+
+    static func stamp(_ time: TimeInterval, text: String) -> String {
+        let safe = max(0, time)
+        return String(format: "[%02d:%05.2f] %@", Int(safe / 60), safe.truncatingRemainder(dividingBy: 60), text)
+    }
+
+    /// Converts common SRT subtitles to timed lyrics, leaving LRC/plain text intact.
+    static func imported(_ source: String) -> String {
+        let normalized = source.replacingOccurrences(of: "\u{FEFF}", with: "").replacingOccurrences(of: "\r\n", with: "\n")
+        let expression = try! NSRegularExpression(pattern: #"(?m)^(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->.*$"#)
+        guard expression.firstMatch(in: normalized, range: NSRange(normalized.startIndex..., in: normalized)) != nil else { return normalized }
+        return normalized.components(separatedBy: "\n\n").compactMap { block in
+            let lines = block.components(separatedBy: "\n")
+            guard let index = lines.firstIndex(where: { $0.contains("-->") }),
+                  let match = expression.firstMatch(in: lines[index], range: NSRange(lines[index].startIndex..., in: lines[index])) else { return nil }
+            let values = (1...4).map { Double((lines[index] as NSString).substring(with: match.range(at: $0))) ?? 0 }
+            let time = values[0] * 3600 + values[1] * 60 + values[2] + values[3] / 1000
+            return stamp(time, text: lines.dropFirst(index + 1).joined(separator: " / "))
+        }.joined(separator: "\n")
     }
 
     static func timestamped(_ plainText: String, every seconds: TimeInterval = 4) -> String {

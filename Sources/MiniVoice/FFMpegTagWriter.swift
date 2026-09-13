@@ -55,6 +55,7 @@ struct TagPayload: Sendable {
     let album: String
     let lyrics: String
     let artwork: Data?
+    var preserveArtwork = false
 }
 
 enum FFMpegTagWriter {
@@ -74,6 +75,7 @@ enum FFMpegTagWriter {
         }
         // Map audio only so replacing/removing artwork really removes the old attachment.
         args += ["-map", "0:a", "-map_metadata", "0", "-c", "copy"]
+        if track.preserveArtwork { args += ["-map", "0:v?"] }
         if track.artwork != nil {
             args += ["-map", "1:v:0", "-disposition:v:0", "attached_pic",
                      "-metadata:s:v:0", "title=Cover", "-metadata:s:v:0", "comment=Cover (front)"]

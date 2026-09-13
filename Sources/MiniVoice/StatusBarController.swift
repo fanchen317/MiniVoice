@@ -57,6 +57,8 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         let title = add(library?.selectedTrack?.title ?? "MiniVoice", nil); title.isEnabled = false
         _ = add("打开 MiniVoice", #selector(showApp))
         let play = add(library?.isPlaying == true ? "暂停" : "播放", #selector(togglePlayback)); play.isEnabled = library?.selectedTrack != nil
+        _ = add("上一曲", #selector(previousTrack))
+        _ = add("下一曲", #selector(nextTrack))
         menu.addItem(.separator())
         let styleItem = add("状态栏图标样式", nil)
         let styles = NSMenu()
@@ -74,6 +76,8 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         openMainWindow?()
         NSApp.activate(ignoringOtherApps: true)
     }
+    @objc private func previousTrack() { library?.skip(-1) }
+    @objc private func nextTrack() { library?.skip(1) }
     @objc private func togglePlayback() { library?.togglePlayback() }
     @objc private func changeStyle(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? String else { return }
@@ -93,6 +97,6 @@ struct AppearanceSettings: View {
             Text("彩色使用浅绿色 MV 音符；纯色自动适应系统明暗外观。隐藏后可在此重新开启。")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-        }.padding(24).frame(width: 430)
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }

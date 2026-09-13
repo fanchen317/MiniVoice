@@ -6,26 +6,6 @@
 	<string>zh-Hans</string>
 	<key>CFBundleDisplayName</key>
 	<string>MiniVoice</string>
-	<key>CFBundleDocumentTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeName</key>
-			<string>Audio</string>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>LSHandlerRank</key>
-			<string>Alternate</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>public.mp3</string>
-				<string>org.xiph.flac</string>
-				<string>public.mpeg-4-audio</string>
-				<string>public.aac-audio</string>
-				<string>com.microsoft.waveform-audio</string>
-				<string>public.aiff-audio</string>
-			</array>
-		</dict>
-	</array>
 	<key>CFBundleExecutable</key>
 	<string>MiniVoice</string>
 	<key>CFBundleIconFile</key>
@@ -39,9 +19,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.1</string>
+	<string>1.3</string>
 	<key>CFBundleVersion</key>
-	<string>3</string>
+	<string>5</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>NSHighResolutionCapable</key>
