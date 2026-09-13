@@ -1,0 +1,81 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "MiniVoice-arm64-apple-macosx-debug.exe": ["<MiniVoice-arm64-apple-macosx-debug.exe>"]
+  "MiniVoice-arm64-apple-macosx-debug.module": ["<MiniVoice-arm64-apple-macosx-debug.module>"]
+  "PackageStructure": ["<PackageStructure>"]
+  "main": ["<MiniVoice-arm64-apple-macosx-debug.exe>","<MiniVoice-arm64-apple-macosx-debug.module>"]
+  "test": ["<MiniVoice-arm64-apple-macosx-debug.exe>","<MiniVoice-arm64-apple-macosx-debug.module>"]
+default: "main"
+nodes:
+  "/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice":
+    is-mutated: true
+commands:
+  "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice-entitlement.plist":
+    tool: write-auxiliary-file
+    inputs: ["<entitlement-plist>","<com.apple.security.get-task-allow>"]
+    outputs: ["/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice-entitlement.plist"]
+    description: "Write auxiliary file /Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice-entitlement.plist"
+
+  "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/AudioCanvasApp.swift","/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/ContentView.swift","/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/FFMpegTagWriter.swift","/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/MetadataEditor.swift","/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/Models.swift"]
+    outputs: ["/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/sources"]
+    description: "Write auxiliary file /Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/sources"
+
+  "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/AudioCanvasApp.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/ContentView.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/FFMpegTagWriter.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/MetadataEditor.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/Models.swift.o"]
+    outputs: ["/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.product/Objects.LinkFileList"
+
+  "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"]
+    outputs: ["/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+
+  "<MiniVoice-arm64-apple-macosx-debug.exe>":
+    tool: phony
+    inputs: ["<MiniVoice-arm64-apple-macosx-debug.exe-CodeSigning>"]
+    outputs: ["<MiniVoice-arm64-apple-macosx-debug.exe>"]
+
+  "<MiniVoice-arm64-apple-macosx-debug.module>":
+    tool: phony
+    inputs: ["/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/AudioCanvasApp.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/ContentView.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/FFMpegTagWriter.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/MetadataEditor.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/Models.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/Modules/MiniVoice.swiftmodule"]
+    outputs: ["<MiniVoice-arm64-apple-macosx-debug.module>"]
+
+  "C.MiniVoice-arm64-apple-macosx-debug.exe":
+    tool: shell
+    inputs: ["/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/AudioCanvasApp.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/ContentView.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/FFMpegTagWriter.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/MetadataEditor.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/Models.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.product/Objects.LinkFileList"]
+    outputs: ["/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice"]
+    description: "Linking ./.build/arm64-apple-macosx/debug/MiniVoice"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-L","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug","-o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice","-module-name","MiniVoice","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-alias","-Xlinker","_MiniVoice_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.product/Objects.LinkFileList","-Xlinker","-rpath","-Xlinker","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-6.2/macosx","-target","arm64-apple-macosx13.0","-framework","SwiftUI","-framework","AVFoundation","-framework","AppKit","-Xlinker","-add_ast_path","-Xlinker","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/Modules/MiniVoice.swiftmodule","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g"]
+
+  "C.MiniVoice-arm64-apple-macosx-debug.exe-entitlements":
+    tool: shell
+    inputs: ["/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice-entitlement.plist"]
+    outputs: ["<MiniVoice-arm64-apple-macosx-debug.exe-CodeSigning>"]
+    description: "Applying debug entitlements to ./.build/arm64-apple-macosx/debug/MiniVoice"
+    args: ["codesign","--force","--sign","-","--entitlements","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice-entitlement.plist","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice"]
+
+  "C.MiniVoice-arm64-apple-macosx-debug.module":
+    tool: shell
+    inputs: ["/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/AudioCanvasApp.swift","/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/ContentView.swift","/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/FFMpegTagWriter.swift","/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/MetadataEditor.swift","/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/Models.swift","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/sources"]
+    outputs: ["/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/AudioCanvasApp.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/ContentView.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/FFMpegTagWriter.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/MetadataEditor.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/Models.swift.o","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/Modules/MiniVoice.swiftmodule"]
+    description: "Compiling Swift Module 'MiniVoice' (5 sources)"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","MiniVoice","-emit-dependencies","-emit-module","-emit-module-path","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/Modules/MiniVoice.swiftmodule","-output-file-map","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/output-file-map.json","-incremental","-c","@/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/sources","-I","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx13.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j18","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","MiniVoice_main","-swift-version","6","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-fPIC","-Xcc","-g","-package-name","audiocanvas"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/","/Users/fanchen/Documents/Codex/AudioCanvas/Package.swift","/Users/fanchen/Documents/Codex/AudioCanvas/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+

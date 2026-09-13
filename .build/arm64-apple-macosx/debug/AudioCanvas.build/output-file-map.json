@@ -1,0 +1,40 @@
+{
+  "": {
+    "swift-dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/primary.swiftdeps"
+  },
+  "/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/AudioCanvasApp.swift": {
+    "dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/AudioCanvasApp.d",
+    "object": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/AudioCanvasApp.swift.o",
+    "swiftmodule": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/AudioCanvasApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/AudioCanvasApp.swiftdeps",
+    "diagnostics": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/AudioCanvasApp.dia"
+  },
+  "/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/ContentView.swift": {
+    "dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/ContentView.d",
+    "object": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/ContentView.swift.o",
+    "swiftmodule": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/ContentView~partial.swiftmodule",
+    "swift-dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/ContentView.swiftdeps",
+    "diagnostics": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/ContentView.dia"
+  },
+  "/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/FFMpegTagWriter.swift": {
+    "dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/FFMpegTagWriter.d",
+    "object": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/FFMpegTagWriter.swift.o",
+    "swiftmodule": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/FFMpegTagWriter~partial.swiftmodule",
+    "swift-dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/FFMpegTagWriter.swiftdeps",
+    "diagnostics": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/FFMpegTagWriter.dia"
+  },
+  "/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/MetadataEditor.swift": {
+    "dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/MetadataEditor.d",
+    "object": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/MetadataEditor.swift.o",
+    "swiftmodule": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/MetadataEditor~partial.swiftmodule",
+    "swift-dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/MetadataEditor.swiftdeps",
+    "diagnostics": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/MetadataEditor.dia"
+  },
+  "/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/Models.swift": {
+    "dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/Models.d",
+    "object": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/Models.swift.o",
+    "swiftmodule": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/Models~partial.swiftmodule",
+    "swift-dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/Models.swiftdeps",
+    "diagnostics": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/AudioCanvas.build/Models.dia"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "": {
+    "swift-dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/primary.swiftdeps"
+  },
+  "/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/AudioCanvasApp.swift": {
+    "dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/AudioCanvasApp.d",
+    "object": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/AudioCanvasApp.swift.o",
+    "swiftmodule": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/AudioCanvasApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/AudioCanvasApp.swiftdeps",
+    "diagnostics": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/AudioCanvasApp.dia"
+  },
+  "/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/ContentView.swift": {
+    "dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/ContentView.d",
+    "object": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/ContentView.swift.o",
+    "swiftmodule": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/ContentView~partial.swiftmodule",
+    "swift-dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/ContentView.swiftdeps",
+    "diagnostics": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/ContentView.dia"
+  },
+  "/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/FFMpegTagWriter.swift": {
+    "dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/FFMpegTagWriter.d",
+    "object": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/FFMpegTagWriter.swift.o",
+    "swiftmodule": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/FFMpegTagWriter~partial.swiftmodule",
+    "swift-dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/FFMpegTagWriter.swiftdeps",
+    "diagnostics": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/FFMpegTagWriter.dia"
+  },
+  "/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/MetadataEditor.swift": {
+    "dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/MetadataEditor.d",
+    "object": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/MetadataEditor.swift.o",
+    "swiftmodule": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/MetadataEditor~partial.swiftmodule",
+    "swift-dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/MetadataEditor.swiftdeps",
+    "diagnostics": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/MetadataEditor.dia"
+  },
+  "/Users/fanchen/Documents/Codex/AudioCanvas/Sources/AudioCanvas/Models.swift": {
+    "dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/Models.d",
+    "object": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/Models.swift.o",
+    "swiftmodule": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/Models~partial.swiftmodule",
+    "swift-dependencies": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/Models.swiftdeps",
+    "diagnostics": "/Users/fanchen/Documents/Codex/AudioCanvas/.build/arm64-apple-macosx/debug/MiniVoice.build/Models.dia"
+  }
+}
