@@ -14,6 +14,7 @@ let package = Package(
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("AppKit")
             ]
-        )
+        ),
+        .testTarget(name: "MiniVoiceTests", dependencies: ["MiniVoice"])
     ]
 )

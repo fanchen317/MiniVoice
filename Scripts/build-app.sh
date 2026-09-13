@@ -15,6 +15,13 @@ fi
 
 cd "$ROOT"
 
+for TOOL in ffmpeg ffprobe; do
+  if [[ ! -x "/opt/homebrew/bin/$TOOL" && ! -x "/usr/local/bin/$TOOL" ]]; then
+    echo "error: 缺少 $TOOL，请先执行 brew install ffmpeg" >&2
+    exit 1
+  fi
+done
+
 if [[ -d /Applications/Xcode.app/Contents/Developer ]]; then
   export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 fi

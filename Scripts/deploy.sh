@@ -6,33 +6,36 @@ APP_NAME="MiniVoice"
 APP_ID="local.fanchen.MiniVoice"
 APP_PATH="/Applications/${APP_NAME}.app"
 BUNDLE_PATH="$ROOT/.build/${APP_NAME}.app"
+STAGING="/Applications/.${APP_NAME}-staging-$$.app"
+PREVIOUS="/Applications/.${APP_NAME}-previous-$$.app"
 
-echo "==> 停止旧进程..."
-osascript -e "tell application id \"${APP_ID}\" to quit" >/dev/null 2>&1 || true
-sleep 1
+# Build and verify before touching the installed app.
+"$ROOT/Scripts/build-app.sh" "${1:-release}"
+codesign --verify --deep --strict "$BUNDLE_PATH"
+trap 'rm -rf "$STAGING"' EXIT
+ditto "$BUNDLE_PATH" "$STAGING"
+codesign --verify --deep --strict "$STAGING"
 
-# 按 bundle ID 退出可能只命中一个实例；清理残留，避免旧版继续占用播放器资源。
 if pgrep -x "$APP_NAME" >/dev/null; then
-  pkill -x "$APP_NAME" || true
-  sleep 1
+  osascript -e "tell application id \"${APP_ID}\" to quit" >/dev/null 2>&1 || true
+  sleep 2
 fi
 if pgrep -x "$APP_NAME" >/dev/null; then
-  echo "error: ${APP_NAME} 旧进程未退出，停止部署" >&2
+  echo "error: MiniVoice 未退出，请先完成正在进行的编辑后重试" >&2
   exit 1
 fi
 
-echo "==> 编译..."
-"$ROOT/Scripts/build-app.sh" "${1:-release}"
-
-echo "==> 签名验证..."
-codesign --verify --deep --strict "$BUNDLE_PATH"
-
-echo "==> 替换应用..."
-rm -rf "$APP_PATH"
-ditto "$BUNDLE_PATH" "$APP_PATH"
-
-echo "==> 启动应用..."
-open -n "$APP_PATH"
-
-echo "==> 完成，进程 ID:"
-pgrep -x "$APP_NAME" || true
+if [[ -e "$APP_PATH" ]]; then mv "$APP_PATH" "$PREVIOUS"; fi
+if ! mv "$STAGING" "$APP_PATH"; then
+  if [[ -e "$PREVIOUS" ]]; then mv "$PREVIOUS" "$APP_PATH"; fi
+  exit 1
+fi
+if ! open -n "$APP_PATH"; then
+  rm -rf "$APP_PATH"
+  if [[ -e "$PREVIOUS" ]]; then mv "$PREVIOUS" "$APP_PATH"; fi
+  exit 1
+fi
+rm -rf "$PREVIOUS"
+sleep 2
+pgrep -x "$APP_NAME"
+echo "已部署并启动：$APP_PATH"

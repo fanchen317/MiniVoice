@@ -13,15 +13,15 @@ struct ContentView: View {
                     Text("音乐库").font(.title2.weight(.bold))
                     Spacer()
                     Button { importing = true } label: { Image(systemName: "plus") }
-                        .help("导入本地音频")
+                        .help("导入本地音频").disabled(library.isImporting)
                 }
                 .padding([.top, .horizontal])
-                List(selection: $library.selectedID) {
+                List(selection: Binding(get: { library.selectedID }, set: { if let id = $0 { library.select(id) } })) {
                     ForEach(library.tracks) { track in
                         TrackRow(track: track).tag(track.id)
                     }
                 }
-                .onChange(of: library.selectedID) { id in if let id { library.select(id) } }
+                if library.isImporting { ProgressView("正在读取音乐…").controlSize(.small) }
                 Text("支持 MP3 · FLAC · M4A · WAV")
                     .font(.caption).foregroundStyle(.secondary).padding(.bottom, 8)
             }
@@ -32,10 +32,13 @@ struct ContentView: View {
             } else { EmptyLibraryView(onImport: { importing = true }) }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
-            if case .success(let urls) = result { library.importFiles(urls) }
+            switch result {
+            case .success(let urls): library.importFiles(urls)
+            case .failure(let error): library.errorMessage = error.localizedDescription
+            }
         }
         .sheet(isPresented: $editing) { if let track = library.selectedTrack { MetadataEditor(track: track) } }
-        .alert("无法保存", isPresented: Binding(get: { library.errorMessage != nil }, set: { if !$0 { library.errorMessage = nil } })) {
+        .alert("操作失败", isPresented: Binding(get: { library.errorMessage != nil }, set: { if !$0 { library.errorMessage = nil } })) {
             Button("好", role: .cancel) { library.errorMessage = nil }
         } message: { Text(library.errorMessage ?? "") }
     }
@@ -61,6 +64,8 @@ private struct PlayerDetail: View {
     var lines: [LyricLine] { track.lyricLines }
 
     var body: some View {
+        let lines = self.lines
+        let activeIndex = library.activeLyricIndex(for: lines)
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 28) {
                 Artwork(image: track.artwork, size: 190)
@@ -74,18 +79,19 @@ private struct PlayerDetail: View {
             }.padding(36)
 
             Divider()
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
-                            Text(line.text)
-                                .font(.title2.weight(library.activeLyricIndex(for: lines) == index ? .bold : .regular))
-                                .foregroundStyle(library.activeLyricIndex(for: lines) == index ? .primary : .secondary)
-                                .opacity(library.activeLyricIndex(for: lines) == index ? 1 : 0.55)
-                                .id(line.id)
-                        }
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(36)
-                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                        Text(line.text)
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                            .foregroundStyle(activeIndex == index ? .primary : .secondary)
+                            .opacity(line.timestamp == nil || activeIndex == index ? 1 : 0.45)
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
+                            .onTapGesture { if let time = line.timestamp { library.seek(to: time) } }
+                            .help(line.timestamp == nil ? "手动滚动查看歌词" : "点击跳转到这一句")
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(36)
             }
             Spacer(minLength: 0)
             PlayerControls(duration: track.duration).padding(24).background(.bar)
@@ -102,10 +108,14 @@ private struct PlayerControls: View {
             HStack {
                 Text(format(library.playbackTime)).monospacedDigit().foregroundStyle(.secondary)
                 Spacer()
+                Button { library.skip(-1) } label: { Image(systemName: "backward.end.fill") }
                 Button { library.togglePlayback() } label: {
                     Image(systemName: library.isPlaying ? "pause.fill" : "play.fill").font(.title2)
                 }.buttonStyle(.borderedProminent).clipShape(Circle())
+                Button { library.skip(1) } label: { Image(systemName: "forward.end.fill") }
                 Spacer()
+                Image(systemName: "speaker.wave.2")
+                Slider(value: $library.volume, in: 0...1).frame(width: 80)
                 Text(format(duration)).monospacedDigit().foregroundStyle(.secondary)
             }
         }

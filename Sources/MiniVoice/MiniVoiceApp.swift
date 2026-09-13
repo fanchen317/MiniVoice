@@ -8,6 +8,7 @@ struct MiniVoiceApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(library)
+                .onOpenURL { library.importFiles([$0]) }
                 .frame(minWidth: 980, minHeight: 650)
         }
         .windowStyle(.hiddenTitleBar)
