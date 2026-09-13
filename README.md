@@ -22,5 +22,12 @@ swift run
 ```sh
 chmod +x Scripts/build-app.sh
 Scripts/build-app.sh
-open build/MiniVoice.app
+open .build/MiniVoice.app
+```
+
+部署至“应用程序”目录并启动（会停止并替换旧版 MiniVoice）：
+
+```sh
+chmod +x Scripts/deploy.sh
+Scripts/deploy.sh
 ```

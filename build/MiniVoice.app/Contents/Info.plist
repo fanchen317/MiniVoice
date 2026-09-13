@@ -9,7 +9,7 @@
     <key>CFBundleExecutable</key>
     <string>MiniVoice</string>
     <key>CFBundleIdentifier</key>
-    <string>local.fanchen.MiniVoice</string>
+    <string>com.local.minivoice</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
