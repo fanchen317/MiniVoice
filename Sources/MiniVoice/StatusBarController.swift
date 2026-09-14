@@ -89,8 +89,12 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
 struct AppearanceSettings: View {
     @AppStorage(StatusBarController.preferenceKey) private var style = StatusIconStyle.colored.rawValue
+    @AppStorage("MiniVoice.appearance") private var appearance = AppAppearance.system.rawValue
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            Picker("界面外观", selection: $appearance) {
+                ForEach(AppAppearance.allCases) { item in Text(item.title).tag(item.rawValue) }
+            }
             Picker("状态栏图标", selection: $style) {
                 ForEach(StatusIconStyle.allCases) { item in Text(item.title).tag(item.rawValue) }
             }

@@ -7,6 +7,8 @@ struct MiniVoiceApp: App {
     @StateObject private var systemVolume = SystemVolume()
     @StateObject private var library = MusicLibrary()
     @StateObject private var shortcuts = PlaybackShortcutController()
+    @StateObject private var desktopLyrics = DesktopLyricsController()
+    @AppStorage("MiniVoice.appearance") private var appearance = AppAppearance.system.rawValue
 
     var body: some Scene {
         WindowGroup("MiniVoice", id: "main") {
@@ -14,9 +16,14 @@ struct MiniVoiceApp: App {
                 .environmentObject(library)
                 .environmentObject(systemVolume)
                 .environmentObject(shortcuts)
+                .environmentObject(desktopLyrics)
                 .background(WindowCloseObserver(library: library))
                 .frame(minWidth: 800, minHeight: 600)
-                .onAppear { shortcuts.connect(library: library) }
+                .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
+                .onAppear {
+                    shortcuts.connect(library: library)
+                    desktopLyrics.connect(library: library)
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1280, height: 800)
@@ -32,6 +39,7 @@ struct MiniVoiceApp: App {
                 .environmentObject(library)
                 .environmentObject(systemVolume)
                 .environmentObject(shortcuts)
+                .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
         }
     }
 }

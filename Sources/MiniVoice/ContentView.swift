@@ -6,6 +6,7 @@ private let playerGreen = Color(red: 0.06, green: 0.66, blue: 0.46)
 struct ContentView: View {
     let statusBar: StatusBarController
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var library: MusicLibrary
     @State private var sidebarVisible = true
     @State private var recent = false
@@ -105,7 +106,7 @@ struct ContentView: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("搜索歌曲、歌手或专辑", text: $query).textFieldStyle(.plain)
-            }.padding(10).background(.white.opacity(0.65), in: RoundedRectangle(cornerRadius: 12))
+            }.padding(10).background(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.58 : 0.65), in: RoundedRectangle(cornerRadius: 12))
             VStack(spacing: 4) {
                 navigationItem("音乐库", symbol: "music.note", isRecent: false)
                 navigationItem("最近播放", symbol: "clock", isRecent: true)
@@ -129,7 +130,7 @@ struct ContentView: View {
         .frame(maxHeight: .infinity)
         .background {
             FrostedBackdrop(material: .hudWindow, blendingMode: .withinWindow)
-            Color.white.opacity(0.22)
+            Color(nsColor: .windowBackgroundColor).opacity(colorScheme == .dark ? 0.34 : 0.22)
         }
     }
 
@@ -222,6 +223,7 @@ struct ContentView: View {
 
 private struct PlayerDetail: View {
     @EnvironmentObject private var library: MusicLibrary
+    @Environment(\.colorScheme) private var colorScheme
     let track: Track
     let onEdit: () -> Void
     let onToggleSidebar: () -> Void
@@ -322,7 +324,7 @@ private struct PlayerDetail: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.white.opacity(0.65), in: RoundedRectangle(cornerRadius: 20))
+        .background(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.58 : 0.65), in: RoundedRectangle(cornerRadius: 20))
     }
 }
 
@@ -365,6 +367,8 @@ private struct SyncedLyrics: View {
 private struct PlayerControls: View {
     @EnvironmentObject private var library: MusicLibrary
     @EnvironmentObject private var volume: SystemVolume
+    @EnvironmentObject private var desktopLyrics: DesktopLyricsController
+    @Environment(\.colorScheme) private var colorScheme
     let track: Track
     let compact: Bool
     let onEdit: () -> Void
@@ -389,13 +393,13 @@ private struct PlayerControls: View {
         }
         .padding(.horizontal, 18).padding(.vertical, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.74 : 0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .onChange(of: track.id) { _ in scrub = nil }
     }
 
     private var trackInfo: some View {
         HStack(spacing: 10) {
-            Artwork(image: track.artwork, size: 48)
+            Artwork(image: track.artwork, size: compact ? 58 : 62)
             VStack(alignment: .leading, spacing: 4) {
                 Text(track.title).font(.subheadline.weight(.semibold)).lineLimit(1)
                 Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -414,8 +418,13 @@ private struct PlayerControls: View {
                 Text(time(track.duration))
             }.font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             HStack(spacing: 26) {
-                Button { library.playbackMode = library.playbackMode == .shuffle ? .list : .shuffle } label: { Image(systemName: "shuffle") }
-                    .foregroundStyle(library.playbackMode == .shuffle ? playerGreen : .secondary).help("随机播放")
+                Button {
+                    let modes = PlaybackMode.allCases
+                    let current = modes.firstIndex(of: library.playbackMode) ?? 0
+                    library.playbackMode = modes[(current + 1) % modes.count]
+                } label: { Image(systemName: library.playbackMode.symbolName) }
+                    .foregroundStyle(library.playbackMode == .list ? .secondary : playerGreen)
+                    .help("当前：\(library.playbackMode.title)，点击切换模式")
                 Button { library.skip(-1) } label: { Image(systemName: "backward.end.fill") }.help("上一首")
                 Button { library.togglePlayback() } label: {
                     Image(systemName: library.isPlaying ? "pause.fill" : "play.fill")
@@ -425,12 +434,11 @@ private struct PlayerControls: View {
                         .shadow(color: playerGreen.opacity(0.22), radius: 8, y: 4)
                 }.help("播放 / 暂停")
                 Button { library.skip(1) } label: { Image(systemName: "forward.end.fill") }.help("下一首")
-                Button {
-                    let modes = PlaybackMode.allCases
-                    let current = modes.firstIndex(of: library.playbackMode) ?? 0
-                    library.playbackMode = modes[(current + 1) % modes.count]
-                } label: { Image(systemName: library.playbackMode.symbolName) }
-                    .help("当前：\(library.playbackMode.title)，点击切换模式")
+                Button { desktopLyrics.toggle() } label: {
+                    Image(systemName: desktopLyrics.isEnabled ? "text.bubble.fill" : "text.bubble")
+                }
+                .foregroundStyle(desktopLyrics.isEnabled ? playerGreen : .primary)
+                .help(desktopLyrics.isEnabled ? "关闭桌面歌词" : "显示桌面歌词")
             }.buttonStyle(.plain).font(.system(size: 17))
         }
     }
@@ -443,8 +451,23 @@ private struct PlayerControls: View {
                     .disabled(!volume.canSetVolume).accessibilityLabel("系统音量")
                 Text(volume.canSetVolume ? "\(Int(volume.value * 100))%" : "—").monospacedDigit()
             }
-            Label(volume.error ?? volume.deviceName, systemImage: "airplayaudio").lineLimit(1)
-                .help(volume.error ?? volume.deviceName)
+            Menu {
+                ForEach(volume.outputDevices) { device in
+                    Button {
+                        volume.selectOutputDevice(device.id)
+                    } label: {
+                        HStack {
+                            Text(device.name)
+                            if device.id == volume.outputDeviceID { Image(systemName: "checkmark") }
+                        }
+                    }
+                }
+            } label: {
+                Label(volume.error ?? volume.deviceName, systemImage: "airplayaudio")
+                    .lineLimit(1)
+            }
+            .menuStyle(.borderlessButton)
+            .help(volume.error ?? "切换播放输出设备")
         }.font(.caption).foregroundStyle(.secondary)
     }
     private func time(_ value: Double) -> String { String(format: "%d:%02d", Int(max(0, value)) / 60, Int(max(0, value)) % 60) }

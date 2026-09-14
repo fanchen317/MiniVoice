@@ -44,6 +44,11 @@ struct MetadataEditor: View {
             }.padding(24)
             Divider()
             Form {
+                Section("文件信息") {
+                    readOnlyRow("文件名称", track.url.lastPathComponent)
+                    readOnlyRow("文件路径", track.url.path, selectable: true)
+                    readOnlyRow("播放时长", formattedDuration(track.duration))
+                }
                 Section("基本信息") {
                     TextField("歌曲名称", text: $title)
                     ForEach($artists) { $entry in
@@ -155,6 +160,31 @@ struct MetadataEditor: View {
             catch { saveError = error.localizedDescription }
             isSaving = false
         }
+    }
+
+    private func readOnlyRow(_ title: String, _ value: String, selectable: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(title)
+                .foregroundStyle(.secondary)
+                .frame(width: 72, alignment: .leading)
+            if selectable {
+                Text(value)
+                    .lineLimit(3)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text(value)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .font(.callout)
+    }
+
+    private func formattedDuration(_ value: Double) -> String {
+        guard value.isFinite, value > 0 else { return "未知" }
+        let total = Int(value.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 
