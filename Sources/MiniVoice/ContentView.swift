@@ -111,11 +111,6 @@ struct ContentView: View {
                 navigationItem("最近播放", symbol: "clock", isRecent: true)
             }
             Divider().opacity(0.4)
-            HStack {
-                Text(recent ? "最近播放" : "我的歌曲").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Text("\(songs.count)").font(.caption).foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-            }
             libraryToolbar
             ScrollView {
                 LazyVStack(spacing: 4) {
@@ -139,7 +134,11 @@ struct ContentView: View {
     }
 
     private func navigationItem(_ title: String, symbol: String, isRecent: Bool) -> some View {
-        Button { recent = isRecent; selectedIDs.removeAll() } label: {
+        Button {
+            recent = isRecent
+            selectedIDs.removeAll()
+            if isRecent { multiSelecting = false }
+        } label: {
             HStack(spacing: 12) {
                 Image(systemName: symbol).frame(width: 22)
                 Text(title).fontWeight(recent == isRecent ? .semibold : .regular)
@@ -150,28 +149,36 @@ struct ContentView: View {
     }
 
     private var libraryToolbar: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 14) {
+            Text(recent ? "最近播放" : "我的歌曲")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text("\(songs.count)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
             Button { library.rescan() } label: { Image(systemName: "arrow.clockwise") }
                 .help("重新扫描").disabled(library.isImporting)
-            Menu {
-                Picker("歌曲排序", selection: $sortOrder) {
-                    Text("最近添加").tag("modified")
-                    Text("歌名正序").tag("title")
-                    Text("歌手名称正序").tag("artist")
-                }
-            } label: { Image(systemName: "arrow.up.arrow.down") }
-                .menuStyle(.borderlessButton).frame(width: 30).disabled(recent).help("歌曲排序")
-            Button { multiSelecting.toggle(); selectedIDs.removeAll() } label: {
-                Image(systemName: multiSelecting ? "checkmark.circle.fill" : "checklist")
-            }.help("多选歌曲")
-            Button { requestDelete(Array(selectedIDs)) } label: { Image(systemName: "trash") }
-                .disabled(!multiSelecting || selectedIDs.isEmpty).help("删除所选歌曲")
-            Spacer(minLength: 0)
+            if !recent {
+                Menu {
+                    Picker("歌曲排序", selection: $sortOrder) {
+                        Text("最近添加").tag("modified")
+                        Text("歌名正序").tag("title")
+                        Text("歌手名称正序").tag("artist")
+                    }
+                } label: { Image(systemName: "arrow.up.arrow.down") }
+                    .menuStyle(.borderlessButton).frame(width: 30).help("歌曲排序")
+                Button { multiSelecting.toggle(); selectedIDs.removeAll() } label: {
+                    Image(systemName: multiSelecting ? "checkmark.circle.fill" : "checklist")
+                }.help("多选歌曲")
+                Button { requestDelete(Array(selectedIDs)) } label: { Image(systemName: "trash") }
+                    .disabled(!multiSelecting || selectedIDs.isEmpty).help("删除所选歌曲")
+            }
             if recent {
                 Menu { Button("清空最近播放记录") { library.clearRecentPlayback() } }
                     label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).frame(width: 22)
             }
-        }.buttonStyle(.plain).font(.system(size: 15)).frame(height: 24)
+        }.buttonStyle(.plain).font(.system(size: 15)).frame(height: 28)
     }
 
     private func songRow(_ track: Track) -> some View {
