@@ -33,11 +33,14 @@ final class PlayerTests: XCTestCase {
     func testFolderScanRecursionDeduplicationAndMissingFolder() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let child = root.appendingPathComponent("child")
+        let backup = root.appendingPathComponent("backup")
         try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         for file in ["one.MP3", "child/two.flac", "cover.png", ".hidden.mp3", "one.mp3.minivoice-backup-123"] {
             try Data().write(to: root.appendingPathComponent(file))
         }
+        try Data().write(to: backup.appendingPathComponent("original.flac"))
         XCTAssertEqual(FolderScanner.scan([root], recursive: false).urls.count, 1)
         XCTAssertEqual(FolderScanner.scan([root, child], recursive: true).urls.count, 2)
         XCTAssertEqual(FolderScanner.scan([root.appendingPathComponent("missing")], recursive: true).issues.count, 1)
@@ -100,6 +103,13 @@ final class PlayerTests: XCTestCase {
         XCTAssertEqual(library.playbackTime, 0)
         library.play()
         XCTAssertTrue(library.isPlaying)
+        let firstPath = try XCTUnwrap(library.selectedTrack?.url.path)
+        XCTAssertEqual(library.recentPaths.first, firstPath)
+        library.pause()
+        library.play()
+        XCTAssertEqual(library.recentPaths.filter { $0 == firstPath }.count, 1)
+        let restored = MusicLibrary(defaults: defaults, scanOnLaunch: false)
+        XCTAssertEqual(restored.recentPaths, library.recentPaths)
         library.skip(1)
         XCTAssertNotEqual(library.selectedID, first)
         XCTAssertTrue(library.isPlaying)

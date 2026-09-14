@@ -19,10 +19,15 @@ enum FolderScanner {
             }
             var options: FileManager.DirectoryEnumerationOptions = [.skipsHiddenFiles, .skipsPackageDescendants]
             if !recursive { options.insert(.skipsSubdirectoryDescendants) }
-            guard let enumerator = manager.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey], options: options, errorHandler: { url, error in
+            guard let enumerator = manager.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey], options: options, errorHandler: { url, error in
                 result.issues.append("\(url.lastPathComponent)：\(error.localizedDescription)"); return true
             }) else { continue }
             for case let url as URL in enumerator {
+                if url.lastPathComponent == "backup",
+                   (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                    enumerator.skipDescendants()
+                    continue
+                }
                 guard extensions.contains(url.pathExtension.lowercased()),
                       let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
                       values.isRegularFile == true, values.isSymbolicLink != true else { continue }

@@ -22,6 +22,10 @@ struct Track: Identifiable {
     var canWriteTags: Bool { ["mp3", "flac", "m4a"].contains(url.pathExtension.lowercased()) }
 
     var lyricLines: [LyricLine] { LRCParser.parse(lyrics) }
+
+    func hasFileChanges(comparedTo original: Track) -> Bool {
+        title != original.title || artist != original.artist || album != original.album || lyrics != original.lyrics || artworkWasEdited
+    }
 }
 
 @MainActor
@@ -41,16 +45,28 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var scanSummary = "尚未扫描"
     @Published private(set) var scanIssues: [String] = []
     private let defaults: UserDefaults
+    @Published private(set) var recentPaths: [String] = []
+    var recentTracks: [Track] {
+        recentPaths.compactMap { path in tracks.first { $0.url.path == path } }
+    }
+
+    func clearRecentPlayback() {
+        recentPaths = []
+        defaults.removeObject(forKey: "MiniVoice.recentPlayback")
+    }
+    private var hiddenTrackPaths: Set<String>
     private var queue = PlaybackQueue()
     private var scanTask: Task<Void, Never>?
     private var scanGeneration = 0
 
     init(defaults: UserDefaults = .standard, scanOnLaunch: Bool = true) {
         self.defaults = defaults
+        hiddenTrackPaths = Set(defaults.stringArray(forKey: "MiniVoice.hiddenTrackPaths") ?? [])
         folders = (defaults.stringArray(forKey: "MiniVoice.musicFolders") ?? []).map { URL(fileURLWithPath: $0) }
         playbackMode = PlaybackMode(rawValue: defaults.string(forKey: "MiniVoice.playbackMode") ?? "list") ?? .list
         recursiveScan = defaults.object(forKey: "MiniVoice.recursiveScan") as? Bool ?? true
         super.init()
+        recentPaths = defaults.stringArray(forKey: "MiniVoice.recentPlayback") ?? []
         if scanOnLaunch { rescan(preferCache: true) }
     }
     private var player: AVAudioPlayer?
@@ -90,12 +106,14 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 let cached = preferCache ? await Task.detached { try? PlaylistCache.read(root: root, recursive: recursive) }.value : nil
                 var folderTracks: [Track] = []
                 if let cached {
-                    folderTracks = cached.tracks.compactMap { $0.track(root: root) }
+                    folderTracks = cached.tracks.compactMap { $0.track(root: root) }.filter {
+                        !hiddenTrackPaths.contains($0.url.path)
+                    }
                     scanSummary = "正在载入已保存歌单…"
                 } else {
                     let result = await Task.detached { FolderScanner.scan([root], recursive: recursive) }.value
                     issues += result.issues
-                    for (offset, url) in result.urls.enumerated() {
+                    for (offset, url) in result.urls.enumerated() where !hiddenTrackPaths.contains(url.path) {
                         guard !Task.isCancelled else { return }
                         scanSummary = "正在读取 \(offset + 1) / \(result.urls.count)"
                         if let track = scanned.first(where: { $0.url.path == url.path }) {
@@ -164,10 +182,13 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     func select(_ id: Track.ID) {
         guard id != selectedID else { return }
-        let resume = isPlaying
         activate(id)
         queue.reset(current: id, ids: tracks.map(\.id))
-        if resume { play() }
+    }
+
+    func play(_ id: Track.ID) {
+        if id != selectedID { select(id) }
+        play()
     }
 
     private func activate(_ id: Track.ID) {
@@ -191,7 +212,13 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
             if playbackTime >= track.duration { playbackTime = 0; player?.currentTime = 0 }
             player?.volume = volume
             isPlaying = player?.play() == true
-            if isPlaying { beginTimer() }
+            if isPlaying {
+                recentPaths.removeAll { $0 == track.url.path }
+                recentPaths.insert(track.url.path, at: 0)
+                recentPaths = Array(recentPaths.prefix(200))
+                defaults.set(recentPaths, forKey: "MiniVoice.recentPlayback")
+                beginTimer()
+            }
             else { errorMessage = "无法开始播放这首歌曲。" }
         } catch { pause(); errorMessage = "无法播放这首文件：\(error.localizedDescription)" }
     }
@@ -212,6 +239,8 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func save(_ updated: Track) async throws {
+        guard let existing = tracks.first(where: { $0.id == updated.id }) else { return }
+        guard updated.hasFileChanges(comparedTo: existing) else { return }
         let resumeScan = isImporting
         scanTask?.cancel(); scanGeneration += 1; isImporting = false
         defer { if resumeScan { rescan() } }
@@ -233,6 +262,48 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
             let resume = isPlaying
             stop(); playbackTime = time
             if resume { play() }
+        }
+    }
+
+    func deleteTracks(ids: Set<Track.ID>, moveFilesToTrash: Bool) {
+        let targets = tracks.filter { ids.contains($0.id) }
+        guard !targets.isEmpty else { return }
+        var removedPaths: Set<String> = []
+        var failures: [String] = []
+        for track in targets {
+            if moveFilesToTrash {
+                do {
+                    var trashed: NSURL?
+                    try FileManager.default.trashItem(at: track.url, resultingItemURL: &trashed)
+                    removedPaths.insert(track.url.path)
+                } catch {
+                    failures.append("\(track.title)：\(error.localizedDescription)")
+                }
+            } else {
+                hiddenTrackPaths.insert(track.url.path)
+                removedPaths.insert(track.url.path)
+            }
+        }
+        guard !removedPaths.isEmpty else {
+            errorMessage = "没有歌曲被移除。\n\(failures.joined(separator: "\n"))"
+            return
+        }
+        defaults.set(Array(hiddenTrackPaths), forKey: "MiniVoice.hiddenTrackPaths")
+        tracks.removeAll { removedPaths.contains($0.url.path) }
+        if let selectedID, ids.contains(selectedID) {
+            stop()
+            self.selectedID = tracks.first?.id
+        }
+        queue.reset(current: selectedID, ids: tracks.map(\.id))
+        removeCachedTracks(paths: removedPaths)
+        if !failures.isEmpty { errorMessage = "部分歌曲无法移至废纸篓：\n\(failures.joined(separator: "\n"))" }
+    }
+
+    private func removeCachedTracks(paths: Set<String>) {
+        for root in folders {
+            guard var cache = try? PlaylistCache.read(root: root, recursive: recursiveScan) else { continue }
+            cache.tracks.removeAll { paths.contains(root.appendingPathComponent($0.path).path) }
+            try? cache.write(root: root)
         }
     }
 

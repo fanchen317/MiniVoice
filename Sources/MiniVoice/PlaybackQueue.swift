@@ -21,6 +21,15 @@ enum PlaybackMode: String, CaseIterable, Identifiable {
         case .repeatAll: return "按音乐库顺序循环播放。"
         }
     }
+    var symbolName: String {
+        switch self {
+        case .single: return "play.circle"
+        case .list: return "text.line.first.and.arrowtriangle.forward"
+        case .shuffle: return "shuffle"
+        case .repeatOne: return "repeat.1"
+        case .repeatAll: return "repeat"
+        }
+    }
 }
 
 struct PlaybackQueue {

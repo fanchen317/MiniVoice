@@ -31,7 +31,15 @@ struct WindowCloseObserver: NSViewRepresentable {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: nil)
-            if let window { NotificationCenter.default.addObserver(self, selector: #selector(closing), name: NSWindow.willCloseNotification, object: window) }
+            if let window {
+                // Keep the content pane opaque; only the sidebar's behind-window
+                // material samples the desktop and windows beneath it.
+                window.isOpaque = false
+                window.backgroundColor = .clear
+                window.titlebarAppearsTransparent = true
+                window.styleMask.insert(.fullSizeContentView)
+                NotificationCenter.default.addObserver(self, selector: #selector(closing), name: NSWindow.willCloseNotification, object: window)
+            }
         }
         @objc private func closing() {
             let behavior = CloseBehavior(rawValue: UserDefaults.standard.string(forKey: "MiniVoice.closeBehavior") ?? "background") ?? .background
@@ -46,6 +54,8 @@ struct WindowCloseObserver: NSViewRepresentable {
 
 struct AppSettings: View {
     @EnvironmentObject private var library: MusicLibrary
+    @EnvironmentObject private var systemVolume: SystemVolume
+    @EnvironmentObject private var shortcuts: PlaybackShortcutController
     @AppStorage("MiniVoice.closeBehavior") private var closeBehavior = CloseBehavior.background.rawValue
     @State private var choosingFolders = false
 
@@ -90,14 +100,61 @@ struct AppSettings: View {
                 AppearanceSettings()
                 Spacer()
             }.padding(24).tabItem { Label("通用", systemImage: "gearshape") }
+            AudioDeviceSettings()
+                .tabItem { Label("音频设备", systemImage: "speaker.wave.2") }
+            ShortcutSettings()
+                .tabItem { Label("快捷键", systemImage: "keyboard") }
         }
-        .frame(width: 620, height: 460)
+        .frame(width: 620, height: 500)
         .fileImporter(isPresented: $choosingFolders, allowedContentTypes: [.folder], allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls): library.addFolders(urls)
             case .failure(let error): library.errorMessage = error.localizedDescription
             }
         }
+    }
+}
+
+private struct AudioDeviceSettings: View {
+    @EnvironmentObject private var systemVolume: SystemVolume
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("音频设备").font(.title2.bold())
+            Text("选择后会更改 Mac 的默认设备；播放音乐使用输出设备。")
+                .foregroundStyle(.secondary)
+            Picker("输入设备", selection: Binding(get: { systemVolume.inputDeviceID }, set: { systemVolume.selectInputDevice($0) })) {
+                ForEach(systemVolume.inputDevices) { device in Text(device.name).tag(device.id) }
+            }
+            Picker("播放输出设备", selection: Binding(get: { systemVolume.outputDeviceID }, set: { systemVolume.selectOutputDevice($0) })) {
+                ForEach(systemVolume.outputDevices) { device in Text(device.name).tag(device.id) }
+            }
+            if let error = systemVolume.error { Text(error).font(.caption).foregroundStyle(.red) }
+            Spacer()
+        }.padding(24)
+    }
+}
+
+private struct ShortcutSettings: View {
+    @EnvironmentObject private var shortcuts: PlaybackShortcutController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("播放快捷键").font(.title2.bold())
+            Text("点击快捷键后直接按下新组合键；按 Esc 取消。快捷键在 MiniVoice 前台且未输入文字时生效。")
+                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ForEach(PlaybackShortcutAction.allCases) { action in
+                HStack {
+                    Text(action.title)
+                    Spacer()
+                    Button(shortcuts.recordingAction == action ? "按下快捷键…" : shortcuts.shortcut(for: action).description) {
+                        shortcuts.beginRecording(action)
+                    }.frame(minWidth: 120)
+                    Button("恢复默认") { shortcuts.reset(action) }
+                }
+            }
+            Spacer()
+        }.padding(24)
     }
 }
 

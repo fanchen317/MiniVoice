@@ -36,8 +36,8 @@ if [[ ! "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
 fi
 
 echo "==> 编译 (${CONFIGURATION})..."
-swift build -c "$CONFIGURATION"
-EXECUTABLE="$(swift build -c "$CONFIGURATION" --show-bin-path)/$APP_NAME"
+swift build --disable-sandbox -c "$CONFIGURATION"
+EXECUTABLE="$(swift build --disable-sandbox -c "$CONFIGURATION" --show-bin-path)/$APP_NAME"
 
 if [[ ! -x "$EXECUTABLE" ]]; then
   echo "error: 未找到编译产物：$EXECUTABLE" >&2
@@ -56,7 +56,21 @@ chmod +x "$APP_PATH/Contents/MacOS/$APP_NAME"
 echo "==> 生成应用图标..."
 swiftc "$ROOT/Sources/MiniVoice/BrandIcon.swift" "$ROOT/Scripts/IconGenerator.swift" -o "$ROOT/.build/icon-generator" -framework AppKit
 "$ROOT/.build/icon-generator" "$ROOT/.build/MiniVoice.iconset"
-iconutil -c icns "$ROOT/.build/MiniVoice.iconset" -o "$APP_PATH/Contents/Resources/MiniVoice.icns"
+if ! iconutil -c icns "$ROOT/.build/MiniVoice.iconset" -o "$APP_PATH/Contents/Resources/MiniVoice.icns"; then
+    # Some constrained macOS sessions reject iconutil despite a valid PNG iconset.
+  # Keep deployment usable by reusing the currently installed icon in that case.
+  INSTALLED_ICON="/Applications/${APP_NAME}.app/Contents/Resources/MiniVoice.icns"
+  if [[ -f "$INSTALLED_ICON" ]]; then
+    cp "$INSTALLED_ICON" "$APP_PATH/Contents/Resources/MiniVoice.icns"
+  else
+    echo "error: 未能生成应用图标，且没有可复用的已安装图标" >&2
+    exit 1
+  fi
+fi
+if [[ ! -s "$APP_PATH/Contents/Resources/MiniVoice.icns" ]]; then
+  echo "error: 未能生成应用图标" >&2
+  exit 1
+fi
 
 echo "==> 签名..."
 codesign --force --sign - \

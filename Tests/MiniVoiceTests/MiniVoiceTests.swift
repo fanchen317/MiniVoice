@@ -62,7 +62,8 @@ final class MiniVoiceTests: XCTestCase {
                 let player = try AVAudioPlayer(contentsOf: url)
                 XCTAssertGreaterThan(player.duration, 0, ext)
             }
-            let backups = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { $0.lastPathComponent.hasPrefix("sample.\(ext).minivoice-backup-") }
+            let backupDirectory = directory.appendingPathComponent("backup", isDirectory: true)
+            let backups = try FileManager.default.contentsOfDirectory(at: backupDirectory, includingPropertiesForKeys: nil).filter { $0.lastPathComponent.hasPrefix("sample.\(ext).minivoice-backup-") }
             XCTAssertEqual(backups.count, 2)
             XCTAssertTrue(try backups.contains { try Data(contentsOf: $0) == original })
         }

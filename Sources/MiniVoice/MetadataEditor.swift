@@ -22,6 +22,7 @@ struct MetadataEditor: View {
     @State private var choosingLyrics = false
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var isArtworkDropTarget = false
 
     init(track: Track) {
         self.track = track
@@ -59,10 +60,16 @@ struct MetadataEditor: View {
                     HStack(spacing: 16) {
                         ArtworkPreview(image: artwork)
                         VStack(alignment: .leading) {
-                            Button("选择自定义封面") { choosingArtwork = true }
+                            Button("自定义") { choosingArtwork = true }
                             if artwork != nil { Button("移除封面", role: .destructive) { artwork = nil; artworkChanged = true } }
                         }
                     }
+                    .padding(8)
+                    .background(isArtworkDropTarget ? Color.accentColor.opacity(0.14) : .clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .onDrop(of: [.image], isTargeted: $isArtworkDropTarget, perform: importArtwork)
+                    Text("也可将图片直接拖到这里。")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
                     Button("导入歌词文件（LRC / SRT / TXT）") { choosingLyrics = true }
@@ -85,7 +92,7 @@ struct MetadataEditor: View {
                     Text("歌词（支持 LRC 时间标签，例如 [00:12.50]）")
                 }
             }.formStyle(.grouped).padding(.horizontal, 12).disabled(isSaving)
-            Text(track.canWriteTags ? "保存会写回原歌曲，并在同目录保留 .minivoice-backup 备份。" : "此格式可播放；完整信息编辑支持 MP3、FLAC、M4A。")
+            Text(track.canWriteTags ? "保存会写回原歌曲；原文件会保存在同级 backup 文件夹，不会显示在音乐库中。" : "此格式可播放；完整信息编辑支持 MP3、FLAC、M4A。")
                 .font(.caption).foregroundStyle(.secondary).padding(12)
         }
         .frame(width: 660, height: 730)
@@ -118,6 +125,18 @@ struct MetadataEditor: View {
         timingIndex += 1
     }
 
+    private func importArtwork(_ providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first else { return false }
+        provider.loadObject(ofClass: NSImage.self) { image, _ in
+            guard let image = image as? NSImage else { return }
+            DispatchQueue.main.async {
+                artwork = image
+                artworkChanged = true
+            }
+        }
+        return true
+    }
+
     private func save() {
         var updated = track
         updated.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -126,6 +145,10 @@ struct MetadataEditor: View {
         updated.lyrics = lyrics
         updated.artwork = artwork
         updated.artworkWasEdited = artworkChanged
+        guard updated.hasFileChanges(comparedTo: track) else {
+            dismiss()
+            return
+        }
         isSaving = true
         Task {
             do { try await library.save(updated); dismiss() }

@@ -84,8 +84,10 @@ enum FFMpegTagWriter {
         args += ["-metadata", "title=\(track.title)", "-metadata", "artist=\(track.artist)",
                  "-metadata", "album=\(track.album)", "-metadata", "lyrics=\(track.lyrics)", output.path]
         _ = try MediaTools.run("ffmpeg", args)
-        // Keep a recoverable original before atomically replacing the song.
-        let backup = directory.appendingPathComponent("\(track.url.lastPathComponent).minivoice-backup-\(UUID().uuidString)")
+        // Keep recoverable originals together and out of the music library scan.
+        let backupDirectory = directory.appendingPathComponent("backup", isDirectory: true)
+        try FileManager.default.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
+        let backup = backupDirectory.appendingPathComponent("\(track.url.lastPathComponent).minivoice-backup-\(UUID().uuidString)")
         try FileManager.default.copyItem(at: track.url, to: backup)
         _ = try FileManager.default.replaceItemAt(track.url, withItemAt: output)
     }

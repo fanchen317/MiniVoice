@@ -3,11 +3,20 @@ import Foundation
 
 @MainActor
 final class SystemVolume: ObservableObject {
+    struct Device: Identifiable, Equatable {
+        let id: AudioDeviceID
+        let name: String
+    }
+
     @Published private(set) var value: Float = 0
     @Published private(set) var canSetVolume = false
     @Published private(set) var deviceName = "系统输出设备"
     @Published private(set) var isMuted = false
     @Published private(set) var error: String?
+    @Published private(set) var inputDevices: [Device] = []
+    @Published private(set) var outputDevices: [Device] = []
+    @Published private(set) var inputDeviceID = AudioDeviceID(0)
+    @Published private(set) var outputDeviceID = AudioDeviceID(0)
     private var device = AudioDeviceID(0)
     private var elements: [AudioObjectPropertyElement] = []
     private var timer: Timer?
@@ -23,6 +32,7 @@ final class SystemVolume: ObservableObject {
         AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioDevicePropertyScopeOutput, mElement: element)
     }
     func refresh() {
+        refreshDevices()
         var defaultAddress = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: 0)
         var current = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &defaultAddress, 0, nil, &size, &current) == noErr else { canSetVolume = false; return }
@@ -50,6 +60,58 @@ final class SystemVolume: ObservableObject {
         var muted: UInt32 = 0
         size = UInt32(MemoryLayout<UInt32>.size)
         isMuted = AudioObjectGetPropertyData(device, &muteAddress, 0, nil, &size, &muted) == noErr && muted != 0
+    }
+
+    func selectInputDevice(_ id: AudioDeviceID) {
+        setDefaultDevice(id, selector: kAudioHardwarePropertyDefaultInputDevice, failure: "无法切换 Mac 输入设备")
+    }
+
+    func selectOutputDevice(_ id: AudioDeviceID) {
+        setDefaultDevice(id, selector: kAudioHardwarePropertyDefaultOutputDevice, failure: "无法切换 Mac 输出设备")
+    }
+
+    private func refreshDevices() {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: 0)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return }
+        var ids = Array(repeating: AudioDeviceID(0), count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids) == noErr else { return }
+        inputDevices = devices(ids, scope: kAudioDevicePropertyScopeInput)
+        outputDevices = devices(ids, scope: kAudioDevicePropertyScopeOutput)
+        inputDeviceID = defaultDevice(kAudioHardwarePropertyDefaultInputDevice)
+        outputDeviceID = defaultDevice(kAudioHardwarePropertyDefaultOutputDevice)
+    }
+
+    private func devices(_ ids: [AudioDeviceID], scope: AudioObjectPropertyScope) -> [Device] {
+        ids.compactMap { id in
+            var streams = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration, mScope: scope, mElement: 0)
+            guard AudioObjectHasProperty(id, &streams) else { return nil }
+            var size: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(id, &streams, 0, nil, &size) == noErr, size > 0 else { return nil }
+            return Device(id: id, name: deviceName(for: id))
+        }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    private func defaultDevice(_ selector: AudioObjectPropertySelector) -> AudioDeviceID {
+        var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: 0)
+        var id = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        _ = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &id)
+        return id
+    }
+
+    private func deviceName(for id: AudioDeviceID) -> String {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioObjectPropertyName, mScope: kAudioObjectPropertyScopeGlobal, mElement: 0)
+        var name: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &name) == noErr else { return "未知设备" }
+        return name?.takeRetainedValue() as String? ?? "未知设备"
+    }
+
+    private func setDefaultDevice(_ id: AudioDeviceID, selector: AudioObjectPropertySelector, failure: String) {
+        var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: 0)
+        var selected = id
+        error = AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, UInt32(MemoryLayout<AudioDeviceID>.size), &selected) == noErr ? nil : failure
+        refresh()
     }
     func set(_ requested: Float) {
         refresh()
