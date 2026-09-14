@@ -140,11 +140,8 @@ private struct AudioDeviceSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("音频设备").font(.title2.bold())
-            Text("选择后会更改 Mac 的默认设备；播放音乐使用输出设备。")
+            Text("选择后会更改 Mac 的默认播放输出设备。")
                 .foregroundStyle(.secondary)
-            Picker("输入设备", selection: Binding(get: { systemVolume.inputDeviceID }, set: { systemVolume.selectInputDevice($0) })) {
-                ForEach(systemVolume.inputDevices) { device in Text(device.name).tag(device.id) }
-            }
             Picker("播放输出设备", selection: Binding(get: { systemVolume.outputDeviceID }, set: { systemVolume.selectOutputDevice($0) })) {
                 ForEach(systemVolume.outputDevices) { device in Text(device.name).tag(device.id) }
             }

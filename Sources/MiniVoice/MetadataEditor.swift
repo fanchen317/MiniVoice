@@ -38,9 +38,6 @@ struct MetadataEditor: View {
             HStack {
                 Text("编辑歌曲信息").font(.title2.weight(.bold))
                 Spacer()
-                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction).disabled(isSaving)
-                Button(isSaving ? "写入中…" : "保存到歌曲文件") { save() }
-                    .keyboardShortcut(.defaultAction).disabled(isSaving || !track.canWriteTags)
             }.padding(24)
             Divider()
             Form {
@@ -97,8 +94,20 @@ struct MetadataEditor: View {
                     Text("歌词（支持 LRC 时间标签，例如 [00:12.50]）")
                 }
             }.formStyle(.grouped).padding(.horizontal, 12).disabled(isSaving)
-            Text(track.canWriteTags ? "保存会写回原歌曲；原文件会保存在同级 backup 文件夹，不会显示在音乐库中。" : "此格式可播放；完整信息编辑支持 MP3、FLAC、M4A。")
-                .font(.caption).foregroundStyle(.secondary).padding(12)
+            Divider()
+            HStack(spacing: 12) {
+                Spacer()
+                Button("取消") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(isSaving)
+                    .buttonStyle(EditorSecondaryButtonStyle())
+                Button(isSaving ? "保存中…" : "保存") { save() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(isSaving || !track.canWriteTags)
+                    .buttonStyle(EditorPrimaryButtonStyle())
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
         }
         .frame(width: 660, height: 730)
         .interactiveDismissDisabled(isSaving)
@@ -195,5 +204,29 @@ private struct ArtworkPreview: View {
             if let image { Image(nsImage: image).resizable().scaledToFill() }
             else { Image(systemName: "photo").font(.title).foregroundStyle(.secondary) }
         }.frame(width: 86, height: 86).background(.quaternary).clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+private struct EditorPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 24)
+            .frame(height: 34)
+            .background(Color.accentColor.opacity(isEnabled ? (configuration.isPressed ? 0.78 : 1) : 0.38), in: Capsule())
+    }
+}
+
+private struct EditorSecondaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(.primary.opacity(isEnabled ? 1 : 0.45))
+            .padding(.horizontal, 22)
+            .frame(height: 34)
+            .background(Color.secondary.opacity(configuration.isPressed ? 0.20 : 0.13), in: Capsule())
     }
 }

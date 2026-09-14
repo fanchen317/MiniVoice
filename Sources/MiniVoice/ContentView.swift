@@ -18,22 +18,43 @@ struct ContentView: View {
     @State private var deleting = false
     @State private var deleteFiles = false
     @AppStorage("MiniVoice.trackSortOrder") private var sortOrder = "modified"
+    @AppStorage("MiniVoice.trackSortField") private var sortField = "added"
+    @AppStorage("MiniVoice.trackSortAscending") private var sortAscending = false
 
     private var songs: [Track] {
         let source = recent ? library.recentTracks : library.tracks
         let filtered = source.filter { query.isEmpty || "\($0.title) \($0.artist) \($0.album)".localizedCaseInsensitiveContains(query) }
         if recent { return filtered }
-        return filtered.sorted {
-            if sortOrder == "artist" {
-                let order = $0.artist.localizedStandardCompare($1.artist)
-                if order != .orderedSame { return order == .orderedAscending }
-            }
-            if sortOrder == "modified" {
-                let left = (try? $0.url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                let right = (try? $1.url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                if left != right { return left > right }
-            }
-            return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+        return filtered.sorted { compare($0, $1) }
+    }
+
+    private func compare(_ left: Track, _ right: Track) -> Bool {
+        let result: ComparisonResult
+        switch sortField {
+        case "artist":
+            result = left.artist.localizedStandardCompare(right.artist)
+        case "title":
+            result = left.title.localizedStandardCompare(right.title)
+        default:
+            let leftDate = (try? left.url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let rightDate = (try? right.url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            result = leftDate == rightDate ? .orderedSame : (leftDate < rightDate ? .orderedAscending : .orderedDescending)
+        }
+        if result != .orderedSame {
+            return sortAscending ? result == .orderedAscending : result == .orderedDescending
+        }
+        return left.title.localizedStandardCompare(right.title) == .orderedAscending
+    }
+
+    private func migrateSortPreferenceIfNeeded() {
+        guard UserDefaults.standard.object(forKey: "MiniVoice.trackSortField") == nil else { return }
+        switch sortOrder {
+        case "artist":
+            sortField = "artist"; sortAscending = true
+        case "title":
+            sortField = "title"; sortAscending = true
+        default:
+            sortField = "added"; sortAscending = false
         }
     }
 
@@ -69,7 +90,10 @@ struct ContentView: View {
         }
         .ignoresSafeArea()
         .tint(playerGreen)
-        .onAppear { statusBar.start(library: library, openMainWindow: { openWindow(id: "main") }) }
+        .onAppear {
+            migrateSortPreferenceIfNeeded()
+            statusBar.start(library: library, openMainWindow: { openWindow(id: "main") })
+        }
         .sheet(item: $editingTrack) { MetadataEditor(track: $0) }
         .sheet(isPresented: $deleting) {
             VStack(alignment: .leading, spacing: 18) {
@@ -162,13 +186,17 @@ struct ContentView: View {
                 .help("重新扫描").disabled(library.isImporting)
             if !recent {
                 Menu {
-                    Picker("歌曲排序", selection: $sortOrder) {
-                        Text("最近添加").tag("modified")
-                        Text("歌名正序").tag("title")
-                        Text("歌手名称正序").tag("artist")
-                    }
+                    sortFieldButton("添加时间", field: "added")
+                    sortFieldButton("歌曲名称", field: "title")
+                    sortFieldButton("歌手姓名", field: "artist")
+                    Divider()
+                    sortDirectionButton("正序", ascending: true)
+                    sortDirectionButton("降序", ascending: false)
                 } label: { Image(systemName: "arrow.up.arrow.down") }
-                    .menuStyle(.borderlessButton).frame(width: 30).help("歌曲排序")
+                    .menuStyle(.borderlessButton)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 30)
+                    .help("歌曲排序")
                 Button { multiSelecting.toggle(); selectedIDs.removeAll() } label: {
                     Image(systemName: multiSelecting ? "checkmark.circle.fill" : "checklist")
                 }.help("多选歌曲")
@@ -180,6 +208,29 @@ struct ContentView: View {
                     label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).frame(width: 22)
             }
         }.buttonStyle(.plain).font(.system(size: 15)).frame(height: 28)
+    }
+
+    private func sortFieldButton(_ title: String, field: String) -> some View {
+        Button {
+            sortField = field
+            sortOrder = field == "added" ? "modified" : field
+        } label: {
+            HStack {
+                Image(systemName: "checkmark")
+                    .opacity(sortField == field ? 1 : 0)
+                Text(title)
+            }
+        }
+    }
+
+    private func sortDirectionButton(_ title: String, ascending: Bool) -> some View {
+        Button { sortAscending = ascending } label: {
+            HStack {
+                Image(systemName: "checkmark")
+                    .opacity(sortAscending == ascending ? 1 : 0)
+                Text(title)
+            }
+        }
     }
 
     private func songRow(_ track: Track) -> some View {
@@ -263,8 +314,6 @@ private struct PlayerDetail: View {
             .buttonStyle(SidebarToggleStyle())
             .help("显示或隐藏侧栏")
             Spacer()
-            Button { expandedLyrics = false } label: { Label("歌词", systemImage: "text.line.first.and.arrowtriangle.forward") }
-                .buttonStyle(GlassButtonStyle())
             Button(action: onEdit) { Image(systemName: "ellipsis") }
                 .buttonStyle(GlassButtonStyle()).help("编辑歌曲")
         }.padding(.horizontal, 8)

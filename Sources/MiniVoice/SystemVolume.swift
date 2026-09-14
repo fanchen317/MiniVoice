@@ -13,9 +13,7 @@ final class SystemVolume: ObservableObject {
     @Published private(set) var deviceName = "系统输出设备"
     @Published private(set) var isMuted = false
     @Published private(set) var error: String?
-    @Published private(set) var inputDevices: [Device] = []
     @Published private(set) var outputDevices: [Device] = []
-    @Published private(set) var inputDeviceID = AudioDeviceID(0)
     @Published private(set) var outputDeviceID = AudioDeviceID(0)
     private var device = AudioDeviceID(0)
     private var elements: [AudioObjectPropertyElement] = []
@@ -62,10 +60,6 @@ final class SystemVolume: ObservableObject {
         isMuted = AudioObjectGetPropertyData(device, &muteAddress, 0, nil, &size, &muted) == noErr && muted != 0
     }
 
-    func selectInputDevice(_ id: AudioDeviceID) {
-        setDefaultDevice(id, selector: kAudioHardwarePropertyDefaultInputDevice, failure: "无法切换 Mac 输入设备")
-    }
-
     func selectOutputDevice(_ id: AudioDeviceID) {
         setDefaultDevice(id, selector: kAudioHardwarePropertyDefaultOutputDevice, failure: "无法切换 Mac 输出设备")
     }
@@ -76,9 +70,7 @@ final class SystemVolume: ObservableObject {
         guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return }
         var ids = Array(repeating: AudioDeviceID(0), count: Int(size) / MemoryLayout<AudioDeviceID>.size)
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids) == noErr else { return }
-        inputDevices = devices(ids, scope: kAudioDevicePropertyScopeInput)
         outputDevices = devices(ids, scope: kAudioDevicePropertyScopeOutput)
-        inputDeviceID = defaultDevice(kAudioHardwarePropertyDefaultInputDevice)
         outputDeviceID = defaultDevice(kAudioHardwarePropertyDefaultOutputDevice)
     }
 
