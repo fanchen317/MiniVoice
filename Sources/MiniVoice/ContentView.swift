@@ -21,29 +21,23 @@ struct ContentView: View {
     @AppStorage("MiniVoice.trackSortField") private var sortField = "added"
     @AppStorage("MiniVoice.trackSortAscending") private var sortAscending = false
 
-    private var songs: [Track] {
-        let source = recent ? library.recentTracks : library.tracks
-        let filtered = source.filter { query.isEmpty || "\($0.title) \($0.artist) \($0.album)".localizedCaseInsensitiveContains(query) }
-        if recent { return filtered }
-        return filtered.sorted { compare($0, $1) }
+    @State private var songs: [Track] = []
+    @State private var listIndex = SongListIndex()
+
+    private var listRequest: SongListRequest {
+        SongListRequest(revision: library.tracksRevision, recentPaths: recent ? library.recentPaths : [],
+                        recent: recent, query: query, field: sortField, ascending: sortAscending)
     }
 
-    private func compare(_ left: Track, _ right: Track) -> Bool {
-        let result: ComparisonResult
-        switch sortField {
-        case "artist":
-            result = left.artist.localizedStandardCompare(right.artist)
-        case "title":
-            result = left.title.localizedStandardCompare(right.title)
-        default:
-            let leftDate = (try? left.url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-            let rightDate = (try? right.url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-            result = leftDate == rightDate ? .orderedSame : (leftDate < rightDate ? .orderedAscending : .orderedDescending)
-        }
-        if result != .orderedSame {
-            return sortAscending ? result == .orderedAscending : result == .orderedDescending
-        }
-        return left.title.localizedStandardCompare(right.title) == .orderedAscending
+    private func updateSongs() async {
+        let source = recent ? library.recentTracks : library.tracks
+        let request = listRequest
+        let entries = source.map { SongListEntry(id: $0.id, url: $0.url, title: $0.title, artist: $0.artist, album: $0.album) }
+        // Only metadata crosses to the worker; AppKit artwork stays on the main actor.
+        let ids = await listIndex.orderedIDs(entries, request: request)
+        guard !Task.isCancelled else { return }
+        let byID = Dictionary(uniqueKeysWithValues: source.map { ($0.id, $0) })
+        songs = ids.compactMap { byID[$0] }
     }
 
     private func migrateSortPreferenceIfNeeded() {
@@ -71,7 +65,8 @@ struct ContentView: View {
                 }
                 Group {
                     if let track = library.selectedTrack {
-                        PlayerDetail(track: track, onEdit: { editingTrack = track }, onToggleSidebar: { sidebarVisible.toggle() })
+                        let playbackTrack = library.playingTrack ?? track
+                        PlayerDetail(track: track, playbackTrack: playbackTrack, onEdit: { editingTrack = track }, onEditPlayback: { editingTrack = playbackTrack }, onToggleSidebar: { sidebarVisible.toggle() })
                     } else {
                         VStack(spacing: 14) {
                             Image(systemName: "music.note.list").font(.largeTitle)
@@ -90,6 +85,7 @@ struct ContentView: View {
         }
         .ignoresSafeArea()
         .tint(playerGreen)
+        .task(id: listRequest) { await updateSongs() }
         .onAppear {
             migrateSortPreferenceIfNeeded()
             statusBar.start(library: library, openMainWindow: { openWindow(id: "main") })
@@ -174,16 +170,21 @@ struct ContentView: View {
     }
 
     private var libraryToolbar: some View {
-        HStack(spacing: 14) {
-            Text(recent ? "最近播放" : "我的歌曲")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text("\(songs.count)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 8)
-            Button { library.rescan() } label: { Image(systemName: "arrow.clockwise") }
-                .help("重新扫描").disabled(library.isImporting)
+        HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(recent ? "最近播放" : "我的歌曲")
+                    .font(.caption.weight(.semibold))
+                Text("\(songs.count) 首")
+                    .font(.caption2.monospacedDigit())
+            }
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: true, vertical: false)
+            Spacer(minLength: 0)
+            Button { library.rescan() } label: {
+                LibraryToolbarIcon(symbol: "arrow.clockwise")
+            }
+            .help("重新扫描").accessibilityLabel("重新扫描")
+            .disabled(library.isImporting)
             if !recent {
                 Menu {
                     sortFieldButton("添加时间", field: "added")
@@ -192,22 +193,36 @@ struct ContentView: View {
                     Divider()
                     sortDirectionButton("正序", ascending: true)
                     sortDirectionButton("降序", ascending: false)
-                } label: { Image(systemName: "arrow.up.arrow.down") }
-                    .menuStyle(.borderlessButton)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 30)
-                    .help("歌曲排序")
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .modifier(LibraryToolbarSurface())
+                .help("歌曲排序").accessibilityLabel("歌曲排序")
+                .disabled(songs.isEmpty)
                 Button { multiSelecting.toggle(); selectedIDs.removeAll() } label: {
-                    Image(systemName: multiSelecting ? "checkmark.circle.fill" : "checklist")
-                }.help("多选歌曲")
-                Button { requestDelete(Array(selectedIDs)) } label: { Image(systemName: "trash") }
-                    .disabled(!multiSelecting || selectedIDs.isEmpty).help("删除所选歌曲")
-            }
-            if recent {
+                    LibraryToolbarIcon(symbol: multiSelecting ? "checkmark.circle.fill" : "checklist")
+                }
+                .help(multiSelecting ? "退出多选" : "多选歌曲")
+                .accessibilityLabel(multiSelecting ? "退出多选" : "多选歌曲")
+                .disabled(songs.isEmpty && !multiSelecting)
+                Button { requestDelete(Array(selectedIDs)) } label: {
+                    LibraryToolbarIcon(symbol: "trash")
+                }
+                .disabled(!multiSelecting || selectedIDs.isEmpty)
+                .help("删除所选歌曲").accessibilityLabel("删除所选歌曲")
+            } else {
                 Menu { Button("清空最近播放记录") { library.clearRecentPlayback() } }
-                    label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).frame(width: 22)
+                    label: { Image(systemName: "ellipsis") }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                    .fixedSize().modifier(LibraryToolbarSurface())
+                    .disabled(songs.isEmpty)
             }
-        }.buttonStyle(.plain).font(.system(size: 15)).frame(height: 28)
+        }
+        .buttonStyle(.plain)
+        .frame(height: 36)
     }
 
     private func sortFieldButton(_ title: String, field: String) -> some View {
@@ -216,8 +231,9 @@ struct ContentView: View {
             sortOrder = field == "added" ? "modified" : field
         } label: {
             HStack {
-                Image(systemName: "checkmark")
-                    .opacity(sortField == field ? 1 : 0)
+                if sortField == field {
+                    Image(systemName: "checkmark")
+                }
                 Text(title)
             }
         }
@@ -226,8 +242,9 @@ struct ContentView: View {
     private func sortDirectionButton(_ title: String, ascending: Bool) -> some View {
         Button { sortAscending = ascending } label: {
             HStack {
-                Image(systemName: "checkmark")
-                    .opacity(sortAscending == ascending ? 1 : 0)
+                if sortAscending == ascending {
+                    Image(systemName: "checkmark")
+                }
                 Text(title)
             }
         }
@@ -244,7 +261,7 @@ struct ContentView: View {
                 Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
-            if library.selectedID == track.id && !multiSelecting {
+            if library.playingID == track.id && !multiSelecting {
                 Image(systemName: library.isPlaying ? "waveform" : "music.note").foregroundStyle(playerGreen)
             }
         }
@@ -265,7 +282,8 @@ struct ContentView: View {
     }
 
     private func requestDelete(_ ids: [UUID]) {
-        deleteTargets = library.tracks.filter { ids.contains($0.id) }
+        let requested = Set(ids)
+        deleteTargets = library.tracks.filter { requested.contains($0.id) }
         guard !deleteTargets.isEmpty else { return }
         deleteFiles = false
         deleting = true
@@ -276,7 +294,9 @@ private struct PlayerDetail: View {
     @EnvironmentObject private var library: MusicLibrary
     @Environment(\.colorScheme) private var colorScheme
     let track: Track
+    let playbackTrack: Track
     let onEdit: () -> Void
+    let onEditPlayback: () -> Void
     let onToggleSidebar: () -> Void
     @State private var expandedLyrics = false
     @AppStorage("MiniVoice.followLyrics") private var followLyrics = true
@@ -297,7 +317,7 @@ private struct PlayerDetail: View {
                         .padding(.horizontal, 16)
                 }
                 lyrics.frame(maxHeight: .infinity).layoutPriority(1)
-                PlayerControls(track: track, compact: compact, onEdit: onEdit)
+                PlayerControls(track: playbackTrack, compact: compact, onEdit: onEditPlayback)
                     .frame(height: controlsHeight)
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
@@ -342,12 +362,12 @@ private struct PlayerDetail: View {
                 Text("歌词").font(.headline)
                 Spacer()
                 Toggle("自动跟随", isOn: $followLyrics).toggleStyle(.switch).controlSize(.small)
-                    .fixedSize().disabled(!track.lyricLines.contains { $0.timestamp != nil })
+                    .fixedSize().disabled(!playbackTrack.lyricLines.contains { $0.timestamp != nil })
                 Button { expandedLyrics.toggle() } label: {
                     Image(systemName: expandedLyrics ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                 }.buttonStyle(.plain).help("展开或收起歌词")
             }.padding(18)
-            if track.lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if playbackTrack.lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 ViewThatFits(in: .vertical) {
                   VStack(spacing: 14) {
                     ZStack(alignment: .bottomTrailing) {
@@ -355,21 +375,21 @@ private struct PlayerDetail: View {
                         Image(nsImage: NSApplication.shared.applicationIconImage).resizable().scaledToFit().frame(width: 38, height: 38)
                     }
                     Text("尚未添加歌词").font(.title3.weight(.semibold))
-                    Button("添加歌词", action: onEdit).buttonStyle(GlassButtonStyle())
+                    Button("添加歌词", action: onEditPlayback).buttonStyle(GlassButtonStyle())
                   }.fixedSize(horizontal: false, vertical: true)
                   HStack(spacing: 14) {
                     Image(nsImage: NSApplication.shared.applicationIconImage)
                         .resizable().scaledToFit().frame(width: 38, height: 38)
                     VStack(alignment: .leading, spacing: 8) {
                         Text("尚未添加歌词").font(.headline)
-                        Button("添加歌词", action: onEdit).buttonStyle(GlassButtonStyle())
+                        Button("添加歌词", action: onEditPlayback).buttonStyle(GlassButtonStyle())
                     }
                   }.fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 16).padding(.bottom, 14)
             } else {
-                SyncedLyrics(track: track, follow: followLyrics)
+                SyncedLyrics(track: playbackTrack, follow: followLyrics)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -381,13 +401,16 @@ private struct SyncedLyrics: View {
     @EnvironmentObject private var library: MusicLibrary
     let track: Track
     let follow: Bool
-    private var active: Int? { library.activeLyricIndex(for: track.lyricLines) }
+    @EnvironmentObject private var clock: PlaybackClock
+    private var active: Int? { MusicLibrary.activeLyricIndex(for: track.lyricLines, at: clock.time) }
     var body: some View {
+        let active = active
+        let lines = track.lyricLines
         GeometryReader { geometry in
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
-                        ForEach(Array(track.lyricLines.enumerated()), id: \.offset) { index, line in
+                        ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                             Text(line.text.isEmpty ? "•••" : line.text)
                                 .font(.system(size: 30, weight: .bold, design: .rounded))
                                 .foregroundStyle(active == index ? Color.primary : Color.secondary.opacity(0.52))
@@ -414,6 +437,7 @@ private struct SyncedLyrics: View {
 }
 
 private struct PlayerControls: View {
+    @EnvironmentObject private var clock: PlaybackClock
     @EnvironmentObject private var library: MusicLibrary
     @EnvironmentObject private var volume: SystemVolume
     @EnvironmentObject private var desktopLyrics: DesktopLyricsController
@@ -460,8 +484,8 @@ private struct PlayerControls: View {
     private var transport: some View {
         VStack(spacing: 10) {
             HStack(spacing: 8) {
-                Text(time(scrub ?? library.playbackTime))
-                Slider(value: Binding(get: { scrub ?? library.playbackTime }, set: { scrub = $0 }), in: 0...max(track.duration, 1)) { editing in
+                Text(time(scrub ?? clock.time))
+                Slider(value: Binding(get: { scrub ?? clock.time }, set: { scrub = $0 }), in: 0...max(track.duration, 1)) { editing in
                     if !editing, let scrub { library.seek(to: scrub); self.scrub = nil }
                 }.accessibilityLabel("播放进度")
                 Text(time(track.duration))
@@ -543,13 +567,15 @@ private struct FrostedBackdrop: NSViewRepresentable {
         let view = NSVisualEffectView()
         view.material = material
         view.blendingMode = blendingMode
-        view.state = .followsWindowActiveState
+        // Keep the artwork-tinted glass consistent when the window loses focus.
+        view.state = .active
         return view
     }
 
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.material = material
         nsView.blendingMode = blendingMode
+        nsView.state = .active
     }
 }
 
@@ -590,8 +616,14 @@ private struct CoverBackdrop: View {
     }
 }
 
+@MainActor
 private enum CoverPalette {
+    private static let cache = NSCache<NSImage, NSArray>()
     static func colors(for image: NSImage?) -> [Color] {
+        cache.countLimit = 8
+        if let image, let cached = cache.object(forKey: image) as? [NSColor] {
+            return cached.map { Color(nsColor: $0) }
+        }
         guard let data = image?.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: data), bitmap.pixelsWide > 0, bitmap.pixelsHigh > 0
         else {
@@ -609,7 +641,41 @@ private enum CoverPalette {
         let base = NSColor(red: red / count, green: green / count, blue: blue / count, alpha: 1)
         let bright = NSColor(red: min(1, base.redComponent * 0.38 + 0.62), green: min(1, base.greenComponent * 0.38 + 0.62), blue: min(1, base.blueComponent * 0.38 + 0.62), alpha: 1)
         let soft = NSColor(red: min(1, base.redComponent * 0.20 + 0.80), green: min(1, base.greenComponent * 0.20 + 0.80), blue: min(1, base.blueComponent * 0.20 + 0.80), alpha: 1)
+        if let image { cache.setObject([bright, soft] as NSArray, forKey: image) }
         return [Color(nsColor: bright), Color(nsColor: soft)]
+    }
+}
+
+/// Shared visual treatment for both ordinary buttons and the sorting menu.
+private struct LibraryToolbarIcon: View {
+    let symbol: String
+    var body: some View {
+        Image(systemName: symbol).modifier(LibraryToolbarSurface())
+    }
+}
+
+private struct LibraryToolbarSurface: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var hovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(isEnabled ? playerGreen : Color.secondary.opacity(0.42))
+            .frame(width: 32, height: 32)
+            .background {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(isEnabled
+                          ? playerGreen.opacity(hovered ? 0.18 : (colorScheme == .dark ? 0.14 : 0.08))
+                          : Color.primary.opacity(0.035))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(isEnabled ? playerGreen.opacity(0.15) : Color.secondary.opacity(0.10), lineWidth: 0.5)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .onHover { hovered = $0 }
     }
 }
 

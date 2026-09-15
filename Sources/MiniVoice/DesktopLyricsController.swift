@@ -16,6 +16,7 @@ final class DesktopLyricsController: ObservableObject {
     private weak var library: MusicLibrary?
     private var cancellables = Set<AnyCancellable>()
     private var panel: NSPanel?
+    private var refreshPending = false
 
     init() {
         isEnabled = UserDefaults.standard.bool(forKey: "MiniVoice.desktopLyrics")
@@ -25,9 +26,9 @@ final class DesktopLyricsController: ObservableObject {
         guard self.library !== library else { return }
         self.library = library
         cancellables.removeAll()
-        library.$playbackTime.sink { [weak self] _ in self?.refreshText() }.store(in: &cancellables)
-        library.$selectedID.sink { [weak self] _ in self?.refreshText() }.store(in: &cancellables)
-        library.$tracks.sink { [weak self] _ in self?.refreshText() }.store(in: &cancellables)
+        library.clock.$time.sink { [weak self] _ in self?.scheduleRefresh() }.store(in: &cancellables)
+        library.$playingID.sink { [weak self] _ in self?.scheduleRefresh() }.store(in: &cancellables)
+        library.$tracks.sink { [weak self] _ in self?.scheduleRefresh() }.store(in: &cancellables)
         refreshText()
         updatePanelVisibility()
     }
@@ -36,23 +37,35 @@ final class DesktopLyricsController: ObservableObject {
         isEnabled.toggle()
     }
 
+    private func scheduleRefresh() {
+        guard isEnabled, !refreshPending else { return }
+        refreshPending = true
+        // @Published emits before assignment; read the committed state next turn.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.refreshPending = false
+            self.refreshText()
+        }
+    }
+
     private func refreshText() {
-        guard let library, let track = library.selectedTrack else {
-            line = "MiniVoice"
-            subtitle = "桌面歌词"
-            return
+        guard isEnabled else { return }
+        var nextLine = "MiniVoice"
+        var nextSubtitle = "桌面歌词"
+        if let library, let track = library.playingTrack ?? library.selectedTrack {
+            let lines = track.lyricLines
+            if let active = library.activeLyricIndex(for: lines) {
+                nextLine = lines[active].text
+            } else { nextLine = track.title }
+            nextSubtitle = track.artist
         }
-        let lines = track.lyricLines
-        if let active = library.activeLyricIndex(for: lines), lines.indices.contains(active) {
-            line = lines[active].text
-        } else {
-            line = track.title
-        }
-        subtitle = track.artist
+        if line != nextLine { line = nextLine }
+        if subtitle != nextSubtitle { subtitle = nextSubtitle }
     }
 
     private func updatePanelVisibility() {
         if isEnabled {
+            refreshText()
             showPanel()
         } else {
             panel?.orderOut(nil)

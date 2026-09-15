@@ -38,7 +38,10 @@ final class SystemVolume: ObservableObject {
         var nameAddress = AudioObjectPropertyAddress(mSelector: kAudioObjectPropertyName, mScope: kAudioObjectPropertyScopeGlobal, mElement: 0)
         var name: Unmanaged<CFString>?
         size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-        if AudioObjectGetPropertyData(device, &nameAddress, 0, nil, &size, &name) == noErr { deviceName = name?.takeRetainedValue() as String? ?? "系统输出设备" }
+        if AudioObjectGetPropertyData(device, &nameAddress, 0, nil, &size, &name) == noErr {
+            let nextName = name?.takeRetainedValue() as String? ?? "系统输出设备"
+            if deviceName != nextName { deviceName = nextName }
+        }
         elements = []
         var values: [Float] = []
         for element: AudioObjectPropertyElement in [0, 1, 2] {
@@ -52,12 +55,17 @@ final class SystemVolume: ObservableObject {
                 if element == 0 { break }
             }
         }
-        canSetVolume = !elements.isEmpty
-        if !values.isEmpty { value = min(1, max(0, values.reduce(0, +) / Float(values.count))) }
+        let nextCanSet = !elements.isEmpty
+        if canSetVolume != nextCanSet { canSetVolume = nextCanSet }
+        if !values.isEmpty {
+            let nextValue = min(1, max(0, values.reduce(0, +) / Float(values.count)))
+            if value != nextValue { value = nextValue }
+        }
         var muteAddress = address(kAudioDevicePropertyMute)
         var muted: UInt32 = 0
         size = UInt32(MemoryLayout<UInt32>.size)
-        isMuted = AudioObjectGetPropertyData(device, &muteAddress, 0, nil, &size, &muted) == noErr && muted != 0
+        let nextMuted = AudioObjectGetPropertyData(device, &muteAddress, 0, nil, &size, &muted) == noErr && muted != 0
+        if isMuted != nextMuted { isMuted = nextMuted }
     }
 
     func selectOutputDevice(_ id: AudioDeviceID) {
@@ -70,8 +78,10 @@ final class SystemVolume: ObservableObject {
         guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return }
         var ids = Array(repeating: AudioDeviceID(0), count: Int(size) / MemoryLayout<AudioDeviceID>.size)
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids) == noErr else { return }
-        outputDevices = devices(ids, scope: kAudioDevicePropertyScopeOutput)
-        outputDeviceID = defaultDevice(kAudioHardwarePropertyDefaultOutputDevice)
+        let nextDevices = devices(ids, scope: kAudioDevicePropertyScopeOutput)
+        if outputDevices != nextDevices { outputDevices = nextDevices }
+        let nextID = defaultDevice(kAudioHardwarePropertyDefaultOutputDevice)
+        if outputDeviceID != nextID { outputDeviceID = nextID }
     }
 
     private func devices(_ ids: [AudioDeviceID], scope: AudioObjectPropertyScope) -> [Device] {

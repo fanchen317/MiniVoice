@@ -14,31 +14,69 @@ struct Track: Identifiable {
     var title: String
     var artist: String
     var album: String
-    var lyrics: String
+    var lyrics: String { didSet { if lyrics != oldValue { lyricCache = LyricCache() } } }
     var artwork: NSImage?
     var artworkWasEdited = false
     var duration: TimeInterval
 
     var canWriteTags: Bool { ["mp3", "flac", "m4a"].contains(url.pathExtension.lowercased()) }
 
-    var lyricLines: [LyricLine] { LRCParser.parse(lyrics) }
+    private var lyricCache = LyricCache()
+    var lyricLines: [LyricLine] { lyricCache.lines(for: lyrics) }
+
+    init(id: UUID = UUID(), url: URL, title: String, artist: String, album: String,
+         lyrics: String, artwork: NSImage?, artworkWasEdited: Bool = false, duration: TimeInterval) {
+        self.id = id; self.url = url; self.title = title; self.artist = artist; self.album = album
+        self.lyrics = lyrics; self.artwork = artwork; self.artworkWasEdited = artworkWasEdited; self.duration = duration
+    }
 
     func hasFileChanges(comparedTo original: Track) -> Bool {
         title != original.title || artist != original.artist || album != original.album || lyrics != original.lyrics || artworkWasEdited
     }
 }
 
+private final class LyricCache {
+    private var parsed: [LyricLine]?
+    func lines(for source: String) -> [LyricLine] {
+        if let parsed { return parsed }
+        let lines = LRCParser.parse(source)
+        parsed = lines
+        return lines
+    }
+}
+
+@MainActor
+final class PlaybackClock: ObservableObject {
+    @Published var time: TimeInterval = 0
+}
+
 @MainActor
 final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
-    @Published private(set) var tracks: [Track] = []
+    @Published private(set) var tracks: [Track] = [] {
+        didSet {
+            tracksByID = Dictionary(uniqueKeysWithValues: tracks.map { ($0.id, $0) })
+            tracksByPath = Dictionary(uniqueKeysWithValues: tracks.map { ($0.url.path, $0) })
+            tracksRevision += 1
+        }
+    }
+    private var tracksByID: [UUID: Track] = [:]
+    private var tracksByPath: [String: Track] = [:]
+    private(set) var tracksRevision = 0
     @Published var selectedID: Track.ID?
+    /// The audio currently loaded in AVAudioPlayer. This deliberately differs from
+    /// selectedID while the user browses other songs during playback.
+    @Published private(set) var playingID: Track.ID?
     @Published var isPlaying = false
-    @Published var playbackTime: TimeInterval = 0
+    let clock = PlaybackClock()
+    var playbackTime: TimeInterval {
+        get { clock.time }
+        set { if clock.time != newValue { clock.time = newValue } }
+    }
     @Published var errorMessage: String?
     @Published var isImporting = false
     var volume: Float = 1 { didSet { player?.volume = volume } }
     @Published var playbackMode: PlaybackMode = .list {
-        didSet { defaults.set(playbackMode.rawValue, forKey: "MiniVoice.playbackMode"); queue.reset(current: selectedID, ids: tracks.map(\.id)) }
+        didSet { defaults.set(playbackMode.rawValue, forKey: "MiniVoice.playbackMode"); queue.reset(current: playingID ?? selectedID, ids: tracks.map(\.id)) }
     }
     @Published private(set) var folders: [URL] = []
     @Published var recursiveScan = true { didSet { defaults.set(recursiveScan, forKey: "MiniVoice.recursiveScan"); rescan() } }
@@ -47,7 +85,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private let defaults: UserDefaults
     @Published private(set) var recentPaths: [String] = []
     var recentTracks: [Track] {
-        recentPaths.compactMap { path in tracks.first { $0.url.path == path } }
+        recentPaths.compactMap { tracksByPath[$0] }
     }
 
     func clearRecentPlayback() {
@@ -72,7 +110,8 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private var player: AVAudioPlayer?
     private var timer: Timer?
 
-    var selectedTrack: Track? { tracks.first { $0.id == selectedID } }
+    var selectedTrack: Track? { selectedID.flatMap { tracksByID[$0] } }
+    var playingTrack: Track? { playingID.flatMap { tracksByID[$0] } }
     var selectedIndex: Int? { tracks.firstIndex { $0.id == selectedID } }
 
     func addFolders(_ urls: [URL]) {
@@ -101,13 +140,18 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
             var scanned: [Track] = []
             var issues: [String] = []
             var seen = Set<String>()
+            var scannedByPath: [String: Track] = [:]
             for root in roots {
                 guard !Task.isCancelled else { return }
                 let cached = preferCache ? await Task.detached { try? PlaylistCache.read(root: root, recursive: recursive) }.value : nil
                 var folderTracks: [Track] = []
                 if let cached {
-                    folderTracks = cached.tracks.compactMap { $0.track(root: root) }.filter {
-                        !hiddenTrackPaths.contains($0.url.path)
+                    for (offset, entry) in cached.tracks.enumerated() {
+                        guard !Task.isCancelled else { return }
+                        if !hiddenTrackPaths.contains(root.appendingPathComponent(entry.path).path),
+                           let track = entry.track(root: root) { folderTracks.append(track) }
+                        // Keep window creation and input responsive while restoring large caches.
+                        if offset % 64 == 63 { await Task.yield() }
                     }
                     scanSummary = "正在载入已保存歌单…"
                 } else {
@@ -116,7 +160,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                     for (offset, url) in result.urls.enumerated() where !hiddenTrackPaths.contains(url.path) {
                         guard !Task.isCancelled else { return }
                         scanSummary = "正在读取 \(offset + 1) / \(result.urls.count)"
-                        if let track = scanned.first(where: { $0.url.path == url.path }) {
+                        if let track = scannedByPath[url.path] {
                             folderTracks.append(track)
                         } else if let track = await loadTrack(url), track.duration > 0 { folderTracks.append(track) }
                         else { issues.append("无法读取音频：\(url.lastPathComponent)") }
@@ -133,8 +177,9 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                     }
                 }
                 for var track in folderTracks where seen.insert(track.url.path).inserted {
-                    if let existing = tracks.first(where: { $0.url.path == track.url.path }) { track.id = existing.id }
+                    if let existing = tracksByPath[track.url.path] { track.id = existing.id }
                     scanned.append(track)
+                    scannedByPath[track.url.path] = track
                 }
                 // Publish each root as soon as available, including cached roots before scanning new ones.
                 if tracks.isEmpty { tracks = scanned; selectedID = tracks.first?.id }
@@ -181,26 +226,27 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func select(_ id: Track.ID) {
-        guard id != selectedID else { return }
-        activate(id)
-        queue.reset(current: id, ids: tracks.map(\.id))
+        guard tracksByID[id] != nil else { return }
+        selectedID = id
     }
 
     func play(_ id: Track.ID) {
-        if id != selectedID { select(id) }
+        guard tracksByID[id] != nil else { return }
+        activate(id)
+        queue.reset(current: id, ids: tracks.map(\.id))
         play()
     }
 
     private func activate(_ id: Track.ID) {
-        stop(); selectedID = id
+        stop(); selectedID = id; playingID = id
         defaults.set(selectedTrack?.url.path, forKey: "MiniVoice.lastTrack")
     }
 
     func togglePlayback() { isPlaying ? pause() : play() }
 
     func play() {
-        guard let index = selectedIndex else { return }
-        let track = tracks[index]
+        guard let track = playingTrack ?? selectedTrack else { return }
+        playingID = track.id
         do {
             if player?.url != track.url {
                 player?.stop()
@@ -213,6 +259,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
             player?.volume = volume
             isPlaying = player?.play() == true
             if isPlaying {
+                playingID = track.id
                 recentPaths.removeAll { $0 == track.url.path }
                 recentPaths.insert(track.url.path, at: 0)
                 recentPaths = Array(recentPaths.prefix(200))
@@ -224,15 +271,16 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func pause() { player?.pause(); isPlaying = false; timer?.invalidate() }
-    func stop() { player?.stop(); player = nil; isPlaying = false; playbackTime = 0; timer?.invalidate() }
+    func stop() { player?.stop(); player = nil; playingID = nil; isPlaying = false; playbackTime = 0; timer?.invalidate() }
     func seek(to time: TimeInterval) {
-        let clamped = max(0, min(time, selectedTrack?.duration ?? 0))
+        let clamped = max(0, min(time, playingTrack?.duration ?? selectedTrack?.duration ?? 0))
         player?.currentTime = clamped; playbackTime = clamped
     }
 
     func skip(_ delta: Int) {
         if delta < 0 && playbackTime > 3 { seek(to: 0); return }
-        guard let next = queue.destination(current: selectedID, ids: tracks.map(\.id), mode: playbackMode, direction: delta) else { return }
+        let current = playingID ?? selectedID
+        guard let next = queue.destination(current: current, ids: tracks.map(\.id), mode: playbackMode, direction: delta) else { return }
         let resume = isPlaying
         activate(next)
         if resume { play() }
@@ -257,10 +305,10 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
             tracks[index] = updated; tracks[index].artworkWasEdited = false
         }
         await updateCachedTrack(updated)
-        if selectedID == updated.id {
+        if playingID == updated.id {
             let time = playbackTime
             let resume = isPlaying
-            stop(); playbackTime = time
+            stop(); playingID = updated.id; playbackTime = time
             if resume { play() }
         }
     }
@@ -291,9 +339,9 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         defaults.set(Array(hiddenTrackPaths), forKey: "MiniVoice.hiddenTrackPaths")
         tracks.removeAll { removedPaths.contains($0.url.path) }
         if let selectedID, ids.contains(selectedID) {
-            stop()
             self.selectedID = tracks.first?.id
         }
+        if let playingID, ids.contains(playingID) { stop() }
         queue.reset(current: selectedID, ids: tracks.map(\.id))
         removeCachedTracks(paths: removedPaths)
         if !failures.isEmpty { errorMessage = "部分歌曲无法移至废纸篓：\n\(failures.joined(separator: "\n"))" }
@@ -324,9 +372,14 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func activeLyricIndex(for lines: [LyricLine]) -> Int? {
-        let timed = lines.enumerated().filter { $0.element.timestamp != nil }
-        guard !timed.isEmpty else { return nil }
-        return timed.last(where: { $0.element.timestamp! <= playbackTime })?.offset
+        Self.activeLyricIndex(for: lines, at: playbackTime)
+    }
+
+    static func activeLyricIndex(for lines: [LyricLine], at time: TimeInterval) -> Int? {
+        lines.indices.reversed().first { index in
+            guard let timestamp = lines[index].timestamp else { return false }
+            return timestamp <= time
+        }
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
@@ -339,9 +392,9 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     func playbackFinished(successfully: Bool) {
         pause()
-        playbackTime = selectedTrack?.duration ?? 0
+        playbackTime = playingTrack?.duration ?? 0
         guard successfully else { errorMessage = "音频播放中断，请尝试重新播放。"; return }
-        guard let next = queue.destination(current: selectedID, ids: tracks.map(\.id), mode: playbackMode, automatic: true) else { return }
+        guard let next = queue.destination(current: playingID, ids: tracks.map(\.id), mode: playbackMode, automatic: true) else { return }
         activate(next); play()
     }
 

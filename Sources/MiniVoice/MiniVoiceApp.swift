@@ -14,6 +14,7 @@ struct MiniVoiceApp: App {
         WindowGroup("MiniVoice", id: "main") {
             ContentView(statusBar: statusBar)
                 .environmentObject(library)
+                .environmentObject(library.clock)
                 .environmentObject(systemVolume)
                 .environmentObject(shortcuts)
                 .environmentObject(desktopLyrics)
@@ -37,6 +38,7 @@ struct MiniVoiceApp: App {
         Settings {
             AppSettings()
                 .environmentObject(library)
+                .environmentObject(library.clock)
                 .environmentObject(systemVolume)
                 .environmentObject(shortcuts)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)

@@ -80,11 +80,11 @@ struct MetadataEditor: View {
                         .font(.caption).foregroundStyle(.secondary)
                     HStack {
                         Button(library.isPlaying ? "暂停试听" : "播放试听") {
-                            if library.selectedID != track.id { library.select(track.id) }
-                            library.togglePlayback()
+                            if library.playingID == track.id { library.togglePlayback() }
+                            else { library.play(track.id) }
                         }
                         Button("标记第 \(timingIndex + 1) 行时间") { stampNextLine() }
-                            .disabled(lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || timingIndex >= LRCParser.parse(lyrics).count || library.selectedID != track.id)
+                            .disabled(lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || timingIndex >= LRCParser.parse(lyrics).count || library.playingID != track.id)
                         Button("从第一行重新打点") { timingIndex = 0 }
                     }
                     TextEditor(text: $lyrics)

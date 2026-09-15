@@ -54,7 +54,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         func add(_ title: String, _ action: Selector?) -> NSMenuItem {
             let entry = NSMenuItem(title: title, action: action, keyEquivalent: ""); entry.target = self; menu.addItem(entry); return entry
         }
-        let title = add(library?.selectedTrack?.title ?? "MiniVoice", nil); title.isEnabled = false
+        let title = add((library?.playingTrack ?? library?.selectedTrack)?.title ?? "MiniVoice", nil); title.isEnabled = false
         _ = add("打开 MiniVoice", #selector(showApp))
         let play = add(library?.isPlaying == true ? "暂停" : "播放", #selector(togglePlayback)); play.isEnabled = library?.selectedTrack != nil
         _ = add("上一曲", #selector(previousTrack))
