@@ -678,14 +678,12 @@ private struct LibraryToolbarSurface: ViewModifier {
             .frame(width: 32, height: 32)
             .background {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(isEnabled
-                          ? playerGreen.opacity(hovered ? 0.18 : (colorScheme == .dark ? 0.14 : 0.08))
-                          : Color.primary.opacity(0.035))
+                    .fill(isEnabled && hovered ? playerGreen.opacity(0.18) : .clear)
             }
             .overlay {
-                if showBorder {
+                if showBorder && hovered {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(isEnabled ? playerGreen.opacity(0.15) : Color.secondary.opacity(0.10), lineWidth: 0.5)
+                        .strokeBorder(playerGreen.opacity(0.15), lineWidth: 0.5)
                 }
             }
             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
