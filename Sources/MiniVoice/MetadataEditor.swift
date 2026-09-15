@@ -23,6 +23,8 @@ struct MetadataEditor: View {
     @State private var isSaving = false
     @State private var saveError: String?
     @State private var isArtworkDropTarget = false
+    @State private var lyricsDestination: LyricsDestination
+    private let lyricsSourceLabel: String
 
     init(track: Track) {
         self.track = track
@@ -31,6 +33,22 @@ struct MetadataEditor: View {
         _album = State(initialValue: track.album)
         _lyrics = State(initialValue: track.lyrics)
         _artwork = State(initialValue: track.artwork)
+
+        let sidecarLyrics = LyricsStorage.read(LyricsStorage.sidecarURL(for: track.url))
+        let hasSidecar = sidecarLyrics != nil
+        if !track.canWriteTags {
+            _lyricsDestination = State(initialValue: .sidecar)
+            self.lyricsSourceLabel = hasSidecar ? "当前歌词来自同目录 lrc/ 下的 .lrc 文件。" : "此格式不支持写入标签，歌词将保存到同目录 lrc/ 下。"
+        } else if hasSidecar {
+            _lyricsDestination = State(initialValue: .sidecar)
+            self.lyricsSourceLabel = "当前歌词来自同目录 lrc/ 下的 .lrc 文件。"
+        } else if !track.lyrics.isEmpty {
+            _lyricsDestination = State(initialValue: .tags)
+            self.lyricsSourceLabel = "当前歌词来自音频文件标签。"
+        } else {
+            _lyricsDestination = State(initialValue: .tags)
+            self.lyricsSourceLabel = "当前暂无歌词。"
+        }
     }
 
     var body: some View {
@@ -46,7 +64,7 @@ struct MetadataEditor: View {
                     readOnlyRow("文件路径", track.url.path, selectable: true)
                     readOnlyRow("播放时长", formattedDuration(track.duration))
                 }
-                Section("基本信息") {
+                Section {
                     TextField("歌曲名称", text: $title)
                     ForEach($artists) { $entry in
                         HStack {
@@ -57,6 +75,16 @@ struct MetadataEditor: View {
                     }
                     Button { artists.append(ArtistEntry(name: "")) } label: { Label("添加歌手", systemImage: "plus") }
                     TextField("专辑名称", text: $album)
+                } header: {
+                    HStack {
+                        Text("基本信息")
+                        Spacer()
+                        Button(action: applyFilenameParsing) {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("从文件名解析歌手与歌曲名称")
+                    }
                 }
                 Section("封面") {
                     HStack(spacing: 16) {
@@ -87,6 +115,23 @@ struct MetadataEditor: View {
                             .disabled(lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || timingIndex >= LRCParser.parse(lyrics).count || library.playingID != track.id)
                         Button("从第一行重新打点") { timingIndex = 0 }
                     }
+                    HStack(spacing: 8) {
+                        Text("保存到").foregroundStyle(.secondary)
+                        if track.canWriteTags {
+                            Picker("", selection: $lyricsDestination) {
+                                Text("音频文件标签").tag(LyricsDestination.tags)
+                                Text("同目录 lrc/ 下的 .lrc").tag(LyricsDestination.sidecar)
+                                Text("两者都写").tag(LyricsDestination.both)
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                        } else {
+                            Text("同目录 lrc/ 下的 .lrc").foregroundStyle(.primary)
+                        }
+                        Spacer()
+                    }
+                    Text(lyricsSourceLabel)
+                        .font(.caption).foregroundStyle(.secondary)
                     TextEditor(text: $lyrics)
                         .font(.body)
                         .frame(minHeight: 210)
@@ -103,7 +148,7 @@ struct MetadataEditor: View {
                     .buttonStyle(EditorSecondaryButtonStyle())
                 Button(isSaving ? "保存中…" : "保存") { save() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(isSaving || !track.canWriteTags)
+                    .disabled(isSaving)
                     .buttonStyle(EditorPrimaryButtonStyle())
             }
             .padding(.horizontal, 24)
@@ -164,10 +209,50 @@ struct MetadataEditor: View {
             return
         }
         isSaving = true
+        let destination: LyricsDestination = track.canWriteTags ? lyricsDestination : .sidecar
         Task {
-            do { try await library.save(updated); dismiss() }
+            do { try await library.save(updated, lyricsDestination: destination); dismiss() }
             catch { saveError = error.localizedDescription }
             isSaving = false
+        }
+    }
+
+    private func applyFilenameParsing() {
+        var name = track.url.deletingPathExtension().lastPathComponent
+        name = name.replacingOccurrences(of: #"^\d{1,3}[.\s_\-]+"#, with: "", options: .regularExpression)
+        name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+
+        let primarySeparators = [" - ", " – ", " — "]
+        var artistPart: String?
+        var titlePart: String?
+
+        for separator in primarySeparators {
+            if let range = name.range(of: separator) {
+                artistPart = String(name[..<range.lowerBound]).trimmingCharacters(in: .whitespaces)
+                titlePart = String(name[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+                break
+            }
+        }
+
+        if let titlePart, !titlePart.isEmpty {
+            title = titlePart
+        }
+
+        guard let artistPart, !artistPart.isEmpty else { return }
+
+        let artistSeparators = [" featuring ", " feat. ", " ft. ", " & ", " / ", ", ", "、"]
+        var entries = [artistPart]
+        for separator in artistSeparators {
+            entries = entries.flatMap { $0.components(separatedBy: separator) }
+        }
+
+        let parsed = entries
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+
+        if !parsed.isEmpty {
+            artists = parsed.map { ArtistEntry(name: $0) }
         }
     }
 

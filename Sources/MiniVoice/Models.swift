@@ -8,6 +8,12 @@ struct LyricLine: Identifiable, Equatable {
     var text: String
 }
 
+enum LyricsDestination: Hashable {
+    case tags
+    case sidecar
+    case both
+}
+
 struct Track: Identifiable {
     var id = UUID()
     let url: URL
@@ -213,6 +219,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private func loadTrack(_ url: URL) async -> Track? {
         let probe = await Task.detached { try? MediaTools.run("ffprobe", ["-v", "error", "-show_format", "-show_streams", "-of", "json", url.path]) }.value
         guard var track = await readTrack(url) else { return nil }
+        var embeddedLyrics = ""
         if let probe,
            let json = try? JSONSerialization.jsonObject(with: probe) as? [String: Any],
            let format = json["format"] as? [String: Any] {
@@ -220,7 +227,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
             track.title = tags["title"] ?? track.title
             track.artist = tags["artist"] ?? track.artist
             track.album = tags["album"] ?? track.album
-            track.lyrics = tags["lyrics"] ?? tags["unsyncedlyrics"] ?? track.lyrics
+            embeddedLyrics = tags["lyrics"] ?? tags["unsyncedlyrics"] ?? ""
             track.duration = Double(format["duration"] as? String ?? "") ?? track.duration
             if track.artwork == nil,
                let streams = json["streams"] as? [[String: Any]],
@@ -230,10 +237,8 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 track.artwork = data.flatMap(NSImage.init(data:))
             }
         }
-        if track.lyrics.isEmpty {
-            let sidecar = url.deletingPathExtension().appendingPathExtension("lrc")
-            track.lyrics = (try? String(contentsOf: sidecar, encoding: .utf8)) ?? ""
-        }
+        let sidecarLyrics = LyricsStorage.read(LyricsStorage.sidecarURL(for: url)) ?? ""
+        track.lyrics = sidecarLyrics.isEmpty ? embeddedLyrics : sidecarLyrics
         return track
     }
 
@@ -298,21 +303,40 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         if resume { play() }
     }
 
-    func save(_ updated: Track) async throws {
+    func save(_ updated: Track, lyricsDestination: LyricsDestination = .tags) async throws {
         guard let existing = tracks.first(where: { $0.id == updated.id }) else { return }
         guard updated.hasFileChanges(comparedTo: existing) else { return }
+        let nonLyricsChanged = updated.title != existing.title || updated.artist != existing.artist || updated.album != existing.album || updated.artworkWasEdited
+        let lyricsChanged = updated.lyrics != existing.lyrics
+        let needsTagWrite = nonLyricsChanged || lyricsDestination != .sidecar
         let resumeScan = isImporting
         scanTask?.cancel(); scanGeneration += 1; isImporting = false
         defer { if resumeScan { rescan() } }
-        let png: Data?
-        if updated.artworkWasEdited, let art = updated.artwork {
-            guard let tiff = art.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
-                  let data = bitmap.representation(using: .png, properties: [:]) else { throw TagWriteError.artworkEncodingFailed }
-            png = data
-        } else { png = nil }
-        let payload = TagPayload(url: updated.url, title: updated.title, artist: updated.artist,
-                                 album: updated.album, lyrics: updated.lyrics, artwork: png, preserveArtwork: !updated.artworkWasEdited)
-        try await Task.detached { try FFMpegTagWriter.write(payload) }.value
+        if needsTagWrite {
+            let png: Data?
+            if updated.artworkWasEdited, let art = updated.artwork {
+                guard let tiff = art.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
+                      let data = bitmap.representation(using: .png, properties: [:]) else { throw TagWriteError.artworkEncodingFailed }
+                png = data
+            } else { png = nil }
+            let lyricsForTags = lyricsDestination == .sidecar ? "" : updated.lyrics
+            let payload = TagPayload(url: updated.url, title: updated.title, artist: updated.artist,
+                                     album: updated.album, lyrics: lyricsForTags, artwork: png, preserveArtwork: !updated.artworkWasEdited)
+            try await Task.detached { try FFMpegTagWriter.write(payload) }.value
+        }
+        if lyricsChanged {
+            let sidecar = LyricsStorage.sidecarURL(for: updated.url)
+            switch lyricsDestination {
+            case .tags:
+                try? LyricsStorage.delete(sidecar)
+            case .sidecar, .both:
+                if updated.lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    try? LyricsStorage.delete(sidecar)
+                } else {
+                    try LyricsStorage.write(updated.lyrics, to: sidecar)
+                }
+            }
+        }
         if let index = tracks.firstIndex(where: { $0.id == updated.id }) {
             tracks[index] = updated; tracks[index].artworkWasEdited = false
         }
