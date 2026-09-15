@@ -188,11 +188,13 @@ struct ContentView: View {
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: true, vertical: false)
             Spacer(minLength: 0)
-            Button { library.rescan() } label: {
-                LibraryToolbarIcon(symbol: "arrow.clockwise", showBorder: false)
+            if !recent {
+                Button { library.rescan() } label: {
+                    LibraryToolbarIcon(symbol: "arrow.clockwise", showBorder: false)
+                }
+                .help("重新扫描").accessibilityLabel("重新扫描")
+                .disabled(library.isImporting)
             }
-            .help("重新扫描").accessibilityLabel("重新扫描")
-            .disabled(library.isImporting)
             if !recent {
                 Menu {
                     sortFieldButton("添加时间", field: "added")
