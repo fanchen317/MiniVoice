@@ -21,16 +21,26 @@ struct SongListRequest: Equatable, Sendable {
 actor SongListIndex {
     private var revision: Int?
     private var dates: [URL: Date] = [:]
+    private struct CacheKey: Hashable {
+        let revision: Int
+        let query: String
+        let field: String
+        let ascending: Bool
+    }
+    private var sortedCache: [CacheKey: [UUID]] = [:]
 
     func orderedIDs(_ entries: [SongListEntry], request: SongListRequest) -> [UUID] {
         if revision != request.revision {
             dates.removeAll(keepingCapacity: true)
+            sortedCache.removeAll(keepingCapacity: true)
             revision = request.revision
         }
         var filtered = entries.filter {
             request.query.isEmpty || "\($0.title) \($0.artist) \($0.album)".localizedCaseInsensitiveContains(request.query)
         }
         guard !request.recent else { return filtered.map(\.id) }
+        let key = CacheKey(revision: request.revision, query: request.query, field: request.field, ascending: request.ascending)
+        if let cached = sortedCache[key] { return cached }
         if request.field != "artist" && request.field != "title" {
             for entry in filtered where dates[entry.url] == nil {
                 guard !Task.isCancelled else { return [] }
@@ -55,6 +65,8 @@ actor SongListIndex {
             if title != .orderedSame { return title == .orderedAscending }
             return left.url.path < right.url.path
         }
-        return filtered.map(\.id)
+        let ids = filtered.map(\.id)
+        sortedCache[key] = ids
+        return ids
     }
 }

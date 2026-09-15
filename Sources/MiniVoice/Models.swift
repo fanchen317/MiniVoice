@@ -88,6 +88,18 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         recentPaths.compactMap { tracksByPath[$0] }
     }
 
+    func track(for id: UUID) -> Track? { tracksByID[id] }
+    func track(forPath path: String) -> Track? { tracksByPath[path] }
+
+    func recentTracks(matching query: String) -> [Track] {
+        recentPaths.compactMap { path -> Track? in
+            guard let track = tracksByPath[path] else { return nil }
+            if query.isEmpty { return track }
+            return "\(track.title) \(track.artist) \(track.album)"
+                .localizedCaseInsensitiveContains(query) ? track : nil
+        }
+    }
+
     func clearRecentPlayback() {
         recentPaths = []
         defaults.removeObject(forKey: "MiniVoice.recentPlayback")

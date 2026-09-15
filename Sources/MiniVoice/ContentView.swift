@@ -30,14 +30,18 @@ struct ContentView: View {
     }
 
     private func updateSongs() async {
-        let source = recent ? library.recentTracks : library.tracks
+        if recent {
+            let matches = library.recentTracks(matching: query)
+            if !Task.isCancelled { songs = matches }
+            return
+        }
+        let source = library.tracks
         let request = listRequest
         let entries = source.map { SongListEntry(id: $0.id, url: $0.url, title: $0.title, artist: $0.artist, album: $0.album) }
         // Only metadata crosses to the worker; AppKit artwork stays on the main actor.
         let ids = await listIndex.orderedIDs(entries, request: request)
         guard !Task.isCancelled else { return }
-        let byID = Dictionary(uniqueKeysWithValues: source.map { ($0.id, $0) })
-        songs = ids.compactMap { byID[$0] }
+        songs = ids.compactMap { library.track(for: $0) }
     }
 
     private func migrateSortPreferenceIfNeeded() {
@@ -164,8 +168,12 @@ struct ContentView: View {
                 Image(systemName: symbol).frame(width: 22)
                 Text(title).fontWeight(recent == isRecent ? .semibold : .regular)
                 Spacer()
-            }.padding(12).foregroundStyle(recent == isRecent ? playerGreen : Color.primary)
-                .background(recent == isRecent ? playerGreen.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 10))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(12)
+            .contentShape(Rectangle())
+            .foregroundStyle(recent == isRecent ? playerGreen : Color.primary)
+            .background(recent == isRecent ? playerGreen.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 10))
         }.buttonStyle(.plain)
     }
 
