@@ -181,7 +181,7 @@ struct ContentView: View {
             .fixedSize(horizontal: true, vertical: false)
             Spacer(minLength: 0)
             Button { library.rescan() } label: {
-                LibraryToolbarIcon(symbol: "arrow.clockwise")
+                LibraryToolbarIcon(symbol: "arrow.clockwise", showBorder: false)
             }
             .help("重新扫描").accessibilityLabel("重新扫描")
             .disabled(library.isImporting)
@@ -203,7 +203,7 @@ struct ContentView: View {
                 .help("歌曲排序").accessibilityLabel("歌曲排序")
                 .disabled(songs.isEmpty)
                 Button { multiSelecting.toggle(); selectedIDs.removeAll() } label: {
-                    LibraryToolbarIcon(symbol: multiSelecting ? "checkmark.circle.fill" : "checklist")
+                    LibraryToolbarIcon(symbol: multiSelecting ? "checkmark.circle.fill" : "checklist", showBorder: false)
                 }
                 .help(multiSelecting ? "退出多选" : "多选歌曲")
                 .accessibilityLabel(multiSelecting ? "退出多选" : "多选歌曲")
@@ -649,12 +649,14 @@ private enum CoverPalette {
 /// Shared visual treatment for both ordinary buttons and the sorting menu.
 private struct LibraryToolbarIcon: View {
     let symbol: String
+    var showBorder: Bool = true
     var body: some View {
-        Image(systemName: symbol).modifier(LibraryToolbarSurface())
+        Image(systemName: symbol).modifier(LibraryToolbarSurface(showBorder: showBorder))
     }
 }
 
 private struct LibraryToolbarSurface: ViewModifier {
+    var showBorder: Bool = true
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.colorScheme) private var colorScheme
     @State private var hovered = false
@@ -671,8 +673,10 @@ private struct LibraryToolbarSurface: ViewModifier {
                           : Color.primary.opacity(0.035))
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(isEnabled ? playerGreen.opacity(0.15) : Color.secondary.opacity(0.10), lineWidth: 0.5)
+                if showBorder {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(isEnabled ? playerGreen.opacity(0.15) : Color.secondary.opacity(0.10), lineWidth: 0.5)
+                }
             }
             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .onHover { hovered = $0 }

@@ -42,7 +42,7 @@ struct MetadataEditor: View {
             Divider()
             Form {
                 Section("文件信息") {
-                    readOnlyRow("文件名称", track.url.lastPathComponent)
+                    readOnlyRow("文件名称", track.url.lastPathComponent, selectable: true)
                     readOnlyRow("文件路径", track.url.path, selectable: true)
                     readOnlyRow("播放时长", formattedDuration(track.duration))
                 }
