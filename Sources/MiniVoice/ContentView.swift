@@ -130,6 +130,14 @@ struct ContentView: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("搜索歌曲、歌手或专辑", text: $query).textFieldStyle(.plain)
+                if !query.isEmpty {
+                    Button { query = "" } label: {
+                        Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("清空搜索").accessibilityLabel("清空搜索")
+                }
             }.padding(10).background(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.58 : 0.65), in: RoundedRectangle(cornerRadius: 12))
             VStack(spacing: 4) {
                 navigationItem("音乐库", symbol: "music.note", isRecent: false)
@@ -147,6 +155,7 @@ struct ContentView: View {
                             .font(.caption).foregroundStyle(.secondary).padding(.vertical, 30)
                     }
                 }
+                .background(HiddenScrollerConfigurator())
             }
             if library.isImporting { ProgressView("正在读取音乐…").controlSize(.small) }
         }

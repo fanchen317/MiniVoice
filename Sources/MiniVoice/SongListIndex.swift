@@ -50,6 +50,14 @@ actor SongListIndex {
             }
         }
         filtered.sort { left, right in
+            if request.field == "artist" || request.field == "title" {
+                let leftValue = request.field == "artist" ? left.artist : left.title
+                let rightValue = request.field == "artist" ? right.artist : right.title
+                let leftBucket = Self.letterBucket(leftValue), rightBucket = Self.letterBucket(rightValue)
+                if leftBucket != rightBucket {
+                    return request.ascending ? leftBucket < rightBucket : leftBucket > rightBucket
+                }
+            }
             let result: ComparisonResult
             switch request.field {
             case "artist": result = left.artist.localizedStandardCompare(right.artist)
@@ -68,5 +76,13 @@ actor SongListIndex {
         let ids = filtered.map(\.id)
         sortedCache[key] = ids
         return ids
+    }
+
+    private static func letterBucket(_ string: String) -> Int {
+        guard let firstScalar = string.unicodeScalars.first,
+              CharacterSet.letters.contains(firstScalar) else {
+            return 1
+        }
+        return 0
     }
 }

@@ -23,6 +23,7 @@ struct MetadataEditor: View {
     @State private var isSaving = false
     @State private var saveError: String?
     @State private var isArtworkDropTarget = false
+    @State private var showArtworkZoom = false
     @State private var lyricsDestination: LyricsDestination
     private let lyricsSourceLabel: String
 
@@ -88,7 +89,14 @@ struct MetadataEditor: View {
                 }
                 Section("封面") {
                     HStack(spacing: 16) {
-                        ArtworkPreview(image: artwork)
+                        Button {
+                            showArtworkZoom = true
+                        } label: {
+                            ArtworkPreview(image: artwork)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(artwork == nil)
+                        .help(artwork == nil ? "" : "查看大图")
                         VStack(alignment: .leading) {
                             Button("自定义") { choosingArtwork = true }
                             if artwork != nil { Button("移除封面", role: .destructive) { artwork = nil; artworkChanged = true } }
@@ -172,6 +180,26 @@ struct MetadataEditor: View {
         .alert("操作失败", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
             Button("好", role: .cancel) { saveError = nil }
         } message: { Text(saveError ?? "") }
+        .sheet(isPresented: $showArtworkZoom) {
+            if let artwork {
+                VStack(spacing: 12) {
+                    HStack {
+                        Text("封面预览").font(.headline)
+                        Spacer()
+                        Button("关闭") { showArtworkZoom = false }
+                            .keyboardShortcut(.cancelAction)
+                    }
+                    Image(nsImage: artwork)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 560, maxHeight: 560)
+                        .background(.black.opacity(0.04))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .padding(20)
+                .frame(width: 600, height: 640)
+            }
+        }
     }
 
     private func stampNextLine() {
