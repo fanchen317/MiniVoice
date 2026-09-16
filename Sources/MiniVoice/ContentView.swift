@@ -155,7 +155,7 @@ struct ContentView: View {
                             .font(.caption).foregroundStyle(.secondary).padding(.vertical, 30)
                     }
                 }
-                .background(HiddenScrollerConfigurator())
+                .background(TransparentScrollBackgroundConfigurator().frame(width: 0, height: 0).allowsHitTesting(false))
             }
             if library.isImporting { ProgressView("正在读取音乐…").controlSize(.small) }
         }
@@ -578,23 +578,84 @@ private struct Artwork: View {
     }
 }
 
+private final class ScrollbarHiderView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { return }
+        applyConfig()
+    }
+
+    override func layout() {
+        super.layout()
+        applyConfig()
+    }
+
+    func applyConfig() {
+        var current: NSView? = self
+        while let v = current {
+            if let scrollView = v as? NSScrollView {
+                scrollView.scrollerStyle = .overlay
+                scrollView.hasVerticalScroller = false
+                scrollView.hasHorizontalScroller = false
+                scrollView.autohidesScrollers = true
+                scrollView.verticalScroller?.alphaValue = 0
+                scrollView.horizontalScroller?.alphaValue = 0
+                scrollView.verticalScroller?.isHidden = true
+                scrollView.horizontalScroller?.isHidden = true
+                scrollView.drawsBackground = false
+                scrollView.backgroundColor = .clear
+                scrollView.contentView.drawsBackground = false
+                scrollView.contentView.backgroundColor = .clear
+                return
+            }
+            current = v.superview
+        }
+    }
+}
+
+private struct TransparentScrollBackgroundConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { TransparentScrollBackgroundView(frame: .zero) }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async { (nsView as? TransparentScrollBackgroundView)?.applyConfig() }
+    }
+}
+
+private final class TransparentScrollBackgroundView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { return }
+        applyConfig()
+    }
+
+    override func layout() {
+        super.layout()
+        applyConfig()
+    }
+
+    func applyConfig() {
+        var current: NSView? = self
+        while let v = current {
+            if let scrollView = v as? NSScrollView {
+                scrollView.scrollerStyle = .overlay
+                scrollView.drawsBackground = false
+                scrollView.backgroundColor = .clear
+                scrollView.contentView.drawsBackground = false
+                scrollView.contentView.backgroundColor = .clear
+                return
+            }
+            current = v.superview
+        }
+    }
+}
+
 private struct HiddenScrollerConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        configure(view)
-        return view
+        ScrollbarHiderView(frame: .zero)
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        configure(nsView)
-    }
-
-    private func configure(_ view: NSView) {
         DispatchQueue.main.async {
-            guard let scrollView = view.enclosingScrollView else { return }
-            scrollView.hasVerticalScroller = false
-            scrollView.hasHorizontalScroller = false
-            scrollView.autohidesScrollers = true
+            (nsView as? ScrollbarHiderView)?.applyConfig()
         }
     }
 }
