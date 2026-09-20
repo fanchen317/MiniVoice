@@ -145,7 +145,7 @@ struct ContentView: View {
             }
             Divider().opacity(0.4)
             libraryToolbar
-            ScrollView {
+            SidebarSongScrollView(trackIDs: songs.map(\.id)) {
                 LazyVStack(spacing: 4) {
                     ForEach(songs) { track in
                         songRow(track)
@@ -155,7 +155,6 @@ struct ContentView: View {
                             .font(.caption).foregroundStyle(.secondary).padding(.vertical, 30)
                     }
                 }
-                .background(TransparentScrollBackgroundConfigurator().frame(width: 0, height: 0).allowsHitTesting(false))
             }
             if library.isImporting { ProgressView("正在读取音乐…").controlSize(.small) }
         }
@@ -579,6 +578,20 @@ private struct Artwork: View {
 }
 
 private final class ScrollbarHiderView: NSView {
+    var onMetrics: ((CGFloat, CGFloat) -> Void)?
+    private weak var observedScroll: NSScrollView?
+
+    @objc private func scrollMetricsChanged(_ notification: Notification) {
+        publishMetrics()
+    }
+
+    private func publishMetrics() {
+        guard let scroll = observedScroll else { return }
+        let offset = scroll.contentView.bounds.minY
+        let height = scroll.documentView?.frame.height ?? 0
+        DispatchQueue.main.async { [weak self] in self?.onMetrics?(offset, height) }
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil else { return }
@@ -594,6 +607,16 @@ private final class ScrollbarHiderView: NSView {
         var current: NSView? = self
         while let v = current {
             if let scrollView = v as? NSScrollView {
+                if observedScroll !== scrollView {
+                    NotificationCenter.default.removeObserver(self)
+                    observedScroll = scrollView
+                    scrollView.contentView.postsBoundsChangedNotifications = true
+                    NotificationCenter.default.addObserver(self, selector: #selector(scrollMetricsChanged(_:)), name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
+                    if let document = scrollView.documentView {
+                        document.postsFrameChangedNotifications = true
+                        NotificationCenter.default.addObserver(self, selector: #selector(scrollMetricsChanged(_:)), name: NSView.frameDidChangeNotification, object: document)
+                    }
+                }
                 scrollView.scrollerStyle = .overlay
                 scrollView.hasVerticalScroller = false
                 scrollView.hasHorizontalScroller = false
@@ -606,10 +629,122 @@ private final class ScrollbarHiderView: NSView {
                 scrollView.backgroundColor = .clear
                 scrollView.contentView.drawsBackground = false
                 scrollView.contentView.backgroundColor = .clear
+                publishMetrics()
                 return
             }
             current = v.superview
         }
+    }
+}
+
+private struct SidebarScrollMetrics: Equatable {
+    var offset: CGFloat = 0
+    var height: CGFloat = 0
+}
+
+private struct SidebarScrollMetricsKey: PreferenceKey {
+    static let defaultValue = SidebarScrollMetrics()
+    static func reduce(value: inout SidebarScrollMetrics, nextValue: () -> SidebarScrollMetrics) {
+        value = nextValue()
+    }
+}
+
+/// Hide the system indicator entirely: its overlay track can reappear during
+/// scrolling. This thumb is drawn above the list and never paints a track.
+private struct SidebarSongScrollView<Content: View>: View {
+    let trackIDs: [UUID]
+    @ViewBuilder var content: () -> Content
+    @State private var metrics = SidebarScrollMetrics()
+    @State private var isThumbVisible = false
+    @State private var hideTask: Task<Void, Never>?
+    @Namespace private var coordinateSpace
+
+    private func revealThumb() {
+        hideTask?.cancel()
+        if !isThumbVisible {
+            withAnimation(.easeOut(duration: 0.15)) { isThumbVisible = true }
+        }
+        hideTask = Task {
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            if !Task.isCancelled {
+                await MainActor.run {
+                    withAnimation(.easeIn(duration: 0.25)) { isThumbVisible = false }
+                }
+            }
+        }
+    }
+
+    var body: some View {
+        GeometryReader { viewport in
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    content()
+                        .padding(.trailing, 8)
+                        .background(HiddenScrollerConfigurator(onMetrics: { offset, height in
+                            let updated = SidebarScrollMetrics(offset: offset, height: height)
+                            if metrics != updated {
+                                metrics = updated
+                                revealThumb()
+                            }
+                        }).frame(width: 0, height: 0).allowsHitTesting(false))
+                        .background(GeometryReader { geometry in
+                            Color.clear.preference(key: SidebarScrollMetricsKey.self,
+                                value: SidebarScrollMetrics(
+                                    offset: -geometry.frame(in: .named(coordinateSpace)).minY,
+                                    height: geometry.size.height))
+                        })
+                        .simultaneousGesture(DragGesture(minimumDistance: 0)
+                            .onChanged { _ in revealThumb() })
+                }
+                .scrollIndicators(.hidden)
+                .coordinateSpace(name: coordinateSpace)
+                .overlay(alignment: .trailing) {
+                    if metrics.height > viewport.size.height, viewport.size.height > 0 {
+                        let thumbHeight = min(viewport.size.height, max(28, viewport.size.height * viewport.size.height / metrics.height))
+                        let travel = viewport.size.height - thumbHeight
+                        let progress = min(1, max(0, metrics.offset / (metrics.height - viewport.size.height)))
+                        Capsule()
+                            .fill(Color.primary.opacity(0.55))
+                            .frame(width: 6, height: thumbHeight)
+                            .overlay(
+                                Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.5)
+                            )
+                            .offset(y: progress * travel)
+                            .frame(width: 14, height: viewport.size.height, alignment: .top)
+                            .contentShape(Rectangle())
+                            .opacity(isThumbVisible ? 1 : 0)
+                            .animation(.easeInOut(duration: 0.2), value: isThumbVisible)
+                            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named(coordinateSpace))
+                                .onChanged { value in
+                                    guard !trackIDs.isEmpty else { return }
+                                    revealThumb()
+                                    let fraction = min(1, max(0, (value.location.y - thumbHeight / 2) / max(1, travel)))
+                                    let index = Int((fraction * CGFloat(trackIDs.count - 1)).rounded())
+                                    proxy.scrollTo(trackIDs[index], anchor: UnitPoint(x: 0.5, y: fraction))
+                                })
+                            .clipped()
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Keep native scrolling and dragging, but draw only a slim, trackless thumb.
+private final class SidebarScroller: NSScroller {
+    override class var isCompatibleWithOverlayScrollers: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard knobProportion < 1 else { return }
+        let nativeKnob = rect(for: .knob)
+        guard nativeKnob.height > 0 else { return }
+        let width: CGFloat = 4
+        let thumb = NSRect(x: bounds.midX - width / 2,
+                           y: nativeKnob.minY,
+                           width: width,
+                           height: nativeKnob.height)
+        NSColor.secondaryLabelColor.withAlphaComponent(0.45).setFill()
+        NSBezierPath(roundedRect: thumb, xRadius: width / 2, yRadius: width / 2).fill()
     }
 }
 
@@ -636,7 +771,13 @@ private final class TransparentScrollBackgroundView: NSView {
         var current: NSView? = self
         while let v = current {
             if let scrollView = v as? NSScrollView {
+                if !(scrollView.verticalScroller is SidebarScroller) {
+                    scrollView.verticalScroller = SidebarScroller(frame: .zero)
+                }
                 scrollView.scrollerStyle = .overlay
+                scrollView.hasVerticalScroller = true
+                scrollView.hasHorizontalScroller = false
+                scrollView.autohidesScrollers = true
                 scrollView.drawsBackground = false
                 scrollView.backgroundColor = .clear
                 scrollView.contentView.drawsBackground = false
@@ -649,11 +790,15 @@ private final class TransparentScrollBackgroundView: NSView {
 }
 
 private struct HiddenScrollerConfigurator: NSViewRepresentable {
+    var onMetrics: ((CGFloat, CGFloat) -> Void)? = nil
     func makeNSView(context: Context) -> NSView {
-        ScrollbarHiderView(frame: .zero)
+        let view = ScrollbarHiderView(frame: .zero)
+        view.onMetrics = onMetrics
+        return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? ScrollbarHiderView)?.onMetrics = onMetrics
         DispatchQueue.main.async {
             (nsView as? ScrollbarHiderView)?.applyConfig()
         }
