@@ -63,9 +63,7 @@ struct ContentView: View {
                     sidebar
                         .frame(width: min(288, max(240, geometry.size.width * 0.25)))
                         .frame(maxHeight: .infinity)
-                        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-                        .overlay { RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(.white.opacity(0.55), lineWidth: 1) }
-                        .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
+                        .modifier(PlayerPanelSurface())
                 }
                 Group {
                     if let track = library.selectedTrack {
@@ -145,7 +143,7 @@ struct ContentView: View {
             }
             Divider().opacity(0.4)
             libraryToolbar
-            SidebarSongScrollView(trackIDs: songs.map(\.id)) {
+            PlayerScrollView {
                 LazyVStack(spacing: 4) {
                     ForEach(songs) { track in
                         songRow(track)
@@ -160,10 +158,6 @@ struct ContentView: View {
         }
         .padding(.horizontal, 12).padding(.top, 18).padding(.bottom, 12)
         .frame(maxHeight: .infinity)
-        .background {
-            FrostedBackdrop(material: .hudWindow, blendingMode: .withinWindow)
-            Color(nsColor: .windowBackgroundColor).opacity(colorScheme == .dark ? 0.34 : 0.22)
-        }
     }
 
     private func navigationItem(_ title: String, symbol: String, isRecent: Bool) -> some View {
@@ -325,7 +319,7 @@ private struct PlayerDetail: View {
             let controlsHeight: CGFloat = compact ? 166 : 116
             let contentHeight = max(0, geometry.size.height - controlsHeight - 64)
             // Reserve space for the lyric card before sizing the artwork.
-            let artworkSize = max(112, min(260, min(geometry.size.width * 0.34, min(geometry.size.height * 0.30, contentHeight - 206))))
+            let artworkSize = max(88, min(260, min(geometry.size.width * 0.34, min(geometry.size.height * 0.30, contentHeight - 250))))
             VStack(spacing: 12) {
                 header
                     .frame(height: 40)
@@ -359,8 +353,7 @@ private struct PlayerDetail: View {
 
     private func hero(size: CGFloat) -> some View {
         HStack(spacing: 22) {
-            Artwork(image: track.artwork, size: size)
-                .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.8), lineWidth: 1.5))
+            Artwork(image: track.artwork, size: size, showsBorder: true)
                 .shadow(color: .black.opacity(0.10), radius: 16, y: 6)
             VStack(alignment: .leading, spacing: size < 160 ? 6 : 12) {
                 Text(track.title).font(.system(size: size < 160 ? 20 : (size < 180 ? 23 : 30), weight: .bold)).lineLimit(2).minimumScaleFactor(0.85)
@@ -411,7 +404,8 @@ private struct PlayerDetail: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.58 : 0.65), in: RoundedRectangle(cornerRadius: 20))
+        .foregroundStyle(.primary)
+        .modifier(PlayerPanelSurface())
     }
 }
 
@@ -430,47 +424,30 @@ private struct SyncedLyrics: View {
         let lyrics: String
     }
 
-    private var activeColor: Color {
-        colorScheme == .dark
-            ? Color(red: 0.72, green: 0.68, blue: 1.0)
-            : Color(red: 0.32, green: 0.25, blue: 0.78)
-    }
-
-    private var inactiveColor: Color {
-        colorScheme == .dark
-            ? Color.white.opacity(0.38)
-            : Color(red: 0.43, green: 0.43, blue: 0.47).opacity(0.58)
-    }
-
     private var active: Int? { MusicLibrary.activeLyricIndex(for: track.lyricLines, at: clock.time) }
     var body: some View {
         let active = active
         let lines = track.lyricLines
         GeometryReader { geometry in
+            let rowHeight = min(92.0, max(28.0, (geometry.size.height - 36) / 5))
+            let fontSize = min(34.0, max(19.0, rowHeight * 0.56))
             ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
+                PlayerScrollView(fadesEdges: true) {
+                    VStack(alignment: .leading, spacing: 8) {
                         ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                            let distance = active.map { abs(index - $0) } ?? 0
                             Text(line.text.isEmpty ? "•••" : line.text)
-                                .font(.system(size: 30, weight: active == index ? .bold : .regular, design: .rounded))
-                                .fixedSize(horizontal: false, vertical: true)
-                                .foregroundStyle(active == index ? activeColor : inactiveColor)
-                                // Scale visually, keeping row heights stable as the current line changes.
-                                .scaleEffect(active == index ? 1 : 0.84, anchor: .leading)
+                                .font(.system(size: fontSize, weight: .bold))
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.6)
+                                .multilineTextAlignment(.leading)
+                                .foregroundStyle((colorScheme == .dark ? Color.white : Color(red: 0.23, green: 0.27, blue: 0.31))
+                                    .opacity(active == nil ? 0.78 : (active == index ? 1 : (distance == 1 ? 0.40 : 0.27))))
+                                .blur(radius: active == nil || active == index ? 0 : (distance == 1 ? 0.45 : 1.1))
+                                .scaleEffect(active == index || active == nil ? 1 : 0.94, anchor: .leading)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .background {
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(LinearGradient(colors: [activeColor.opacity(0.09), activeColor.opacity(0.015)],
-                                                             startPoint: .leading, endPoint: .trailing))
-                                        .opacity(active == index ? 1 : 0)
-                                }
-                                .overlay(alignment: .leading) {
-                                    Capsule().fill(activeColor).frame(width: 3, height: 26)
-                                        .opacity(active == index ? 1 : 0)
-                                }
-                                .animation(.easeInOut(duration: 0.3), value: active)
+                                .frame(height: rowHeight)
+                                .animation(.easeInOut(duration: 0.4), value: active)
                                 .contentShape(Rectangle()).id(index)
                                 .onTapGesture { if let time = line.timestamp { library.seek(to: time) } }
                         }
@@ -479,7 +456,6 @@ private struct SyncedLyrics: View {
                     // Half a viewport at either end lets even the first/last line reach the center.
                     .padding(.vertical, geometry.size.height / 2)
                 }
-                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.1), .init(color: .black, location: 0.9), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
                 .task(id: ScrollTarget(trackID: track.id, active: active, follow: follow,
                                        size: geometry.size, lyrics: track.lyrics)) {
                     // Wait for new text/viewport geometry before resolving the line's scroll frame.
@@ -524,7 +500,7 @@ private struct PlayerControls: View {
         }
         .padding(.horizontal, 18).padding(.vertical, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.74 : 0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .modifier(PlayerPanelSurface())
         .onChange(of: track.id) { _ in scrub = nil }
     }
 
@@ -607,18 +583,26 @@ private struct PlayerControls: View {
 private struct Artwork: View {
     let image: NSImage?
     let size: CGFloat
+    var showsBorder = false
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: min(22, size * 0.16), style: .continuous)
+    }
     var body: some View {
         Group {
             if let image { Image(nsImage: image).resizable().scaledToFill() }
             else { Image(systemName: "music.note").font(.system(size: size * 0.4)).foregroundStyle(playerGreen.opacity(0.6)) }
         }.frame(width: size, height: size)
             .background(playerGreen.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: size > 100 ? 22 : 9))
+            .clipShape(shape)
+            .overlay {
+                if showsBorder { shape.strokeBorder(.white.opacity(0.45), lineWidth: 0.75) }
+            }
     }
 }
 
 private final class ScrollbarHiderView: NSView {
     var onMetrics: ((CGFloat, CGFloat) -> Void)?
+    var onScrollView: ((NSScrollView) -> Void)?
     private weak var observedScroll: NSScrollView?
 
     @objc private func scrollMetricsChanged(_ notification: Notification) {
@@ -647,6 +631,7 @@ private final class ScrollbarHiderView: NSView {
         var current: NSView? = self
         while let v = current {
             if let scrollView = v as? NSScrollView {
+                onScrollView?(scrollView)
                 if observedScroll !== scrollView {
                     NotificationCenter.default.removeObserver(self)
                     observedScroll = scrollView
@@ -677,171 +662,127 @@ private final class ScrollbarHiderView: NSView {
     }
 }
 
-private struct SidebarScrollMetrics: Equatable {
+private struct ScrollMetrics: Equatable {
     var offset: CGFloat = 0
     var height: CGFloat = 0
 }
 
-private struct SidebarScrollMetricsKey: PreferenceKey {
-    static let defaultValue = SidebarScrollMetrics()
-    static func reduce(value: inout SidebarScrollMetrics, nextValue: () -> SidebarScrollMetrics) {
-        value = nextValue()
-    }
+private final class ScrollViewReference {
+    weak var view: NSScrollView?
 }
 
-/// Hide the system indicator entirely: its overlay track can reappear during
-/// scrolling. This thumb is drawn above the list and never paints a track.
-private struct SidebarSongScrollView<Content: View>: View {
-    let trackIDs: [UUID]
+/// One thumb geometry and interaction model for both songs and lyrics.
+private struct PlayerScrollView<Content: View>: View {
+    var fadesEdges = false
     @ViewBuilder var content: () -> Content
-    @State private var metrics = SidebarScrollMetrics()
+    @State private var metrics = ScrollMetrics()
+    @State private var scrollReference = ScrollViewReference()
     @State private var isThumbVisible = false
+    @State private var isDragging = false
+    @State private var grabOffset: CGFloat?
     @State private var hideTask: Task<Void, Never>?
     @Namespace private var coordinateSpace
 
     private func revealThumb() {
         hideTask?.cancel()
-        if !isThumbVisible {
-            withAnimation(.easeOut(duration: 0.15)) { isThumbVisible = true }
-        }
+        isThumbVisible = true
         hideTask = Task {
             try? await Task.sleep(nanoseconds: 700_000_000)
-            if !Task.isCancelled {
-                await MainActor.run {
-                    withAnimation(.easeIn(duration: 0.25)) { isThumbVisible = false }
-                }
-            }
+            if !Task.isCancelled && !isDragging { isThumbVisible = false }
         }
     }
 
     var body: some View {
         GeometryReader { viewport in
-            ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: false) {
-                    content()
-                        .padding(.trailing, 8)
-                        .background(HiddenScrollerConfigurator(onMetrics: { offset, height in
-                            let updated = SidebarScrollMetrics(offset: offset, height: height)
-                            if metrics != updated {
-                                metrics = updated
+            ScrollView(.vertical, showsIndicators: false) {
+                content()
+                    .padding(.trailing, 8)
+                    .background(HiddenScrollerConfigurator(onMetrics: { offset, height in
+                        let updated = ScrollMetrics(offset: offset, height: height)
+                        if metrics != updated { metrics = updated; revealThumb() }
+                    }, onScrollView: { scrollReference.view = $0 })
+                        .frame(width: 0, height: 0).allowsHitTesting(false))
+            }
+            .scrollIndicators(.hidden)
+            .coordinateSpace(name: coordinateSpace)
+            .mask {
+                if fadesEdges {
+                    LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.1),
+                                           .init(color: .black, location: 0.9), .init(color: .clear, location: 1)],
+                                   startPoint: .top, endPoint: .bottom)
+                } else { Rectangle() }
+            }
+            .onHover { inside in if inside { revealThumb() } }
+            .overlay(alignment: .trailing) {
+                if metrics.height > viewport.size.height, viewport.size.height > 0 {
+                    let thumbHeight = min(viewport.size.height, max(28, viewport.size.height * viewport.size.height / metrics.height))
+                    let travel = viewport.size.height - thumbHeight
+                    let progress = min(1, max(0, metrics.offset / (metrics.height - viewport.size.height)))
+                    Capsule()
+                        .fill(Color.primary.opacity(0.55))
+                        .frame(width: 6, height: thumbHeight)
+                        .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
+                        .offset(y: progress * travel)
+                        .frame(width: 14, height: viewport.size.height, alignment: .top)
+                        .contentShape(Rectangle())
+                        .opacity(isThumbVisible ? 1 : 0)
+                        .allowsHitTesting(isThumbVisible)
+                        .animation(.easeInOut(duration: 0.2), value: isThumbVisible)
+                        .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named(coordinateSpace))
+                            .onChanged { value in
+                                if grabOffset == nil {
+                                    let withinThumb = value.startLocation.y - progress * travel
+                                    grabOffset = (0...thumbHeight).contains(withinThumb) ? withinThumb : thumbHeight / 2
+                                }
+                                isDragging = true
                                 revealThumb()
+                                guard let scroll = scrollReference.view else { return }
+                                let fraction = min(1, max(0, (value.location.y - (grabOffset ?? thumbHeight / 2)) / max(1, travel)))
+                                let offset = fraction * max(0, metrics.height - viewport.size.height)
+                                scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: offset))
+                                scroll.reflectScrolledClipView(scroll.contentView)
                             }
-                        }).frame(width: 0, height: 0).allowsHitTesting(false))
-                        .background(GeometryReader { geometry in
-                            Color.clear.preference(key: SidebarScrollMetricsKey.self,
-                                value: SidebarScrollMetrics(
-                                    offset: -geometry.frame(in: .named(coordinateSpace)).minY,
-                                    height: geometry.size.height))
-                        })
-                        .simultaneousGesture(DragGesture(minimumDistance: 0)
-                            .onChanged { _ in revealThumb() })
-                }
-                .scrollIndicators(.hidden)
-                .coordinateSpace(name: coordinateSpace)
-                .overlay(alignment: .trailing) {
-                    if metrics.height > viewport.size.height, viewport.size.height > 0 {
-                        let thumbHeight = min(viewport.size.height, max(28, viewport.size.height * viewport.size.height / metrics.height))
-                        let travel = viewport.size.height - thumbHeight
-                        let progress = min(1, max(0, metrics.offset / (metrics.height - viewport.size.height)))
-                        Capsule()
-                            .fill(Color.primary.opacity(0.55))
-                            .frame(width: 6, height: thumbHeight)
-                            .overlay(
-                                Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.5)
-                            )
-                            .offset(y: progress * travel)
-                            .frame(width: 14, height: viewport.size.height, alignment: .top)
-                            .contentShape(Rectangle())
-                            .opacity(isThumbVisible ? 1 : 0)
-                            .animation(.easeInOut(duration: 0.2), value: isThumbVisible)
-                            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named(coordinateSpace))
-                                .onChanged { value in
-                                    guard !trackIDs.isEmpty else { return }
-                                    revealThumb()
-                                    let fraction = min(1, max(0, (value.location.y - thumbHeight / 2) / max(1, travel)))
-                                    let index = Int((fraction * CGFloat(trackIDs.count - 1)).rounded())
-                                    proxy.scrollTo(trackIDs[index], anchor: UnitPoint(x: 0.5, y: fraction))
-                                })
-                            .clipped()
-                    }
+                            .onEnded { _ in isDragging = false; grabOffset = nil; revealThumb() })
+                        .clipped()
                 }
             }
-        }
-    }
-}
-
-/// Keep native scrolling and dragging, but draw only a slim, trackless thumb.
-private final class SidebarScroller: NSScroller {
-    override class var isCompatibleWithOverlayScrollers: Bool { true }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard knobProportion < 1 else { return }
-        let nativeKnob = rect(for: .knob)
-        guard nativeKnob.height > 0 else { return }
-        let width: CGFloat = 4
-        let thumb = NSRect(x: bounds.midX - width / 2,
-                           y: nativeKnob.minY,
-                           width: width,
-                           height: nativeKnob.height)
-        NSColor.secondaryLabelColor.withAlphaComponent(0.45).setFill()
-        NSBezierPath(roundedRect: thumb, xRadius: width / 2, yRadius: width / 2).fill()
-    }
-}
-
-private struct TransparentScrollBackgroundConfigurator: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView { TransparentScrollBackgroundView(frame: .zero) }
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { (nsView as? TransparentScrollBackgroundView)?.applyConfig() }
-    }
-}
-
-private final class TransparentScrollBackgroundView: NSView {
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard window != nil else { return }
-        applyConfig()
-    }
-
-    override func layout() {
-        super.layout()
-        applyConfig()
-    }
-
-    func applyConfig() {
-        var current: NSView? = self
-        while let v = current {
-            if let scrollView = v as? NSScrollView {
-                if !(scrollView.verticalScroller is SidebarScroller) {
-                    scrollView.verticalScroller = SidebarScroller(frame: .zero)
-                }
-                scrollView.scrollerStyle = .overlay
-                scrollView.hasVerticalScroller = true
-                scrollView.hasHorizontalScroller = false
-                scrollView.autohidesScrollers = true
-                scrollView.drawsBackground = false
-                scrollView.backgroundColor = .clear
-                scrollView.contentView.drawsBackground = false
-                scrollView.contentView.backgroundColor = .clear
-                return
-            }
-            current = v.superview
+            .onDisappear { hideTask?.cancel(); scrollReference.view = nil }
         }
     }
 }
 
 private struct HiddenScrollerConfigurator: NSViewRepresentable {
     var onMetrics: ((CGFloat, CGFloat) -> Void)? = nil
+    var onScrollView: ((NSScrollView) -> Void)? = nil
     func makeNSView(context: Context) -> NSView {
         let view = ScrollbarHiderView(frame: .zero)
         view.onMetrics = onMetrics
+        view.onScrollView = onScrollView
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         (nsView as? ScrollbarHiderView)?.onMetrics = onMetrics
+        (nsView as? ScrollbarHiderView)?.onScrollView = onScrollView
         DispatchQueue.main.async {
             (nsView as? ScrollbarHiderView)?.applyConfig()
         }
+    }
+}
+
+/// Shared sidebar material, tint, contour and shadow for all three player panels.
+private struct PlayerPanelSurface: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+        content
+            .background {
+                FrostedBackdrop(material: .hudWindow, blendingMode: .withinWindow)
+                Color(nsColor: .windowBackgroundColor).opacity(colorScheme == .dark ? 0.34 : 0.22)
+            }
+            .clipShape(shape)
+            .overlay { shape.stroke(.white.opacity(0.55), lineWidth: 1).allowsHitTesting(false) }
+            .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
     }
 }
 

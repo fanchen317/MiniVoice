@@ -26,6 +26,7 @@ struct MetadataEditor: View {
     @State private var saveTask: Task<Void, Never>?
     @StateObject private var alignment = LyricsAlignment()
     @State private var saveError: String?
+    @State private var saveNotice: String?
     @State private var isArtworkDropTarget = false
     @State private var showArtworkZoom = false
     @State private var lyricsDestination: LyricsDestination
@@ -113,7 +114,9 @@ struct MetadataEditor: View {
                 Section {
                     Button("导入歌词文件（LRC / SRT / TXT）") { choosingLyrics = true }
                     let timed = LRCParser.parse(lyrics).filter { $0.timestamp != nil }.count
-                    Text(LyricsAlignment.needsAlignment(lyrics) ? "保存时将使用本地 AI 自动匹配歌曲，生成跟随时间轴。首次使用需联网下载模型，歌曲不会上传。" : "已识别 \(timed) 行时间标签，保存后可自动滚动。")
+                    Text(LyricsAlignment.needsAlignment(lyrics) ? "保存时将使用本地 AI 自动匹配歌曲，生成跟随时间轴。首次使用需联网下载模型，歌曲不会上传。" : (timed > 0 ? "已识别 \(timed) 行时间标签，保存后可自动滚动。" : "粘贴歌词或导入歌词文件，保存时自动整理。"))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("保存时自动去除空行，并按短语整理纯文本长句；已有时间标签保持不变。")
                         .font(.caption).foregroundStyle(.secondary)
                     HStack {
                         Button(library.isPlaying ? "暂停试听" : "播放试听") {
@@ -182,7 +185,7 @@ struct MetadataEditor: View {
             do {
                 let url = try result.get()
                 var encoding = String.Encoding.utf8
-                lyrics = LRCParser.imported(try String(contentsOf: url, usedEncoding: &encoding))
+                lyrics = LyricsText.normalized(try String(contentsOf: url, usedEncoding: &encoding))
                 timingIndex = 0
             } catch { saveError = "无法读取歌词，请使用 UTF-8 编码：\(error.localizedDescription)" }
         }
@@ -193,6 +196,9 @@ struct MetadataEditor: View {
             }
             Button("返回编辑", role: .cancel) { saveError = nil }
         } message: { Text(saveError ?? "") }
+        .alert("歌词已保存，部分行待校正", isPresented: Binding(get: { saveNotice != nil }, set: { if !$0 { saveNotice = nil } })) {
+            Button("完成") { saveNotice = nil; dismiss() }
+        } message: { Text(saveNotice ?? "") }
         .sheet(isPresented: $showArtworkZoom) {
             if let artwork {
                 VStack(spacing: 12) {
@@ -242,7 +248,8 @@ struct MetadataEditor: View {
         updated.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         updated.artist = artists.map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " / ")
         updated.album = album
-        updated.lyrics = LRCParser.imported(lyrics)
+        updated.lyrics = LyricsAlignment.alignmentSource(lyrics, title: updated.title)
+        lyrics = updated.lyrics
         updated.artwork = artwork
         updated.artworkWasEdited = artworkChanged
         let shouldAlign = synchronize && LyricsAlignment.needsAlignment(updated.lyrics)
@@ -263,7 +270,9 @@ struct MetadataEditor: View {
                 try Task.checkCancellation()
                 isAligning = false
                 try await library.save(updated, lyricsDestination: destination)
-                dismiss()
+                lyrics = updated.lyrics
+                if shouldAlign, let warning = alignment.warning { saveNotice = warning }
+                else { dismiss() }
             } catch is CancellationError {
                 // Keep all editor fields available for another attempt.
             } catch {

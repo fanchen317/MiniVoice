@@ -4,8 +4,8 @@ import Darwin
 
 struct AlignedLyric: Codable, Sendable {
     let text: String
-    let start: Double
-    let end: Double
+    let start: Double?
+    let end: Double?
 }
 
 enum LyricsAlignmentError: LocalizedError {
@@ -20,6 +20,7 @@ enum LyricsAlignmentError: LocalizedError {
 @MainActor
 final class LyricsAlignment: ObservableObject {
     @Published private(set) var status = ""
+    @Published private(set) var warning: String?
     private static var isBusy = false
     private static let runtimeVersion = "stable-ts-2.19.1-v1"
     private let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -32,14 +33,20 @@ final class LyricsAlignment: ObservableObject {
 
     /// Keep credits/section labels in metadata, but do not ask the model to hear them.
     nonisolated static func alignmentSource(_ source: String, title: String) -> String {
-        LRCParser.imported(source).components(separatedBy: .newlines).map { raw in
+        var sawLyrics = false
+        let annotated = LRCParser.imported(source).components(separatedBy: .newlines).map { raw in
             let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             let heading = text.components(separatedBy: " - ").first ?? text
-            let isTitle = !title.isEmpty && heading.localizedCaseInsensitiveCompare(title) == .orderedSame
-            let isCredit = text.range(of: #"^(词|詞|曲|作词|作詞|作曲|编曲|編曲|演唱|歌手|制作人|製作人|混音|录音|錄音|和声|和聲|母带|母帶|出品|发行|發行|监制|監製|制作|製作|词曲|詞曲|专辑|專輯|OP|SP|Lyrics|Composer|Arranger|Produced by)\s*[:：]"#, options: [.regularExpression, .caseInsensitive]) != nil
+            let baseHeading = heading.replacingOccurrences(of: #"\s*[（(].*?[）)]"#, with: "", options: .regularExpression)
+            let baseTitle = title.replacingOccurrences(of: #"\s*[（(].*?[）)]"#, with: "", options: .regularExpression)
+            let isTitle = !sawLyrics && !title.isEmpty && (baseHeading.localizedCaseInsensitiveCompare(baseTitle) == .orderedSame ||
+                (text.contains(" - ") && baseHeading.lowercased().hasPrefix(baseTitle.lowercased() + " ")))
+            let isCredit = text.range(of: #"^(Rap填词|Rap填詞|原唱|Program|伴唱|童声|童聲|吉他|贝斯|貝斯|鼓|钢琴|鋼琴|弦乐|弦樂|人声|人聲|录音师|錄音師|混音师|混音師|词|詞|曲|作词|作詞|作曲|编曲|編曲|演唱|歌手|制作人|製作人|混音|录音|錄音|和声|和聲|母带|母帶|出品|发行|發行|监制|監製|制作|製作|词曲|詞曲|专辑|專輯|OP|SP|Lyrics|Composer|Arranger|Produced by)\s*[:：]"#, options: [.regularExpression, .caseInsensitive]) != nil || text.range(of: #"^[^:：]{0,10}(制作人|製作人|工程师|工程師|录音室|錄音室|工作室|监制|監製|填词|填詞)\s*[:：]"#, options: .regularExpression) != nil
             let isSection = text.range(of: #"^\[(?i:verse|chorus|bridge|intro|outro|instrumental|pre-chorus|副歌|主歌|间奏|間奏)[^\]]*\]$"#, options: .regularExpression) != nil
+            if !text.isEmpty && !text.hasPrefix("[") && !isTitle && !isCredit && !isSection { sawLyrics = true }
             return isTitle || isCredit || isSection ? "[note:\(text)]" : raw
         }.joined(separator: "\n")
+        return LyricsText.normalized(annotated)
     }
 
     /// Validate again at the application boundary; preserve any manually supplied anchors.
@@ -48,17 +55,30 @@ final class LyricsAlignment: ObservableObject {
         guard duration.isFinite, duration > 0, !lines.isEmpty, result.count == lines.count else {
             throw LyricsAlignmentError.failed("歌词未能完整匹配，原歌词未改动。")
         }
+        let matchedCount = zip(lines, result).filter { $0.0.timestamp != nil || $0.1.start != nil }.count
+        guard Double(matchedCount) / Double(lines.count) >= 0.65 else {
+            throw LyricsAlignmentError.failed("较多歌词未能匹配，请检查歌曲版本后重试，或先保存文本。")
+        }
         var previous = -1.0
         let metadata = source.components(separatedBy: .newlines).filter {
             $0.range(of: #"^\s*\[(?!offset:)[A-Za-z]+:.*\]\s*$"#, options: [.regularExpression, .caseInsensitive]) != nil
         }
         let timed = try zip(lines, result).map { line, aligned in
-            let time = line.timestamp ?? aligned.start
-            guard aligned.text == line.text, aligned.start.isFinite, aligned.end.isFinite,
-                  aligned.start >= 0, aligned.end > aligned.start, aligned.end <= duration + 0.5,
-                  time.isFinite, time >= 0, time < duration,
+            guard aligned.text == line.text else {
+                throw LyricsAlignmentError.failed("对齐结果与歌词原文不一致，请重试。")
+            }
+            // Unmatched lines remain readable plain text; never fabricate their timestamps.
+            if aligned.start == nil && aligned.end == nil && line.timestamp == nil { return line.text }
+            if let start = aligned.start, let end = aligned.end {
+                guard start.isFinite, end.isFinite, start >= 0, end > start, end <= duration + 0.5 else {
+                    throw LyricsAlignmentError.failed("部分歌词时间无效，请重试同步。")
+                }
+            } else if aligned.start != nil || aligned.end != nil {
+                throw LyricsAlignmentError.failed("歌词时间轴不完整，请重试同步。")
+            }
+            guard let time = line.timestamp ?? aligned.start, time.isFinite, time >= 0, time < duration,
                   (time * 100).rounded() > previous else {
-                throw LyricsAlignmentError.failed("时间轴存在未匹配或冲突的歌词，请检查歌词版本或使用手动打点。")
+                throw LyricsAlignmentError.failed("已有时间点与新时间轴冲突，请检查手动打点。")
             }
             previous = (time * 100).rounded()
             return LRCParser.stamp(time, text: line.text)
@@ -67,6 +87,7 @@ final class LyricsAlignment: ObservableObject {
     }
 
     func align(source: String, audioURL: URL, duration: Double, title: String = "") async throws -> String {
+        warning = nil
         let normalized = Self.alignmentSource(source, title: title)
         guard Self.needsAlignment(normalized) else { return normalized }
         guard !Self.isBusy else { throw LyricsAlignmentError.failed("另一首歌曲正在同步，请完成或取消后重试。") }
@@ -98,7 +119,12 @@ final class LyricsAlignment: ObservableObject {
         try await run(python, [worker.path, requestURL.path, output.path, progress.path], work: work,
                       statusFile: progress, timeout: 3600)
         let result = try JSONDecoder().decode([AlignedLyric].self, from: Data(contentsOf: output))
-        return try Self.merge(result, source: normalized, duration: duration)
+        let merged = try Self.merge(result, source: normalized, duration: duration)
+        let unmatched = LRCParser.parse(merged, placeholder: false).filter { $0.timestamp == nil }.count
+        if unmatched > 0 {
+            warning = "已保存可同步的歌词。还有 \(unmatched) 行未能匹配，已保留原文，不会自动高亮。可在编辑窗口为这些行手动打点，或检查歌词版本后重新同步。"
+        }
+        return merged
     }
 
     private func prepareRuntime(work: URL) async throws -> URL {
@@ -161,7 +187,11 @@ final class LyricsAlignment: ObservableObject {
         }
         guard process.terminationStatus == 0 else {
             let detail = (try? String(contentsOf: log, encoding: .utf8)) ?? "未知错误"
-            throw LyricsAlignmentError.failed("本地 AI 同步失败，可重试或仅保存原歌词。\n\(detail.suffix(800))")
+            try? detail.write(to: root.appendingPathComponent("last-error.log"), atomically: true, encoding: .utf8)
+            let errorURL = work.appendingPathComponent("result.error.json")
+            let errorData = try? Data(contentsOf: errorURL)
+            let errorInfo = errorData.flatMap { try? JSONDecoder().decode([String: String].self, from: $0) }
+            throw LyricsAlignmentError.failed(errorInfo?["message"] ?? "本地 AI 暂时无法完成同步。请检查网络与本地 AI 环境后重试，也可以先保存歌词文本。详细诊断已记录到 LyricsAI/last-error.log。")
         }
     }
 }

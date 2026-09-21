@@ -49,6 +49,51 @@ final class LyricsAlignmentTests: XCTestCase {
         XCTAssertEqual(LRCParser.stamp(59.999, text: "跨分钟"), "[01:00.00] 跨分钟")
     }
 
+    func testTextCleanupAndPhraseSplittingPreserveWords() {
+        let source = "\n 为爱飞行 脱离地心引力的热情 寻找你每一个身影 \n\n第二句\r\n\r\n"
+        let normalized = LyricsText.normalized(source)
+        XCTAssertFalse(normalized.contains("\n\n"))
+        XCTAssertGreaterThan(normalized.components(separatedBy: "\n").count, 2)
+        XCTAssertEqual(normalized.filter { !$0.isWhitespace }, source.filter { !$0.isWhitespace })
+        XCTAssertEqual(LyricsText.normalized("\n[00:03.00] 很长的歌词 保留已有时间点\n\n[00:06.00]\n"),
+                       "[00:03.00] 很长的歌词 保留已有时间点\n[00:06.00]")
+    }
+
+    func testCreditsAndRepeatedTitle() {
+        let cleaned = LyricsAlignment.alignmentSource("阿刁 (Live) - 张韶涵\nRap填词：作者\n原唱：作者\nProgram：作者\n伴唱：作者\n童声：作者\n第一句\n阿刁", title: "阿刁")
+        XCTAssertEqual(LRCParser.parse(cleaned, placeholder: false).map(\.text), ["第一句", "阿刁"])
+    }
+
+    func testPartialAlignmentRetainsEveryLineWithoutInventingTime() throws {
+        let result = [AlignedLyric(text: "甲", start: 1, end: 2),
+                      AlignedLyric(text: "乙", start: nil, end: nil),
+                      AlignedLyric(text: "丙", start: 5, end: 6),
+                      AlignedLyric(text: "丁", start: 7, end: 8)]
+        let merged = try LyricsAlignment.merge(result, source: "甲\n乙\n丙\n丁", duration: 10)
+        let parsed = LRCParser.parse(merged)
+        XCTAssertEqual(parsed.map(\.text), ["甲", "乙", "丙", "丁"])
+        XCTAssertNil(parsed[1].timestamp)
+        XCTAssertEqual(parsed.compactMap(\.timestamp), [1, 5, 7])
+        XCTAssertThrowsError(try LyricsAlignment.merge([AlignedLyric(text: "甲", start: nil, end: nil)], source: "甲", duration: 10))
+    }
+
+    /// Optional local regression fixtures; never writes audio or the user's library.
+    @MainActor func testAudioRegressionFixtures() async throws {
+        guard let path = ProcessInfo.processInfo.environment["MINIVOICE_AI_FIXTURES"] else {
+            throw XCTSkip("No local audio regression fixtures supplied")
+        }
+        struct Fixture: Decodable { let path: String; let lyrics: String; let title: String; let duration: Double }
+        let fixtures = try JSONDecoder().decode([Fixture].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        for fixture in fixtures {
+            let result = try await LyricsAlignment().align(source: fixture.lyrics, audioURL: URL(fileURLWithPath: fixture.path), duration: fixture.duration, title: fixture.title)
+            let expected = LRCParser.parse(LyricsAlignment.alignmentSource(fixture.lyrics, title: fixture.title), placeholder: false)
+            let actual = LRCParser.parse(result, placeholder: false)
+            XCTAssertEqual(actual.map(\.text), expected.map(\.text))
+            XCTAssertGreaterThanOrEqual(Double(actual.filter { $0.timestamp != nil }.count) / Double(actual.count), 0.65)
+            print("AI fixture validated: \(fixture.title), \(actual.filter { $0.timestamp != nil }.count)/\(actual.count) timed lines")
+        }
+    }
+
     @MainActor func testTimedLyricsBypassRuntime() async throws {
         let source = "[00:02.00]不用模型"
         let result = try await LyricsAlignment().align(source: source, audioURL: URL(fileURLWithPath: "/missing"), duration: 10)
@@ -77,14 +122,14 @@ final class LyricsAlignmentTests: XCTestCase {
         XCTAssertEqual(speech.terminationStatus, 0)
         let result = try await LyricsAlignment().align(
             source: "Hello my friend, welcome to the music.\nWe sing together, under the morning sun.",
-            audioURL: audio, duration: 10)
+            audioURL: audio, duration: 6)
         let lines = LRCParser.parse(result)
         XCTAssertEqual(lines.count, 2)
         XCTAssertEqual(lines[0].timestamp ?? -1, 0.2, accuracy: 1)
         XCTAssertEqual(lines[1].timestamp ?? -1, 2.52, accuracy: 1)
 
         let service = LyricsAlignment()
-        let task = Task { try await service.align(source: "Hello again", audioURL: audio, duration: 10) }
+        let task = Task { try await service.align(source: "Hello again", audioURL: audio, duration: 6) }
         for _ in 0..<100 {
             if !service.status.isEmpty { break }
             try await Task.sleep(nanoseconds: 20_000_000)
