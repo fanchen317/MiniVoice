@@ -324,7 +324,9 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                                      album: updated.album, lyrics: lyricsForTags, artwork: png, preserveArtwork: !updated.artworkWasEdited)
             try await Task.detached { try FFMpegTagWriter.write(payload) }.value
         }
-        if lyricsChanged {
+        // A metadata-only edit can move embedded lyrics to the default sidecar destination.
+        // Persist that text too, since the tag write above removes embedded lyrics for .sidecar.
+        if lyricsChanged || (nonLyricsChanged && lyricsDestination != .tags && !updated.lyrics.isEmpty) {
             let sidecar = LyricsStorage.sidecarURL(for: updated.url)
             switch lyricsDestination {
             case .tags:

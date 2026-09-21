@@ -9,6 +9,7 @@ let package = Package(
         .executableTarget(
             name: "MiniVoice",
             path: "Sources/MiniVoice",
+            resources: [.copy("Resources/align_lyrics.py")],
             linkerSettings: [
                 .linkedFramework("SwiftUI"),
                 .linkedFramework("AVFoundation"),

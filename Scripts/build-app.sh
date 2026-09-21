@@ -50,6 +50,9 @@ mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 cp "$INFO_PLIST" "$APP_PATH/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP_PATH/Contents/Info.plist"
 cp "$EXECUTABLE" "$APP_PATH/Contents/MacOS/$APP_NAME"
+# SwiftPM Bundle.module locates its resource bundle in Contents/Resources.
+RESOURCE_BUNDLE="$(dirname "$EXECUTABLE")/MiniVoice_MiniVoice.bundle"
+ditto "$RESOURCE_BUNDLE" "$APP_PATH/Contents/Resources/MiniVoice_MiniVoice.bundle"
 printf 'APPL????' > "$APP_PATH/Contents/PkgInfo"
 chmod +x "$APP_PATH/Contents/MacOS/$APP_NAME"
 

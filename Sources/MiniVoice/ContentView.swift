@@ -420,6 +420,28 @@ private struct SyncedLyrics: View {
     let track: Track
     let follow: Bool
     @EnvironmentObject private var clock: PlaybackClock
+    @Environment(\.colorScheme) private var colorScheme
+
+    private struct ScrollTarget: Equatable {
+        let trackID: UUID
+        let active: Int?
+        let follow: Bool
+        let size: CGSize
+        let lyrics: String
+    }
+
+    private var activeColor: Color {
+        colorScheme == .dark
+            ? Color(red: 0.72, green: 0.68, blue: 1.0)
+            : Color(red: 0.32, green: 0.25, blue: 0.78)
+    }
+
+    private var inactiveColor: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.38)
+            : Color(red: 0.43, green: 0.43, blue: 0.47).opacity(0.58)
+    }
+
     private var active: Int? { MusicLibrary.activeLyricIndex(for: track.lyricLines, at: clock.time) }
     var body: some View {
         let active = active
@@ -430,25 +452,43 @@ private struct SyncedLyrics: View {
                     VStack(alignment: .leading, spacing: 24) {
                         ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                             Text(line.text.isEmpty ? "•••" : line.text)
-                                .font(.system(size: 30, weight: .bold, design: .rounded))
-                                .foregroundStyle(active == index ? Color.primary : Color.secondary.opacity(0.52))
-                                .blur(radius: line.timestamp != nil && active != index ? 0.7 : 0)
-                                .scaleEffect(active == index ? 1 : 0.96, anchor: .leading)
-                                .animation(.easeInOut(duration: 0.35), value: active)
+                                .font(.system(size: 30, weight: active == index ? .bold : .regular, design: .rounded))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .foregroundStyle(active == index ? activeColor : inactiveColor)
+                                // Scale visually, keeping row heights stable as the current line changes.
+                                .scaleEffect(active == index ? 1 : 0.84, anchor: .leading)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background {
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(LinearGradient(colors: [activeColor.opacity(0.09), activeColor.opacity(0.015)],
+                                                             startPoint: .leading, endPoint: .trailing))
+                                        .opacity(active == index ? 1 : 0)
+                                }
+                                .overlay(alignment: .leading) {
+                                    Capsule().fill(activeColor).frame(width: 3, height: 26)
+                                        .opacity(active == index ? 1 : 0)
+                                }
+                                .animation(.easeInOut(duration: 0.3), value: active)
                                 .contentShape(Rectangle()).id(index)
                                 .onTapGesture { if let time = line.timestamp { library.seek(to: time) } }
                         }
-                    }.padding(.horizontal, 32).padding(.vertical, geometry.size.height * 0.32)
+                    }
+                    .padding(.horizontal, 32)
+                    // Half a viewport at either end lets even the first/last line reach the center.
+                    .padding(.vertical, geometry.size.height / 2)
                 }
                 .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.1), .init(color: .black, location: 0.9), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
-                .onChange(of: active) { index in
-                    if follow, let index { withAnimation(.easeInOut(duration: 0.45)) { proxy.scrollTo(index, anchor: .center) } }
+                .task(id: ScrollTarget(trackID: track.id, active: active, follow: follow,
+                                       size: geometry.size, lyrics: track.lyrics)) {
+                    // Wait for new text/viewport geometry before resolving the line's scroll frame.
+                    await Task.yield()
+                    guard !Task.isCancelled, follow else { return }
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        proxy.scrollTo(active ?? 0, anchor: .center)
+                    }
                 }
-                .onChange(of: follow) { enabled in
-                    if enabled, let active { withAnimation { proxy.scrollTo(active, anchor: .center) } }
-                }
-                .onChange(of: track.id) { _ in proxy.scrollTo(0, anchor: .top) }
             }
         }
     }

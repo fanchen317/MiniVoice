@@ -21,6 +21,10 @@ struct MetadataEditor: View {
     @State private var choosingArtwork = false
     @State private var choosingLyrics = false
     @State private var isSaving = false
+    @State private var isAligning = false
+    @State private var alignmentFailed = false
+    @State private var saveTask: Task<Void, Never>?
+    @StateObject private var alignment = LyricsAlignment()
     @State private var saveError: String?
     @State private var isArtworkDropTarget = false
     @State private var showArtworkZoom = false
@@ -35,19 +39,16 @@ struct MetadataEditor: View {
         _lyrics = State(initialValue: track.lyrics)
         _artwork = State(initialValue: track.artwork)
 
+        _lyricsDestination = State(initialValue: .sidecar)
         let sidecarLyrics = LyricsStorage.read(LyricsStorage.sidecarURL(for: track.url))
         let hasSidecar = sidecarLyrics != nil
         if !track.canWriteTags {
-            _lyricsDestination = State(initialValue: .sidecar)
             self.lyricsSourceLabel = hasSidecar ? "当前歌词来自同目录 lrc/ 下的 .lrc 文件。" : "此格式不支持写入标签，歌词将保存到同目录 lrc/ 下。"
         } else if hasSidecar {
-            _lyricsDestination = State(initialValue: .sidecar)
             self.lyricsSourceLabel = "当前歌词来自同目录 lrc/ 下的 .lrc 文件。"
         } else if !track.lyrics.isEmpty {
-            _lyricsDestination = State(initialValue: .tags)
             self.lyricsSourceLabel = "当前歌词来自音频文件标签。"
         } else {
-            _lyricsDestination = State(initialValue: .tags)
             self.lyricsSourceLabel = "当前暂无歌词。"
         }
     }
@@ -112,7 +113,7 @@ struct MetadataEditor: View {
                 Section {
                     Button("导入歌词文件（LRC / SRT / TXT）") { choosingLyrics = true }
                     let timed = LRCParser.parse(lyrics).filter { $0.timestamp != nil }.count
-                    Text(timed > 0 ? "已识别 \(timed) 行时间标签，保存后可自动滚动。" : "纯文本无时间标签；可播放歌曲并逐行打点。")
+                    Text(LyricsAlignment.needsAlignment(lyrics) ? "保存时将使用本地 AI 自动匹配歌曲，生成跟随时间轴。首次使用需联网下载模型，歌曲不会上传。" : "已识别 \(timed) 行时间标签，保存后可自动滚动。")
                         .font(.caption).foregroundStyle(.secondary)
                     HStack {
                         Button(library.isPlaying ? "暂停试听" : "播放试听") {
@@ -149,12 +150,20 @@ struct MetadataEditor: View {
             }.formStyle(.grouped).padding(.horizontal, 12).disabled(isSaving)
             Divider()
             HStack(spacing: 12) {
+                if isAligning {
+                    ProgressView().controlSize(.small)
+                    Text(alignment.status).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                }
                 Spacer()
-                Button("取消") { dismiss() }
+                Button(isAligning ? "取消同步" : "取消") {
+                    if isAligning { saveTask?.cancel() }
+                    else { dismiss() }
+                }
                     .keyboardShortcut(.cancelAction)
-                    .disabled(isSaving)
+                    .disabled(isSaving && !isAligning)
                     .buttonStyle(EditorSecondaryButtonStyle())
-                Button(isSaving ? "保存中…" : "保存") { save() }
+                Button(isAligning ? "同步中…" : (isSaving ? "保存中…" : "保存")) { save() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(isSaving)
                     .buttonStyle(EditorPrimaryButtonStyle())
@@ -178,7 +187,11 @@ struct MetadataEditor: View {
             } catch { saveError = "无法读取歌词，请使用 UTF-8 编码：\(error.localizedDescription)" }
         }
         .alert("操作失败", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
-            Button("好", role: .cancel) { saveError = nil }
+            if alignmentFailed {
+                Button("重试同步") { saveError = nil; save() }
+                Button("仅保存原歌词") { saveError = nil; save(synchronize: false) }
+            }
+            Button("返回编辑", role: .cancel) { saveError = nil }
         } message: { Text(saveError ?? "") }
         .sheet(isPresented: $showArtworkZoom) {
             if let artwork {
@@ -224,24 +237,39 @@ struct MetadataEditor: View {
         return true
     }
 
-    private func save() {
+    private func save(synchronize: Bool = true) {
         var updated = track
         updated.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         updated.artist = artists.map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " / ")
         updated.album = album
-        updated.lyrics = lyrics
+        updated.lyrics = LRCParser.imported(lyrics)
         updated.artwork = artwork
         updated.artworkWasEdited = artworkChanged
-        guard updated.hasFileChanges(comparedTo: track) else {
+        let shouldAlign = synchronize && LyricsAlignment.needsAlignment(updated.lyrics)
+        guard updated.hasFileChanges(comparedTo: track) || shouldAlign else {
             dismiss()
             return
         }
         isSaving = true
         let destination: LyricsDestination = track.canWriteTags ? lyricsDestination : .sidecar
-        Task {
-            do { try await library.save(updated, lyricsDestination: destination); dismiss() }
-            catch { saveError = error.localizedDescription }
-            isSaving = false
+        alignmentFailed = false
+        isAligning = shouldAlign
+        saveTask = Task {
+            defer { isSaving = false; isAligning = false; saveTask = nil }
+            do {
+                if shouldAlign {
+                    updated.lyrics = try await alignment.align(source: updated.lyrics, audioURL: track.url, duration: track.duration, title: updated.title)
+                }
+                try Task.checkCancellation()
+                isAligning = false
+                try await library.save(updated, lyricsDestination: destination)
+                dismiss()
+            } catch is CancellationError {
+                // Keep all editor fields available for another attempt.
+            } catch {
+                alignmentFailed = isAligning
+                saveError = error.localizedDescription
+            }
         }
     }
 

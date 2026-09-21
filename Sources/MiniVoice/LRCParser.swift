@@ -1,7 +1,7 @@
 import Foundation
 
 enum LRCParser {
-    static func parse(_ source: String) -> [LyricLine] {
+    static func parse(_ source: String, placeholder: Bool = true) -> [LyricLine] {
         let timestamp = try! NSRegularExpression(pattern: #"\[(\d+):(\d{2}(?:\.\d{1,3})?)\]"#)
         let offsetPattern = try! NSRegularExpression(pattern: #"(?im)^\s*\[offset:([+-]?\d+)\]\s*$"#)
         var offset: Double = 0
@@ -31,12 +31,12 @@ enum LRCParser {
                 return a == b ? $0.offset < $1.offset : a < b
             }.map(\.element)
         }
-        return parsed.isEmpty ? [LyricLine(timestamp: nil, text: "尚未添加歌词")] : parsed
+        return parsed.isEmpty && placeholder ? [LyricLine(timestamp: nil, text: "尚未添加歌词")] : parsed
     }
 
     static func stamp(_ time: TimeInterval, text: String) -> String {
-        let safe = max(0, time)
-        return String(format: "[%02d:%05.2f] %@", Int(safe / 60), safe.truncatingRemainder(dividingBy: 60), text)
+        let ticks = Int((max(0, time.isFinite ? time : 0) * 100).rounded())
+        return String(format: "[%02d:%02d.%02d] %@", ticks / 6000, (ticks / 100) % 60, ticks % 100, text)
     }
 
     /// Converts common SRT subtitles to timed lyrics, leaving LRC/plain text intact.
