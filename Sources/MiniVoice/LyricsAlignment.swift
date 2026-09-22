@@ -2,6 +2,15 @@ import Foundation
 import NaturalLanguage
 import Darwin
 
+enum LyricsModel: String, CaseIterable, Identifiable {
+    case small, medium
+    var id: String { rawValue }
+    var title: String { self == .small ? "快速（small）" : "精准（medium）" }
+    static var selected: LyricsModel {
+        LyricsModel(rawValue: UserDefaults.standard.string(forKey: "MiniVoice.lyricsModel") ?? "medium") ?? .medium
+    }
+}
+
 struct AlignedLyric: Codable, Sendable {
     let text: String
     let start: Double?
@@ -25,6 +34,57 @@ final class LyricsAlignment: ObservableObject {
     private static let runtimeVersion = "stable-ts-2.19.1-v1"
     private let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("MiniVoice/LyricsAI", isDirectory: true)
+
+    var installedModels: [LyricsModel] {
+        LyricsModel.allCases.filter {
+            let size = (try? FileManager.default.attributesOfItem(atPath: modelURL($0).path)[.size] as? NSNumber)?.int64Value ?? 0
+            return size >= ($0 == .small ? 480_000_000 : 1_500_000_000)
+        }
+    }
+
+    func migrateModels() throws {
+        let keep = installedModels.contains(LyricsModel.selected) ? LyricsModel.selected : installedModels.first
+        for model in LyricsModel.allCases where model != keep {
+            let url = modelURL(model)
+            if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        }
+    }
+
+    private func modelURL(_ model: LyricsModel) -> URL {
+        root.appendingPathComponent("models").appendingPathComponent(model.rawValue + ".pt")
+    }
+
+    func deleteModels() throws {
+        guard !Self.isBusy else { throw LyricsAlignmentError.failed("请等待当前模型任务完成后再删除。") }
+        for model in LyricsModel.allCases {
+            if FileManager.default.fileExists(atPath: modelURL(model).path) { try FileManager.default.removeItem(at: modelURL(model)) }
+        }
+    }
+
+    func downloadModel(_ model: LyricsModel) async throws {
+        guard !Self.isBusy else { throw LyricsAlignmentError.failed("请等待当前歌词任务完成后再下载。") }
+        Self.isBusy = true
+        defer { Self.isBusy = false; status = "" }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let work = FileManager.default.temporaryDirectory.appendingPathComponent("MiniVoice-model-\(UUID())")
+        try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: work) }
+        let python = try await prepareRuntime(work: work)
+        guard let worker = Bundle.module.url(forResource: "align_lyrics", withExtension: "py") else {
+            throw LyricsAlignmentError.failed("应用缺少模型下载组件。")
+        }
+        // Only the two known model files are eligible for removal.
+        for existing in LyricsModel.allCases where existing != model {
+            if FileManager.default.fileExists(atPath: modelURL(existing).path) { try FileManager.default.removeItem(at: modelURL(existing)) }
+        }
+        status = "正在下载 \(model.rawValue) 模型并校验完整性…"
+        do {
+            try await run(python, [worker.path, "--download-model", model.rawValue, root.appendingPathComponent("models").path], work: work, timeout: 7200)
+        } catch {
+            try? FileManager.default.removeItem(at: modelURL(model))
+            throw error
+        }
+    }
 
     nonisolated static func needsAlignment(_ source: String) -> Bool {
         guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
@@ -105,6 +165,11 @@ final class LyricsAlignment: ObservableObject {
         warning = nil
         let normalized = Self.alignmentSource(source, title: title)
         guard Self.needsAlignment(normalized) else { return normalized }
+        try Task.checkCancellation()
+        let model = LyricsModel.selected
+        guard installedModels.contains(model) else {
+            throw LyricsAlignmentError.failed("尚未下载\(model.title)模型，请在设置的“歌词匹配”中下载后重试。原歌词已保存。")
+        }
         guard !Self.isBusy else { throw LyricsAlignmentError.failed("另一首歌曲正在同步，请完成或取消后重试。") }
         Self.isBusy = true
         defer { Self.isBusy = false }
@@ -125,7 +190,7 @@ final class LyricsAlignment: ObservableObject {
         let language = detected.hasPrefix("zh") ? "zh" : detected
         let request: [String: Any] = ["audioPath": audioURL.path, "lines": lines,
                                      "duration": duration, "language": language,
-                                     "modelDirectory": root.appendingPathComponent("models").path]
+                                     "modelDirectory": root.appendingPathComponent("models").path, "model": model.rawValue]
         let requestURL = work.appendingPathComponent("request.json")
         try JSONSerialization.data(withJSONObject: request).write(to: requestURL)
         let output = work.appendingPathComponent("result.json")

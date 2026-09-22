@@ -39,6 +39,7 @@ struct MiniVoiceApp: App {
         }
         Settings {
             AppSettings()
+                .environmentObject(lyricsSync)
                 .environmentObject(library)
                 .environmentObject(library.clock)
                 .environmentObject(systemVolume)

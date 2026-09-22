@@ -104,11 +104,14 @@ def main():
     duration = len(audio) / 16000
     if not np.isfinite(audio).all() or duration < request["duration"] - max(3, request["duration"] * 0.03):
         raise AlignmentFailure("歌曲音频未能完整解码，暂时无法可靠同步。请更换完整音频文件，或先保存歌词文本。")
-    status("正在加载 AI 模型（首次使用需要下载约 460 MB）…")
+    model_name = request.get("model", "medium")
+    if model_name not in ("small", "medium"):
+        raise AlignmentFailure("不支持的歌词模型。")
+    status(f"正在加载 Whisper {model_name}…")
     import stable_whisper
     import torch
     torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
-    model = stable_whisper.load_model("small", device="cpu", download_root=request["modelDirectory"])
+    model = stable_whisper.load_model(model_name, device="cpu", download_root=request["modelDirectory"])
     status("正在分析歌曲并匹配歌词…")
 
     def progress(current, total):
@@ -128,6 +131,13 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1] == "--download-model":
+        import whisper
+        name, directory = sys.argv[2:4]
+        if name not in ("small", "medium"):
+            raise ValueError("Unsupported model")
+        whisper._download(whisper._MODELS[name], directory, in_memory=False)
+        sys.exit(0)
     try:
         main()
     except Exception as error:

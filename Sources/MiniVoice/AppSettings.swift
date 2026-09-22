@@ -96,6 +96,8 @@ struct AppSettings: View {
 
     var body: some View {
         TabView {
+            LyricsModelSettings()
+                .tabItem { Label("歌词匹配", systemImage: "text.alignleft") }
             VStack(alignment: .leading, spacing: 16) {
                 Text("音乐文件夹").font(.title2.bold())
                 Text("启动优先读取文件夹中的隐藏歌单；重新扫描时更新。移除文件夹不会删除歌曲。")
@@ -147,6 +149,41 @@ struct AppSettings: View {
             case .failure(let error): library.errorMessage = error.localizedDescription
             }
         }
+    }
+}
+
+private struct LyricsModelSettings: View {
+    @EnvironmentObject private var sync: LyricsSyncCoordinator
+    @AppStorage("MiniVoice.lyricsModel") private var model = "medium"
+    @State private var downloadNotice = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("歌词匹配模式").font(.title2.bold())
+            Picker("匹配模式", selection: $model) {
+                ForEach(LyricsModel.allCases) { item in Text(item.title).tag(item.rawValue) }
+            }.pickerStyle(.segmented)
+            Text("快速：small，约 460 MB，处理较快。\n精准：medium，约 1.5 GB，处理较慢，适合更复杂的歌曲。")
+                .foregroundStyle(.secondary)
+            Text("本地模型：" + (sync.installedModels.isEmpty ? "未下载" : sync.installedModels.map(\.title).joined(separator: "、")))
+            Text("本地只保留一种模型。下载另一种时会先移除旧模型；仅切换选项不会下载。")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button("下载选中的模型") {
+                    sync.download(LyricsModel(rawValue: model) ?? .medium)
+                    downloadNotice = true
+                }
+                Button("删除本地模型") { sync.deleteModel() }
+                    .disabled(sync.installedModels.isEmpty)
+            }.disabled(sync.downloadingModel || sync.activeCount > 0)
+            if let status = sync.modelStatus { Text(status).font(.caption).foregroundStyle(.secondary) }
+            if sync.activeCount > 0 { Text("歌词匹配中，完成后可管理模型。").font(.caption) }
+            Spacer()
+        }
+        .padding(24)
+        .onAppear { sync.refreshModels() }
+        .alert("模型正在后台下载", isPresented: $downloadNotice) {
+            Button("好", role: .cancel) { }
+        } message: { Text("可以继续使用播放器，在侧栏的圆圈叹号中查看后台任务和下载结果。") }
     }
 }
 

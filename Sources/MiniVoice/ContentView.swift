@@ -12,6 +12,10 @@ struct ContentView: View {
     @State private var sidebarVisible = true
     @State private var recent = false
     @State private var query = ""
+    @State private var showingTasks = false
+    @State private var unreadScan = false
+    @State private var locateRequest = UUID()
+    @State private var locateTarget: UUID?
     @State private var multiSelecting = false
     @State private var selectedIDs = Set<UUID>()
     @State private var editingTrack: Track?
@@ -120,6 +124,44 @@ struct ContentView: View {
         }
     }
 
+    private var backgroundTasks: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("后台任务").font(.headline)
+            Text("\(lyricsSync.activeCount + (library.isImporting ? 1 : 0) + (lyricsSync.downloadingModel ? 1 : 0)) 项进行中").foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if let status = lyricsSync.modelStatus {
+                        Label(status, systemImage: "arrow.down.circle")
+                            .font(.callout)
+                        if lyricsSync.downloadingModel { ProgressView().controlSize(.small) }
+                        Divider()
+                    }
+                    HStack(alignment: .top) {
+                        Image(systemName: "folder.badge.gearshape")
+                        VStack(alignment: .leading) {
+                            Text("扫描音乐库").fontWeight(.medium)
+                            Text(library.scanSummary).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if library.isImporting { ProgressView().controlSize(.small) }
+                    }
+                    ForEach(lyricsSync.jobs.reversed()) { job in
+                        Divider()
+                        HStack(alignment: .top) {
+                            Image(systemName: "text.alignleft")
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(job.track.title).fontWeight(.medium)
+                                Text(job.detail).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                            }
+                            Spacer()
+                            if !job.finished { ProgressView().controlSize(.small) }
+                        }
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }.frame(maxHeight: 340)
+        }.padding(18).frame(width: 360)
+    }
+
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
@@ -130,6 +172,19 @@ struct ContentView: View {
                     Text("MiniVoice").font(.title3.weight(.bold))
                     Text("音乐让生活更美好").font(.caption).foregroundStyle(.secondary)
                 }
+                Spacer(minLength: 0)
+                if showingTasks || lyricsSync.activeCount > 0 || library.isImporting || lyricsSync.downloadingModel || lyricsSync.hasUnread || unreadScan {
+                  Button { showingTasks.toggle() } label: {
+                    Image(systemName: "exclamationmark.circle")
+                        .font(.system(size: 19)).foregroundStyle(playerGreen)
+                  }
+                  .buttonStyle(.plain).help("后台任务").accessibilityLabel("后台任务")
+                  .popover(isPresented: $showingTasks) { backgroundTasks }
+                }
+            }
+            .onChange(of: library.isImporting) { importing in if !importing { unreadScan = true } }
+            .onChange(of: showingTasks) { showing in
+                if !showing { lyricsSync.hasUnread = false; unreadScan = false }
             }
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -149,18 +204,30 @@ struct ContentView: View {
             }
             Divider().opacity(0.4)
             libraryToolbar
-            PlayerScrollView {
+            ScrollViewReader { proxy in
+              PlayerScrollView {
                 LazyVStack(spacing: 4) {
                     ForEach(songs) { track in
-                        songRow(track)
+                        songRow(track).id(track.id)
                     }
                     if songs.isEmpty {
                         Text(recent ? "播放歌曲后，记录会保存在这里" : "没有找到歌曲")
                             .font(.caption).foregroundStyle(.secondary).padding(.vertical, 30)
                     }
                 }
+              }
+              .onChange(of: locateRequest) { _ in
+                  if let target = locateTarget, songs.contains(where: { $0.id == target }) {
+                      withAnimation { proxy.scrollTo(target, anchor: .center) }
+                  }
+              }
+              .onChange(of: songs.map(\.id)) { ids in
+                  if let target = locateTarget, ids.contains(target) {
+                      withAnimation { proxy.scrollTo(target, anchor: .center) }
+                      locateTarget = nil
+                  }
+              }
             }
-            if library.isImporting { ProgressView("正在读取音乐…").controlSize(.small) }
         }
         .padding(.horizontal, 12).padding(.top, 18).padding(.bottom, 12)
         .frame(maxHeight: .infinity)
@@ -196,6 +263,17 @@ struct ContentView: View {
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: true, vertical: false)
             Spacer(minLength: 0)
+            Button {
+                guard let id = library.playingID else { return }
+                locateTarget = id
+                library.selectedID = id
+                if !songs.contains(where: { $0.id == id }) { query = ""; recent = false }
+                locateRequest = UUID()
+            } label: {
+                Image(systemName: "location.circle").foregroundStyle(playerGreen)
+            }
+            .buttonStyle(.plain).disabled(library.playingID == nil)
+            .help("定位正在播放的歌曲").accessibilityLabel("定位正在播放的歌曲")
             if !recent {
                 Button { library.rescan() } label: {
                     LibraryToolbarIcon(symbol: "arrow.clockwise", showBorder: false)
