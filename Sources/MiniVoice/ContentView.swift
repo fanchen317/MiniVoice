@@ -115,7 +115,7 @@ struct ContentView: View {
             AppDelegate.reopenMainWindow = { openWindow(id: "main") }
             statusBar.start(library: library, openMainWindow: { openWindow(id: "main") })
         }
-        .sheet(item: $editingTrack) { MetadataEditor(track: $0) }
+        .background(SongInfoWindowPresenter(track: $editingTrack, library: library, lyricsSync: lyricsSync))
         .sheet(isPresented: $deleting) {
             VStack(alignment: .leading, spacing: 18) {
                 Text("删除 \(deleteTargets.count) 首歌曲？").font(.title3.bold())

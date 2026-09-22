@@ -12,6 +12,7 @@ struct MetadataEditor: View {
     @EnvironmentObject private var lyricsSync: LyricsSyncCoordinator
     @Environment(\.dismiss) private var dismiss
     let track: Track
+    var onClose: (() -> Void)?
     @State private var title: String
     @State private var artists: [ArtistEntry]
     @State private var album: String
@@ -30,8 +31,9 @@ struct MetadataEditor: View {
     @State private var lyricsDestination: LyricsDestination
     private let lyricsSourceLabel: String
 
-    init(track: Track) {
+    init(track: Track, onClose: (() -> Void)? = nil) {
         self.track = track
+        self.onClose = onClose
         _title = State(initialValue: track.title)
         _artists = State(initialValue: track.artist.components(separatedBy: " / ").map { ArtistEntry(name: $0) })
         _album = State(initialValue: track.album)
@@ -122,11 +124,15 @@ struct MetadataEditor: View {
         }
     }
 
+    private func closeEditor() {
+        if let onClose { onClose() } else { dismiss() }
+    }
+
     private var header: some View {
         HStack(spacing: 14) {
             ArtworkPreview(image: artwork, size: 54)
             VStack(alignment: .leading, spacing: 5) {
-                Text("编辑歌曲信息").font(.system(size: 21, weight: .bold))
+                Text("歌曲信息").font(.system(size: 21, weight: .bold))
                 Text(title.isEmpty ? track.url.deletingPathExtension().lastPathComponent : title)
                     .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
             }
@@ -147,7 +153,7 @@ struct MetadataEditor: View {
                 Text("点击保存后应用更改").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button("取消") { dismiss() }
+            Button("取消") { closeEditor() }
                 .keyboardShortcut(.cancelAction).disabled(isSaving)
             Button(isSaving ? "保存中…" : "保存更改") { save() }
                 .buttonStyle(.borderedProminent)
@@ -347,7 +353,7 @@ struct MetadataEditor: View {
         updated.artworkWasEdited = artworkChanged
         let shouldAlign = LyricsAlignment.needsAlignment(updated.lyrics)
         guard updated.hasFileChanges(comparedTo: track) || shouldAlign else {
-            dismiss()
+            closeEditor()
             return
         }
         isSaving = true
@@ -358,7 +364,7 @@ struct MetadataEditor: View {
                 try await library.save(updated, lyricsDestination: destination)
                 lyrics = updated.lyrics
                 if shouldAlign { lyricsSync.start(track: updated, destination: destination, library: library) }
-                dismiss()
+                closeEditor()
             } catch {
                 saveError = error.localizedDescription
             }
@@ -446,4 +452,54 @@ private enum EditorPage: String, CaseIterable, Identifiable {
     case lyrics = "歌词"
     case file = "文件信息"
     var id: Self { self }
+}
+
+/// Present independently of the main window so the information panel can move.
+struct SongInfoWindowPresenter: NSViewRepresentable {
+    @Binding var track: Track?
+    let library: MusicLibrary
+    let lyricsSync: LyricsSyncCoordinator
+    @Environment(\.colorScheme) private var colorScheme
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        let coordinator = context.coordinator
+        guard let track else {
+            coordinator.window?.close()
+            coordinator.window = nil
+            coordinator.trackID = nil
+            return
+        }
+        coordinator.window?.appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
+        guard coordinator.trackID != track.id else { return }
+        coordinator.window?.close()
+        // Use the explicit Cancel/Save controls; saving cannot be interrupted
+        // by an independent native close button.
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 700),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.title = "歌曲信息"
+        window.isReleasedWhenClosed = false
+        window.isMovable = true
+        window.appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
+        window.contentView = NSHostingView(rootView:
+            MetadataEditor(track: track, onClose: { self.track = nil })
+                .environmentObject(library)
+                .environmentObject(lyricsSync))
+        coordinator.window = window
+        coordinator.trackID = track.id
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        coordinator.window?.close()
+        coordinator.window = nil
+    }
+
+    final class Coordinator {
+        var window: NSWindow?
+        var trackID: UUID?
+    }
 }
