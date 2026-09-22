@@ -63,7 +63,7 @@ final class LyricsAlignment: ObservableObject {
         guard let worker = Bundle.module.url(forResource: "align_lyrics", withExtension: "py") else {
             throw LyricsAlignmentError.failed("应用缺少模型下载组件。")
         }
-        status = "正在下载 \(model.rawValue) 模型并校验…"
+        status = "下载 \(model.rawValue) 模型…"
         do {
             let progress = work.appendingPathComponent("download-status.txt")
             try await run(python, [worker.path, "--download-model", model.rawValue, root.appendingPathComponent("models").path, progress.path], work: work, statusFile: progress, timeout: 7200)
@@ -200,7 +200,7 @@ final class LyricsAlignment: ObservableObject {
         let marker = root.appendingPathComponent("runtime-version")
         if (try? String(contentsOf: marker, encoding: .utf8)) == Self.runtimeVersion,
            FileManager.default.isExecutableFile(atPath: python.path) { return python }
-        status = "首次使用：正在准备本地 AI 环境，需要联网下载…"
+        status = "首次使用：准备 AI 环境…"
         if !FileManager.default.isExecutableFile(atPath: python.path) {
             let candidates = ["/opt/homebrew/bin/python3.12", "/usr/local/bin/python3.12",
                               "/opt/homebrew/bin/python3.11", "/usr/local/bin/python3.11", "/usr/bin/python3"]

@@ -157,20 +157,25 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     if let status = lyricsSync.modelStatus {
-                        Label(status, systemImage: "arrow.down.circle")
-                            .font(.callout)
-                        if lyricsSync.downloadingModel {
-                            if let progress = lyricsSync.modelProgress { ProgressView(value: progress) }
-                            else { ProgressView().controlSize(.small) }
-                        } else {
-                            HStack {
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.down.circle")
+                            Text(status).font(.callout).lineLimit(1).truncationMode(.tail)
+                            if lyricsSync.downloadingModel {
+                                if let progress = lyricsSync.modelProgress {
+                                    ProgressView(value: progress).frame(width: 70)
+                                    Text("\(Int(progress * 100))%").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                                } else {
+                                    ProgressView().controlSize(.small)
+                                }
+                            } else {
+                                Spacer(minLength: 0)
                                 if lyricsSync.modelFailed {
                                     Button { lyricsSync.retryModel() } label: { Image(systemName: "arrow.clockwise") }
                                         .help("重试下载").disabled(lyricsSync.activeCount > 0)
                                 }
                                 Button { lyricsSync.clearModelResult() } label: { Image(systemName: "xmark") }.help("清理记录")
-                            }.buttonStyle(.borderless)
-                        }
+                            }
+                        }.buttonStyle(.borderless)
                         Divider()
                     }
                     if library.isImporting || !hideFinishedScan {
