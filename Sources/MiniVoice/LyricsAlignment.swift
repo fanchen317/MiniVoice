@@ -42,23 +42,13 @@ final class LyricsAlignment: ObservableObject {
         }
     }
 
-    func migrateModels() throws {
-        let keep = installedModels.contains(LyricsModel.selected) ? LyricsModel.selected : installedModels.first
-        for model in LyricsModel.allCases where model != keep {
-            let url = modelURL(model)
-            if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
-        }
-    }
-
     private func modelURL(_ model: LyricsModel) -> URL {
         root.appendingPathComponent("models").appendingPathComponent(model.rawValue + ".pt")
     }
 
-    func deleteModels() throws {
+    func deleteModel(_ model: LyricsModel) throws {
         guard !Self.isBusy else { throw LyricsAlignmentError.failed("请等待当前模型任务完成后再删除。") }
-        for model in LyricsModel.allCases {
-            if FileManager.default.fileExists(atPath: modelURL(model).path) { try FileManager.default.removeItem(at: modelURL(model)) }
-        }
+        if FileManager.default.fileExists(atPath: modelURL(model).path) { try FileManager.default.removeItem(at: modelURL(model)) }
     }
 
     func downloadModel(_ model: LyricsModel) async throws {
@@ -73,13 +63,10 @@ final class LyricsAlignment: ObservableObject {
         guard let worker = Bundle.module.url(forResource: "align_lyrics", withExtension: "py") else {
             throw LyricsAlignmentError.failed("应用缺少模型下载组件。")
         }
-        // Only the two known model files are eligible for removal.
-        for existing in LyricsModel.allCases where existing != model {
-            if FileManager.default.fileExists(atPath: modelURL(existing).path) { try FileManager.default.removeItem(at: modelURL(existing)) }
-        }
         status = "正在下载 \(model.rawValue) 模型并校验…"
         do {
-            try await run(python, [worker.path, "--download-model", model.rawValue, root.appendingPathComponent("models").path], work: work, timeout: 7200)
+            let progress = work.appendingPathComponent("download-status.txt")
+            try await run(python, [worker.path, "--download-model", model.rawValue, root.appendingPathComponent("models").path, progress.path], work: work, statusFile: progress, timeout: 7200)
         } catch {
             try? FileManager.default.removeItem(at: modelURL(model))
             throw error

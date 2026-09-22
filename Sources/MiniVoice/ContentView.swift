@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var query = ""
     @State private var showingTasks = false
     @State private var unreadScan = false
+    @State private var hideFinishedScan = false
     @State private var locateRequest = UUID()
     @State private var locateTarget: UUID?
     @State private var multiSelecting = false
@@ -95,6 +96,7 @@ struct ContentView: View {
         .task(id: listRequest) { await updateSongs() }
         .onAppear {
             migrateSortPreferenceIfNeeded()
+            AppDelegate.reopenMainWindow = { openWindow(id: "main") }
             statusBar.start(library: library, openMainWindow: { openWindow(id: "main") })
         }
         .sheet(item: $editingTrack) { MetadataEditor(track: $0) }
@@ -126,16 +128,36 @@ struct ContentView: View {
 
     private var backgroundTasks: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("后台任务").font(.headline)
+            HStack {
+                Text("后台任务").font(.headline)
+                Spacer()
+                Button("一键清理") {
+                    lyricsSync.clearFinished()
+                    hideFinishedScan = !library.isImporting
+                    unreadScan = false
+                }.buttonStyle(.borderless).font(.caption)
+            }
             Text("\(lyricsSync.activeCount + (library.isImporting ? 1 : 0) + (lyricsSync.downloadingModel ? 1 : 0)) 项进行中").foregroundStyle(.secondary)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     if let status = lyricsSync.modelStatus {
                         Label(status, systemImage: "arrow.down.circle")
                             .font(.callout)
-                        if lyricsSync.downloadingModel { ProgressView().controlSize(.small) }
+                        if lyricsSync.downloadingModel {
+                            if let progress = lyricsSync.modelProgress { ProgressView(value: progress) }
+                            else { ProgressView().controlSize(.small) }
+                        } else {
+                            HStack {
+                                if lyricsSync.modelFailed {
+                                    Button { lyricsSync.retryModel() } label: { Image(systemName: "arrow.clockwise") }
+                                        .help("重试下载").disabled(lyricsSync.activeCount > 0)
+                                }
+                                Button { lyricsSync.clearModelResult() } label: { Image(systemName: "xmark") }.help("清理记录")
+                            }.buttonStyle(.borderless)
+                        }
                         Divider()
                     }
+                    if library.isImporting || !hideFinishedScan {
                     HStack(alignment: .top) {
                         Image(systemName: "folder.badge.gearshape")
                         VStack(alignment: .leading) {
@@ -144,6 +166,13 @@ struct ContentView: View {
                         }
                         Spacer()
                         if library.isImporting { ProgressView().controlSize(.small) }
+                        else {
+                            if !library.scanIssues.isEmpty {
+                                Button { library.rescan() } label: { Image(systemName: "arrow.clockwise") }.help("重新扫描")
+                            }
+                            Button { hideFinishedScan = true; unreadScan = false } label: { Image(systemName: "xmark") }.help("清理扫描记录")
+                        }
+                    }
                     }
                     ForEach(lyricsSync.jobs.reversed()) { job in
                         Divider()
@@ -155,6 +184,13 @@ struct ContentView: View {
                             }
                             Spacer()
                             if !job.finished { ProgressView().controlSize(.small) }
+                            else {
+                                if job.failed {
+                                    Button { lyricsSync.retry(job.id, library: library) } label: { Image(systemName: "arrow.clockwise") }
+                                        .help("重试歌词匹配").disabled(lyricsSync.downloadingModel)
+                                }
+                                Button { lyricsSync.clear(job.id) } label: { Image(systemName: "xmark") }.help("清理记录")
+                            }
                         }
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
@@ -182,7 +218,9 @@ struct ContentView: View {
                   .popover(isPresented: $showingTasks) { backgroundTasks }
                 }
             }
-            .onChange(of: library.isImporting) { importing in if !importing { unreadScan = true } }
+            .onChange(of: library.isImporting) { importing in
+                if importing { hideFinishedScan = false } else { unreadScan = true }
+            }
             .onChange(of: showingTasks) { showing in
                 if !showing { lyricsSync.hasUnread = false; unreadScan = false }
             }
@@ -270,7 +308,10 @@ struct ContentView: View {
                 if !songs.contains(where: { $0.id == id }) { query = ""; recent = false }
                 locateRequest = UUID()
             } label: {
-                Image(systemName: "location.circle").foregroundStyle(playerGreen)
+                ZStack {
+                    Circle().stroke(style: StrokeStyle(lineWidth: 1.5, dash: [9, 3])).frame(width: 17, height: 17)
+                    Circle().fill().frame(width: 8, height: 8)
+                }.modifier(LibraryToolbarSurface(showBorder: false))
             }
             .buttonStyle(.plain).disabled(library.playingID == nil)
             .help("定位正在播放的歌曲").accessibilityLabel("定位正在播放的歌曲")
@@ -358,7 +399,7 @@ struct ContentView: View {
             }
             Spacer(minLength: 0)
             if library.playingID == track.id && !multiSelecting {
-                Image(systemName: library.isPlaying ? "waveform" : "music.note").foregroundStyle(playerGreen)
+                NowPlayingIndicator(isPlaying: library.isPlaying)
             }
         }
         .padding(7)
@@ -551,6 +592,29 @@ private struct SyncedLyrics: View {
                 }
             }
         }
+    }
+}
+
+private struct NowPlayingIndicator: View {
+    let isPlaying: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !isPlaying || reduceMotion)) { context in
+            let time = context.date.timeIntervalSinceReferenceDate
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(0..<4) { index in
+                    let phase = time * (3.8 + Double(index) * 0.7) + Double(index) * 1.6
+                    let height = isPlaying && !reduceMotion
+                        ? 5 + 13 * (sin(phase) + 1) / 2
+                        : [7.0, 14.0, 18.0, 10.0][index]
+                    Capsule().fill(playerGreen).frame(width: 3, height: height)
+                }
+            }
+            .frame(width: 20, height: 20, alignment: .bottom)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(isPlaying ? "正在播放" : "当前歌曲已暂停")
     }
 }
 

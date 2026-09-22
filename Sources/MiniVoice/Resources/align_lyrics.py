@@ -136,6 +136,24 @@ if __name__ == "__main__":
         name, directory = sys.argv[2:4]
         if name not in ("small", "medium"):
             raise ValueError("Unsupported model")
+        progress_path = Path(sys.argv[4])
+        def report(message):
+            temporary = progress_path.with_suffix(".tmp")
+            temporary.write_text(message, encoding="utf-8")
+            os.replace(temporary, progress_path)
+        original_progress = whisper.tqdm
+        class DownloadProgress(original_progress):
+            last_percent = -1
+            def update(self, amount=1):
+                result = super().update(amount)
+                if self.total:
+                    percent = int(self.n * 100 / self.total)
+                    if percent != self.last_percent:
+                        self.last_percent = percent
+                        report(f"下载 {name}：{percent}% · {self.n / 1048576:.1f} / {self.total / 1048576:.1f} MB" if percent < 100 else "下载完成，正在校验模型…")
+                return result
+        whisper.tqdm = DownloadProgress
+        report("正在连接下载服务器并检查本地模型…")
         whisper._download(whisper._MODELS[name], directory, in_memory=False)
         sys.exit(0)
     try:

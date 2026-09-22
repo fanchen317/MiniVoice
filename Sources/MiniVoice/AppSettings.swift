@@ -35,6 +35,23 @@ enum CloseBehavior: String, CaseIterable, Identifiable {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    static var reopenMainWindow: (() -> Void)?
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // A floating lyrics panel also counts as a visible window. Look for the
+        // actual player instead of relying on AppKit's hasVisibleWindows flag.
+        if let main = sender.windows.first(where: {
+            $0.identifier?.rawValue == "MiniVoice.main" && ($0.isVisible || $0.isMiniaturized)
+        }) {
+            if main.isMiniaturized { main.deminiaturize(nil) }
+            main.makeKeyAndOrderFront(nil)
+        } else {
+            Self.reopenMainWindow?()
+        }
+        sender.activate(ignoringOtherApps: true)
+        return false
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         applyAppearance()
         NotificationCenter.default.addObserver(self, selector: #selector(applyAppearance), name: UserDefaults.didChangeNotification, object: nil)
@@ -61,22 +78,59 @@ struct WindowCloseObserver: NSViewRepresentable {
 
     final class CloseView: NSView {
         let library: MusicLibrary
+        private static let frameName = "MiniVoice.MainPlayerWindow"
+        private weak var configuredWindow: NSWindow?
+        private let placement = WindowPlacementStore(key: "MiniVoice.mainWindowFrame")
+        private var restoringFrame = false
         init(library: MusicLibrary) { self.library = library; super.init(frame: .zero) }
         required init?(coder: NSCoder) { fatalError() }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: nil)
             if let window {
+                guard configuredWindow !== window else { return }
+                NotificationCenter.default.removeObserver(self)
+                configuredWindow = window
+                window.identifier = NSUserInterfaceItemIdentifier("MiniVoice.main")
                 // Keep the content pane opaque; only the sidebar's behind-window
                 // material samples the desktop and windows beneath it.
                 window.isOpaque = false
                 window.backgroundColor = .clear
                 window.titlebarAppearsTransparent = true
                 window.styleMask.insert(.fullSizeContentView)
-                NotificationCenter.default.addObserver(self, selector: #selector(closing), name: NSWindow.willCloseNotification, object: window)
+                window.windowController?.shouldCascadeWindows = false
+                // Read before SwiftUI's initial layout can emit move/resize events.
+                var savedFrame = placement.load()
+                if savedFrame == nil,
+                   let legacy = UserDefaults.standard.string(forKey: "NSWindow Frame \(Self.frameName)") {
+                    window.setFrame(from: legacy)
+                    savedFrame = window.frame
+                }
+                restoringFrame = true
+                if let savedFrame { restore(savedFrame, in: window) }
+                DispatchQueue.main.async { [weak self, weak window] in
+                    guard let self, let window, self.configuredWindow === window else { return }
+                    if let savedFrame { self.restore(savedFrame, in: window) }
+                    self.restoringFrame = false
+                    self.saveFrame()
+                }
+                let center = NotificationCenter.default
+                center.addObserver(self, selector: #selector(closing), name: NSWindow.willCloseNotification, object: window)
+                center.addObserver(self, selector: #selector(saveFrame), name: NSWindow.didMoveNotification, object: window)
+                center.addObserver(self, selector: #selector(saveFrame), name: NSWindow.didResizeNotification, object: window)
+                center.addObserver(self, selector: #selector(saveFrame), name: NSApplication.willTerminateNotification, object: nil)
             }
         }
+        private func restore(_ frame: NSRect, in window: NSWindow) {
+            let restored = WindowPlacementStore.visibleFrame(frame, screens: NSScreen.screens.map(\.visibleFrame))
+            window.setFrame(restored, display: false)
+        }
+        @objc private func saveFrame() {
+            guard !restoringFrame, let window = configuredWindow,
+                  !window.styleMask.contains(.fullScreen), !window.isMiniaturized else { return }
+            placement.save(window.frame)
+        }
         @objc private func closing() {
+            saveFrame()
             let behavior = CloseBehavior(rawValue: UserDefaults.standard.string(forKey: "MiniVoice.closeBehavior") ?? "background") ?? .background
             switch behavior {
             case .background: break
@@ -164,15 +218,23 @@ private struct LyricsModelSettings: View {
             }.pickerStyle(.segmented)
             Text("快速：small，约 460 MB，处理较快。\n精准：medium，约 1.5 GB，处理较慢，适合更复杂的歌曲。")
                 .foregroundStyle(.secondary)
-            Text("本地模型：" + (sync.installedModels.isEmpty ? "未下载" : sync.installedModels.map(\.title).joined(separator: "、")))
-            Text("本地只保留一种模型。下载另一种时会先移除旧模型；仅切换选项不会下载。")
+            Text("本地资源：" + (sync.installedModels.isEmpty ? "未下载" : sync.installedModels.map(\.title).joined(separator: "、")))
+            Text("两种资源可同时保留。匹配模式决定使用哪一种；下载和删除可独立选择资源。")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
-                Button("下载选中的模型") {
-                    sync.download(LyricsModel(rawValue: model) ?? .medium)
-                    downloadNotice = true
+                Menu("下载资源") {
+                    ForEach(LyricsModel.allCases) { resource in
+                        Button(resource.title + (sync.installedModels.contains(resource) ? "（已下载）" : "")) {
+                            sync.download(resource)
+                            downloadNotice = true
+                        }.disabled(sync.installedModels.contains(resource))
+                    }
                 }
-                Button("删除本地模型") { sync.deleteModel() }
+                Menu("删除资源") {
+                    ForEach(sync.installedModels) { resource in
+                        Button(resource.title) { sync.deleteModel(resource) }
+                    }
+                }
                     .disabled(sync.installedModels.isEmpty)
             }.disabled(sync.downloadingModel || sync.activeCount > 0)
             if let status = sync.modelStatus { Text(status).font(.caption).foregroundStyle(.secondary) }
@@ -181,7 +243,7 @@ private struct LyricsModelSettings: View {
         }
         .padding(24)
         .onAppear { sync.refreshModels() }
-        .alert("模型正在后台下载", isPresented: $downloadNotice) {
+        .alert("资源正在后台下载", isPresented: $downloadNotice) {
             Button("好", role: .cancel) { }
         } message: { Text("可以继续使用播放器，在侧栏的圆圈叹号中查看后台任务和下载结果。") }
     }

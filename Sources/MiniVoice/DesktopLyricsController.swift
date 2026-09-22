@@ -21,7 +21,7 @@ final class DesktopLyricsController: ObservableObject {
     private weak var library: MusicLibrary?
     private var cancellables = Set<AnyCancellable>()
     private var panel: NSPanel?
-    private var panelMoveObserver: NSObjectProtocol?
+    private var panelMoveObserver: AnyCancellable?
     private var refreshPending = false
     private let positionKey = "MiniVoice.desktopLyricsPosition"
 
@@ -100,18 +100,17 @@ final class DesktopLyricsController: ObservableObject {
             contentView.layer?.backgroundColor = NSColor.clear.cgColor
             panel.contentView = contentView
             self.panel = panel
-            panelMoveObserver = NotificationCenter.default.addObserver(
-                forName: NSWindow.didMoveNotification,
-                object: panel,
-                queue: .main
-            ) { [weak self, weak panel] _ in
-                Task { @MainActor [weak self, weak panel] in
-                    guard let self, let panel else { return }
-                    self.savePosition(panel.frame.origin)
+            // Restore before observing movement so initial placement cannot overwrite it.
+            restoreOrPositionPanel()
+            panelMoveObserver = NotificationCenter.default.publisher(for: NSWindow.didMoveNotification, object: panel)
+                .sink { [weak self, weak panel] _ in
+                    MainActor.assumeIsolated {
+                        guard let self, let panel else { return }
+                        self.savePosition(panel.frame.origin)
+                    }
                 }
-            }
         }
-        restoreOrPositionPanel()
+
         panel?.orderFrontRegardless()
     }
 
@@ -119,8 +118,9 @@ final class DesktopLyricsController: ObservableObject {
         guard let screen = NSScreen.main, let panel else { return }
         if let values = UserDefaults.standard.array(forKey: positionKey) as? [CGFloat], values.count == 2 {
             let origin = NSPoint(x: values[0], y: values[1])
-            if screen.visibleFrame.intersects(NSRect(origin: origin, size: panel.frame.size)) {
-                panel.setFrameOrigin(origin)
+            let frame = NSRect(origin: origin, size: panel.frame.size)
+            if WindowPlacementStore.isValid(frame) {
+                panel.setFrameOrigin(WindowPlacementStore.visibleFrame(frame, screens: NSScreen.screens.map(\.visibleFrame)).origin)
                 return
             }
         }

@@ -7,6 +7,7 @@ struct LyricsSyncJob: Identifiable {
     let destination: LyricsDestination
     var detail = "等待处理"
     var finished = false
+    var failed = false
 }
 
 struct LyricsSyncAlert: Identifiable {
@@ -27,6 +28,32 @@ final class LyricsSyncCoordinator: ObservableObject {
     @Published private(set) var downloadingModel = false
     @Published private(set) var installedModels: [LyricsModel] = []
     @Published var hasUnread = false
+    @Published private(set) var modelFailed = false
+    private var attemptedModel: LyricsModel?
+    var modelProgress: Double? {
+        guard let status = modelStatus, let range = status.range(of: #"\d+(?=%)"#, options: .regularExpression),
+              let percent = Double(status[range]) else { return nil }
+        return min(1, max(0, percent / 100))
+    }
+
+    func clearFinished() {
+        jobs.removeAll { $0.finished }
+        clearModelResult()
+        hasUnread = false
+    }
+    func clear(_ id: UUID) { jobs.removeAll { $0.id == id && $0.finished } }
+    func clearModelResult() {
+        guard !downloadingModel else { return }
+        modelStatus = nil
+        modelFailed = false
+    }
+    func retryModel() { if let attemptedModel { download(attemptedModel) } }
+    func retry(_ id: UUID, library: MusicLibrary) {
+        guard let job = jobs.first(where: { $0.id == id && $0.failed }),
+              let current = library.track(forPath: job.track.url.path), !downloadingModel else { return }
+        clear(id)
+        start(track: current, destination: job.destination, library: library)
+    }
     var activeCount: Int { jobs.filter { !$0.finished }.count }
 
     private let alignment = LyricsAlignment()
@@ -35,8 +62,6 @@ final class LyricsSyncCoordinator: ObservableObject {
     private var modelTask: Task<Void, Never>?
 
     init() {
-        do { try alignment.migrateModels() }
-        catch { modelStatus = "模型清理失败：\(error.localizedDescription)"; hasUnread = true }
         refreshModels()
     }
     func refreshModels() { installedModels = alignment.installedModels }
@@ -44,6 +69,8 @@ final class LyricsSyncCoordinator: ObservableObject {
     func download(_ model: LyricsModel) {
         guard activeCount == 0, !downloadingModel else { return }
         downloadingModel = true
+        modelFailed = false
+        attemptedModel = model
         modelStatus = "正在下载 \(model.title)…"
         hasUnread = true
         modelTask = Task { [self] in
@@ -60,15 +87,15 @@ final class LyricsSyncCoordinator: ObservableObject {
             do {
                 try await alignment.downloadModel(model)
                 modelStatus = "\(model.title)模型已下载并通过校验"
-            } catch { modelStatus = "模型下载失败：\(error.localizedDescription)" }
+            } catch { modelFailed = true; modelStatus = "模型下载失败：\(error.localizedDescription)" }
         }
     }
 
-    func deleteModel() {
+    func deleteModel(_ model: LyricsModel) {
         guard activeCount == 0, !downloadingModel else { return }
         do {
-            try alignment.deleteModels()
-            modelStatus = "本地歌词模型已删除"
+            try alignment.deleteModel(model)
+            modelStatus = "\(model.title)资源已删除"
         } catch { modelStatus = error.localizedDescription }
         refreshModels()
         hasUnread = true
@@ -128,16 +155,17 @@ final class LyricsSyncCoordinator: ObservableObject {
                 self.update(job.id, "已取消", finished: true)
                 self.alert = LyricsSyncAlert(kind: .warning, title: "歌词同步已取消", message: "原歌词已保存，稍后可再次编辑并同步。")
             } catch {
-                self.update(job.id, error.localizedDescription, finished: true)
+                self.update(job.id, error.localizedDescription, finished: true, failed: true)
                 self.alert = LyricsSyncAlert(kind: .failure, title: "歌词同步失败", message: error.localizedDescription)
             }
         }
     }
 
-    private func update(_ id: UUID, _ detail: String, finished: Bool = false) {
+    private func update(_ id: UUID, _ detail: String, finished: Bool = false, failed: Bool = false) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
         jobs[index].detail = detail
         jobs[index].finished = finished
+        jobs[index].failed = failed
         if finished { hasUnread = true }
     }
 }
