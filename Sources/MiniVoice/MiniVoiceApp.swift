@@ -7,6 +7,7 @@ struct MiniVoiceApp: App {
     @StateObject private var systemVolume = SystemVolume()
     @StateObject private var library = MusicLibrary()
     @StateObject private var shortcuts = PlaybackShortcutController()
+    @StateObject private var windowToggle = WindowToggleController()
     @StateObject private var desktopLyrics = DesktopLyricsController()
     @StateObject private var lyricsSync = LyricsSyncCoordinator()
     @AppStorage("MiniVoice.appearance") private var appearance = AppAppearance.system.rawValue
@@ -18,6 +19,7 @@ struct MiniVoiceApp: App {
                 .environmentObject(library.clock)
                 .environmentObject(systemVolume)
                 .environmentObject(shortcuts)
+                .environmentObject(windowToggle)
                 .environmentObject(desktopLyrics)
                 .environmentObject(lyricsSync)
                 .background(WindowCloseObserver(library: library))
@@ -44,6 +46,7 @@ struct MiniVoiceApp: App {
                 .environmentObject(library.clock)
                 .environmentObject(systemVolume)
                 .environmentObject(shortcuts)
+                .environmentObject(windowToggle)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
         }
     }

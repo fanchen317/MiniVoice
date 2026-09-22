@@ -13,7 +13,8 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("SwiftUI"),
                 .linkedFramework("AVFoundation"),
-                .linkedFramework("AppKit")
+                .linkedFramework("AppKit"),
+                .linkedFramework("ApplicationServices")
             ]
         ),
         .testTarget(name: "MiniVoiceTests", dependencies: ["MiniVoice"])

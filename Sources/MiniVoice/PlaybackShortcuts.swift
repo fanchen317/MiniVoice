@@ -89,6 +89,21 @@ final class PlaybackShortcutController: ObservableObject {
     func beginRecording(_ action: PlaybackShortcutAction) { recordingAction = action }
     func reset(_ action: PlaybackShortcutAction) { save(action.defaultShortcut, for: action) }
 
+    /// Human-readable descriptions of shortcuts this one would clash with.
+    /// Empty list means no conflicts.
+    func conflicts(for shortcut: PlaybackShortcut, excluding: PlaybackShortcutAction? = nil) -> [String] {
+        var result: [String] = []
+        if let label = PlaybackShortcutSystemConflict.label(for: shortcut) {
+            result.append(label)
+        }
+        for action in PlaybackShortcutAction.allCases where action != excluding {
+            if self.shortcut(for: action) == shortcut {
+                result.append(action.title)
+            }
+        }
+        return result
+    }
+
     private func handle(_ event: NSEvent) -> NSEvent? {
         if let recordingAction {
             if event.keyCode == 53 { self.recordingAction = nil; return nil }
@@ -121,8 +136,33 @@ final class PlaybackShortcutController: ObservableObject {
     }
 }
 
-private extension PlaybackShortcut {
+extension PlaybackShortcut {
     func matches(_ event: NSEvent) -> Bool {
         keyCode == event.keyCode && modifiers == event.modifierFlags.intersection(.deviceIndependentFlagsMask).rawValue
+    }
+}
+
+/// Known macOS system shortcuts that would shadow a user-configured hotkey.
+enum PlaybackShortcutSystemConflict {
+    private static let table: [(keyCode: UInt16, mask: NSEvent.ModifierFlags, label: String)] = [
+        (4, .command, "隐藏当前应用 (⌘H)"),
+        (12, .command, "退出应用 (⌘Q)"),
+        (13, .command, "关闭窗口 (⌘W)"),
+        (46, .command, "最小化窗口 (⌘M)"),
+        (44, .command, "打开偏好设置 (⌘,)"),
+        (49, .command, "Spotlight 搜索 (⌘Space)"),
+        (8, .command, "复制 (⌘C)"),
+        (9, .command, "粘贴 (⌘V)"),
+        (7, .command, "剪切 (⌘X)"),
+        (0, .command, "全选 (⌘A)"),
+        (6, .command, "撤销 (⌘Z)")
+    ]
+
+    static func label(for shortcut: PlaybackShortcut) -> String? {
+        let flags = NSEvent.ModifierFlags(rawValue: shortcut.modifiers)
+        for (keyCode, mask, label) in table where shortcut.keyCode == keyCode && flags.contains(mask) {
+            return label
+        }
+        return nil
     }
 }

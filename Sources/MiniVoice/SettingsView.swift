@@ -302,20 +302,73 @@ private struct AudioSettingsPage: View {
 
 private struct ShortcutSettingsPage: View {
     @EnvironmentObject private var shortcuts: PlaybackShortcutController
+    @EnvironmentObject private var windowToggle: WindowToggleController
+
     var body: some View {
         SettingsGroup(title: "播放控制", footer: "点击组合键后按下新快捷键，按 Esc 取消。在 MiniVoice 位于前台且未输入文字时生效。") {
             ForEach(PlaybackShortcutAction.allCases) { action in
-                SettingsRow(title: action.title) {
-                    Button { shortcuts.beginRecording(action) } label: {
-                        Text(shortcuts.recordingAction == action ? "按下快捷键…" : shortcuts.shortcut(for: action).description)
-                            .font(.system(size: 13, weight: .medium, design: .monospaced)).frame(width: 112)
-                            .foregroundStyle(shortcuts.recordingAction == action ? Color.accentColor : Color.primary)
-                    }.accessibilityLabel("\(action.title)：\(shortcuts.recordingAction == action ? "正在录制" : shortcuts.shortcut(for: action).description)")
-                    Button("恢复默认") { shortcuts.recordingAction = nil; shortcuts.reset(action) }
+                ShortcutRow(title: action.title, shortcut: shortcuts.shortcut(for: action), isRecording: shortcuts.recordingAction == action, conflicts: shortcuts.conflicts(for: shortcuts.shortcut(for: action), excluding: action)) {
+                    shortcuts.beginRecording(action)
+                } onReset: {
+                    shortcuts.recordingAction = nil
+                    shortcuts.reset(action)
                 }
                 if action.id != PlaybackShortcutAction.allCases.last?.id { Divider().padding(.horizontal, 16) }
             }
         }
-        Color.clear.frame(height: 0).onDisappear { shortcuts.recordingAction = nil }
+        SettingsGroup(title: "窗口", footer: "全局快捷键可在任何应用下唤起 MiniVoice 主窗口。无需额外权限。") {
+            ShortcutRow(
+                title: "显示 / 隐藏主窗口",
+                shortcut: windowToggle.configuredShortcut,
+                isRecording: windowToggle.recording,
+                conflicts: windowToggle.conflicts(),
+                showsRecordingHint: false,
+                onTap: { windowToggle.beginRecording() },
+                onReset: { windowToggle.resetToDefault() }
+            )
+        }
+        Color.clear.frame(height: 0).onDisappear {
+            shortcuts.recordingAction = nil
+            windowToggle.cancelRecording()
+        }
+    }
+}
+
+private struct ShortcutRow: View {
+    let title: String
+    let shortcut: PlaybackShortcut
+    let isRecording: Bool
+    let conflicts: [String]
+    var showsRecordingHint: Bool = true
+    let onTap: () -> Void
+    let onReset: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SettingsRow(title: title) {
+                Button(action: onTap) {
+                    Text(displayText)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced)).frame(width: 112)
+                        .foregroundStyle(isRecording ? Color.accentColor : Color.primary)
+                }.accessibilityLabel("\(title)：\(displayText)")
+                Button("恢复默认", action: onReset)
+            }
+            if !conflicts.isEmpty {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange).font(.system(size: 12))
+                    Text("与 \(conflicts.joined(separator: "、")) 冲突")
+                        .font(.caption).foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16).padding(.bottom, 10).padding(.top, -2)
+            }
+        }
+    }
+
+    private var displayText: String {
+        if isRecording, showsRecordingHint { return "按下快捷键…" }
+        return shortcut.description
     }
 }

@@ -3,6 +3,18 @@ import AppKit
 
 private let playerGreen = Color(red: 0.06, green: 0.66, blue: 0.46)
 
+/// Corner radius for the three player panels and the app icon.
+/// Matches the macOS window's rounded corner so the panels feel continuous
+/// with the window chrome instead of looking like a smaller shape inside it.
+private let panelCornerRadius: CGFloat = 15
+
+/// Single source of truth for the artwork-style corner radius.
+/// Mirrors the album artwork's visual language across panels and the app icon.
+private let artworkCornerRadiusCap: CGFloat = 22
+private func artworkCornerRadius(for size: CGFloat) -> CGFloat {
+    min(artworkCornerRadiusCap, size * 0.16)
+}
+
 struct ContentView: View {
     let statusBar: StatusBarController
     @Environment(\.openWindow) private var openWindow
@@ -64,7 +76,7 @@ struct ContentView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            HStack(spacing: 14) {
+            HStack(spacing: 12) {
                 if sidebarVisible {
                     sidebar
                         .frame(width: min(288, max(250, geometry.size.width * 0.25)))
@@ -86,7 +98,9 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .padding(.horizontal, 12)
-            .padding(.top, 42)
+            // Outer top padding clears the macOS traffic light buttons so the
+            // visible gap matches the 12pt horizontal margin on every side.
+            .padding(.top, 34)
             .padding(.bottom, 12)
             .frame(width: geometry.size.width, height: geometry.size.height)
             .background { CoverBackdrop(image: library.selectedTrack?.artwork) }
@@ -203,6 +217,7 @@ struct ContentView: View {
             HStack(spacing: 12) {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable().scaledToFit().frame(width: 46, height: 46)
+                    .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
                     .accessibilityLabel("MiniVoice")
                 VStack(alignment: .leading, spacing: 4) {
                     Text("MiniVoice").font(.title3.weight(.bold))
@@ -267,7 +282,10 @@ struct ContentView: View {
               }
             }
         }
-        .padding(14)
+        // 12pt inner padding keeps the sidebar's first row visually flush with the
+        // header buttons on the right - both share the same Y so the eye reads them
+        // as a single horizontal band across the top of the window.
+        .padding(12)
         .frame(maxHeight: .infinity)
     }
 
@@ -441,19 +459,24 @@ private struct PlayerDetail: View {
     var body: some View {
         GeometryReader { geometry in
             let compact = geometry.size.width < 720
-            let controlsHeight: CGFloat = compact ? 166 : 116
-            let contentHeight = max(0, geometry.size.height - controlsHeight - 64)
-            // Reserve space for the lyric card before sizing the artwork.
-            let artworkSize = max(88, min(260, min(geometry.size.width * 0.34, min(geometry.size.height * 0.30, contentHeight - 250))))
+            let controlsHeight: CGFloat = compact ? 178 : 116
+            let headerHeight: CGFloat = 38
+            let gap: CGFloat = 12
+            // Fix the top and bottom sections first. Lyrics take the remaining
+            // space, with identical gaps above and below the card.
+            let artworkBudget = geometry.size.height - headerHeight - controlsHeight - gap * 3 - 150
+            let artworkSize = max(88, min(260, min(geometry.size.width * 0.34,
+                min(geometry.size.height * 0.23, artworkBudget))))
+            let lyricsHeight = max(0, geometry.size.height - headerHeight - controlsHeight
+                - (expandedLyrics ? gap * 2 : artworkSize + gap * 3))
             VStack(spacing: 12) {
                 header
-                    .frame(height: 40)
+                    .frame(height: headerHeight)
                 if !expandedLyrics {
                     hero(size: artworkSize)
                         .frame(height: artworkSize)
-                        .padding(.horizontal, 16)
                 }
-                lyrics.frame(maxHeight: .infinity).layoutPriority(1)
+                lyrics.frame(height: lyricsHeight)
                 PlayerControls(track: playbackTrack, compact: compact, onEdit: onEditPlayback)
                     .frame(height: controlsHeight)
             }
@@ -467,13 +490,22 @@ private struct PlayerDetail: View {
                 Image(systemName: "sidebar.left")
                     .font(.system(size: 22, weight: .medium))
                     .frame(width: 38, height: 38)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(SidebarToggleStyle())
+            .buttonStyle(.plain)
+            .modifier(HeaderButtonSurface())
             .help("显示或隐藏侧栏")
             Spacer()
-            Button(action: onEdit) { Image(systemName: "ellipsis") }
-                .buttonStyle(GlassButtonStyle()).help("编辑歌曲")
-        }.padding(.horizontal, 8)
+            Button(action: onEdit) {
+                Image(systemName: "ellipsis.rectangle")
+                    .font(.system(size: 18, weight: .medium))
+                    .frame(width: 38, height: 38)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .modifier(HeaderButtonSurface())
+            .help("编辑歌曲")
+        }
     }
 
     private func hero(size: CGFloat) -> some View {
@@ -485,8 +517,8 @@ private struct PlayerDetail: View {
                 Text(track.artist).font(.headline).lineLimit(1)
                 Text(track.album).foregroundStyle(.secondary).lineLimit(size < 160 ? 1 : 2)
                 if size >= 160 {
-                    Button(action: onEdit) { Image(systemName: "ellipsis") }
-                        .buttonStyle(GlassButtonStyle()).padding(.top, 6)
+                    Button(action: onEdit) { Image(systemName: "ellipsis.rectangle") }
+                        .buttonStyle(.plain).modifier(HeaderButtonSurface()).padding(.top, 6)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.frame(maxWidth: .infinity, alignment: .leading)
@@ -502,7 +534,10 @@ private struct PlayerDetail: View {
                 Button { expandedLyrics.toggle() } label: {
                     Image(systemName: expandedLyrics ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                 }.buttonStyle(.plain).help("展开或收起歌词")
-            }.padding(18)
+            }
+            // 12pt internal padding keeps the lyrics header flush with the 12pt
+            // gaps between the surrounding panels.
+            .padding(12)
             if playbackTrack.lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 ViewThatFits(in: .vertical) {
                   VStack(spacing: 14) {
@@ -578,8 +613,10 @@ private struct SyncedLyrics: View {
                         }
                     }
                     .padding(.horizontal, 32)
-                    // Half a viewport at either end lets even the first/last line reach the center.
-                    .padding(.vertical, geometry.size.height / 2)
+                    // Smaller bottom padding keeps the lyrics visually flush with the
+                    // panel edge instead of leaving a wide gap to the controls below.
+                    .padding(.top, geometry.size.height / 2)
+                    .padding(.bottom, 8)
                 }
                 .task(id: ScrollTarget(trackID: track.id, active: active, follow: follow,
                                        size: geometry.size, lyrics: track.lyrics)) {
@@ -646,7 +683,9 @@ private struct PlayerControls: View {
                 }
             }
         }
-        .padding(.horizontal, 18).padding(.vertical, 12)
+        // 12pt all-around padding keeps the controls' contents flush with the
+        // 12pt gaps between the surrounding panels.
+        .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .modifier(PlayerPanelSurface())
         .onChange(of: track.id) { _ in scrub = nil }
@@ -733,7 +772,7 @@ private struct Artwork: View {
     let size: CGFloat
     var showsBorder = false
     private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: min(22, size * 0.16), style: .continuous)
+        RoundedRectangle(cornerRadius: artworkCornerRadius(for: size), style: .continuous)
     }
     var body: some View {
         Group {
@@ -847,7 +886,11 @@ private struct PlayerScrollView<Content: View>: View {
                     .padding(.trailing, 8)
                     .background(HiddenScrollerConfigurator(onMetrics: { offset, height in
                         let updated = ScrollMetrics(offset: offset, height: height)
-                        if metrics != updated { metrics = updated; revealThumb() }
+                        if metrics != updated {
+                            let scrolled = abs(metrics.offset - offset) > 0.5
+                            metrics = updated
+                            if scrolled { revealThumb() }
+                        }
                     }, onScrollView: { scrollReference.view = $0 })
                         .frame(width: 0, height: 0).allowsHitTesting(false))
             }
@@ -860,7 +903,6 @@ private struct PlayerScrollView<Content: View>: View {
                                    startPoint: .top, endPoint: .bottom)
                 } else { Rectangle() }
             }
-            .onHover { inside in if inside { revealThumb() } }
             .overlay(alignment: .trailing) {
                 if metrics.height > viewport.size.height, viewport.size.height > 0 {
                     let thumbHeight = min(viewport.size.height, max(28, viewport.size.height * viewport.size.height / metrics.height))
@@ -922,7 +964,7 @@ private struct HiddenScrollerConfigurator: NSViewRepresentable {
 private struct PlayerPanelSurface: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
         content
             .background {
                 FrostedBackdrop(material: .hudWindow, blendingMode: .withinWindow)
@@ -1057,6 +1099,31 @@ private struct LibraryToolbarSurface: ViewModifier {
                 }
             }
             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .onHover { hovered = $0 }
+    }
+}
+
+/// Header buttons (sidebar toggle, edit track) sit on the right panel's frosted
+/// background, so they stay invisible at rest and only gain a light fill + thin
+/// outline on hover - matching the library toolbar buttons.
+private struct HeaderButtonSurface: ViewModifier {
+    @State private var hovered = false
+    func body(content: Content) -> some View {
+        content
+            .frame(width: 38, height: 38)
+            .background {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(hovered ? Color.primary.opacity(0.08) : .clear)
+                    .allowsHitTesting(false)
+            }
+            .overlay {
+                if hovered {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+                        .allowsHitTesting(false)
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .onHover { hovered = $0 }
     }
 }
