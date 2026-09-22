@@ -17,6 +17,8 @@ struct MetadataEditor: View {
     @State private var album: String
     @State private var lyrics: String
     @State private var artwork: NSImage?
+    @State private var selectedPage = EditorPage.details
+    @State private var showTimingTools = false
     @State private var timingIndex = 0
     @State private var artworkChanged = false
     @State private var choosingArtwork = false
@@ -52,117 +54,36 @@ struct MetadataEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("编辑歌曲信息").font(.title2.weight(.bold))
-                Spacer()
-            }.padding(24)
-            Divider()
-            Form {
-                Section("文件信息") {
-                    readOnlyRow("文件名称", track.url.lastPathComponent, selectable: true)
-                    readOnlyRow("文件路径", track.url.path, selectable: true)
-                    readOnlyRow("播放时长", formattedDuration(track.duration))
-                }
-                Section {
-                    TextField("歌曲名称", text: $title)
-                    ForEach($artists) { $entry in
-                        HStack {
-                            TextField("歌手", text: $entry.name)
-                            Button { artists.removeAll { $0.id == entry.id } } label: { Image(systemName: "minus.circle") }
-                                .disabled(artists.count == 1)
-                        }
-                    }
-                    Button { artists.append(ArtistEntry(name: "")) } label: { Label("添加歌手", systemImage: "plus") }
-                    TextField("专辑名称", text: $album)
-                } header: {
-                    HStack {
-                        Text("基本信息")
-                        Spacer()
-                        Button(action: applyFilenameParsing) {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .buttonStyle(.borderless)
-                        .help("从文件名解析歌手与歌曲名称")
-                    }
-                }
-                Section("封面") {
-                    HStack(spacing: 16) {
-                        Button {
-                            showArtworkZoom = true
-                        } label: {
-                            ArtworkPreview(image: artwork)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(artwork == nil)
-                        .help(artwork == nil ? "" : "查看大图")
-                        VStack(alignment: .leading) {
-                            Button("自定义") { choosingArtwork = true }
-                            if artwork != nil { Button("移除封面", role: .destructive) { artwork = nil; artworkChanged = true } }
-                        }
-                    }
-                    .padding(8)
-                    .background(isArtworkDropTarget ? Color.accentColor.opacity(0.14) : .clear)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .onDrop(of: [.image], isTargeted: $isArtworkDropTarget, perform: importArtwork)
-                    Text("也可将图片直接拖到这里。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section {
-                    Button("导入歌词文件（LRC / SRT / TXT）") { choosingLyrics = true }
-                    let timed = LRCParser.parse(lyrics).filter { $0.timestamp != nil }.count
-                    Text(LyricsAlignment.needsAlignment(lyrics) ? "保存时将使用本地 AI 自动匹配歌曲，生成跟随时间轴。首次使用需联网下载模型，歌曲不会上传。" : (timed > 0 ? "已识别 \(timed) 行时间标签，保存后可自动滚动。" : "粘贴歌词或导入歌词文件，保存时自动整理。"))
-                        .font(.caption).foregroundStyle(.secondary)
-                    Text("保存时自动去除空行，并按短语整理纯文本长句；已有时间标签保持不变。")
-                        .font(.caption).foregroundStyle(.secondary)
-                    HStack {
-                        Button(library.isPlaying ? "暂停试听" : "播放试听") {
-                            if library.playingID == track.id { library.togglePlayback() }
-                            else { library.play(track.id) }
-                        }
-                        Button("标记第 \(timingIndex + 1) 行时间") { stampNextLine() }
-                            .disabled(lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || timingIndex >= LRCParser.parse(lyrics).count || library.playingID != track.id)
-                        Button("从第一行重新打点") { timingIndex = 0 }
-                    }
-                    HStack(spacing: 8) {
-                        Text("保存到").foregroundStyle(.secondary)
-                        if track.canWriteTags {
-                            Picker("", selection: $lyricsDestination) {
-                                Text("音频文件标签").tag(LyricsDestination.tags)
-                                Text("同目录 lrc/ 下的 .lrc").tag(LyricsDestination.sidecar)
-                                Text("两者都写").tag(LyricsDestination.both)
-                            }
-                            .pickerStyle(.menu)
-                            .labelsHidden()
-                        } else {
-                            Text("同目录 lrc/ 下的 .lrc").foregroundStyle(.primary)
-                        }
-                        Spacer()
-                    }
-                    Text(lyricsSourceLabel)
-                        .font(.caption).foregroundStyle(.secondary)
-                    TextEditor(text: $lyrics)
-                        .font(.body)
-                        .frame(minHeight: 210)
-                } header: {
-                    Text("歌词（支持 LRC 时间标签，例如 [00:12.50]）")
-                }
-            }.formStyle(.grouped).padding(.horizontal, 12).disabled(isSaving)
-            Divider()
-            HStack(spacing: 12) {
-                Spacer()
-                Button("取消") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                    .disabled(isSaving)
-                    .buttonStyle(EditorSecondaryButtonStyle())
-                Button(isSaving ? "保存中…" : "保存") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(isSaving)
-                    .buttonStyle(EditorPrimaryButtonStyle())
+            header
+            Picker("编辑内容", selection: $selectedPage) {
+                ForEach(EditorPage.allCases) { Text($0.rawValue).tag($0) }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
+            .pickerStyle(.segmented).labelsHidden().frame(width: 360)
+            .padding(.bottom, 20).disabled(isSaving)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    switch selectedPage {
+                    case .details: detailsPage
+                    case .lyrics: lyricsPage
+                    case .file: filePage
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(24)
+            }
+            .id(selectedPage)
+            .disabled(isSaving)
+            Divider()
+            footer
         }
-        .frame(width: 660, height: 730)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .tint(Color(red: 0.06, green: 0.55, blue: 0.40))
+        .accentColor(Color(red: 0.06, green: 0.55, blue: 0.40))
+        .buttonStyle(.bordered)
+        .controlSize(.regular)
+        .frame(width: 760, height: 700)
+        .interactiveDismissDisabled(isSaving)
         .fileImporter(isPresented: $choosingArtwork, allowedContentTypes: [.image]) { result in
             guard case .success(let url) = result else { return }
             if let image = NSImage(contentsOf: url) { artwork = image; artworkChanged = true }
@@ -198,6 +119,198 @@ struct MetadataEditor: View {
                 .padding(20)
                 .frame(width: 600, height: 640)
             }
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 14) {
+            ArtworkPreview(image: artwork, size: 54)
+            VStack(alignment: .leading, spacing: 5) {
+                Text("编辑歌曲信息").font(.system(size: 21, weight: .bold))
+                Text(title.isEmpty ? track.url.deletingPathExtension().lastPathComponent : title)
+                    .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 16)
+            Text(track.url.pathExtension.uppercased())
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+        }.padding(24)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 12) {
+            if isSaving {
+                ProgressView().controlSize(.small)
+                Text("正在保存更改…").font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("点击保存后应用更改").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("取消") { dismiss() }
+                .keyboardShortcut(.cancelAction).disabled(isSaving)
+            Button(isSaving ? "保存中…" : "保存更改") { save() }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction).disabled(isSaving)
+        }
+        .controlSize(.large)
+        .padding(.horizontal, 24).padding(.vertical, 16)
+    }
+
+    private var detailsPage: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            if !track.canWriteTags {
+                Label("此格式暂不支持修改基本信息和封面，你仍可在「歌词」中编辑并保存歌词。", systemImage: "info.circle")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            SettingsGroup(title: "基本信息") {
+                VStack(spacing: 0) {
+                    inputRow("歌曲名称", placeholder: "输入歌曲名称", text: $title)
+                    Divider().padding(.horizontal, 16)
+                    HStack(alignment: .top, spacing: 16) {
+                        Text("歌手").font(.system(size: 13, weight: .medium))
+                            .frame(width: 72, alignment: .leading).padding(.top, 5)
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach($artists) { $entry in
+                                HStack(spacing: 10) {
+                                    TextField("输入歌手名称", text: $entry.name)
+                                        .textFieldStyle(.roundedBorder)
+                                        .accessibilityLabel("歌手名称")
+                                    Button("移除") { artists.removeAll { $0.id == entry.id } }
+                                        .disabled(artists.count == 1)
+                                        .accessibilityLabel("移除歌手 \(entry.name)")
+                                }
+                            }
+                            Button { artists.append(ArtistEntry(name: "")) } label: {
+                                Label("添加歌手", systemImage: "plus")
+                            }
+                        }
+                    }.padding(16)
+                    Divider().padding(.horizontal, 16)
+                    inputRow("专辑名称", placeholder: "输入专辑名称", text: $album)
+                    Divider().padding(.horizontal, 16)
+                    SettingsRow(title: "从文件名填充", detail: "识别「歌手 - 歌曲名」格式") {
+                        Button("解析文件名", action: applyFilenameParsing)
+                    }
+                }.disabled(!track.canWriteTags)
+            }
+            SettingsGroup(title: "专辑封面", footer: "支持拖入图片；点击已有封面可查看大图。") {
+                HStack(spacing: 20) {
+                    Button { showArtworkZoom = true } label: { ArtworkPreview(image: artwork, size: 96) }
+                        .buttonStyle(.plain).disabled(artwork == nil)
+                        .accessibilityLabel("查看封面大图")
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(artwork == nil ? "尚未设置封面" : "自定义歌曲封面")
+                            .font(.system(size: 13, weight: .medium))
+                        HStack(spacing: 10) {
+                            Button(artwork == nil ? "添加封面…" : "更换封面…") { choosingArtwork = true }
+                            Button("移除", role: .destructive) { artwork = nil; artworkChanged = true }
+                                .disabled(artwork == nil)
+                        }.disabled(!track.canWriteTags)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                .background(isArtworkDropTarget ? Color.accentColor.opacity(0.12) : .clear)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .onDrop(of: [.image], isTargeted: $isArtworkDropTarget) { providers in
+                    guard track.canWriteTags, !isSaving else { return false }
+                    return importArtwork(providers)
+                }
+            }
+        }
+    }
+
+    private func inputRow(_ label: String, placeholder: String, text: Binding<String>) -> some View {
+        HStack(spacing: 16) {
+            Text(label).font(.system(size: 13, weight: .medium)).frame(width: 72, alignment: .leading)
+            TextField(placeholder, text: text).textFieldStyle(.roundedBorder).accessibilityLabel(label)
+        }.padding(16)
+    }
+
+    private var lyricsPage: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            SettingsGroup(title: "歌词内容") {
+                HStack {
+                    Label("支持 LRC、SRT、TXT", systemImage: "doc.text")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("导入歌词…") { choosingLyrics = true }
+                }.padding(16)
+                Divider().padding(.horizontal, 16)
+                ZStack(alignment: .topLeading) {
+                    if lyrics.isEmpty {
+                        Text("在这里粘贴歌词，或导入歌词文件…")
+                            .font(.system(size: 13)).foregroundStyle(.tertiary)
+                            .padding(.leading, 5).padding(.top, 8).allowsHitTesting(false)
+                    }
+                    TextEditor(text: $lyrics)
+                        .font(.system(size: 13, design: .monospaced))
+                        .scrollContentBackground(.hidden)
+                        .accessibilityLabel("歌词内容")
+                        .frame(height: 230)
+                }.padding(12)
+                Divider().padding(.horizontal, 16)
+                Label(lyricsStatus, systemImage: "text.alignleft")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+            }
+            SettingsGroup(title: "歌词保存", footer: lyricsSourceLabel) {
+                SettingsRow(title: "保存位置") {
+                    if track.canWriteTags {
+                        Picker("歌词保存位置", selection: $lyricsDestination) {
+                            Text("音频文件标签").tag(LyricsDestination.tags)
+                            Text("同目录 lrc/ 文件夹").tag(LyricsDestination.sidecar)
+                            Text("标签与 LRC 文件").tag(LyricsDestination.both)
+                        }.labelsHidden().frame(width: 230)
+                    } else {
+                        Text("同目录 lrc/ 文件夹").font(.system(size: 13)).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            SettingsGroup(title: "进阶工具") {
+                DisclosureGroup("手动调整时间轴", isExpanded: $showTimingTools) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("试听当前歌曲，在对应歌词开始时标记时间。LRC 格式示例：[00:12.50] 歌词")
+                            .font(.caption).foregroundStyle(.secondary)
+                        HStack(spacing: 10) {
+                            Button(library.playingID == track.id && library.isPlaying ? "暂停试听" : "播放试听") {
+                                if library.playingID == track.id { library.togglePlayback() }
+                                else { library.play(track.id) }
+                            }
+                            Button("标记第 \(timingIndex + 1) 行") { stampNextLine() }
+                                .disabled(lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || timingIndex >= LRCParser.parse(lyrics).count || library.playingID != track.id)
+                            Button("从头打点") { timingIndex = 0 }
+                        }
+                    }.padding(.top, 12)
+                }.padding(16)
+            }
+        }
+    }
+
+    private var lyricsStatus: String {
+        if lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "保存时自动整理空行；已有时间标签保持不变。"
+        }
+        if LyricsAlignment.needsAlignment(lyrics) {
+            return "保存后将在本机自动匹配时间轴。首次使用需联网下载模型，歌曲不会上传。"
+        }
+        let timed = LRCParser.parse(lyrics).filter { $0.timestamp != nil }.count
+        return "已识别 \(timed) 行时间标签，保存后可自动跟随播放。"
+    }
+
+    private var filePage: some View {
+        SettingsGroup(title: "原始文件", footer: "文件信息仅供查看，可以选择并复制文件名称与路径。") {
+            VStack(alignment: .leading, spacing: 16) {
+                readOnlyRow("文件名称", track.url.lastPathComponent, selectable: true)
+                Divider()
+                readOnlyRow("文件路径", track.url.path, selectable: true)
+                Divider()
+                readOnlyRow("播放时长", formattedDuration(track.duration))
+                Divider()
+                readOnlyRow("标签编辑", track.canWriteTags ? "支持编辑基本信息、封面和歌词" : "仅支持将歌词保存到 LRC 文件")
+            }.padding(16)
         }
     }
 
@@ -319,34 +432,18 @@ struct MetadataEditor: View {
 
 private struct ArtworkPreview: View {
     let image: NSImage?
+    var size: CGFloat = 86
     var body: some View {
         Group {
             if let image { Image(nsImage: image).resizable().scaledToFill() }
             else { Image(systemName: "photo").font(.title).foregroundStyle(.secondary) }
-        }.frame(width: 86, height: 86).background(.quaternary).clipShape(RoundedRectangle(cornerRadius: 12))
+        }.frame(width: size, height: size).background(.quaternary).clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 
-private struct EditorPrimaryButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 24)
-            .frame(height: 34)
-            .background(Color.accentColor.opacity(isEnabled ? (configuration.isPressed ? 0.78 : 1) : 0.38), in: Capsule())
-    }
-}
-
-private struct EditorSecondaryButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(.primary.opacity(isEnabled ? 1 : 0.45))
-            .padding(.horizontal, 22)
-            .frame(height: 34)
-            .background(Color.secondary.opacity(configuration.isPressed ? 0.20 : 0.13), in: Capsule())
-    }
+private enum EditorPage: String, CaseIterable, Identifiable {
+    case details = "基本信息"
+    case lyrics = "歌词"
+    case file = "文件信息"
+    var id: Self { self }
 }

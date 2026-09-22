@@ -86,21 +86,3 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     }
     @objc private func quit() { NSApp.terminate(nil) }
 }
-
-struct AppearanceSettings: View {
-    @AppStorage(StatusBarController.preferenceKey) private var style = StatusIconStyle.colored.rawValue
-    @AppStorage("MiniVoice.appearance") private var appearance = AppAppearance.system.rawValue
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Picker("界面外观", selection: $appearance) {
-                ForEach(AppAppearance.allCases) { item in Text(item.title).tag(item.rawValue) }
-            }
-            Picker("状态栏图标", selection: $style) {
-                ForEach(StatusIconStyle.allCases) { item in Text(item.title).tag(item.rawValue) }
-            }
-            Text("彩色使用浅绿色 MV 音符；纯色自动适应系统明暗外观。隐藏后可在此重新开启。")
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }.frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
