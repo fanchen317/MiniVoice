@@ -227,12 +227,11 @@ struct ContentView: View {
                 }
                 Spacer(minLength: 0)
                 if showingTasks || lyricsSync.activeCount > 0 || library.isImporting || lyricsSync.downloadingModel || lyricsSync.hasUnread || unreadScan {
-                  Button { showingTasks.toggle() } label: {
-                    Image(systemName: "exclamationmark.circle")
-                        .font(.system(size: 19)).foregroundStyle(playerGreen)
-                  }
-                  .buttonStyle(.plain).help("后台任务").accessibilityLabel("后台任务")
-                  .popover(isPresented: $showingTasks) { backgroundTasks }
+                  Image(systemName: "exclamationmark.circle")
+                    .font(.system(size: 19)).foregroundStyle(playerGreen)
+                    .help("后台任务").accessibilityLabel("后台任务")
+                    .onTapGesture { showingTasks.toggle() }
+                    .popover(isPresented: $showingTasks) { backgroundTasks }
                 }
             }
             .onChange(of: library.isImporting) { importing in
