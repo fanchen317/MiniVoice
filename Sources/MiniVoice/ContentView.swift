@@ -106,6 +106,8 @@ struct ContentView: View {
             .background { CoverBackdrop(image: library.selectedTrack?.artwork) }
         }
         .ignoresSafeArea()
+        // 280pt player + outer margins; the visible sidebar adds 250pt + 12pt.
+        .frame(minWidth: sidebarVisible ? 566 : 304, minHeight: 600)
         .tint(playerGreen)
         .task(id: listRequest) { await updateSongs() }
         .onAppear {
@@ -516,10 +518,6 @@ private struct PlayerDetail: View {
                 Text(track.title).font(.system(size: size < 160 ? 20 : (size < 180 ? 23 : 30), weight: .bold)).lineLimit(2).minimumScaleFactor(0.85)
                 Text(track.artist).font(.headline).lineLimit(1)
                 Text(track.album).foregroundStyle(.secondary).lineLimit(size < 160 ? 1 : 2)
-                if size >= 160 {
-                    Button(action: onEdit) { Image(systemName: "ellipsis.rectangle") }
-                        .buttonStyle(.plain).modifier(HeaderButtonSurface()).padding(.top, 6)
-                }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -672,7 +670,7 @@ private struct PlayerControls: View {
                     transport
                     HStack(spacing: 18) {
                         trackInfo.frame(maxWidth: .infinity, alignment: .leading)
-                        output.frame(width: 150)
+                        output.frame(width: 120)
                     }
                 }
             } else {
@@ -698,7 +696,6 @@ private struct PlayerControls: View {
                 Text(track.title).font(.subheadline.weight(.semibold)).lineLimit(1)
                 Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
-            Button(action: onEdit) { Image(systemName: "ellipsis") }.buttonStyle(.plain).help("编辑歌曲")
         }
     }
 
@@ -772,7 +769,7 @@ private struct Artwork: View {
     let size: CGFloat
     var showsBorder = false
     private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: artworkCornerRadius(for: size), style: .continuous)
+        RoundedRectangle(cornerRadius: showsBorder ? panelCornerRadius : artworkCornerRadius(for: size), style: .continuous)
     }
     var body: some View {
         Group {

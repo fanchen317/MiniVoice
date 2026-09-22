@@ -23,7 +23,6 @@ struct MiniVoiceApp: App {
                 .environmentObject(desktopLyrics)
                 .environmentObject(lyricsSync)
                 .background(WindowCloseObserver(library: library))
-                .frame(minWidth: 800, minHeight: 600)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
                 .onAppear {
                     shortcuts.connect(library: library)
@@ -31,6 +30,7 @@ struct MiniVoiceApp: App {
                 }
         }
         .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentMinSize)
         .defaultSize(width: 1280, height: 800)
         .commands {
             CommandMenu("播放") {
