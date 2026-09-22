@@ -67,7 +67,7 @@ struct ContentView: View {
             HStack(spacing: 14) {
                 if sidebarVisible {
                     sidebar
-                        .frame(width: min(288, max(240, geometry.size.width * 0.25)))
+                        .frame(width: min(288, max(250, geometry.size.width * 0.25)))
                         .frame(maxHeight: .infinity)
                         .modifier(PlayerPanelSurface())
                 }
@@ -267,7 +267,7 @@ struct ContentView: View {
               }
             }
         }
-        .padding(.horizontal, 12).padding(.top, 18).padding(.bottom, 12)
+        .padding(.horizontal, 18).padding(.top, 18).padding(.bottom, 14)
         .frame(maxHeight: .infinity)
     }
 
@@ -291,7 +291,7 @@ struct ContentView: View {
     }
 
     private var libraryToolbar: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(recent ? "最近播放" : "我的歌曲")
                     .font(.caption.weight(.semibold))
@@ -1045,7 +1045,7 @@ private struct LibraryToolbarSurface: ViewModifier {
         content
             .font(.system(size: 15, weight: .medium))
             .foregroundStyle(isEnabled ? playerGreen : Color.secondary.opacity(0.42))
-            .frame(width: 32, height: 32)
+            .frame(width: 28, height: 28)
             .background {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(isEnabled && hovered ? playerGreen.opacity(0.18) : .clear)

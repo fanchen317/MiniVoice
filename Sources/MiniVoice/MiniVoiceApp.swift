@@ -12,7 +12,7 @@ struct MiniVoiceApp: App {
     @AppStorage("MiniVoice.appearance") private var appearance = AppAppearance.system.rawValue
 
     var body: some Scene {
-        WindowGroup("MiniVoice", id: "main") {
+        Window("MiniVoice", id: "main") {
             ContentView(statusBar: statusBar)
                 .environmentObject(library)
                 .environmentObject(library.clock)

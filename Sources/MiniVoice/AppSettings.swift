@@ -37,11 +37,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static var reopenMainWindow: (() -> Void)?
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // A floating lyrics panel also counts as a visible window. Look for the
-        // actual player instead of relying on AppKit's hasVisibleWindows flag.
-        if let main = sender.windows.first(where: {
-            $0.identifier?.rawValue == "MiniVoice.main" && ($0.isVisible || $0.isMiniaturized)
-        }) {
+        // The main window may exist in a hidden state after the user closes it.
+        // Reuse the existing instance instead of letting reopenMainWindow spawn
+        // a duplicate every time the dock icon is clicked.
+        if let main = sender.windows.first(where: { $0.identifier?.rawValue == "MiniVoice.main" }) {
             if main.isMiniaturized { main.deminiaturize(nil) }
             main.makeKeyAndOrderFront(nil)
         } else {
