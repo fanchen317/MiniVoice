@@ -35,6 +35,22 @@ enum CloseBehavior: String, CaseIterable, Identifiable {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        applyAppearance()
+        NotificationCenter.default.addObserver(self, selector: #selector(applyAppearance), name: UserDefaults.didChangeNotification, object: nil)
+    }
+
+    @objc private func applyAppearance() {
+        let preference = AppAppearance(rawValue: UserDefaults.standard.string(forKey: "MiniVoice.appearance") ?? "system") ?? .system
+        let appearance: NSAppearance?
+        switch preference {
+        case .system: appearance = nil
+        case .light: appearance = NSAppearance(named: .aqua)
+        case .dark: appearance = NSAppearance(named: .darkAqua)
+        }
+        if NSApp.appearance?.name != appearance?.name { NSApp.appearance = appearance }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
 

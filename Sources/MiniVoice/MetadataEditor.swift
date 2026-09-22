@@ -212,7 +212,7 @@ struct MetadataEditor: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxWidth: 560, maxHeight: 560)
-                        .background(.black.opacity(0.04))
+                        .background(Color.primary.opacity(0.04))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .padding(20)

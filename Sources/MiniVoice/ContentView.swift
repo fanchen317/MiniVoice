@@ -781,7 +781,7 @@ private struct PlayerPanelSurface: ViewModifier {
                 Color(nsColor: .windowBackgroundColor).opacity(colorScheme == .dark ? 0.34 : 0.22)
             }
             .clipShape(shape)
-            .overlay { shape.stroke(.white.opacity(0.55), lineWidth: 1).allowsHitTesting(false) }
+            .overlay { shape.stroke(.white.opacity(colorScheme == .dark ? 0.14 : 0.55), lineWidth: 1).allowsHitTesting(false) }
             .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
     }
 }
@@ -811,6 +811,7 @@ private struct FrostedBackdrop: NSViewRepresentable {
 /// competing with controls or text placed above it.
 private struct CoverBackdrop: View {
     let image: NSImage?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         GeometryReader { geometry in
@@ -821,7 +822,7 @@ private struct CoverBackdrop: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            .opacity(0.66)
+            .opacity(colorScheme == .dark ? 0.16 : 0.66)
 
             if let image {
                 Image(nsImage: image)
@@ -830,10 +831,14 @@ private struct CoverBackdrop: View {
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .scaleEffect(1.24)
                     .blur(radius: 52)
-                    .opacity(0.38)
+                    .opacity(colorScheme == .dark ? 0.18 : 0.38)
             }
 
-            Color.white.opacity(0.06)
+            if colorScheme == .dark {
+                Color.black.opacity(0.42)
+            } else {
+                Color.white.opacity(0.06)
+            }
           }
           .frame(width: geometry.size.width, height: geometry.size.height)
           .clipped()
@@ -912,7 +917,7 @@ private struct GlassButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.font(.subheadline.weight(.medium))
             .padding(.horizontal, 14).padding(.vertical, 10)
-            .background(.white.opacity(configuration.isPressed ? 0.4 : 0.7), in: RoundedRectangle(cornerRadius: 12))
+            .background(Color(nsColor: .controlBackgroundColor).opacity(configuration.isPressed ? 0.4 : 0.7), in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -920,7 +925,7 @@ private struct SidebarToggleStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(.primary)
-            .background(.white.opacity(configuration.isPressed ? 0.48 : 0.74), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(Color(nsColor: .controlBackgroundColor).opacity(configuration.isPressed ? 0.48 : 0.74), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: .black.opacity(0.05), radius: 8, y: 3)
     }
 }
