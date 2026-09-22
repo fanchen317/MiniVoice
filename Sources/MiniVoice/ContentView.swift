@@ -740,7 +740,13 @@ private struct PlayerControls: View {
                 Image(systemName: volume.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                 Slider(value: Binding(get: { volume.value }, set: { volume.set($0) }), in: 0...1)
                     .disabled(!volume.canSetVolume).accessibilityLabel("系统音量")
-                Text(volume.canSetVolume ? "\(Int(volume.value * 100))%" : "—").monospacedDigit()
+                // Reserve a width just wide enough for "100%" so the slider
+                // doesn't shrink/grow as the digit count changes.
+                Text(volume.canSetVolume ? "\(Int(volume.value * 100))%" : "—")
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(minWidth: 32, idealWidth: 36, alignment: .trailing)
             }
             Menu {
                 ForEach(volume.outputDevices) { device in
