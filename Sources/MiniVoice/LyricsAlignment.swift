@@ -77,7 +77,7 @@ final class LyricsAlignment: ObservableObject {
         for existing in LyricsModel.allCases where existing != model {
             if FileManager.default.fileExists(atPath: modelURL(existing).path) { try FileManager.default.removeItem(at: modelURL(existing)) }
         }
-        status = "正在下载 \(model.rawValue) 模型并校验完整性…"
+        status = "正在下载 \(model.rawValue) 模型并校验…"
         do {
             try await run(python, [worker.path, "--download-model", model.rawValue, root.appendingPathComponent("models").path], work: work, timeout: 7200)
         } catch {
