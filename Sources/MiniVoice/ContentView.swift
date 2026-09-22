@@ -965,7 +965,8 @@ private struct PlayerPanelSurface: ViewModifier {
         content
             .background {
                 FrostedBackdrop(material: .hudWindow, blendingMode: .withinWindow)
-                Color(nsColor: .windowBackgroundColor).opacity(colorScheme == .dark ? 0.34 : 0.22)
+                    .opacity(colorScheme == .dark ? 0.76 : 1)
+                Color(nsColor: .windowBackgroundColor).opacity(colorScheme == .dark ? 0.18 : 0.22)
             }
             .clipShape(shape)
             .overlay { shape.stroke(.white.opacity(colorScheme == .dark ? 0.14 : 0.55), lineWidth: 1).allowsHitTesting(false) }
@@ -1009,7 +1010,7 @@ private struct CoverBackdrop: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            .opacity(colorScheme == .dark ? 0.16 : 0.66)
+            .opacity(colorScheme == .dark ? 0.42 : 0.66)
 
             if let image {
                 Image(nsImage: image)
@@ -1017,12 +1018,12 @@ private struct CoverBackdrop: View {
                     .scaledToFill()
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .scaleEffect(1.24)
-                    .blur(radius: 52)
-                    .opacity(colorScheme == .dark ? 0.18 : 0.38)
+                    .blur(radius: colorScheme == .dark ? 28 : 52)
+                    .opacity(colorScheme == .dark ? 0.40 : 0.38)
             }
 
             if colorScheme == .dark {
-                Color.black.opacity(0.42)
+                Color.black.opacity(0.20)
             } else {
                 Color.white.opacity(0.06)
             }
