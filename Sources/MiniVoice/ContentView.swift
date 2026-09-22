@@ -267,7 +267,7 @@ struct ContentView: View {
               }
             }
         }
-        .padding(.horizontal, 18).padding(.top, 18).padding(.bottom, 14)
+        .padding(14)
         .frame(maxHeight: .infinity)
     }
 
