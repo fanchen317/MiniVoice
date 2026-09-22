@@ -41,12 +41,27 @@ final class LyricsAlignment: ObservableObject {
             let baseTitle = title.replacingOccurrences(of: #"\s*[（(].*?[）)]"#, with: "", options: .regularExpression)
             let isTitle = !sawLyrics && !title.isEmpty && (baseHeading.localizedCaseInsensitiveCompare(baseTitle) == .orderedSame ||
                 (text.contains(" - ") && baseHeading.lowercased().hasPrefix(baseTitle.lowercased() + " ")))
-            let isCredit = text.range(of: #"^(Rap填词|Rap填詞|原唱|Program|伴唱|童声|童聲|吉他|贝斯|貝斯|鼓|钢琴|鋼琴|弦乐|弦樂|人声|人聲|录音师|錄音師|混音师|混音師|词|詞|曲|作词|作詞|作曲|编曲|編曲|演唱|歌手|制作人|製作人|混音|录音|錄音|和声|和聲|母带|母帶|出品|发行|發行|监制|監製|制作|製作|词曲|詞曲|专辑|專輯|OP|SP|Lyrics|Composer|Arranger|Produced by)\s*[:：]"#, options: [.regularExpression, .caseInsensitive]) != nil || text.range(of: #"^[^:：]{0,10}(制作人|製作人|工程师|工程師|录音室|錄音室|工作室|监制|監製|填词|填詞)\s*[:：]"#, options: .regularExpression) != nil
+            let isCredit = Self.isCredit(text)
             let isSection = text.range(of: #"^\[(?i:verse|chorus|bridge|intro|outro|instrumental|pre-chorus|副歌|主歌|间奏|間奏)[^\]]*\]$"#, options: .regularExpression) != nil
             if !text.isEmpty && !text.hasPrefix("[") && !isTitle && !isCredit && !isSection { sawLyrics = true }
             return isTitle || isCredit || isSection ? "[note:\(text)]" : raw
         }.joined(separator: "\n")
         return LyricsText.normalized(annotated)
+    }
+
+    private nonisolated static func isCredit(_ text: String) -> Bool {
+        guard let separator = text.firstIndex(where: { $0 == ":" || $0 == "：" }) else { return false }
+        let role = text[..<separator].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !role.isEmpty, role.count <= 24 else { return false }
+        let keywords = [
+            "词", "詞", "曲", "编曲", "編曲", "制作", "製作", "总监", "總監", "监制", "監製",
+            "统筹", "統籌", "策划", "策劃", "企划", "企劃", "出品", "发行", "發行", "宣发",
+            "录音", "錄音", "混音", "母带", "母帶", "工程师", "工程師", "工作室", "录音棚", "錄音棚",
+            "吉他", "贝斯", "貝斯", "鼓", "钢琴", "鋼琴", "弦乐", "弦樂", "和声", "和聲", "人声", "人聲",
+            "伴唱", "童声", "童聲", "原唱", "演唱", "歌手", "rap填词", "rap填詞", "program",
+            "lyrics", "composer", "arranger", "produced by", "op", "sp"
+        ]
+        return keywords.contains { role.localizedCaseInsensitiveContains($0) }
     }
 
     /// Validate again at the application boundary; preserve any manually supplied anchors.

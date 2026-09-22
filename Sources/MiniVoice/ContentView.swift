@@ -8,6 +8,7 @@ struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var library: MusicLibrary
+    @EnvironmentObject private var lyricsSync: LyricsSyncCoordinator
     @State private var sidebarVisible = true
     @State private var recent = false
     @State private var query = ""
@@ -112,6 +113,11 @@ struct ContentView: View {
         .alert("操作失败", isPresented: Binding(get: { library.errorMessage != nil }, set: { if !$0 { library.errorMessage = nil } })) {
             Button("好", role: .cancel) { library.errorMessage = nil }
         } message: { Text(library.errorMessage ?? "") }
+        .alert("歌词同步", item: $lyricsSync.alert) { notice in
+            Button("好", role: .cancel) { lyricsSync.alert = nil }
+        } message: { notice in
+            Text(notice.message)
+        }
     }
 
     private var sidebar: some View {

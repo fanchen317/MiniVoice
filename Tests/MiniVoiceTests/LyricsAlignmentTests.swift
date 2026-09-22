@@ -17,6 +17,14 @@ final class LyricsAlignmentTests: XCTestCase {
         XCTAssertTrue(text.contains("[note:词：许嵩]"))
     }
 
+    func testProductionCreditsBecomeNotes() {
+        let text = LyricsAlignment.alignmentSource("音乐总监：甲\n制作总监：乙\n编曲：丙\n录音棚：丁\n第一句歌词", title: "测试")
+        XCTAssertTrue(text.contains("[note:音乐总监：甲]"))
+        XCTAssertTrue(text.contains("[note:制作总监：乙]"))
+        XCTAssertTrue(text.contains("[note:编曲：丙]"))
+        XCTAssertEqual(LRCParser.parse(text, placeholder: false).map(\.text), ["第一句歌词"])
+    }
+
     func testMergePreservesRepeatedLinesAndAnchors() throws {
         let source = "[note:词：作者]\n[00:02.00]重复\n第二句\n重复"
         let result = [AlignedLyric(text: "重复", start: 1, end: 3),

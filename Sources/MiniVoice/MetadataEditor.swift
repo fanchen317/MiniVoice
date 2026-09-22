@@ -9,6 +9,7 @@ private struct ArtistEntry: Identifiable {
 
 struct MetadataEditor: View {
     @EnvironmentObject private var library: MusicLibrary
+    @EnvironmentObject private var lyricsSync: LyricsSyncCoordinator
     @Environment(\.dismiss) private var dismiss
     let track: Track
     @State private var title: String
@@ -21,12 +22,7 @@ struct MetadataEditor: View {
     @State private var choosingArtwork = false
     @State private var choosingLyrics = false
     @State private var isSaving = false
-    @State private var isAligning = false
-    @State private var alignmentFailed = false
-    @State private var saveTask: Task<Void, Never>?
-    @StateObject private var alignment = LyricsAlignment()
     @State private var saveError: String?
-    @State private var saveNotice: String?
     @State private var isArtworkDropTarget = false
     @State private var showArtworkZoom = false
     @State private var lyricsDestination: LyricsDestination
@@ -153,20 +149,12 @@ struct MetadataEditor: View {
             }.formStyle(.grouped).padding(.horizontal, 12).disabled(isSaving)
             Divider()
             HStack(spacing: 12) {
-                if isAligning {
-                    ProgressView().controlSize(.small)
-                    Text(alignment.status).font(.caption).foregroundStyle(.secondary)
-                        .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-                }
                 Spacer()
-                Button(isAligning ? "取消同步" : "取消") {
-                    if isAligning { saveTask?.cancel() }
-                    else { dismiss() }
-                }
+                Button("取消") { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                    .disabled(isSaving && !isAligning)
+                    .disabled(isSaving)
                     .buttonStyle(EditorSecondaryButtonStyle())
-                Button(isAligning ? "同步中…" : (isSaving ? "保存中…" : "保存")) { save() }
+                Button(isSaving ? "保存中…" : "保存") { save() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(isSaving)
                     .buttonStyle(EditorPrimaryButtonStyle())
@@ -175,7 +163,6 @@ struct MetadataEditor: View {
             .padding(.vertical, 16)
         }
         .frame(width: 660, height: 730)
-        .interactiveDismissDisabled(isSaving)
         .fileImporter(isPresented: $choosingArtwork, allowedContentTypes: [.image]) { result in
             guard case .success(let url) = result else { return }
             if let image = NSImage(contentsOf: url) { artwork = image; artworkChanged = true }
@@ -190,15 +177,8 @@ struct MetadataEditor: View {
             } catch { saveError = "无法读取歌词，请使用 UTF-8 编码：\(error.localizedDescription)" }
         }
         .alert("操作失败", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
-            if alignmentFailed {
-                Button("重试同步") { saveError = nil; save() }
-                Button("仅保存原歌词") { saveError = nil; save(synchronize: false) }
-            }
             Button("返回编辑", role: .cancel) { saveError = nil }
         } message: { Text(saveError ?? "") }
-        .alert("歌词已保存，部分行待校正", isPresented: Binding(get: { saveNotice != nil }, set: { if !$0 { saveNotice = nil } })) {
-            Button("完成") { saveNotice = nil; dismiss() }
-        } message: { Text(saveNotice ?? "") }
         .sheet(isPresented: $showArtworkZoom) {
             if let artwork {
                 VStack(spacing: 12) {
@@ -243,7 +223,7 @@ struct MetadataEditor: View {
         return true
     }
 
-    private func save(synchronize: Bool = true) {
+    private func save() {
         var updated = track
         updated.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         updated.artist = artists.map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " / ")
@@ -252,31 +232,21 @@ struct MetadataEditor: View {
         lyrics = updated.lyrics
         updated.artwork = artwork
         updated.artworkWasEdited = artworkChanged
-        let shouldAlign = synchronize && LyricsAlignment.needsAlignment(updated.lyrics)
+        let shouldAlign = LyricsAlignment.needsAlignment(updated.lyrics)
         guard updated.hasFileChanges(comparedTo: track) || shouldAlign else {
             dismiss()
             return
         }
         isSaving = true
         let destination: LyricsDestination = track.canWriteTags ? lyricsDestination : .sidecar
-        alignmentFailed = false
-        isAligning = shouldAlign
-        saveTask = Task {
-            defer { isSaving = false; isAligning = false; saveTask = nil }
+        Task {
+            defer { isSaving = false }
             do {
-                if shouldAlign {
-                    updated.lyrics = try await alignment.align(source: updated.lyrics, audioURL: track.url, duration: track.duration, title: updated.title)
-                }
-                try Task.checkCancellation()
-                isAligning = false
                 try await library.save(updated, lyricsDestination: destination)
                 lyrics = updated.lyrics
-                if shouldAlign, let warning = alignment.warning { saveNotice = warning }
-                else { dismiss() }
-            } catch is CancellationError {
-                // Keep all editor fields available for another attempt.
+                if shouldAlign { lyricsSync.start(track: updated, destination: destination, library: library) }
+                dismiss()
             } catch {
-                alignmentFailed = isAligning
                 saveError = error.localizedDescription
             }
         }
