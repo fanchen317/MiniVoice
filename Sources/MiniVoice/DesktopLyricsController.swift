@@ -62,7 +62,8 @@ final class DesktopLyricsController: ObservableObject {
             let lines = track.lyricLines
             if let active = library.activeLyricIndex(for: lines) {
                 primary = lines[active].text
-                secondary = lines.dropFirst(active + 1).first(where: { !$0.text.isEmpty })?.text ?? track.artist
+                secondary = lines.dropFirst(active + 1).first(where: { !$0.text.isEmpty })?.text
+                    ?? "\(track.title) - \(track.artist)"
             } else {
                 primary = track.title
                 secondary = track.artist
@@ -84,7 +85,7 @@ final class DesktopLyricsController: ObservableObject {
     private func showPanel() {
         if panel == nil {
             let panel = NSPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 760, height: 118),
+                contentRect: NSRect(x: 0, y: 0, width: 520, height: 104),
                 styleMask: [.borderless, .nonactivatingPanel],
                 backing: .buffered,
                 defer: false
@@ -112,6 +113,7 @@ final class DesktopLyricsController: ObservableObject {
         }
 
         panel?.orderFrontRegardless()
+        (panel?.contentView as? DesktopLyricsPanelView)?.refreshHoverState()
     }
 
     private func restoreOrPositionPanel() {
@@ -146,7 +148,7 @@ private final class DesktopLyricsPanelView: NSView {
     init(controller: DesktopLyricsController) {
         self.controller = controller
         lyrics = DesktopLyricsHostingView(rootView: DesktopLyricsOverlay(controller: controller))
-        super.init(frame: NSRect(x: 0, y: 0, width: 760, height: 118))
+        super.init(frame: NSRect(x: 0, y: 0, width: 520, height: 104))
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
         layer?.masksToBounds = true
@@ -154,6 +156,7 @@ private final class DesktopLyricsPanelView: NSView {
         glass.blendingMode = .behindWindow
         glass.state = .active
         glass.alphaValue = 0.68
+        glass.isHidden = true
         addSubview(glass)
         addSubview(lyrics)
         lockButton.isBordered = false
@@ -196,8 +199,22 @@ private final class DesktopLyricsPanelView: NSView {
         hoverArea = area
     }
 
-    override func mouseEntered(with event: NSEvent) { lockButton.isHidden = false }
-    override func mouseExited(with event: NSEvent) { lockButton.isHidden = true }
+    private func setHovered(_ hovered: Bool) {
+        glass.isHidden = !hovered
+        lockButton.isHidden = !hovered
+    }
+
+    func refreshHoverState() {
+        guard let window, window.isVisible else {
+            setHovered(false)
+            return
+        }
+        let point = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+        setHovered(bounds.contains(point))
+    }
+
+    override func mouseEntered(with event: NSEvent) { setHovered(true) }
+    override func mouseExited(with event: NSEvent) { setHovered(false) }
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
         guard NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).contains(local) else { return nil }
@@ -208,6 +225,7 @@ private final class DesktopLyricsPanelView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard !controller.isLocked else { return }
         window?.performDrag(with: event)
+        refreshHoverState()
     }
     @objc private func toggleLock() { controller.toggleLock() }
 }
@@ -227,15 +245,9 @@ private struct DesktopLyricsOverlay: View {
     var body: some View {
         ZStack {
             VStack(spacing: 5) {
-                Text(controller.primaryLine)
-                    .font(.system(size: 27, weight: .semibold, design: .rounded))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.55)
-                Text(controller.secondaryLine)
-                    .font(.system(size: 18, weight: .medium, design: .rounded))
+                DesktopLyricMarquee(text: controller.primaryLine, size: 27, weight: .semibold)
+                DesktopLyricMarquee(text: controller.secondaryLine, size: 18, weight: .medium)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.55)
             }
             .id(lyricKey)
             .transition(.asymmetric(
@@ -248,5 +260,59 @@ private struct DesktopLyricsOverlay: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .animation(.easeInOut(duration: 0.38), value: lyricKey)
+    }
+}
+
+/// Keep short lines centered; reveal long lines at a constant, readable speed.
+private struct DesktopLyricMarquee: View {
+    let text: String
+    let size: CGFloat
+    let weight: Font.Weight
+    @State private var textWidth: CGFloat = 0
+    @State private var startedAt = Date()
+
+    var body: some View {
+        GeometryReader { geometry in
+            let overflow = max(0, textWidth - geometry.size.width)
+            TimelineView(.animation(paused: overflow <= 0)) { context in
+                Text(text)
+                    .font(.system(size: size, weight: weight, design: .rounded))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .background(GeometryReader { measurement in
+                        Color.clear.preference(key: DesktopLyricWidthKey.self, value: measurement.size.width)
+                    })
+                    .offset(x: overflow > 0 ? -scrollOffset(at: context.date, overflow: overflow) : 0)
+                    .frame(width: geometry.size.width, height: geometry.size.height,
+                           alignment: overflow > 0 ? .leading : .center)
+            }
+            .clipped()
+            .onPreferenceChange(DesktopLyricWidthKey.self) { width in
+                if textWidth != width {
+                    textWidth = width
+                    startedAt = Date()
+                }
+            }
+            .onChange(of: text) { _ in startedAt = Date() }
+            .onChange(of: geometry.size.width) { _ in startedAt = Date() }
+        }
+        .frame(height: size * 1.35)
+        .accessibilityLabel(text)
+    }
+
+    private func scrollOffset(at date: Date, overflow: CGFloat) -> CGFloat {
+        guard overflow > 0 else { return 0 }
+        let duration = Double(overflow) / 30
+        // Pause at both ends, then begin another pass from the start.
+        let elapsed = max(0, date.timeIntervalSince(startedAt))
+            .truncatingRemainder(dividingBy: duration + 3)
+        return min(overflow, CGFloat(max(0, elapsed - 1.5) * 30))
+    }
+}
+
+private struct DesktopLyricWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
