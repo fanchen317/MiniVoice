@@ -503,14 +503,16 @@ private struct PlayerDetail: View {
             .help("显示或隐藏侧栏")
             Spacer()
             Button(action: onEdit) {
-                Image(systemName: "ellipsis.rectangle")
-                    .font(.system(size: 18, weight: .medium))
+                Image(systemName: "info.circle")
+                    .font(.system(size: 22, weight: .medium))
+                    .symbolRenderingMode(.monochrome)
                     .frame(width: 38, height: 38)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .modifier(HeaderButtonSurface())
-            .help("编辑歌曲")
+            .help("歌曲信息")
+            .accessibilityLabel("歌曲信息")
         }
     }
 

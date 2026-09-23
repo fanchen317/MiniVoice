@@ -231,22 +231,32 @@ private struct LibrarySettingsPage: View {
 }
 
 private struct LyricsSettingsPage: View {
+    @EnvironmentObject private var library: MusicLibrary
     @EnvironmentObject private var sync: LyricsSyncCoordinator
-    @AppStorage("MiniVoice.lyricsModel") private var model = "medium"
+    @AppStorage("MiniVoice.lyricsModel") private var model = "small"
     @State private var pendingDeletion: LyricsModel?
+    @State private var onlineTrack: Track?
 
     var body: some View {
-        SettingsGroup(title: "匹配偏好", footer: "歌曲和歌词在本机处理，无需 API Key，也不会上传。") {
+        SettingsGroup(title: "在线歌词", footer: "使用歌名和歌手查询 LRCLIB；预览并确认后才会保存。") {
+            SettingsRow(title: "当前选中歌曲", detail: library.selectedTrack?.title ?? "请先在音乐库中选择歌曲") {
+                Button("查询并预览…") { onlineTrack = library.selectedTrack }
+                    .disabled(library.selectedTrack == nil)
+            }
+        }
+        SettingsGroup(title: "匹配偏好", footer: "在线查询只发送歌曲名称与歌手。本地 AI 会分析音频，歌曲不会上传。") {
             SettingsRow(title: "匹配模式", detail: "应用于下一次歌词匹配") {
                 Picker("匹配模式", selection: $model) {
                     ForEach(LyricsModel.allCases) { Text($0.title).tag($0.rawValue) }
                 }.labelsHidden().pickerStyle(.segmented).frame(width: 210)
             }
         }
-        SettingsGroup(title: "本地资源", footer: "两种资源可以同时保留。首次使用会下载对应资源，下载完成后可离线使用。") {
+        SettingsGroup(title: "本地 AI（可选）", footer: "仅在需要把纯文本歌词与音频对齐时使用。首次启用需安装 Python 3.11/3.12，并按需下载运行环境和模型。已下载资源继续保留。") {
             ForEach(LyricsModel.allCases) { resource in
                 SettingsRow(title: resource.title, detail: resource.rawValue == "small" ? "约 460 MB · 处理更快" : "约 1.5 GB · 适合更复杂的歌曲") {
-                    if sync.installedModels.contains(resource) {
+                    if LyricsAlignment.isBundled(resource) {
+                        Label("应用内置 · 可离线使用", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.secondary)
+                    } else if sync.installedModels.contains(resource) {
                         Label("已下载", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.secondary)
                         Button("删除", role: .destructive) { pendingDeletion = resource }
                             .disabled(sync.downloadingModel || sync.activeCount > 0)
@@ -272,6 +282,9 @@ private struct LyricsSettingsPage: View {
             }.padding(.horizontal, 2)
         }
         Color.clear.frame(height: 0)
+            .sheet(item: $onlineTrack) { track in
+                MetadataEditor(track: track, openOnlineSearch: true)
+            }
             .onAppear { sync.refreshModels() }
             .alert("删除本地资源？", isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } })) {
                 Button("取消", role: .cancel) { pendingDeletion = nil }

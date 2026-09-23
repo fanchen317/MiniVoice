@@ -13,6 +13,7 @@ struct MetadataEditor: View {
     @Environment(\.dismiss) private var dismiss
     let track: Track
     var onClose: (() -> Void)?
+    private let openOnlineSearch: Bool
     @State private var title: String
     @State private var artists: [ArtistEntry]
     @State private var album: String
@@ -21,9 +22,19 @@ struct MetadataEditor: View {
     @State private var selectedPage = EditorPage.details
     @State private var showTimingTools = false
     @State private var timingIndex = 0
+    @State private var timingShiftSeconds = 0.5
     @State private var artworkChanged = false
     @State private var choosingArtwork = false
     @State private var choosingLyrics = false
+    @State private var searchingLyrics = false
+    @State private var onlineResults: [OnlineLyricsResult] = []
+    @State private var onlineError: String?
+    @State private var showingOnlineLyrics = false
+    @State private var onlineSearchTitle: String
+    @State private var onlineSearchArtist: String
+    @AppStorage("MiniVoice.onlineLyricsPreferSimplified") private var preferSimplifiedOnlineLyrics = true
+    @State private var selectedOnlineID: Int?
+    @State private var alignAfterSave = false
     @State private var isSaving = false
     @State private var saveError: String?
     @State private var isArtworkDropTarget = false
@@ -31,13 +42,17 @@ struct MetadataEditor: View {
     @State private var lyricsDestination: LyricsDestination
     private let lyricsSourceLabel: String
 
-    init(track: Track, onClose: (() -> Void)? = nil) {
+    init(track: Track, onClose: (() -> Void)? = nil, openOnlineSearch: Bool = false) {
         self.track = track
         self.onClose = onClose
+        self.openOnlineSearch = openOnlineSearch
+        _selectedPage = State(initialValue: openOnlineSearch ? .lyrics : .details)
         _title = State(initialValue: track.title)
         _artists = State(initialValue: track.artist.components(separatedBy: " / ").map { ArtistEntry(name: $0) })
         _album = State(initialValue: track.album)
         _lyrics = State(initialValue: track.lyrics)
+        _onlineSearchTitle = State(initialValue: track.title)
+        _onlineSearchArtist = State(initialValue: track.artist)
         _artwork = State(initialValue: track.artwork)
 
         _lyricsDestination = State(initialValue: .sidecar)
@@ -121,6 +136,10 @@ struct MetadataEditor: View {
                 .padding(20)
                 .frame(width: 600, height: 640)
             }
+        }
+        .sheet(isPresented: $showingOnlineLyrics) { onlineLyricsSheet }
+        .onAppear {
+            if openOnlineSearch { showingOnlineLyrics = true; searchOnlineLyrics() }
         }
     }
 
@@ -236,12 +255,21 @@ struct MetadataEditor: View {
 
     private var lyricsPage: some View {
         VStack(alignment: .leading, spacing: 20) {
+            SettingsGroup(title: "获取时间轴") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("先在线查找并预览歌词；有时间轴的版本可直接跟随播放。没有合适版本时，可导入歌词、手动打点，或选择本地 AI。在线查询无需下载模型。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button("在线查找歌词…") { openOnlineLyricsSearch() }
+                            .buttonStyle(.borderedProminent)
+                        Button("导入 LRC / SRT / TXT…") { choosingLyrics = true }
+                    }
+                }.padding(16)
+            }
             SettingsGroup(title: "歌词内容") {
                 HStack {
                     Label("支持 LRC、SRT、TXT", systemImage: "doc.text")
                         .font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Button("导入歌词…") { choosingLyrics = true }
                 }.padding(16)
                 Divider().padding(.horizontal, 16)
                 ZStack(alignment: .topLeading) {
@@ -276,6 +304,34 @@ struct MetadataEditor: View {
                 }
             }
             SettingsGroup(title: "进阶工具") {
+                if LRCParser.parse(lyrics, placeholder: false).contains(where: { $0.timestamp != nil }) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("整体校正时间轴").font(.system(size: 13, weight: .medium))
+                        Text("正数让歌词晚出现，负数让歌词早出现；只修改编辑框，保存更改后才写入歌曲。")
+                            .font(.caption).foregroundStyle(.secondary)
+                        HStack {
+                            TextField("秒数", value: $timingShiftSeconds, format: .number.precision(.fractionLength(1)))
+                                .textFieldStyle(.roundedBorder).frame(width: 90)
+                            Text("秒").foregroundStyle(.secondary)
+                            Button("应用偏移") {
+                                lyrics = LRCParser.shifted(lyrics, by: timingShiftSeconds)
+                                timingIndex = 0
+                            }.disabled(!timingShiftSeconds.isFinite || timingShiftSeconds == 0 || abs(timingShiftSeconds) > 60)
+                        }
+                    }.padding(16)
+                    Divider().padding(.horizontal, 16)
+                }
+                if LyricsAlignment.needsAlignment(lyrics) {
+                    Button("使用本地 AI 匹配当前歌词") {
+                        alignAfterSave = true
+                        save()
+                    }
+                    .disabled(isSaving || lyricsSync.installedModels.isEmpty)
+                    if lyricsSync.installedModels.isEmpty {
+                        Text("本地 AI 需要先在设置 → 歌词匹配下载运行环境和模型。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 DisclosureGroup("手动调整时间轴", isExpanded: $showTimingTools) {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("试听当前歌曲，在对应歌词开始时标记时间。LRC 格式示例：[00:12.50] 歌词")
@@ -300,7 +356,7 @@ struct MetadataEditor: View {
             return "保存时自动整理空行；已有时间标签保持不变。"
         }
         if LyricsAlignment.needsAlignment(lyrics) {
-            return "保存后将在本机自动匹配时间轴。首次使用需联网下载模型，歌曲不会上传。"
+            return "当前是纯文本歌词。建议先在线查找；没有结果时可手动打点，或使用可选的本地 AI。"
         }
         let timed = LRCParser.parse(lyrics).filter { $0.timestamp != nil }.count
         return "已识别 \(timed) 行时间标签，保存后可自动跟随播放。"
@@ -351,7 +407,7 @@ struct MetadataEditor: View {
         lyrics = updated.lyrics
         updated.artwork = artwork
         updated.artworkWasEdited = artworkChanged
-        let shouldAlign = LyricsAlignment.needsAlignment(updated.lyrics)
+        let shouldAlign = alignAfterSave && LyricsAlignment.needsAlignment(updated.lyrics)
         guard updated.hasFileChanges(comparedTo: track) || shouldAlign else {
             closeEditor()
             return
@@ -364,11 +420,104 @@ struct MetadataEditor: View {
                 try await library.save(updated, lyricsDestination: destination)
                 lyrics = updated.lyrics
                 if shouldAlign { lyricsSync.start(track: updated, destination: destination, library: library) }
+                alignAfterSave = false
                 closeEditor()
             } catch {
                 saveError = error.localizedDescription
             }
         }
+    }
+
+    private var onlineLyricsSheet: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("在线查找歌词").font(.title2.bold())
+                Spacer()
+                Button("重新查询") { searchOnlineLyrics() }.disabled(searchingLyrics)
+                Button("关闭") { showingOnlineLyrics = false }
+            }
+            HStack {
+                TextField("歌曲名称", text: $onlineSearchTitle).textFieldStyle(.roundedBorder)
+                TextField("歌手（可留空）", text: $onlineSearchArtist).textFieldStyle(.roundedBorder)
+            }
+            Toggle("简体预览并应用", isOn: $preferSimplifiedOnlineLyrics)
+                .toggleStyle(.checkbox)
+            Text("同时尝试简繁歌名。简体选项只转换字形，不会把粤语歌词改成国语；请预览确认演唱版本。")
+                .font(.caption).foregroundStyle(.secondary)
+            if searchingLyrics { ProgressView("正在查询…") }
+            if let onlineError { Text(onlineError).foregroundStyle(.secondary) }
+            if let candidate = onlineResults.first(where: { $0.id == selectedOnlineID }),
+               let duration = candidate.duration, track.duration > 0, abs(duration - track.duration) > 10 {
+                Label("这个版本与歌曲时长相差 (Int(abs(duration - track.duration))) 秒，可能是不同演唱或剪辑版本；请先预览确认。", systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            if let candidate = onlineResults.first(where: { $0.id == selectedOnlineID }), !candidate.hasTimeline {
+                Label("这份歌词没有时间轴；应用后可手动打点或使用本地 AI 匹配。", systemImage: "info.circle")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            HStack(alignment: .top, spacing: 16) {
+                List(onlineResults, selection: $selectedOnlineID) { item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(item.trackName) : item.trackName).font(.headline)
+                        Text("\(preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(item.artistName) : item.artistName) · \(item.hasTimeline ? "同步歌词" : "纯文本") · \(Int(item.duration ?? 0) / 60):\(String(format: "%02d", Int(item.duration ?? 0) % 60))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }.tag(item.id)
+                }.frame(width: 250)
+                ScrollView {
+                    Text(onlineResults.first { $0.id == selectedOnlineID }.flatMap { displayedOnlineLyrics($0) } ?? "选择左侧结果预览歌词")
+                        .font(.system(.body, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }.frame(maxWidth: .infinity)
+            }
+            HStack {
+                Text("来源：LRCLIB。确认后替换编辑框中的歌词，点击“保存更改”才写入歌曲。")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("使用这份歌词") {
+                    guard let result = onlineResults.first(where: { $0.id == selectedOnlineID }),
+                          let text = displayedOnlineLyrics(result) else { return }
+                    lyrics = LyricsText.normalized(text)
+                    timingIndex = 0
+                    showingOnlineLyrics = false
+                }.buttonStyle(.borderedProminent).disabled(selectedOnlineID == nil)
+            }
+        }.padding(20).frame(width: 790, height: 540)
+    }
+
+    private func displayedOnlineLyrics(_ result: OnlineLyricsResult) -> String? {
+        guard let text = result.usableLyrics else { return nil }
+        return preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(text) : text
+    }
+
+    private func searchOnlineLyrics() {
+        let searchTitle = onlineSearchTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let searchArtist = onlineSearchArtist.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !searchTitle.isEmpty else {
+            onlineError = "请先填写歌曲名称。"
+            return
+        }
+        searchingLyrics = true
+        onlineError = nil
+        onlineResults = []
+        selectedOnlineID = nil
+        Task {
+            defer { searchingLyrics = false }
+            do {
+                onlineResults = try await OnlineLyricsSearch.search(title: searchTitle, artist: searchArtist, duration: track.duration)
+                if onlineResults.isEmpty { onlineError = "没有找到歌词，可去掉歌名后缀或修改歌手后重试。" }
+                else { selectedOnlineID = onlineResults.first?.id }
+            } catch {
+                onlineError = "查询失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func openOnlineLyricsSearch() {
+        onlineSearchTitle = title
+        onlineSearchArtist = artists.map(\.name).filter { !$0.isEmpty }.joined(separator: " / ")
+        showingOnlineLyrics = true
+        searchOnlineLyrics()
     }
 
     private func applyFilenameParsing() {

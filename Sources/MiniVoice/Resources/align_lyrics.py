@@ -111,7 +111,10 @@ def main():
     import stable_whisper
     import torch
     torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
-    model = stable_whisper.load_model(model_name, device="cpu", download_root=request["modelDirectory"])
+    model_path = Path(request["modelDirectory"]) / (model_name + ".pt")
+    if not model_path.is_file():
+        raise AlignmentFailure("应用缺少本地模型，请重新安装完整版本。")
+    model = stable_whisper.load_model(str(model_path), device="cpu")
     status("正在分析歌曲并匹配歌词…")
 
     def progress(current, total):
@@ -131,6 +134,21 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1] == "--self-test":
+        import stable_whisper
+        import torch
+        import whisper
+        import tiktoken
+        from whisper.tokenizer import get_tokenizer
+        get_tokenizer(multilingual=True, language="zh", task="transcribe").encode("离线歌词")
+        if len(sys.argv) > 2:
+            torch.set_num_threads(2)
+            model = stable_whisper.load_model(sys.argv[2], device="cpu")
+            with torch.no_grad():
+                model.encoder(torch.zeros(1, model.dims.n_mels, 3000))
+            print("Offline model inference OK")
+        print("Offline runtime OK", torch.__version__)
+        sys.exit(0)
     if sys.argv[1] == "--download-model":
         import whisper
         name, directory = sys.argv[2:4]

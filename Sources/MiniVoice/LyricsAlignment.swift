@@ -7,7 +7,7 @@ enum LyricsModel: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String { self == .small ? "快速（small）" : "精准（medium）" }
     static var selected: LyricsModel {
-        LyricsModel(rawValue: UserDefaults.standard.string(forKey: "MiniVoice.lyricsModel") ?? "medium") ?? .medium
+        LyricsModel(rawValue: UserDefaults.standard.string(forKey: "MiniVoice.lyricsModel") ?? "small") ?? .small
     }
 }
 
@@ -43,15 +43,25 @@ final class LyricsAlignment: ObservableObject {
     }
 
     private func modelURL(_ model: LyricsModel) -> URL {
-        root.appendingPathComponent("models").appendingPathComponent(model.rawValue + ".pt")
+        if Self.isBundled(model) {
+            return Bundle.main.resourceURL!.appendingPathComponent("LyricsModels/\(model.rawValue).pt")
+        }
+        return root.appendingPathComponent("models").appendingPathComponent(model.rawValue + ".pt")
+    }
+
+    static func isBundled(_ model: LyricsModel) -> Bool {
+        guard let url = Bundle.main.resourceURL?.appendingPathComponent("LyricsModels/\(model.rawValue).pt") else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
     }
 
     func deleteModel(_ model: LyricsModel) throws {
+        guard !Self.isBundled(model) else { throw LyricsAlignmentError.failed("此模型随应用内置，不能单独删除。") }
         guard !Self.isBusy else { throw LyricsAlignmentError.failed("请等待当前模型任务完成后再删除。") }
         if FileManager.default.fileExists(atPath: modelURL(model).path) { try FileManager.default.removeItem(at: modelURL(model)) }
     }
 
     func downloadModel(_ model: LyricsModel) async throws {
+        if Self.isBundled(model) { return }
         guard !Self.isBusy else { throw LyricsAlignmentError.failed("请等待当前歌词任务完成后再下载。") }
         Self.isBusy = true
         defer { Self.isBusy = false; status = "" }
@@ -177,12 +187,12 @@ final class LyricsAlignment: ObservableObject {
         let language = detected.hasPrefix("zh") ? "zh" : detected
         let request: [String: Any] = ["audioPath": audioURL.path, "lines": lines,
                                      "duration": duration, "language": language,
-                                     "modelDirectory": root.appendingPathComponent("models").path, "model": model.rawValue]
+                                     "modelDirectory": modelURL(model).deletingLastPathComponent().path, "model": model.rawValue]
         let requestURL = work.appendingPathComponent("request.json")
         try JSONSerialization.data(withJSONObject: request).write(to: requestURL)
         let output = work.appendingPathComponent("result.json")
         let progress = work.appendingPathComponent("status.txt")
-        status = "正在加载 AI 模型（首次使用需要下载）…"
+        status = "正在加载本地 AI 模型…"
         try await run(python, [worker.path, requestURL.path, output.path, progress.path], work: work,
                       statusFile: progress, timeout: 3600)
         let result = try JSONDecoder().decode([AlignedLyric].self, from: Data(contentsOf: output))
@@ -195,6 +205,8 @@ final class LyricsAlignment: ObservableObject {
     }
 
     private func prepareRuntime(work: URL) async throws -> URL {
+        let bundled = Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/lyrics-worker/lyrics-worker")
+        if FileManager.default.isExecutableFile(atPath: bundled.path) { return bundled }
         let environment = root.appendingPathComponent("venv")
         let python = environment.appendingPathComponent("bin/python3")
         let marker = root.appendingPathComponent("runtime-version")
@@ -224,9 +236,14 @@ final class LyricsAlignment: ObservableObject {
         defer { try? handle.close() }
         let process = Process()
         process.executableURL = executable
-        process.arguments = arguments
+        process.arguments = executable.lastPathComponent == "lyrics-worker" ? Array(arguments.dropFirst()) : arguments
         var environment = ProcessInfo.processInfo.environment
-        environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+        let helpers = Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/lyrics-worker/_internal").path
+        environment["PATH"] = helpers + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+        environment["PYTHONNOUSERSITE"] = "1"
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        environment.removeValue(forKey: "PYTHONHOME")
+        environment.removeValue(forKey: "PYTHONPATH")
         environment["PYTHONUNBUFFERED"] = "1"
         process.environment = environment
         process.standardOutput = handle

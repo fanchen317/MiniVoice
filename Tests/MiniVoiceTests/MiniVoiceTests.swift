@@ -14,6 +14,17 @@ final class MiniVoiceTests: XCTestCase {
         XCTAssertEqual(LRCParser.timestamped("第一行\n\n第二行"), "[00:00.00] 第一行\n[00:04.00] 第二行")
     }
 
+    func testShiftedLyricsPreservesWordsAndFoldsExistingOffset() {
+        let source = "[ar:Artist]\n[offset:-500]\n[00:01.00]<00:01.25>第一句\n[00:03.00]第二句"
+        let shifted = LRCParser.shifted(source, by: 1.5)
+        XCTAssertTrue(shifted.contains("[ar:Artist]"))
+        XCTAssertFalse(shifted.contains("[offset:"))
+        XCTAssertTrue(shifted.contains("[00:02.00]<00:02.25>第一句"))
+        XCTAssertEqual(LRCParser.parse(shifted).compactMap(\.timestamp), [2, 4])
+        XCTAssertEqual(LRCParser.parse(LRCParser.shifted("[00:00.20]开头", by: -1)).first?.timestamp, 0)
+        XCTAssertEqual(LRCParser.shifted("纯文本", by: 1), "纯文本")
+    }
+
     func testUnsupportedWritePreservesOriginal() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("MiniVoice-\(UUID()).wav")
         let original = Data("original".utf8)

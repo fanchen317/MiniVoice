@@ -39,6 +39,37 @@ enum LRCParser {
         return String(format: "[%02d:%02d.%02d] %@", ticks / 6000, (ticks / 100) % 60, ticks % 100, text)
     }
 
+    /// Shift every LRC timing mark while preserving metadata and lyric text.
+    /// Existing [offset:] metadata is folded into the timestamps so the result
+    /// also behaves consistently in players that ignore that tag.
+    static func shifted(_ source: String, by seconds: TimeInterval) -> String {
+        guard seconds.isFinite else { return source }
+        let offsetPattern = try! NSRegularExpression(pattern: #"(?im)^\s*\[offset:([+-]?\d+)\]\s*\n?"#)
+        let offset: Double
+        if let match = offsetPattern.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)),
+           let range = Range(match.range(at: 1), in: source) {
+            offset = (Double(source[range]) ?? 0) / 1000
+        } else { offset = 0 }
+        let withoutOffset = offsetPattern.stringByReplacingMatches(in: source, range: NSRange(source.startIndex..., in: source), withTemplate: "")
+        let pattern = try! NSRegularExpression(pattern: #"([\[<])(\d+):(\d{2}(?:\.\d{1,3})?)([\]>])"#)
+        let matches = pattern.matches(in: withoutOffset, range: NSRange(withoutOffset.startIndex..., in: withoutOffset))
+        guard !matches.isEmpty else { return source }
+        var result = withoutOffset
+        for match in matches.reversed() {
+            guard let full = Range(match.range, in: result),
+                  let minuteRange = Range(match.range(at: 2), in: result),
+                  let secondRange = Range(match.range(at: 3), in: result),
+                  let minutes = Double(result[minuteRange]),
+                  let remaining = Double(result[secondRange]), remaining < 60 else { continue }
+            let adjusted = max(0, minutes * 60 + remaining + offset + seconds)
+            let ticks = Int((adjusted * 100).rounded())
+            let opening = (result as NSString).substring(with: match.range(at: 1))
+            let closing = (result as NSString).substring(with: match.range(at: 4))
+            result.replaceSubrange(full, with: String(format: "%@%02d:%02d.%02d%@", opening, ticks / 6000, (ticks / 100) % 60, ticks % 100, closing))
+        }
+        return result
+    }
+
     /// Converts common SRT subtitles to timed lyrics, leaving LRC/plain text intact.
     static func imported(_ source: String) -> String {
         let normalized = source.replacingOccurrences(of: "\u{FEFF}", with: "").replacingOccurrences(of: "\r\n", with: "\n")

@@ -148,8 +148,6 @@ final class LyricsSyncCoordinator: ObservableObject {
                 self.update(job.id, self.alignment.warning ?? "同步完成", finished: true)
                 if let warning = self.alignment.warning {
                     self.alert = LyricsSyncAlert(kind: .warning, title: "歌词已保存，部分行待校正", message: warning)
-                } else {
-                    self.alert = LyricsSyncAlert(kind: .success, title: "歌词同步完成", message: "《\(track.title)》已生成可自动跟随的时间轴。")
                 }
             } catch is CancellationError {
                 self.update(job.id, "已取消", finished: true)

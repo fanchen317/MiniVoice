@@ -18,6 +18,7 @@ enum TagWriteError: LocalizedError {
 enum MediaTools {
     static func executable(_ name: String) throws -> URL {
         let paths = [Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/\(name)").path,
+                     Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/lyrics-worker/_internal/\(name)").path,
                      "/opt/homebrew/bin/\(name)", "/usr/local/bin/\(name)"]
         guard let path = paths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
             throw TagWriteError.missingFFmpeg
