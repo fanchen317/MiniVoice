@@ -15,10 +15,10 @@ enum PlaybackMode: String, CaseIterable, Identifiable {
     var explanation: String {
         switch self {
         case .single: return "当前歌曲播完停止。"
-        case .list: return "按音乐库顺序播放，最后一首播完停止。"
-        case .shuffle: return "随机播放，一轮内不重复；上一曲返回实际播放历史。"
+        case .list: return "按开始播放时的列表顺序播放，最后一首播完停止。"
+        case .shuffle: return "在开始播放时的列表内随机播放，一轮内不重复；上一曲返回实际播放历史。"
         case .repeatOne: return "当前歌曲循环播放。"
-        case .repeatAll: return "按音乐库顺序循环播放。"
+        case .repeatAll: return "按开始播放时的列表顺序循环，最后一首后回到第一首。"
         }
     }
     var symbolName: String {

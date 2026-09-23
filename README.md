@@ -37,7 +37,7 @@ swift test
 Scripts/deploy.sh
 ```
 
-部署脚本先构建 release、验证签名，再退出旧版并替换 `/Applications/MiniVoice.app`，最后启动。歌词编辑页并行按简繁歌名宽松查询、按歌名和歌手精确查询 LRCLIB；可修改搜索词、预览同步或纯文本歌词，并切换简体预览与应用（仅转换字形，不翻译粤语）。确认应用后再明确保存到本地。大型 AI 模型和 Python 依赖不再随 App 打包。本地 AI 对齐保留为可选功能：首次启用需要 Python 3.11/3.12，按需安装运行环境并下载模型；已有本地资源不会删除。
+部署脚本先构建 release、验证签名，再退出旧版并替换 `/Applications/MiniVoice.app`，最后启动。歌词编辑页并行查询 LRCLIB 与偏重中文曲目的 LrcAPI，外文歌还可由 lyrics.ovh 补充纯文本；候选会标明来源、合并重复内容，并保留简体预览与应用选项（仅转换字形，不翻译粤语）。确认应用后再明确保存到本地。大型 AI 模型和 Python 依赖不再随 App 打包。本地 AI 对齐保留为可选功能：首次启用需要 Python 3.11/3.12，并按需安装运行环境和模型；已有本地资源不会删除。
 
 单独构建：`Scripts/build-app.sh [debug|release]`，产物在 `.build/MiniVoice.app`。
 

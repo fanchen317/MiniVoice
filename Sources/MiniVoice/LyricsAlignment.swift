@@ -127,11 +127,8 @@ final class LyricsAlignment: ObservableObject {
         guard duration.isFinite, duration > 0, !lines.isEmpty, result.count == lines.count else {
             throw LyricsAlignmentError.failed("歌词未能完整匹配，原歌词未改动。")
         }
-        let matchedCount = zip(lines, result).filter { $0.0.timestamp != nil || $0.1.start != nil }.count
-        guard Double(matchedCount) / Double(lines.count) >= 0.65 else {
-            throw LyricsAlignmentError.failed("较多歌词未能匹配，请检查歌曲版本后重试，或先保存文本。")
-        }
         var previous = -1.0
+        var matchedCount = 0
         let metadata = source.components(separatedBy: .newlines).filter {
             $0.range(of: #"^\s*\[(?!offset:)[A-Za-z]+:.*\]\s*$"#, options: [.regularExpression, .caseInsensitive]) != nil
         }
@@ -139,21 +136,29 @@ final class LyricsAlignment: ObservableObject {
             guard aligned.text == line.text else {
                 throw LyricsAlignmentError.failed("对齐结果与歌词原文不一致，请重试。")
             }
-            // Unmatched lines remain readable plain text; never fabricate their timestamps.
-            if aligned.start == nil && aligned.end == nil && line.timestamp == nil { return line.text }
+            // Keep isolated invalid model timestamps as plain text; do not discard
+            // the entire song when the remaining lines have a reliable timeline.
+            var candidate: Double?
             if let start = aligned.start, let end = aligned.end {
-                guard start.isFinite, end.isFinite, start >= 0, end > start, end <= duration + 0.5 else {
-                    throw LyricsAlignmentError.failed("部分歌词时间无效，请重试同步。")
+                if start.isFinite, end.isFinite, start >= 0, start < duration,
+                   end > start, end <= duration + 0.5 {
+                    candidate = start
                 }
-            } else if aligned.start != nil || aligned.end != nil {
-                throw LyricsAlignmentError.failed("歌词时间轴不完整，请重试同步。")
             }
-            guard let time = line.timestamp ?? aligned.start, time.isFinite, time >= 0, time < duration,
+            guard let time = line.timestamp ?? candidate,
+                  time.isFinite, time >= 0, time < duration,
                   (time * 100).rounded() > previous else {
-                throw LyricsAlignmentError.failed("已有时间点与新时间轴冲突，请检查手动打点。")
+                if line.timestamp != nil {
+                    throw LyricsAlignmentError.failed("已有时间点与新时间轴冲突，请检查手动打点。")
+                }
+                return line.text
             }
             previous = (time * 100).rounded()
+            matchedCount += 1
             return LRCParser.stamp(time, text: line.text)
+        }
+        guard Double(matchedCount) / Double(lines.count) >= 0.65 else {
+            throw LyricsAlignmentError.failed("较多歌词未能匹配，请检查歌曲版本后重试，或先保存文本。")
         }
         return (metadata + timed).joined(separator: "\n")
     }

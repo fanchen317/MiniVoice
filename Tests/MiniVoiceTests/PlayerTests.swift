@@ -2,6 +2,57 @@ import XCTest
 @testable import MiniVoice
 
 final class PlayerTests: XCTestCase {
+    @MainActor
+    func testVisiblePlaybackSnapshotAndModes() async throws {
+        let name = "MiniVoiceQueue-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { defaults.removePersistentDomain(forName: name); try? FileManager.default.removeItem(at: root) }
+        for file in ["a.wav", "b.wav", "c.wav"] {
+            _ = try MediaTools.run("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "10", root.appendingPathComponent(file).path])
+        }
+        let library = MusicLibrary(defaults: defaults, scanOnLaunch: false)
+        library.volume = 0
+        defer { library.stop() }
+        library.addFolders([root])
+        for _ in 0..<1000 {
+            if !library.isImporting { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(library.tracks.count, 3)
+        let ids = library.tracks.map(\.id)
+        guard ids.count == 3 else { return }
+        let visible = [ids[2], ids[0]]
+        library.playbackMode = .list
+        library.play(ids[2], in: visible)
+        library.pause()
+        library.select(ids[1]) // Browsing outside the snapshot must not change it.
+        library.clearRecentPlayback()
+        XCTAssertEqual(library.playbackIDs, visible)
+        library.playbackFinished(successfully: true)
+        XCTAssertEqual(library.playingID, ids[0])
+        library.playbackFinished(successfully: true)
+        XCTAssertFalse(library.isPlaying)
+        library.playbackMode = .repeatAll
+        library.playbackFinished(successfully: true)
+        XCTAssertEqual(library.playingID, ids[2])
+        library.playbackMode = .repeatOne
+        library.playbackFinished(successfully: true)
+        XCTAssertEqual(library.playingID, ids[2])
+        library.playbackMode = .shuffle
+        for _ in 0..<8 {
+            library.playbackFinished(successfully: true)
+            XCTAssertTrue(visible.contains(try XCTUnwrap(library.playingID)))
+        }
+        library.play(ids[1], in: [ids[1]]) // Starting from another list replaces it.
+        XCTAssertEqual(library.playbackIDs, [ids[1]])
+        library.playbackMode = .single
+        library.playbackFinished(successfully: true)
+        XCTAssertFalse(library.isPlaying)
+        XCTAssertEqual(library.playingID, ids[1])
+    }
+
     func testAutomaticPlaybackModesAndManualBoundaries() {
         let ids = [UUID(), UUID(), UUID()]
         var queue = PlaybackQueue()

@@ -33,7 +33,7 @@ struct MetadataEditor: View {
     @State private var onlineSearchTitle: String
     @State private var onlineSearchArtist: String
     @AppStorage("MiniVoice.onlineLyricsPreferSimplified") private var preferSimplifiedOnlineLyrics = true
-    @State private var selectedOnlineID: Int?
+    @State private var selectedOnlineID: String?
     @State private var alignAfterSave = false
     @State private var isSaving = false
     @State private var saveError: String?
@@ -442,13 +442,13 @@ struct MetadataEditor: View {
             }
             Toggle("简体预览并应用", isOn: $preferSimplifiedOnlineLyrics)
                 .toggleStyle(.checkbox)
-            Text("同时尝试简繁歌名。简体选项只转换字形，不会把粤语歌词改成国语；请预览确认演唱版本。")
+            Text("查询 LRCLIB、LrcAPI；外文歌另查 lyrics.ovh。简体选项只转换字形，不会把粤语歌词改成国语。")
                 .font(.caption).foregroundStyle(.secondary)
             if searchingLyrics { ProgressView("正在查询…") }
             if let onlineError { Text(onlineError).foregroundStyle(.secondary) }
             if let candidate = onlineResults.first(where: { $0.id == selectedOnlineID }),
                let duration = candidate.duration, track.duration > 0, abs(duration - track.duration) > 10 {
-                Label("这个版本与歌曲时长相差 (Int(abs(duration - track.duration))) 秒，可能是不同演唱或剪辑版本；请先预览确认。", systemImage: "exclamationmark.triangle")
+                Label("这个版本与歌曲时长相差 \(Int(abs(duration - track.duration))) 秒，可能是不同演唱或剪辑版本；请先预览确认。", systemImage: "exclamationmark.triangle")
                     .font(.caption).foregroundStyle(.orange)
             }
             if let candidate = onlineResults.first(where: { $0.id == selectedOnlineID }), !candidate.hasTimeline {
@@ -459,7 +459,7 @@ struct MetadataEditor: View {
                 List(onlineResults, selection: $selectedOnlineID) { item in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(item.trackName) : item.trackName).font(.headline)
-                        Text("\(preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(item.artistName) : item.artistName) · \(item.hasTimeline ? "同步歌词" : "纯文本") · \(Int(item.duration ?? 0) / 60):\(String(format: "%02d", Int(item.duration ?? 0) % 60))")
+                        Text("\(item.source) · \(preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(item.artistName) : item.artistName) · \(item.hasTimeline ? "同步" : "纯文本")\(item.duration.map { " · \(Int($0) / 60):\(String(format: "%02d", Int($0) % 60))" } ?? "")")
                             .font(.caption).foregroundStyle(.secondary)
                     }.tag(item.id)
                 }.frame(width: 250)
@@ -471,7 +471,7 @@ struct MetadataEditor: View {
                 }.frame(maxWidth: .infinity)
             }
             HStack {
-                Text("来源：LRCLIB。确认后替换编辑框中的歌词，点击“保存更改”才写入歌曲。")
+                Text("确认后替换编辑框中的歌词，点击“保存更改”才写入歌曲。")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("使用这份歌词") {

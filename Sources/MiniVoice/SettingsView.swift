@@ -238,13 +238,13 @@ private struct LyricsSettingsPage: View {
     @State private var onlineTrack: Track?
 
     var body: some View {
-        SettingsGroup(title: "在线歌词", footer: "使用歌名和歌手查询 LRCLIB；预览并确认后才会保存。") {
+        SettingsGroup(title: "在线歌词", footer: "使用歌名和歌手查询 LRCLIB、LrcAPI；外文歌可由 lyrics.ovh 补充纯文本。预览并确认后才会保存。") {
             SettingsRow(title: "当前选中歌曲", detail: library.selectedTrack?.title ?? "请先在音乐库中选择歌曲") {
                 Button("查询并预览…") { onlineTrack = library.selectedTrack }
                     .disabled(library.selectedTrack == nil)
             }
         }
-        SettingsGroup(title: "匹配偏好", footer: "在线查询只发送歌曲名称与歌手。本地 AI 会分析音频，歌曲不会上传。") {
+        SettingsGroup(title: "匹配偏好", footer: "在线查询会向所选歌词源发送歌曲名称与歌手。本地 AI 会分析音频，歌曲不会上传。") {
             SettingsRow(title: "匹配模式", detail: "应用于下一次歌词匹配") {
                 Picker("匹配模式", selection: $model) {
                     ForEach(LyricsModel.allCases) { Text($0.title).tag($0.rawValue) }

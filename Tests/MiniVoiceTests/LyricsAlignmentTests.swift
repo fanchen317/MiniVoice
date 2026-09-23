@@ -85,16 +85,29 @@ final class LyricsAlignmentTests: XCTestCase {
         XCTAssertThrowsError(try LyricsAlignment.merge([AlignedLyric(text: "甲", start: nil, end: nil)], source: "甲", duration: 10))
     }
 
+    func testIsolatedInvalidTimesDoNotDiscardValidLyrics() throws {
+        let result = [AlignedLyric(text: "甲", start: 1, end: 2),
+                      AlignedLyric(text: "乙", start: 3, end: 200),
+                      AlignedLyric(text: "丙", start: 5, end: 6),
+                      AlignedLyric(text: "丁", start: 7, end: 8)]
+        let merged = try LyricsAlignment.merge(result, source: "甲\n乙\n丙\n丁", duration: 10)
+        let lines = LRCParser.parse(merged)
+        XCTAssertEqual(lines.map(\.text), ["甲", "乙", "丙", "丁"])
+        XCTAssertNil(lines[1].timestamp)
+        XCTAssertEqual(lines.compactMap(\.timestamp), [1, 5, 7])
+    }
+
     /// Optional local regression fixtures; never writes audio or the user's library.
     @MainActor func testAudioRegressionFixtures() async throws {
         guard let path = ProcessInfo.processInfo.environment["MINIVOICE_AI_FIXTURES"] else {
             throw XCTSkip("No local audio regression fixtures supplied")
         }
-        struct Fixture: Decodable { let path: String; let lyrics: String; let title: String; let duration: Double }
+        struct Fixture: Decodable { let path: String; let lyrics: String?; let lyricsFile: String?; let title: String; let duration: Double }
         let fixtures = try JSONDecoder().decode([Fixture].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
         for fixture in fixtures {
-            let result = try await LyricsAlignment().align(source: fixture.lyrics, audioURL: URL(fileURLWithPath: fixture.path), duration: fixture.duration, title: fixture.title)
-            let expected = LRCParser.parse(LyricsAlignment.alignmentSource(fixture.lyrics, title: fixture.title), placeholder: false)
+            let source = try fixture.lyricsFile.map { try String(contentsOf: URL(fileURLWithPath: $0), encoding: .utf8) } ?? fixture.lyrics ?? ""
+            let result = try await LyricsAlignment().align(source: source, audioURL: URL(fileURLWithPath: fixture.path), duration: fixture.duration, title: fixture.title)
+            let expected = LRCParser.parse(LyricsAlignment.alignmentSource(source, title: fixture.title), placeholder: false)
             let actual = LRCParser.parse(result, placeholder: false)
             XCTAssertEqual(actual.map(\.text), expected.map(\.text))
             XCTAssertGreaterThanOrEqual(Double(actual.filter { $0.timestamp != nil }.count) / Double(actual.count), 0.65)

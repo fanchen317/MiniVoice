@@ -429,14 +429,14 @@ struct ContentView: View {
         .padding(7)
         .background((multiSelecting ? selectedIDs.contains(track.id) : library.selectedID == track.id) ? playerGreen.opacity(0.13) : .clear, in: RoundedRectangle(cornerRadius: 11))
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) { if !multiSelecting { library.play(track.id) } }
+        .onTapGesture(count: 2) { if !multiSelecting { library.play(track.id, in: songs.map(\.id)) } }
         .onTapGesture {
             if multiSelecting {
                 if selectedIDs.contains(track.id) { selectedIDs.remove(track.id) } else { selectedIDs.insert(track.id) }
             } else { library.select(track.id) }
         }
         .contextMenu {
-            Button("播放") { library.play(track.id) }
+            Button("播放") { library.play(track.id, in: songs.map(\.id)) }
             Button("编辑歌曲信息与歌词") { editingTrack = track }
             Button("删除歌曲") { requestDelete([track.id]) }
         }

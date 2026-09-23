@@ -82,7 +82,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var isImporting = false
     var volume: Float = 1 { didSet { player?.volume = volume } }
     @Published var playbackMode: PlaybackMode = .list {
-        didSet { defaults.set(playbackMode.rawValue, forKey: "MiniVoice.playbackMode"); queue.reset(current: playingID ?? selectedID, ids: tracks.map(\.id)) }
+        didSet { defaults.set(playbackMode.rawValue, forKey: "MiniVoice.playbackMode"); queue.reset(current: playingID ?? selectedID, ids: playbackIDs) }
     }
     @Published private(set) var folders: [URL] = []
     @Published var recursiveScan = true { didSet { defaults.set(recursiveScan, forKey: "MiniVoice.recursiveScan"); rescan() } }
@@ -112,6 +112,12 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
     private var hiddenTrackPaths: Set<String>
     private var queue = PlaybackQueue()
+    // Snapshot the visible order when playback is explicitly started from a list.
+    // Browsing, searching and recent-history updates do not replace this snapshot.
+    private var playbackSnapshot: [UUID]?
+    var playbackIDs: [UUID] {
+        (playbackSnapshot ?? tracks.map(\.id)).filter { tracksByID[$0] != nil }
+    }
     private var scanTask: Task<Void, Never>?
     private var scanGeneration = 0
 
@@ -209,7 +215,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 let savedPath = defaults.string(forKey: "MiniVoice.lastTrack")
                 selectedID = tracks.first(where: { $0.url.path == savedPath })?.id ?? tracks.first?.id
             }
-            queue.reset(current: selectedID, ids: tracks.map(\.id))
+            queue.reset(current: playingID ?? selectedID, ids: playbackIDs)
             scanIssues = issues
             scanSummary = "歌单已载入：\(tracks.count) 首歌曲" + (issues.isEmpty ? "" : "，\(issues.count) 项无法读取")
             isImporting = false
@@ -247,10 +253,18 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         selectedID = id
     }
 
-    func play(_ id: Track.ID) {
+    func play(_ id: Track.ID, in visibleIDs: [Track.ID]? = nil) {
         guard tracksByID[id] != nil else { return }
+        if let visibleIDs {
+            var seen = Set<UUID>()
+            var snapshot = visibleIDs.filter { tracksByID[$0] != nil && seen.insert($0).inserted }
+            if !snapshot.contains(id) { snapshot.append(id) }
+            playbackSnapshot = snapshot
+        } else if !playbackIDs.contains(id) {
+            playbackSnapshot = [id]
+        }
         activate(id)
-        queue.reset(current: id, ids: tracks.map(\.id))
+        queue.reset(current: id, ids: playbackIDs)
         play()
     }
 
@@ -297,7 +311,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     func skip(_ delta: Int) {
         if delta < 0 && playbackTime > 3 { seek(to: 0); return }
         let current = playingID ?? selectedID
-        guard let next = queue.destination(current: current, ids: tracks.map(\.id), mode: playbackMode, direction: delta) else { return }
+        guard let next = queue.destination(current: current, ids: playbackIDs, mode: playbackMode, direction: delta) else { return }
         let resume = isPlaying
         activate(next)
         if resume { play() }
@@ -380,7 +394,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
             self.selectedID = tracks.first?.id
         }
         if let playingID, ids.contains(playingID) { stop() }
-        queue.reset(current: selectedID, ids: tracks.map(\.id))
+        queue.reset(current: playingID ?? selectedID, ids: playbackIDs)
         removeCachedTracks(paths: removedPaths)
         if !failures.isEmpty { errorMessage = "部分歌曲无法移至废纸篓：\n\(failures.joined(separator: "\n"))" }
     }
@@ -432,7 +446,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         pause()
         playbackTime = playingTrack?.duration ?? 0
         guard successfully else { errorMessage = "音频播放中断，请尝试重新播放。"; return }
-        guard let next = queue.destination(current: playingID, ids: tracks.map(\.id), mode: playbackMode, automatic: true) else { return }
+        guard let next = queue.destination(current: playingID, ids: playbackIDs, mode: playbackMode, automatic: true) else { return }
         activate(next); play()
     }
 
