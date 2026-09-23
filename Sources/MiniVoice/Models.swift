@@ -286,11 +286,12 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 player?.prepareToPlay()
                 // AVAudioPlayer's duration is the source of truth for the playable
                 // length - file metadata (AVURLAsset / ffprobe) can be off by a few
-                // seconds on live recordings.  Sync once so the slider and end label
-                // don't show a current time that exceeds the total.
+                // seconds on live recordings.  Only ever lengthen the recorded
+                // duration; a smaller value here means metadata still wins, and the
+                // real end will be locked in when audioPlayerDidFinishPlaying fires.
                 if let actual = player?.duration, actual.isFinite, actual > 0,
                    let index = tracks.firstIndex(where: { $0.id == track.id }),
-                   abs(tracks[index].duration - actual) > 0.5 {
+                   actual > tracks[index].duration + 0.5 {
                     tracks[index].duration = actual
                 }
                 player?.currentTime = playbackTime
@@ -445,8 +446,20 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         let finishedPlayer = ObjectIdentifier(player)
+        // Read the values we need on the calling thread before hopping actors;
+        // AVAudioPlayer isn't Sendable and the values we extract are just Doubles.
+        let actualEnd = max(player.duration, player.currentTime)
         Task { @MainActor in
             guard let current = self.player, ObjectIdentifier(current) == finishedPlayer else { return }
+            // The actual end is wherever AVAudioPlayer stopped - for live
+            // recordings this can exceed both the metadata and AVAudioPlayer's
+            // own reported duration.  Lock the track's duration to the real
+            // end so subsequent plays show the correct total.
+            if let id = self.playingID, let index = self.tracks.firstIndex(where: { $0.id == id }),
+               actualEnd.isFinite, actualEnd > 0,
+               abs(self.tracks[index].duration - actualEnd) > 0.5 {
+                self.tracks[index].duration = actualEnd
+            }
             self.playbackFinished(successfully: flag)
         }
     }
@@ -462,7 +475,15 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private func beginTimer() {
         timer?.invalidate()
         timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.playbackTime = self?.player?.currentTime ?? 0 }
+            // Some live recordings let AVAudioPlayer.currentTime drift past its
+            // reported duration (and the metadata that backs it).  Clamp the
+            // surfaced time so the slider never claims a position past the end.
+            Task { @MainActor in
+                guard let self = self else { return }
+                let playerTime = self.player?.currentTime ?? 0
+                let ceiling = self.playingTrack?.duration ?? playerTime
+                self.playbackTime = min(playerTime, ceiling)
+            }
         }
         if let timer { RunLoop.main.add(timer, forMode: .common) }
     }
