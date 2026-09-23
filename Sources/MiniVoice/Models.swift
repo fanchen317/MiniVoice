@@ -284,6 +284,15 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 player = try AVAudioPlayer(contentsOf: track.url)
                 player?.delegate = self
                 player?.prepareToPlay()
+                // AVAudioPlayer's duration is the source of truth for the playable
+                // length - file metadata (AVURLAsset / ffprobe) can be off by a few
+                // seconds on live recordings.  Sync once so the slider and end label
+                // don't show a current time that exceeds the total.
+                if let actual = player?.duration, actual.isFinite, actual > 0,
+                   let index = tracks.firstIndex(where: { $0.id == track.id }),
+                   abs(tracks[index].duration - actual) > 0.5 {
+                    tracks[index].duration = actual
+                }
                 player?.currentTime = playbackTime
             }
             if playbackTime >= track.duration { playbackTime = 0; player?.currentTime = 0 }
