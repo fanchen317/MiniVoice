@@ -787,7 +787,17 @@ private struct Artwork: View {
     }
     var body: some View {
         Group {
-            if let image { Image(nsImage: image).resizable().scaledToFill() }
+            if let image {
+                let cover = ArtworkPresentation.image(for: image)
+                ZStack {
+                    Image(nsImage: cover).resizable().scaledToFill()
+                        .frame(width: size, height: size).clipped()
+                        .blur(radius: max(4, size * 0.08))
+                        .overlay(Color.black.opacity(0.12))
+                    Image(nsImage: cover).resizable().scaledToFit()
+                        .frame(width: size, height: size)
+                }
+            }
             else { Image(systemName: "music.note").font(.system(size: size * 0.4)).foregroundStyle(playerGreen.opacity(0.6)) }
         }.frame(width: size, height: size)
             .background(playerGreen.opacity(0.08))
@@ -801,6 +811,8 @@ private struct Artwork: View {
 private final class ScrollbarHiderView: NSView {
     var onMetrics: ((CGFloat, CGFloat) -> Void)?
     var onScrollView: ((NSScrollView) -> Void)?
+    var onUserScroll: (() -> Void)?
+    private nonisolated(unsafe) var scrollMonitor: Any?
     private weak var observedScroll: NSScrollView?
 
     @objc private func scrollMetricsChanged(_ notification: Notification) {
@@ -816,8 +828,25 @@ private final class ScrollbarHiderView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
+        scrollMonitor = nil
         guard window != nil else { return }
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self, let scroll = self.observedScroll,
+                  let window = scroll.window, event.window === window,
+                  scroll.bounds.contains(scroll.convert(event.locationInWindow, from: nil)),
+                  event.scrollingDeltaY != 0 else { return event }
+            // Bounds changes also occur during automatic lyric following. Only
+            // real wheel/trackpad events reveal the scrollbar, including momentum.
+            self.onUserScroll?()
+            return event
+        }
         applyConfig()
+    }
+
+    deinit {
+        if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
+        NotificationCenter.default.removeObserver(self)
     }
 
     override func layout() {
@@ -885,7 +914,7 @@ private struct PlayerScrollView<Content: View>: View {
         hideTask?.cancel()
         isThumbVisible = true
         hideTask = Task {
-            try? await Task.sleep(nanoseconds: 700_000_000)
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
             if !Task.isCancelled && !isDragging { isThumbVisible = false }
         }
     }
@@ -894,15 +923,13 @@ private struct PlayerScrollView<Content: View>: View {
         GeometryReader { viewport in
             ScrollView(.vertical, showsIndicators: false) {
                 content()
-                    .padding(.trailing, 8)
+                    .padding(.trailing, 24)
                     .background(HiddenScrollerConfigurator(onMetrics: { offset, height in
                         let updated = ScrollMetrics(offset: offset, height: height)
                         if metrics != updated {
-                            let scrolled = abs(metrics.offset - offset) > 0.5
                             metrics = updated
-                            if scrolled { revealThumb() }
                         }
-                    }, onScrollView: { scrollReference.view = $0 })
+                    }, onScrollView: { scrollReference.view = $0 }, onUserScroll: { revealThumb() })
                         .frame(width: 0, height: 0).allowsHitTesting(false))
             }
             .scrollIndicators(.hidden)
@@ -916,19 +943,22 @@ private struct PlayerScrollView<Content: View>: View {
             }
             .overlay(alignment: .trailing) {
                 if metrics.height > viewport.size.height, viewport.size.height > 0 {
-                    let thumbHeight = min(viewport.size.height, max(28, viewport.size.height * viewport.size.height / metrics.height))
+                    let thumbHeight = min(viewport.size.height, max(44, viewport.size.height * viewport.size.height / metrics.height))
                     let travel = viewport.size.height - thumbHeight
                     let progress = min(1, max(0, metrics.offset / (metrics.height - viewport.size.height)))
                     Capsule()
                         .fill(Color.primary.opacity(0.55))
-                        .frame(width: 6, height: thumbHeight)
+                        .frame(width: isDragging ? 12 : 10, height: thumbHeight)
                         .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
                         .offset(y: progress * travel)
-                        .frame(width: 14, height: viewport.size.height, alignment: .top)
-                        .contentShape(Rectangle())
                         .opacity(isThumbVisible ? 1 : 0)
-                        .allowsHitTesting(isThumbVisible)
                         .animation(.easeInOut(duration: 0.2), value: isThumbVisible)
+                        .frame(width: 24, height: viewport.size.height, alignment: .top)
+                        .contentShape(Rectangle())
+                        .onHover { hovering in
+                            if hovering && isThumbVisible { hideTask?.cancel() }
+                            else if !hovering && isThumbVisible { revealThumb() }
+                        }
                         .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named(coordinateSpace))
                             .onChanged { value in
                                 if grabOffset == nil {
@@ -955,16 +985,19 @@ private struct PlayerScrollView<Content: View>: View {
 private struct HiddenScrollerConfigurator: NSViewRepresentable {
     var onMetrics: ((CGFloat, CGFloat) -> Void)? = nil
     var onScrollView: ((NSScrollView) -> Void)? = nil
+    var onUserScroll: (() -> Void)? = nil
     func makeNSView(context: Context) -> NSView {
         let view = ScrollbarHiderView(frame: .zero)
         view.onMetrics = onMetrics
         view.onScrollView = onScrollView
+        view.onUserScroll = onUserScroll
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         (nsView as? ScrollbarHiderView)?.onMetrics = onMetrics
         (nsView as? ScrollbarHiderView)?.onScrollView = onScrollView
+        (nsView as? ScrollbarHiderView)?.onUserScroll = onUserScroll
         DispatchQueue.main.async {
             (nsView as? ScrollbarHiderView)?.applyConfig()
         }

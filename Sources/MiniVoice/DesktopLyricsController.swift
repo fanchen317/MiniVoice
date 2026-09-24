@@ -17,6 +17,8 @@ final class DesktopLyricsController: ObservableObject {
     }
     @Published private(set) var primaryLine = "MiniVoice"
     @Published private(set) var secondaryLine = "桌面歌词"
+    @Published private(set) var lineProgress: Double?
+    @Published private(set) var lineIdentity = ""
 
     private weak var library: MusicLibrary?
     private var cancellables = Set<AnyCancellable>()
@@ -58,19 +60,28 @@ final class DesktopLyricsController: ObservableObject {
         guard isEnabled else { return }
         var primary = "MiniVoice"
         var secondary = "桌面歌词"
+        var progress: Double?
+        var identity = "idle"
         if let library, let track = library.playingTrack ?? library.selectedTrack {
             let lines = track.lyricLines
             if let active = library.activeLyricIndex(for: lines) {
+                let start = lines[active].timestamp ?? 0
+                let end = lines.dropFirst(active + 1).compactMap(\.timestamp).first(where: { $0 > start }) ?? track.duration
+                progress = DesktopLyricScroll.progress(time: library.playbackTime, start: start, end: end)
+                identity = "\(track.id)-\(active)"
                 primary = lines[active].text
                 secondary = lines.dropFirst(active + 1).first(where: { !$0.text.isEmpty })?.text
                     ?? "\(track.title) - \(track.artist)"
             } else {
+                identity = "\(track.id)-title"
                 primary = track.title
                 secondary = track.artist
             }
         }
         if primaryLine != primary { primaryLine = primary }
         if secondaryLine != secondary { secondaryLine = secondary }
+        if lineProgress != progress { lineProgress = progress }
+        if lineIdentity != identity { lineIdentity = identity }
     }
 
     private func updatePanelVisibility() {
@@ -188,7 +199,7 @@ private final class DesktopLyricsPanelView: NSView {
             return true
         }
         lyrics.frame = bounds
-        lockButton.frame = NSRect(x: bounds.width - 56, y: bounds.height - 49, width: 32, height: 32)
+        lockButton.frame = NSRect(x: bounds.midX - 10, y: bounds.height - 18, width: 20, height: 18)
     }
 
     override func updateTrackingAreas() {
@@ -239,14 +250,14 @@ private struct DesktopLyricsOverlay: View {
     @ObservedObject var controller: DesktopLyricsController
 
     private var lyricKey: String {
-        controller.primaryLine + "\u{001F}" + controller.secondaryLine
+        controller.lineIdentity + controller.primaryLine + "\u{001F}" + controller.secondaryLine
     }
 
     var body: some View {
         ZStack {
             VStack(spacing: 5) {
-                DesktopLyricMarquee(text: controller.primaryLine, size: 27, weight: .semibold)
-                DesktopLyricMarquee(text: controller.secondaryLine, size: 18, weight: .medium)
+                DesktopLyricMarquee(text: controller.primaryLine, size: 27, weight: .semibold, progress: controller.lineProgress)
+                DesktopLyricMarquee(text: controller.secondaryLine, size: 18, weight: .medium, progress: controller.lineProgress)
                     .foregroundStyle(.secondary)
             }
             .id(lyricKey)
@@ -255,26 +266,27 @@ private struct DesktopLyricsOverlay: View {
                 removal: .move(edge: .top).combined(with: .opacity)
             ))
         }
-        .padding(.horizontal, 52)
+        .padding(.horizontal, 16)
         .padding(.vertical, 18)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
+        .clipShape(Capsule())
         .animation(.easeInOut(duration: 0.38), value: lyricKey)
     }
 }
 
-/// Keep short lines centered; reveal long lines at a constant, readable speed.
+/// Timed lyrics reveal the whole line within its actual playback interval.
 private struct DesktopLyricMarquee: View {
     let text: String
     let size: CGFloat
     let weight: Font.Weight
+    let progress: Double?
     @State private var textWidth: CGFloat = 0
     @State private var startedAt = Date()
 
     var body: some View {
         GeometryReader { geometry in
             let overflow = max(0, textWidth - geometry.size.width)
-            TimelineView(.animation(paused: overflow <= 0)) { context in
+            TimelineView(.animation(paused: overflow <= 0 || progress != nil)) { context in
                 Text(text)
                     .font(.system(size: size, weight: weight, design: .rounded))
                     .lineLimit(1)
@@ -283,10 +295,10 @@ private struct DesktopLyricMarquee: View {
                         Color.clear.preference(key: DesktopLyricWidthKey.self, value: measurement.size.width)
                     })
                     .offset(x: overflow > 0 ? -scrollOffset(at: context.date, overflow: overflow) : 0)
+                    .animation(.linear(duration: 0.18), value: progress)
                     .frame(width: geometry.size.width, height: geometry.size.height,
                            alignment: overflow > 0 ? .leading : .center)
             }
-            .clipped()
             .onPreferenceChange(DesktopLyricWidthKey.self) { width in
                 if textWidth != width {
                     textWidth = width
@@ -302,11 +314,21 @@ private struct DesktopLyricMarquee: View {
 
     private func scrollOffset(at date: Date, overflow: CGFloat) -> CGFloat {
         guard overflow > 0 else { return 0 }
+        if let progress { return overflow * progress }
         let duration = Double(overflow) / 30
         // Pause at both ends, then begin another pass from the start.
         let elapsed = max(0, date.timeIntervalSince(startedAt))
             .truncatingRemainder(dividingBy: duration + 3)
         return min(overflow, CGFloat(max(0, elapsed - 1.5) * 30))
+    }
+}
+
+enum DesktopLyricScroll {
+    static func progress(time: TimeInterval, start: TimeInterval, end: TimeInterval) -> Double {
+        guard time.isFinite, start.isFinite, end.isFinite, end > start else { return 0 }
+        // A brief proportional opening pause; finish early enough to read the end.
+        let fraction = (time - start) / (end - start)
+        return min(1, max(0, (fraction - 0.08) / 0.72))
     }
 }
 
