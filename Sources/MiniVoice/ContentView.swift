@@ -82,7 +82,8 @@ struct ContentView: View {
             let playerWidth = sidebarVisible
                 ? max(280, availableWidth - sidebarWidth - 12)
                 : availableWidth
-            let overlap = sidebarVisible ? max(0, sidebarWidth + 12 + 280 - availableWidth) : 0
+            let overlap = max(0, sidebarWidth + 12 + 280 - availableWidth)
+            let depth = sidebarVisible ? min(1, overlap / 60) : 0
             ZStack(alignment: .topLeading) {
                 Group {
                     if let track = library.selectedTrack {
@@ -97,28 +98,32 @@ struct ContentView: View {
                     }
                 }
                 .frame(width: playerWidth, height: geometry.size.height - 46)
+                .scaleEffect(1 - 0.025 * depth, anchor: .trailing)
+                .offset(y: 8 * depth)
                 .position(x: geometry.size.width - 12 - playerWidth / 2,
                           y: 34 + (geometry.size.height - 46) / 2)
 
-                if sidebarVisible {
-                    // Dim the full rounded window instead of the inset content
-                    // rectangle, which left a visible dark frame at the margins.
-                    Color.black.opacity(0.18 * min(1, overlap / 60))
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .contentShape(Rectangle())
-                        .allowsHitTesting(overlap > 0)
-                        .onTapGesture(perform: toggleSidebar)
-                        .accessibilityHidden(overlap == 0)
+                // Keep the dimmer in the hierarchy so its opacity animates
+                // with the player instead of appearing all at once.
+                Color.black.opacity(0.18 * depth)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .contentShape(Rectangle())
+                    .allowsHitTesting(sidebarVisible && overlap > 0)
+                    .onTapGesture(perform: toggleSidebar)
+                    .accessibilityHidden(depth == 0)
 
-                    sidebar(closeProgress: min(1, overlap / 24))
-                        .frame(width: sidebarWidth)
-                        .frame(height: geometry.size.height - 46)
-                        .modifier(PlayerPanelSurface())
-                        .position(x: 12 + sidebarWidth / 2,
-                                  y: 34 + (geometry.size.height - 46) / 2)
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                }
+                // Keep the panel mounted through the entire exit animation.
+                // Removing it conditionally made it vanish before reaching the edge.
+                sidebar(closeProgress: min(1, overlap / 24))
+                    .frame(width: sidebarWidth)
+                    .frame(height: geometry.size.height - 46)
+                    .modifier(PlayerPanelSurface())
+                    .position(x: 12 + sidebarWidth / 2,
+                              y: 34 + (geometry.size.height - 46) / 2)
+                    .offset(x: sidebarVisible ? 0 : -sidebarWidth - 12)
+                    .allowsHitTesting(sidebarVisible)
+                    .accessibilityHidden(!sidebarVisible)
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .background { CoverBackdrop(image: library.selectedTrack?.artwork) }
@@ -162,7 +167,7 @@ struct ContentView: View {
     }
 
     private func toggleSidebar() {
-        withAnimation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.88)) {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.36)) {
             sidebarVisible.toggle()
         }
     }
