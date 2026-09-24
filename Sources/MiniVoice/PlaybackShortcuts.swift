@@ -22,12 +22,23 @@ enum PlaybackShortcutAction: String, CaseIterable, Identifiable {
 }
 
 struct PlaybackShortcut: Codable, Equatable {
+    // Arrow events can carry numericPad/function flags, even without those keys
+    // being pressed. Caps Lock must not change a playback shortcut either.
+    private static let chordModifiers: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
     let keyCode: UInt16
     let modifiers: UInt
 
+    private var normalizedModifiers: UInt {
+        NSEvent.ModifierFlags(rawValue: modifiers).intersection(Self.chordModifiers).rawValue
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.keyCode == rhs.keyCode && lhs.normalizedModifiers == rhs.normalizedModifiers
+    }
+
     init(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) {
         self.keyCode = keyCode
-        self.modifiers = modifiers.intersection(.deviceIndependentFlagsMask).rawValue
+        self.modifiers = modifiers.intersection(Self.chordModifiers).rawValue
     }
 
     var description: String {
@@ -138,7 +149,7 @@ final class PlaybackShortcutController: ObservableObject {
 
 extension PlaybackShortcut {
     func matches(_ event: NSEvent) -> Bool {
-        keyCode == event.keyCode && modifiers == event.modifierFlags.intersection(.deviceIndependentFlagsMask).rawValue
+        keyCode == event.keyCode && normalizedModifiers == event.modifierFlags.intersection(Self.chordModifiers).rawValue
     }
 }
 

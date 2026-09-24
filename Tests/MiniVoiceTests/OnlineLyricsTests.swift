@@ -2,6 +2,14 @@ import XCTest
 @testable import MiniVoice
 
 final class OnlineLyricsTests: XCTestCase {
+    func testSimplifiedVariantsPreserveTimingAndLanguage() {
+        let source = "[offset:-120]\r\n[01:23.456]妳們在山峯 說愛我\r\n[01:30.00]佢喺度嘅 祂與祢"
+        let result = ChineseLyricsScript.simplified(source)
+        XCTAssertEqual(result, "[offset:-120]\r\n[01:23.456]你们在山峰 说爱我\r\n[01:30.00]佢喺度嘅 祂与祢")
+        XCTAssertEqual(ChineseLyricsScript.simplified(result), result)
+        XCTAssertEqual(ChineseLyricsScript.simplified("[00:01.00]君の夢を見た"), "[00:01.00]君の夢を見た")
+        XCTAssertEqual(ChineseLyricsScript.simplified("[00:01.00]Don't leave me"), "[00:01.00]Don't leave me")
+    }
     func testLiveChineseSourceWhenRequested() async throws {
         guard ProcessInfo.processInfo.environment["MINIVOICE_TEST_ONLINE"] == "1" else {
             throw XCTSkip("Set MINIVOICE_TEST_ONLINE=1 to query public lyric services")

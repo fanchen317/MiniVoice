@@ -442,7 +442,7 @@ struct MetadataEditor: View {
             }
             Toggle("简体预览并应用", isOn: $preferSimplifiedOnlineLyrics)
                 .toggleStyle(.checkbox)
-            Text("查询 LRCLIB、LrcAPI；外文歌另查 lyrics.ovh。简体选项只转换字形，不会把粤语歌词改成国语。")
+            Text("查询 LRCLIB、LrcAPI；外文歌另查 lyrics.ovh。简体选项仅作用于本次预览和应用，不会自动修改已保存歌词；统一繁体及“妳”等用字，保留粤语用词与日文歌词。")
                 .font(.caption).foregroundStyle(.secondary)
             if searchingLyrics { ProgressView("正在查询…") }
             if let onlineError { Text(onlineError).foregroundStyle(.secondary) }

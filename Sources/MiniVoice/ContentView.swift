@@ -109,6 +109,7 @@ struct ContentView: View {
         // 280pt player + outer margins; the visible sidebar adds 250pt + 12pt.
         .frame(minWidth: sidebarVisible ? 566 : 304, minHeight: 600)
         .tint(playerGreen)
+        .background(PlayerInitialFocus())
         .task(id: listRequest) { await updateSongs() }
         .onAppear {
             migrateSortPreferenceIfNeeded()
@@ -257,6 +258,7 @@ struct ContentView: View {
                     .help("清空搜索").accessibilityLabel("清空搜索")
                 }
             }.padding(10).background(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.58 : 0.65), in: RoundedRectangle(cornerRadius: 12))
+                .background(SearchFocusBoundary())
             VStack(spacing: 4) {
                 navigationItem("音乐库", symbol: "music.note", isRecent: false)
                 navigationItem("最近播放", symbol: "clock", isRecent: true)

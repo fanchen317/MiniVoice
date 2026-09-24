@@ -1,17 +1,5 @@
 import Foundation
 
-enum ChineseLyricsScript {
-    static func simplified(_ text: String) -> String { transform(text, id: "Traditional-Simplified") }
-    static func traditional(_ text: String) -> String { transform(text, id: "Simplified-Traditional") }
-
-    private static func transform(_ text: String, id: String) -> String {
-        let value = NSMutableString(string: text)
-        let fullRange = NSRange(location: 0, length: value.length)
-        guard value.applyTransform(StringTransform(id), reverse: false, range: fullRange, updatedRange: nil) else { return text }
-        return value as String
-    }
-}
-
 struct OnlineLyricsResult: Decodable, Identifiable, Sendable {
     let id: String
     let source: String
