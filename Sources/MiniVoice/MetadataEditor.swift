@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+private let songInfoWindowSize = NSSize(width: 620, height: 680)
+
 private struct ArtistEntry: Identifiable {
     let id = UUID()
     var name: String
@@ -75,8 +77,8 @@ struct MetadataEditor: View {
             Picker("编辑内容", selection: $selectedPage) {
                 ForEach(EditorPage.allCases) { Text($0.rawValue).tag($0) }
             }
-            .pickerStyle(.segmented).labelsHidden().frame(width: 360)
-            .padding(.bottom, 20).disabled(isSaving)
+            .pickerStyle(.segmented).labelsHidden().frame(width: 320)
+            .padding(.bottom, 14).disabled(isSaving)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -87,7 +89,7 @@ struct MetadataEditor: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(24)
+                .padding(20)
             }
             .id(selectedPage)
             .disabled(isSaving)
@@ -99,7 +101,7 @@ struct MetadataEditor: View {
         .accentColor(Color(red: 0.06, green: 0.55, blue: 0.40))
         .buttonStyle(.bordered)
         .controlSize(.regular)
-        .frame(width: 760, height: 700)
+        .frame(width: songInfoWindowSize.width, height: songInfoWindowSize.height)
         .interactiveDismissDisabled(isSaving)
         .fileImporter(isPresented: $choosingArtwork, allowedContentTypes: [.image]) { result in
             guard case .success(let url) = result else { return }
@@ -149,9 +151,9 @@ struct MetadataEditor: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            ArtworkPreview(image: artwork, size: 54)
+            ArtworkPreview(image: artwork, size: 46)
             VStack(alignment: .leading, spacing: 5) {
-                Text("歌曲信息").font(.system(size: 21, weight: .bold))
+                Text("歌曲信息").font(.system(size: 19, weight: .bold))
                 Text(title.isEmpty ? track.url.deletingPathExtension().lastPathComponent : title)
                     .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
             }
@@ -160,7 +162,7 @@ struct MetadataEditor: View {
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
-        }.padding(24)
+        }.padding(.horizontal, 20).padding(.vertical, 16)
     }
 
     private var footer: some View {
@@ -179,7 +181,7 @@ struct MetadataEditor: View {
                 .keyboardShortcut(.defaultAction).disabled(isSaving)
         }
         .controlSize(.large)
-        .padding(.horizontal, 24).padding(.vertical, 16)
+        .padding(.horizontal, 20).padding(.vertical, 12)
     }
 
     private var detailsPage: some View {
@@ -210,7 +212,7 @@ struct MetadataEditor: View {
                                 Label("添加歌手", systemImage: "plus")
                             }
                         }
-                    }.padding(16)
+                    }.padding(.horizontal, 16).padding(.vertical, 12)
                     Divider().padding(.horizontal, 16)
                     inputRow("专辑名称", placeholder: "输入专辑名称", text: $album)
                     Divider().padding(.horizontal, 16)
@@ -220,8 +222,8 @@ struct MetadataEditor: View {
                 }.disabled(!track.canWriteTags)
             }
             SettingsGroup(title: "专辑封面", footer: "支持拖入图片；点击已有封面可查看大图。") {
-                HStack(spacing: 20) {
-                    Button { showArtworkZoom = true } label: { ArtworkPreview(image: artwork, size: 96) }
+                HStack(spacing: 16) {
+                    Button { showArtworkZoom = true } label: { ArtworkPreview(image: artwork, size: 80) }
                         .buttonStyle(.plain).disabled(artwork == nil)
                         .accessibilityLabel("查看封面大图")
                     VStack(alignment: .leading, spacing: 12) {
@@ -250,7 +252,7 @@ struct MetadataEditor: View {
         HStack(spacing: 16) {
             Text(label).font(.system(size: 13, weight: .medium)).frame(width: 72, alignment: .leading)
             TextField(placeholder, text: text).textFieldStyle(.roundedBorder).accessibilityLabel(label)
-        }.padding(16)
+        }.padding(.horizontal, 16).padding(.vertical, 12)
     }
 
     private var lyricsPage: some View {
@@ -566,7 +568,7 @@ struct MetadataEditor: View {
                 .frame(width: 72, alignment: .leading)
             if selectable {
                 Text(value)
-                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
@@ -626,7 +628,7 @@ struct SongInfoWindowPresenter: NSViewRepresentable {
         coordinator.window?.close()
         // Use the explicit Cancel/Save controls; saving cannot be interrupted
         // by an independent native close button.
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 700),
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: songInfoWindowSize),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.title = "歌曲信息"
         window.isReleasedWhenClosed = false
