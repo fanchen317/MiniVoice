@@ -608,6 +608,7 @@ private enum EditorPage: String, CaseIterable, Identifiable {
 /// Present independently of the main window so the information panel can move.
 struct SongInfoWindowPresenter: NSViewRepresentable {
     @Binding var track: Track?
+    let request: UUID
     let library: MusicLibrary
     let lyricsSync: LyricsSyncCoordinator
     @Environment(\.colorScheme) private var colorScheme
@@ -624,7 +625,18 @@ struct SongInfoWindowPresenter: NSViewRepresentable {
             return
         }
         coordinator.window?.appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
-        guard coordinator.trackID != track.id else { return }
+        // A repeated explicit request must raise the existing editor without
+        // recreating it (and losing edits). Ordinary playback updates must not.
+        guard coordinator.trackID != track.id else {
+            if coordinator.lastRequest != request, let window = coordinator.window {
+                coordinator.lastRequest = request
+                if window.isMiniaturized { window.deminiaturize(nil) }
+                NSApp.activate(ignoringOtherApps: true)
+                window.makeKeyAndOrderFront(nil)
+                window.attachedSheet?.makeKeyAndOrderFront(nil)
+            }
+            return
+        }
         coordinator.window?.close()
         // Use the explicit Cancel/Save controls; saving cannot be interrupted
         // by an independent native close button.
@@ -640,7 +652,9 @@ struct SongInfoWindowPresenter: NSViewRepresentable {
                 .environmentObject(lyricsSync))
         coordinator.window = window
         coordinator.trackID = track.id
+        coordinator.lastRequest = request
         window.center()
+        NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -652,5 +666,6 @@ struct SongInfoWindowPresenter: NSViewRepresentable {
     final class Coordinator {
         var window: NSWindow?
         var trackID: UUID?
+        var lastRequest: UUID?
     }
 }

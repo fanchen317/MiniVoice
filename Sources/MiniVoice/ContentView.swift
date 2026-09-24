@@ -33,6 +33,12 @@ struct ContentView: View {
     @State private var multiSelecting = false
     @State private var selectedIDs = Set<UUID>()
     @State private var editingTrack: Track?
+    @State private var songInfoRequest = UUID()
+
+    private func openSongInfo(_ track: Track) {
+        editingTrack = track
+        songInfoRequest = UUID()
+    }
     @State private var deleteTargets: [Track] = []
     @State private var deleting = false
     @State private var deleteFiles = false
@@ -88,7 +94,7 @@ struct ContentView: View {
                 Group {
                     if let track = library.selectedTrack {
                         let playbackTrack = library.playingTrack ?? track
-                        PlayerDetail(track: track, playbackTrack: playbackTrack, onEdit: { editingTrack = track }, onEditPlayback: { editingTrack = playbackTrack }, onToggleSidebar: toggleSidebar)
+                        PlayerDetail(track: track, playbackTrack: playbackTrack, onEdit: { openSongInfo(track) }, onEditPlayback: { openSongInfo(playbackTrack) }, onToggleSidebar: toggleSidebar)
                     } else {
                         VStack(spacing: 14) {
                             Image(systemName: "music.note.list").font(.largeTitle)
@@ -139,7 +145,7 @@ struct ContentView: View {
             AppDelegate.reopenMainWindow = { openWindow(id: "main") }
             statusBar.start(library: library, openMainWindow: { openWindow(id: "main") })
         }
-        .background(SongInfoWindowPresenter(track: $editingTrack, library: library, lyricsSync: lyricsSync))
+        .background(SongInfoWindowPresenter(track: $editingTrack, request: songInfoRequest, library: library, lyricsSync: lyricsSync))
         .sheet(isPresented: $deleting) {
             VStack(alignment: .leading, spacing: 18) {
                 Text("删除 \(deleteTargets.count) 首歌曲？").font(.title3.bold())
@@ -485,7 +491,7 @@ struct ContentView: View {
         }
         .contextMenu {
             Button("播放") { library.play(track.id, in: songs.map(\.id)) }
-            Button("编辑歌曲信息与歌词") { editingTrack = track }
+            Button("编辑歌曲信息与歌词") { openSongInfo(track) }
             Button("删除歌曲") { requestDelete([track.id]) }
         }
     }
@@ -731,6 +737,7 @@ private struct PlayerControls: View {
     @EnvironmentObject private var volume: SystemVolume
     @EnvironmentObject private var desktopLyrics: DesktopLyricsController
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let track: Track
     let compact: Bool
     let onEdit: () -> Void
@@ -790,19 +797,31 @@ private struct PlayerControls: View {
                     .help("当前：\(library.playbackMode.title)，点击切换模式")
                 Button { library.skip(-1) } label: { Image(systemName: "backward.end.fill") }.help("上一首")
                 Button { library.togglePlayback() } label: {
-                    Image(systemName: library.isPlaying ? "pause.fill" : "play.fill")
+                    ZStack {
+                        Image(systemName: "play.fill")
+                            .opacity(library.isPlaying ? 0 : 1)
+                            .scaleEffect(library.isPlaying ? 0.65 : 1)
+                            .offset(x: 1)
+                        Image(systemName: "pause.fill")
+                            .opacity(library.isPlaying ? 1 : 0)
+                            .scaleEffect(library.isPlaying ? 1 : 0.65)
+                    }
                         .font(.system(size: 22, weight: .bold)).foregroundStyle(.white)
                         .frame(width: 52, height: 52)
                         .background(playerGreen.gradient, in: Circle())
                         .shadow(color: playerGreen.opacity(0.22), radius: 8, y: 4)
-                }.help("播放 / 暂停")
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: library.isPlaying)
+                }
+                .buttonStyle(TransportButtonStyle(isPrimary: true))
+                .help("播放 / 暂停")
+                .accessibilityLabel(library.isPlaying ? "暂停" : "播放")
                 Button { library.skip(1) } label: { Image(systemName: "forward.end.fill") }.help("下一首")
                 Button { desktopLyrics.toggle() } label: {
                     Image(systemName: desktopLyrics.isEnabled ? "text.bubble.fill" : "text.bubble")
                 }
                 .foregroundStyle(desktopLyrics.isEnabled ? playerGreen : .primary)
                 .help(desktopLyrics.isEnabled ? "关闭桌面歌词" : "显示桌面歌词")
-            }.buttonStyle(.plain).font(.system(size: 17))
+            }.buttonStyle(TransportButtonStyle()).font(.system(size: 17))
         }
     }
 
@@ -1244,6 +1263,33 @@ private struct PressScaleButtonStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.88 : 1)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: configuration.isPressed)
+    }
+}
+
+private struct TransportButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let isPrimary: Bool
+
+    init(isPrimary: Bool = false) {
+        self.isPrimary = isPrimary
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(width: isPrimary ? 52 : 24, height: 52)
+            .background {
+                if !isPrimary {
+                    Circle()
+                        .fill(playerGreen.opacity(configuration.isPressed ? 0.13 : 0))
+                        .frame(width: 34, height: 34)
+                }
+            }
+            .contentShape(Rectangle())
+            .scaleEffect(configuration.isPressed && !reduceMotion ? (isPrimary ? 0.91 : 0.82) : 1)
+            .offset(y: configuration.isPressed && !reduceMotion ? 2 : 0)
+            .animation(reduceMotion ? nil : (configuration.isPressed
+                ? .easeOut(duration: 0.08)
+                : .spring(response: 0.28, dampingFraction: 0.72)), value: configuration.isPressed)
     }
 }
 
