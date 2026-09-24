@@ -19,6 +19,7 @@ struct ContentView: View {
     let statusBar: StatusBarController
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var library: MusicLibrary
     @EnvironmentObject private var lyricsSync: LyricsSyncCoordinator
     @State private var sidebarVisible = true
@@ -82,11 +83,16 @@ struct ContentView: View {
                         .frame(width: min(288, max(250, geometry.size.width * 0.25)))
                         .frame(maxHeight: .infinity)
                         .modifier(PlayerPanelSurface())
+                        .transition(.move(edge: .leading).combined(with: .opacity))
                 }
                 Group {
                     if let track = library.selectedTrack {
                         let playbackTrack = library.playingTrack ?? track
-                        PlayerDetail(track: track, playbackTrack: playbackTrack, onEdit: { editingTrack = track }, onEditPlayback: { editingTrack = playbackTrack }, onToggleSidebar: { sidebarVisible.toggle() })
+                        PlayerDetail(track: track, playbackTrack: playbackTrack, onEdit: { editingTrack = track }, onEditPlayback: { editingTrack = playbackTrack }, onToggleSidebar: {
+                            withAnimation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.88)) {
+                                sidebarVisible.toggle()
+                            }
+                        })
                     } else {
                         VStack(spacing: 14) {
                             Image(systemName: "music.note.list").font(.largeTitle)
@@ -456,6 +462,7 @@ struct ContentView: View {
 private struct PlayerDetail: View {
     @EnvironmentObject private var library: MusicLibrary
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let track: Track
     let playbackTrack: Track
     let onEdit: () -> Void
@@ -483,6 +490,7 @@ private struct PlayerDetail: View {
                 if !expandedLyrics {
                     hero(size: artworkSize)
                         .frame(height: artworkSize)
+                        .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .topLeading)))
                 }
                 lyrics.frame(height: lyricsHeight)
                 PlayerControls(track: playbackTrack, compact: compact, onEdit: onEditPlayback)
@@ -500,7 +508,7 @@ private struct PlayerDetail: View {
                     .frame(width: 38, height: 38)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressScaleButtonStyle())
             .modifier(HeaderButtonSurface())
             .help("显示或隐藏侧栏")
             Spacer()
@@ -537,9 +545,25 @@ private struct PlayerDetail: View {
                 Spacer()
                 Toggle("自动跟随", isOn: $followLyrics).toggleStyle(.switch).controlSize(.small)
                     .fixedSize().disabled(!playbackTrack.lyricLines.contains { $0.timestamp != nil })
-                Button { expandedLyrics.toggle() } label: {
-                    Image(systemName: expandedLyrics ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                }.buttonStyle(.plain).help("展开或收起歌词")
+                Button {
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.46, dampingFraction: 0.90)) {
+                        expandedLyrics.toggle()
+                    }
+                } label: {
+                    ZStack {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .opacity(expandedLyrics ? 0 : 1)
+                            .scaleEffect(expandedLyrics ? 0.7 : 1)
+                        Image(systemName: "arrow.down.right.and.arrow.up.left")
+                            .opacity(expandedLyrics ? 1 : 0)
+                            .scaleEffect(expandedLyrics ? 1 : 0.7)
+                    }
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(PressScaleButtonStyle())
+                .help(expandedLyrics ? "收起歌词" : "展开歌词")
+                .accessibilityLabel(expandedLyrics ? "收起歌词" : "展开歌词")
             }
             // 12pt internal padding keeps the lyrics header flush with the 12pt
             // gaps between the surrounding panels.
@@ -1170,6 +1194,16 @@ private struct HeaderButtonSurface: ViewModifier {
             }
             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .onHover { hovered = $0 }
+    }
+}
+
+private struct PressScaleButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.88 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }
 
