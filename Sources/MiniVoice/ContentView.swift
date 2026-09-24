@@ -77,22 +77,17 @@ struct ContentView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            HStack(spacing: 12) {
-                if sidebarVisible {
-                    sidebar
-                        .frame(width: min(288, max(250, geometry.size.width * 0.25)))
-                        .frame(maxHeight: .infinity)
-                        .modifier(PlayerPanelSurface())
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                }
+            let sidebarWidth = min(288, max(250, geometry.size.width * 0.25))
+            let availableWidth = geometry.size.width - 24
+            let playerWidth = sidebarVisible
+                ? max(280, availableWidth - sidebarWidth - 12)
+                : availableWidth
+            let overlap = sidebarVisible ? max(0, sidebarWidth + 12 + 280 - availableWidth) : 0
+            ZStack(alignment: .topLeading) {
                 Group {
                     if let track = library.selectedTrack {
                         let playbackTrack = library.playingTrack ?? track
-                        PlayerDetail(track: track, playbackTrack: playbackTrack, onEdit: { editingTrack = track }, onEditPlayback: { editingTrack = playbackTrack }, onToggleSidebar: {
-                            withAnimation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.88)) {
-                                sidebarVisible.toggle()
-                            }
-                        })
+                        PlayerDetail(track: track, playbackTrack: playbackTrack, onEdit: { editingTrack = track }, onEditPlayback: { editingTrack = playbackTrack }, onToggleSidebar: toggleSidebar)
                     } else {
                         VStack(spacing: 14) {
                             Image(systemName: "music.note.list").font(.largeTitle)
@@ -101,19 +96,36 @@ struct ContentView: View {
                         }.frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(width: playerWidth, height: geometry.size.height - 46)
+                .position(x: geometry.size.width - 12 - playerWidth / 2,
+                          y: 34 + (geometry.size.height - 46) / 2)
+
+                if sidebarVisible {
+                    // Dim the full rounded window instead of the inset content
+                    // rectangle, which left a visible dark frame at the margins.
+                    Color.black.opacity(0.18 * min(1, overlap / 60))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .contentShape(Rectangle())
+                        .allowsHitTesting(overlap > 0)
+                        .onTapGesture(perform: toggleSidebar)
+                        .accessibilityHidden(overlap == 0)
+
+                    sidebar(closeProgress: min(1, overlap / 24))
+                        .frame(width: sidebarWidth)
+                        .frame(height: geometry.size.height - 46)
+                        .modifier(PlayerPanelSurface())
+                        .position(x: 12 + sidebarWidth / 2,
+                                  y: 34 + (geometry.size.height - 46) / 2)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                }
             }
-            .padding(.horizontal, 12)
-            // Outer top padding clears the macOS traffic light buttons so the
-            // visible gap matches the 12pt horizontal margin on every side.
-            .padding(.top, 34)
-            .padding(.bottom, 12)
             .frame(width: geometry.size.width, height: geometry.size.height)
             .background { CoverBackdrop(image: library.selectedTrack?.artwork) }
         }
         .ignoresSafeArea()
-        // 280pt player + outer margins; the visible sidebar adds 250pt + 12pt.
-        .frame(minWidth: sidebarVisible ? 566 : 304, minHeight: 600)
+        // The player needs 280pt plus 24pt of outer margins.
+        .frame(minWidth: 304, minHeight: 600)
         .tint(playerGreen)
         .background(PlayerInitialFocus())
         .task(id: listRequest) { await updateSongs() }
@@ -146,6 +158,12 @@ struct ContentView: View {
             Button("好", role: .cancel) { lyricsSync.alert = nil }
         } message: { notice in
             Text(notice.message)
+        }
+    }
+
+    private func toggleSidebar() {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.88)) {
+            sidebarVisible.toggle()
         }
     }
 
@@ -226,25 +244,42 @@ struct ContentView: View {
         }.padding(18).frame(width: 360)
     }
 
-    private var sidebar: some View {
+    private func sidebar(closeProgress: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
+            HStack(spacing: 0) {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable().scaledToFit().frame(width: 46, height: 46)
                     .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
                     .accessibilityLabel("MiniVoice")
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("MiniVoice").font(.title3.weight(.bold))
+                    Text("MiniVoice").font(.title3.weight(.bold)).lineLimit(1)
                     Text("音乐让生活更美好").font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1).minimumScaleFactor(0.75)
                 }
-                Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 8)
                 if showingTasks || lyricsSync.activeCount > 0 || library.isImporting || lyricsSync.downloadingModel || lyricsSync.hasUnread || unreadScan {
                   Image(systemName: "exclamationmark.circle")
                     .font(.system(size: 19)).foregroundStyle(playerGreen)
+                    .frame(width: 22, height: 24)
+                    .padding(.leading, 8)
                     .help("后台任务").accessibilityLabel("后台任务")
                     .onTapGesture { showingTasks.toggle() }
                     .popover(isPresented: $showingTasks) { backgroundTasks }
                 }
+                Button(action: toggleSidebar) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .frame(width: 32 * closeProgress, alignment: .trailing)
+                .opacity(closeProgress)
+                .clipped()
+                .allowsHitTesting(closeProgress >= 1)
+                .accessibilityHidden(closeProgress < 1)
+                .help("收起侧栏")
+                .accessibilityLabel("收起侧栏")
             }
             .onChange(of: library.isImporting) { importing in
                 if importing { hideFinishedScan = false } else { unreadScan = true }
