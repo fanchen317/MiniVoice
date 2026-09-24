@@ -24,7 +24,7 @@ struct MetadataEditor: View {
     @State private var selectedPage = EditorPage.details
     @State private var showTimingTools = false
     @State private var timingIndex = 0
-    @State private var timingShiftSeconds = 0.5
+    @State private var timingShiftSeconds = 0.0
     @State private var artworkChanged = false
     @State private var choosingArtwork = false
     @State private var choosingLyrics = false
@@ -438,15 +438,23 @@ struct MetadataEditor: View {
                 Button("重新查询") { searchOnlineLyrics() }.disabled(searchingLyrics)
                 Button("关闭") { showingOnlineLyrics = false }
             }
-            HStack {
-                TextField("歌曲名称", text: $onlineSearchTitle).textFieldStyle(.roundedBorder)
-                TextField("歌手（可留空）", text: $onlineSearchArtist).textFieldStyle(.roundedBorder)
+            HStack(alignment: .bottom, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("歌名").font(.caption).foregroundStyle(.secondary)
+                    TextField("输入歌曲名称", text: $onlineSearchTitle)
+                        .textFieldStyle(.roundedBorder).accessibilityLabel("歌名")
+                }.frame(width: 280)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("歌手（可留空）").font(.caption).foregroundStyle(.secondary)
+                    TextField("输入歌手姓名", text: $onlineSearchArtist)
+                        .textFieldStyle(.roundedBorder).accessibilityLabel("歌手")
+                }.frame(width: 220)
+                Spacer(minLength: 0)
             }
             Toggle("简体预览并应用", isOn: $preferSimplifiedOnlineLyrics)
                 .toggleStyle(.checkbox)
             Text("查询 LRCLIB、LrcAPI；外文歌另查 lyrics.ovh。简体选项仅作用于本次预览和应用，不会自动修改已保存歌词；统一繁体及“妳”等用字，保留粤语用词与日文歌词。")
                 .font(.caption).foregroundStyle(.secondary)
-            if searchingLyrics { ProgressView("正在查询…") }
             if let onlineError { Text(onlineError).foregroundStyle(.secondary) }
             if let candidate = onlineResults.first(where: { $0.id == selectedOnlineID }),
                let duration = candidate.duration, track.duration > 0, abs(duration - track.duration) > 10 {
@@ -461,8 +469,13 @@ struct MetadataEditor: View {
                 List(onlineResults, selection: $selectedOnlineID) { item in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(item.trackName) : item.trackName).font(.headline)
-                        Text("\(item.source) · \(preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(item.artistName) : item.artistName) · \(item.hasTimeline ? "同步" : "纯文本")\(item.duration.map { " · \(Int($0) / 60):\(String(format: "%02d", Int($0) % 60))" } ?? "")")
+                        Text("\(item.source) · \(preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(item.artistName) : item.artistName)")
                             .font(.caption).foregroundStyle(.secondary)
+                        let album = item.albumName?.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let albumLabel = album.flatMap { $0.isEmpty ? nil : $0 } ?? "未知专辑"
+                        Text("\(preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(albumLabel) : albumLabel)\(item.duration.map { " · \(Int($0) / 60):\(String(format: "%02d", Int($0) % 60))" } ?? "")")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(2).help(albumLabel)
                     }.tag(item.id)
                 }.frame(width: 250)
                 ScrollView {
@@ -471,6 +484,24 @@ struct MetadataEditor: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                 }.frame(maxWidth: .infinity)
+            }
+            .frame(maxHeight: .infinity)
+            .opacity(searchingLyrics ? 0 : 1)
+            .disabled(searchingLyrics)
+            .accessibilityHidden(searchingLyrics)
+            .overlay {
+                if searchingLyrics {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .controlSize(.large)
+                            .accessibilityLabel("正在搜索歌词")
+                        Text("正在搜索歌词…").font(.headline)
+                        Text("正在查询歌词来源，请稍候")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
             HStack {
                 Text("确认后替换编辑框中的歌词，点击“保存更改”才写入歌曲。")
@@ -482,7 +513,7 @@ struct MetadataEditor: View {
                     lyrics = LyricsText.normalized(text)
                     timingIndex = 0
                     showingOnlineLyrics = false
-                }.buttonStyle(.borderedProminent).disabled(selectedOnlineID == nil)
+                }.buttonStyle(.borderedProminent).disabled(searchingLyrics || selectedOnlineID == nil)
             }
         }.padding(20).frame(width: 790, height: 540)
     }
