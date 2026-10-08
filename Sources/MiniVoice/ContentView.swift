@@ -519,8 +519,7 @@ private struct PlayerDetail: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let compact = geometry.size.width < 720
-            let controlsHeight: CGFloat = compact ? 178 : 116
+            let controlsHeight = PlayerControlsGeometry(width: geometry.size.width).height
             let headerHeight: CGFloat = 38
             let gap: CGFloat = 12
             // Fix the top and bottom sections first. Lyrics take the remaining
@@ -539,7 +538,7 @@ private struct PlayerDetail: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .topLeading)))
                 }
                 lyrics.frame(height: lyricsHeight)
-                PlayerControls(track: playbackTrack, compact: compact, onEdit: onEditPlayback)
+                PlayerControls(track: playbackTrack)
                     .frame(height: controlsHeight)
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
@@ -651,6 +650,8 @@ private struct SyncedLyrics: View {
     let follow: Bool
     @EnvironmentObject private var clock: PlaybackClock
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var previousScrollTarget: ScrollTarget?
 
     private struct ScrollTarget: Equatable {
         let trackID: UUID
@@ -699,7 +700,16 @@ private struct SyncedLyrics: View {
                     // Wait for new text/viewport geometry before resolving the line's scroll frame.
                     await Task.yield()
                     guard !Task.isCancelled, follow else { return }
-                    withAnimation(.easeInOut(duration: 0.4)) {
+                    let target = ScrollTarget(trackID: track.id, active: active, follow: follow,
+                                              size: geometry.size, lyrics: track.lyrics)
+                    let animate = !reduceMotion && previousScrollTarget?.trackID == target.trackID
+                        && previousScrollTarget?.size == target.size
+                        && previousScrollTarget?.active != target.active
+                    previousScrollTarget = target
+                    // Live resize must follow the viewport immediately. Starting
+                    // another 0.4s animation for every pixel made scrolling lag
+                    // behind the window and the changing player-panel height.
+                    withAnimation(animate ? .easeInOut(duration: 0.4) : nil) {
                         proxy.scrollTo(active ?? 0, anchor: .center)
                     }
                 }
@@ -731,6 +741,23 @@ private struct NowPlayingIndicator: View {
     }
 }
 
+private struct AdaptivePlayerControlsLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 840
+        return CGSize(width: width, height: PlayerControlsGeometry(width: width).height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 4 else { return }
+        let songWidth = subviews[2].sizeThatFits(ProposedViewSize(width: nil, height: 58)).width
+        let layout = PlayerControlsGeometry(width: bounds.width, songIdealWidth: songWidth)
+        for (view, frame) in zip(subviews, [layout.progress, layout.buttons, layout.song, layout.output]) {
+            view.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                       anchor: .topLeading, proposal: ProposedViewSize(frame.size))
+        }
+    }
+}
+
 private struct PlayerControls: View {
     @EnvironmentObject private var clock: PlaybackClock
     @EnvironmentObject private var library: MusicLibrary
@@ -739,55 +766,51 @@ private struct PlayerControls: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let track: Track
-    let compact: Bool
-    let onEdit: () -> Void
     @State private var scrub: Double?
     var body: some View {
-        Group {
-            if compact {
-                VStack(spacing: 12) {
-                    transport
-                    HStack(spacing: 18) {
-                        trackInfo.frame(maxWidth: .infinity, alignment: .leading)
-                        output.frame(width: 120)
-                    }
-                }
-            } else {
-                HStack(spacing: 18) {
-                    trackInfo.frame(width: 160)
-                    transport.frame(maxWidth: .infinity)
-                    output.frame(width: 160)
-                }
+        GeometryReader { geometry in
+            let layout = PlayerControlsGeometry(width: geometry.size.width)
+            AdaptivePlayerControlsLayout {
+                progress.frame(height: 22)
+                transport(spacing: layout.buttonSpacing)
+                trackInfo(artworkSize: layout.artworkSize)
+                    .frame(height: 58, alignment: .leading)
+                output.frame(height: 58)
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
-        // 12pt all-around padding keeps the controls' contents flush with the
-        // 12pt gaps between the surrounding panels.
-        .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .modifier(PlayerPanelSurface())
         .onChange(of: track.id) { _ in scrub = nil }
     }
 
-    private var trackInfo: some View {
-        HStack(spacing: 10) {
-            Artwork(image: track.artwork, size: compact ? 58 : 62)
+    private func trackInfo(artworkSize: CGFloat) -> some View {
+        HStack(spacing: 8) {
+            Artwork(image: track.artwork, size: artworkSize)
             VStack(alignment: .leading, spacing: 4) {
-                Text(track.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(track.title).font(.subheadline.weight(.semibold))
+                    .lineLimit(1).help(track.title)
+                Text(track.artist).font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(1).help(track.artist)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private var transport: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Text(time(scrub ?? clock.time))
-                Slider(value: Binding(get: { scrub ?? clock.time }, set: { scrub = $0 }), in: 0...max(track.duration, 1)) { editing in
-                    if !editing, let scrub { library.seek(to: scrub); self.scrub = nil }
-                }.accessibilityLabel("播放进度")
-                Text(time(track.duration))
-            }.font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-            HStack(spacing: 26) {
+    private var progress: some View {
+        HStack(spacing: 8) {
+            Text(time(scrub ?? clock.time))
+                .frame(width: 34, alignment: .leading)
+            Slider(value: Binding(get: { scrub ?? clock.time }, set: { scrub = $0 }), in: 0...max(track.duration, 1)) { editing in
+                if !editing, let scrub { library.seek(to: scrub); self.scrub = nil }
+            }.accessibilityLabel("播放进度")
+            Text(time(track.duration))
+                .frame(width: 34, alignment: .trailing)
+        }.font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+    }
+
+    private func transport(spacing: CGFloat) -> some View {
+            HStack(spacing: spacing) {
                 Button {
                     let modes = PlaybackMode.allCases
                     let current = modes.firstIndex(of: library.playbackMode) ?? 0
@@ -822,13 +845,13 @@ private struct PlayerControls: View {
                 .foregroundStyle(desktopLyrics.isEnabled ? playerGreen : .primary)
                 .help(desktopLyrics.isEnabled ? "关闭桌面歌词" : "显示桌面歌词")
             }.buttonStyle(TransportButtonStyle()).font(.system(size: 17))
-        }
     }
 
     private var output: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: volume.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .frame(width: 14)
                 Slider(value: Binding(get: { volume.value }, set: { volume.set($0) }), in: 0...1)
                     .disabled(!volume.canSetVolume).accessibilityLabel("系统音量")
                 // Reserve a width just wide enough for "100%" so the slider
@@ -837,7 +860,7 @@ private struct PlayerControls: View {
                     .monospacedDigit()
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
-                    .frame(minWidth: 32, idealWidth: 36, alignment: .trailing)
+                    .frame(width: 32, alignment: .trailing)
             }
             Menu {
                 ForEach(volume.outputDevices) { device in
@@ -855,7 +878,8 @@ private struct PlayerControls: View {
                     .lineLimit(1)
             }
             .menuStyle(.borderlessButton)
-            .help(volume.error ?? "切换播放输出设备")
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help(volume.error ?? volume.deviceName)
         }.font(.caption).foregroundStyle(.secondary)
     }
     private func time(_ value: Double) -> String { String(format: "%d:%02d", Int(max(0, value)) / 60, Int(max(0, value)) % 60) }
@@ -1276,7 +1300,7 @@ private struct TransportButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .frame(width: isPrimary ? 52 : 24, height: 52)
+            .frame(width: isPrimary ? 52 : 36, height: 52)
             .background {
                 if !isPrimary {
                     Circle()
