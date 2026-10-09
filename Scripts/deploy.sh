@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="MiniVoice"
-APP_ID="local.fanchen.MiniVoice"
+APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$ROOT/AppBundle/Info.plist")"
 APP_PATH="/Applications/${APP_NAME}.app"
 BUNDLE_PATH="$ROOT/.build/${APP_NAME}.app"
 STAGING="/Applications/.${APP_NAME}-staging-$$.app"
@@ -17,8 +17,12 @@ ditto "$BUNDLE_PATH" "$STAGING"
 codesign --verify --deep --strict "$STAGING"
 
 if pgrep -x "$APP_NAME" >/dev/null; then
-  osascript -e "tell application id \"${APP_ID}\" to quit" >/dev/null 2>&1 || true
-  osascript -e 'tell application id "com.local.minivoice" to quit' >/dev/null 2>&1 || true
+  # The installed app can still have the previous bundle identifier.
+  INSTALLED_APP_ID="$APP_ID"
+  if [[ -f "$APP_PATH/Contents/Info.plist" ]]; then
+    INSTALLED_APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Contents/Info.plist")"
+  fi
+  osascript -e "tell application id \"${INSTALLED_APP_ID}\" to quit" >/dev/null 2>&1 || true
   sleep 2
 fi
 if pgrep -x "$APP_NAME" >/dev/null; then

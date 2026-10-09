@@ -53,6 +53,50 @@ final class PlayerTests: XCTestCase {
         XCTAssertEqual(library.playingID, ids[1])
     }
 
+    @MainActor
+    func testPlaybackPositionRestoresWithoutAutoplay() async throws {
+        let name = "MiniVoiceResume-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { defaults.removePersistentDomain(forName: name); try? FileManager.default.removeItem(at: root) }
+        for file in ["a.wav", "b.wav"] {
+            _ = try MediaTools.run("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "10", root.appendingPathComponent(file).path])
+        }
+        func wait(_ library: MusicLibrary) async throws {
+            for _ in 0..<1000 {
+                if !library.isImporting { return }
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+            XCTFail("Library load timed out")
+        }
+        let library = MusicLibrary(defaults: defaults, scanOnLaunch: false)
+        library.addFolders([root]); try await wait(library)
+        library.volume = 0
+        library.play(try XCTUnwrap(library.tracks.first).id)
+        library.pause(); library.seek(to: 4.25)
+        let path = try XCTUnwrap(library.playingTrack).url.path
+        library.select(try XCTUnwrap(library.tracks.last).id)
+        library.stop()
+        let restored = MusicLibrary(defaults: defaults)
+        defer { restored.stop() }
+        try await wait(restored)
+        XCTAssertFalse(restored.isPlaying)
+        XCTAssertEqual(restored.playingTrack?.url.path, path)
+        XCTAssertEqual(restored.playbackTime, 4.25, accuracy: 0.01)
+        restored.volume = 0
+        restored.play(); restored.pause()
+        XCTAssertEqual(restored.playbackTime, 4.25, accuracy: 0.2)
+        restored.skip(1)
+        XCTAssertEqual(restored.playbackTime, 0)
+        XCTAssertEqual(defaults.double(forKey: "MiniVoice.lastPlaybackTime"), 0)
+        defaults.set(999.0, forKey: "MiniVoice.lastPlaybackTime")
+        let invalid = MusicLibrary(defaults: defaults)
+        try await wait(invalid)
+        XCTAssertEqual(invalid.playbackTime, 0)
+        XCTAssertFalse(invalid.isPlaying)
+    }
+
     func testAutomaticPlaybackModesAndManualBoundaries() {
         let ids = [UUID(), UUID(), UUID()]
         var queue = PlaybackQueue()

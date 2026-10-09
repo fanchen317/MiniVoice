@@ -4,9 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIGURATION="${1:-release}"
 APP_NAME="MiniVoice"
-APP_IDENTIFIER="local.fanchen.MiniVoice"
 APP_PATH="$ROOT/.build/${APP_NAME}.app"
 INFO_PLIST="$ROOT/AppBundle/Info.plist"
+APP_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")"
 
 if [[ "$CONFIGURATION" != "debug" && "$CONFIGURATION" != "release" ]]; then
   echo "用法：Scripts/build-app.sh [debug|release]" >&2

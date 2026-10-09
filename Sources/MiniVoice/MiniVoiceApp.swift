@@ -3,14 +3,27 @@ import SwiftUI
 @main
 struct MiniVoiceApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var statusBar = StatusBarController()
-    @StateObject private var systemVolume = SystemVolume()
-    @StateObject private var library = MusicLibrary()
-    @StateObject private var shortcuts = PlaybackShortcutController()
-    @StateObject private var windowToggle = WindowToggleController()
-    @StateObject private var desktopLyrics = DesktopLyricsController()
-    @StateObject private var lyricsSync = LyricsSyncCoordinator()
-    @AppStorage("MiniVoice.appearance") private var appearance = AppAppearance.system.rawValue
+    @StateObject private var statusBar: StatusBarController
+    @StateObject private var systemVolume: SystemVolume
+    @StateObject private var library: MusicLibrary
+    @StateObject private var shortcuts: PlaybackShortcutController
+    @StateObject private var windowToggle: WindowToggleController
+    @StateObject private var desktopLyrics: DesktopLyricsController
+    @StateObject private var lyricsSync: LyricsSyncCoordinator
+    @AppStorage private var appearance: String
+
+    init() {
+        // Migrate before any controller or AppStorage reads the new domain.
+        PreferencesMigration.runIfNeeded()
+        _statusBar = StateObject(wrappedValue: StatusBarController())
+        _systemVolume = StateObject(wrappedValue: SystemVolume())
+        _library = StateObject(wrappedValue: MusicLibrary())
+        _shortcuts = StateObject(wrappedValue: PlaybackShortcutController())
+        _windowToggle = StateObject(wrappedValue: WindowToggleController())
+        _desktopLyrics = StateObject(wrappedValue: DesktopLyricsController())
+        _lyricsSync = StateObject(wrappedValue: LyricsSyncCoordinator())
+        _appearance = AppStorage(wrappedValue: AppAppearance.system.rawValue, "MiniVoice.appearance")
+    }
 
     var body: some Scene {
         Window("MiniVoice", id: "main") {

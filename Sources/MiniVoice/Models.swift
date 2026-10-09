@@ -214,6 +214,11 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 stop()
                 let savedPath = defaults.string(forKey: "MiniVoice.lastTrack")
                 selectedID = tracks.first(where: { $0.url.path == savedPath })?.id ?? tracks.first?.id
+                if let restored = selectedTrack, restored.url.path == savedPath {
+                    let savedTime = defaults.double(forKey: "MiniVoice.lastPlaybackTime")
+                    playbackTime = savedTime.isFinite && savedTime >= 0 && savedTime < restored.duration ? savedTime : 0
+                    playingID = restored.id
+                }
             }
             queue.reset(current: playingID ?? selectedID, ids: playbackIDs)
             scanIssues = issues
@@ -270,7 +275,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     private func activate(_ id: Track.ID) {
         stop(); selectedID = id; playingID = id
-        defaults.set(selectedTrack?.url.path, forKey: "MiniVoice.lastTrack")
+        persistPlaybackPosition()
     }
 
     func togglePlayback() { isPlaying ? pause() : play() }
@@ -305,17 +310,30 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 recentPaths.insert(track.url.path, at: 0)
                 recentPaths = Array(recentPaths.prefix(200))
                 defaults.set(recentPaths, forKey: "MiniVoice.recentPlayback")
+                persistPlaybackPosition()
                 beginTimer()
             }
             else { errorMessage = "无法开始播放这首歌曲。" }
         } catch { pause(); errorMessage = "无法播放这首文件：\(error.localizedDescription)" }
     }
 
-    func pause() { player?.pause(); isPlaying = false; timer?.invalidate() }
-    func stop() { player?.stop(); player = nil; playingID = nil; isPlaying = false; playbackTime = 0; timer?.invalidate() }
+    func pause() {
+        player?.pause()
+        if let player { playbackTime = player.currentTime }
+        persistPlaybackPosition()
+        isPlaying = false; timer?.invalidate()
+    }
+
+    private func persistPlaybackPosition() {
+        guard let track = playingTrack ?? selectedTrack, playbackTime.isFinite else { return }
+        defaults.set(track.url.path, forKey: "MiniVoice.lastTrack")
+        defaults.set(max(0, playbackTime), forKey: "MiniVoice.lastPlaybackTime")
+    }
+    func stop() { if player != nil || playingID != nil { persistPlaybackPosition() }; player?.stop(); player = nil; playingID = nil; isPlaying = false; playbackTime = 0; timer?.invalidate() }
     func seek(to time: TimeInterval) {
         let clamped = max(0, min(time, playingTrack?.duration ?? selectedTrack?.duration ?? 0))
         player?.currentTime = clamped; playbackTime = clamped
+        persistPlaybackPosition()
     }
 
     func skip(_ delta: Int) {
@@ -467,6 +485,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     func playbackFinished(successfully: Bool) {
         pause()
         playbackTime = playingTrack?.duration ?? 0
+        persistPlaybackPosition()
         guard successfully else { errorMessage = "音频播放中断，请尝试重新播放。"; return }
         guard let next = queue.destination(current: playingID, ids: playbackIDs, mode: playbackMode, automatic: true) else { return }
         activate(next); play()
@@ -483,6 +502,9 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 let playerTime = self.player?.currentTime ?? 0
                 let ceiling = self.playingTrack?.duration ?? playerTime
                 self.playbackTime = min(playerTime, ceiling)
+                if Int(self.defaults.double(forKey: "MiniVoice.lastPlaybackTime")) != Int(self.playbackTime) {
+                    self.persistPlaybackPosition()
+                }
             }
         }
         if let timer { RunLoop.main.add(timer, forMode: .common) }
