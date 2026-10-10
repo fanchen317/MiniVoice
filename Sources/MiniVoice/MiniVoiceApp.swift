@@ -16,8 +16,11 @@ struct MiniVoiceApp: App {
         // Migrate before any controller or AppStorage reads the new domain.
         PreferencesMigration.runIfNeeded()
         _statusBar = StateObject(wrappedValue: StatusBarController())
-        _systemVolume = StateObject(wrappedValue: SystemVolume())
-        _library = StateObject(wrappedValue: MusicLibrary())
+        let playbackLibrary = MusicLibrary()
+        let volumeController = SystemVolume()
+        volumeController.connect(library: playbackLibrary)
+        _systemVolume = StateObject(wrappedValue: volumeController)
+        _library = StateObject(wrappedValue: playbackLibrary)
         _shortcuts = StateObject(wrappedValue: PlaybackShortcutController())
         _windowToggle = StateObject(wrappedValue: WindowToggleController())
         _desktopLyrics = StateObject(wrappedValue: DesktopLyricsController())

@@ -476,6 +476,7 @@ struct MetadataEditor: View {
                 Spacer()
                 Button("重新查询") { searchOnlineLyrics() }.disabled(searchingLyrics)
                 Button("关闭") { showingOnlineLyrics = false }
+                    .keyboardShortcut(.cancelAction)
             }
             HStack(alignment: .bottom, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -556,7 +557,9 @@ struct MetadataEditor: View {
                     translation = LyricsTranslation.text(in: imported) ?? ""
                     timingIndex = 0
                     showingOnlineLyrics = false
-                }.buttonStyle(.borderedProminent).disabled(searchingLyrics || selectedOnlineID == nil)
+                }.buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(searchingLyrics || selectedOnlineID == nil)
             }
         }.padding(20).frame(width: 790, height: 540)
     }

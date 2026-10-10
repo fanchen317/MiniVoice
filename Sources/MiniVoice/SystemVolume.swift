@@ -18,6 +18,63 @@ final class SystemVolume: ObservableObject {
     private var device = AudioDeviceID(0)
     private var elements: [AudioObjectPropertyElement] = []
     private var timer: Timer?
+    private weak var library: MusicLibrary?
+    private var previousRoute: HeadphoneDisconnectPolicy.Route?
+    private var routeListeners: [(AudioObjectID, AudioObjectPropertyAddress, AudioObjectPropertyListenerBlock)] = []
+    private var watchedDevice: AudioDeviceID = 0
+
+    func connect(library: MusicLibrary) { self.library = library }
+
+    private func listen(_ object: AudioObjectID, selector: AudioObjectPropertySelector,
+                        scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) {
+        var property = AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: 0)
+        let callback: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            Task { @MainActor in self?.refresh() }
+        }
+        if AudioObjectAddPropertyListenerBlock(object, &property, .main, callback) == noErr {
+            routeListeners.append((object, property, callback))
+        }
+    }
+
+    private func observeRoute(_ id: AudioDeviceID) {
+        guard watchedDevice != id else { return }
+        for (object, var property, callback) in routeListeners {
+            AudioObjectRemovePropertyListenerBlock(object, &property, .main, callback)
+        }
+        routeListeners.removeAll()
+        watchedDevice = id
+        listen(AudioObjectID(kAudioObjectSystemObject), selector: kAudioHardwarePropertyDefaultOutputDevice)
+        listen(AudioObjectID(kAudioObjectSystemObject), selector: kAudioHardwarePropertyDevices)
+        if id != 0 {
+            listen(id, selector: kAudioDevicePropertyDataSource, scope: kAudioDevicePropertyScopeOutput)
+            listen(id, selector: kAudioDevicePropertyDeviceIsAlive)
+        }
+    }
+
+    private func uintProperty(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector,
+                              scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> UInt32? {
+        var property = AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: 0)
+        var value: UInt32 = 0, size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(object, &property, 0, nil, &size, &value) == noErr else { return nil }
+        return value
+    }
+
+    private func isHeadphoneDevice(_ id: AudioDeviceID) -> Bool {
+        let transport = uintProperty(id, kAudioDevicePropertyTransportType)
+        if transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE { return true }
+        // Built-in headphone jacks can change source without changing the device ID.
+        if uintProperty(id, kAudioDevicePropertyDataSource, scope: kAudioDevicePropertyScopeOutput) == 0x6864706e { return true } // 'hdpn'
+        var property = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams, mScope: kAudioDevicePropertyScopeOutput, mElement: 0)
+        var size: UInt32 = 0
+        if AudioObjectGetPropertyDataSize(id, &property, 0, nil, &size) == noErr, size > 0 {
+            var streams = [AudioStreamID](repeating: 0, count: Int(size) / MemoryLayout<AudioStreamID>.size)
+            if AudioObjectGetPropertyData(id, &property, 0, nil, &size, &streams) == noErr,
+               streams.contains(where: { uintProperty($0, kAudioStreamPropertyTerminalType) == kAudioStreamTerminalTypeHeadphones }) { return true }
+        }
+        let name = deviceName(for: id).lowercased()
+        return name.contains("headphone") || name.contains("headset") || name.contains("耳机")
+    }
+
 
     init() {
         refresh()
@@ -34,6 +91,12 @@ final class SystemVolume: ObservableObject {
         var defaultAddress = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: 0)
         var current = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &defaultAddress, 0, nil, &size, &current) == noErr else { canSetVolume = false; return }
+        let route = HeadphoneDisconnectPolicy.Route(id: current, isHeadphones: isHeadphoneDevice(current))
+        let available = Set(outputDevices.filter { uintProperty($0.id, kAudioDevicePropertyDeviceIsAlive) != 0 }.map(\.id))
+        if HeadphoneDisconnectPolicy.shouldPause(previous: previousRoute, current: route, availableIDs: available),
+           library?.isPlaying == true { library?.pause() }
+        previousRoute = route
+        observeRoute(current)
         device = current
         var nameAddress = AudioObjectPropertyAddress(mSelector: kAudioObjectPropertyName, mScope: kAudioObjectPropertyScopeGlobal, mElement: 0)
         var name: Unmanaged<CFString>?

@@ -184,6 +184,7 @@ struct ContentView: View {
                 HStack {
                     Spacer()
                     Button("取消") { showingPlaylistEditor = false }
+                        .keyboardShortcut(.cancelAction)
                     Button("保存") { savePlaylistName() }
                         .disabled(playlistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         .keyboardShortcut(.defaultAction)
@@ -204,11 +205,12 @@ struct ContentView: View {
                 HStack {
                     Spacer()
                     Button("取消") { deleting = false }
+                        .keyboardShortcut(.cancelAction)
                     Button("确认删除", role: .destructive) {
                         library.deleteTracks(ids: Set(deleteTargets.map(\.id)), moveFilesToTrash: deleteFiles)
                         selectedIDs.removeAll()
                         deleting = false
-                    }
+                    }.keyboardShortcut(.defaultAction)
                 }
             }.padding(24).frame(width: 360)
         }
@@ -386,7 +388,9 @@ struct ContentView: View {
                     .padding(.leading, 8)
                     .help("后台任务").accessibilityLabel("后台任务")
                     .onTapGesture { showingTasks.toggle() }
-                    .popover(isPresented: $showingTasks) { backgroundTasks }
+                    .popover(isPresented: $showingTasks) {
+                        backgroundTasks.onExitCommand { showingTasks = false }
+                    }
                 }
                 Button(action: toggleSidebar) {
                     Image(systemName: "xmark")
@@ -429,7 +433,8 @@ struct ContentView: View {
                 HStack(spacing: 8) {
                     Text(destinationTitle).font(.caption.weight(.semibold))
                         .lineLimit(1).truncationMode(.tail).help(destinationTitle)
-                    Text("\(songs.count) 首").font(.caption.monospacedDigit()).fixedSize()
+                    Text(browsingGroups ? "\(groupedSongs.count) \(destination == .artists ? "位" : "张")" : "\(songs.count) 首")
+                        .font(.caption.monospacedDigit()).lineLimit(1).truncationMode(.tail)
                 }.foregroundStyle(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 2) {
@@ -658,7 +663,7 @@ private extension ContentView {
     func workspaceSidebar(closeProgress: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             sidebarBrand(closeProgress: closeProgress)
-            PlayerScrollView {
+            PlayerScrollView(contentTrailingInset: 0, thumbOffset: 8) {
                 VStack(alignment: .leading, spacing: 6) {
                     workspaceNavigation("音乐库", symbol: "music.note", target: .all)
                     workspaceNavigation("最近播放", symbol: "clock", target: .recent)
@@ -788,13 +793,13 @@ private extension ContentView {
     func workspaceSongs(width: CGFloat) -> some View {
         let columns = MusicListColumns(width: width, multiSelecting: multiSelecting)
         return VStack(alignment: .leading, spacing: 4) {
-            if let browseGroup {
+            if browseGroup != nil {
                 HStack {
                     Button { self.browseGroup = nil; selectedIDs.removeAll() } label: {
                         Label(destination == .artists ? "所有歌手" : "所有专辑", systemImage: "chevron.left")
                     }.buttonStyle(.plain).foregroundStyle(playerGreen)
                     Spacer()
-                    Text(browseGroup).font(.headline).lineLimit(1)
+                    Text("\(songs.count) 首歌曲").font(.caption).foregroundStyle(.secondary)
                 }
             }
             libraryToolbar
@@ -802,19 +807,32 @@ private extension ContentView {
             ScrollViewReader { proxy in
                 PlayerScrollView(contentTrailingInset: 16, thumbOffset: 8) {
                     if browsingGroups {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 135), spacing: 16)], spacing: 18) {
-                            ForEach(groupedSongs, id: \.name) { group in
-                                Button {
-                                    browseGroup = group.name; selectedIDs.removeAll()
-                                } label: {
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        Artwork(image: group.tracks.first?.artwork, size: 100)
-                                        Text(group.name).font(.headline).lineLimit(2)
-                                        Text("\(group.tracks.count) 首歌曲").font(.caption).foregroundStyle(.secondary)
-                                    }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
-                                }.buttonStyle(.plain).help(group.name)
-                            }
+                        let groups = groupedSongs
+                        let availableWidth = max(1, width - 56)
+                        if width < 480 {
+                            LazyVStack(spacing: 4) {
+                                ForEach(groups, id: \.name) { group in
+                                    LibraryBrowseCard(name: group.name, tracks: group.tracks,
+                                                      isArtist: destination == .artists, width: availableWidth,
+                                                      compact: true) {
+                                        browseGroup = group.name; selectedIDs.removeAll()
+                                    }
+                                }
+                            }.padding(8)
+                        } else {
+                            let columnCount = max(2, Int((availableWidth + 16) / 166))
+                            let cardWidth = (availableWidth - CGFloat(columnCount - 1) * 16) / CGFloat(columnCount)
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 16, alignment: .top), count: columnCount),
+                                      alignment: .leading, spacing: 16) {
+                                ForEach(groups, id: \.name) { group in
+                                    LibraryBrowseCard(name: group.name, tracks: group.tracks,
+                                                      isArtist: destination == .artists, width: cardWidth) {
+                                        browseGroup = group.name; selectedIDs.removeAll()
+                                    }
+                                }
+                            }.padding(8)
                         }
+
                     } else {
                         LazyVStack(spacing: 4) {
                             ForEach(songs) { track in songRow(track, columns: columns).id(track.id) }
@@ -907,6 +925,87 @@ private extension ContentView {
         case .recent: return "播放歌曲后，记录会保存在这里"
         default: return "没有找到歌曲"
         }
+    }
+}
+
+/// Equal text slots keep rows aligned even when names wrap or artwork is missing.
+private struct LibraryBrowseCard: View {
+    let name: String
+    let tracks: [Track]
+    let isArtist: Bool
+    let width: CGFloat
+    var compact = false
+    let action: () -> Void
+    @State private var hovered = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var image: NSImage? { tracks.first(where: { $0.artwork != nil })?.artwork }
+    private var artists: String {
+        let names = Set(tracks.map(\.artist).filter { !$0.isEmpty }).sorted()
+        return names.isEmpty ? "未知歌手" : names.joined(separator: " / ")
+    }
+
+    private func cover(size: CGFloat) -> some View {
+        ZStack {
+            if let image {
+                Artwork(image: image, size: size)
+            } else {
+                Color.clear.background(playerGreen.opacity(0.09))
+                Image(systemName: isArtist ? "person.fill" : "opticaldisc")
+                    .font(.system(size: size * 0.32, weight: .light))
+                    .foregroundStyle(playerGreen.opacity(0.6))
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: isArtist ? size / 2 : 10, style: .continuous))
+        .scaleEffect(hovered && !reduceMotion ? 1.025 : 1)
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Group {
+                if compact {
+                    HStack(spacing: 12) {
+                        cover(size: 54)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(name).font(.system(size: 13, weight: .semibold))
+                                .lineLimit(1).truncationMode(.tail).help(name)
+                            if !isArtist {
+                                Text(artists).font(.caption).foregroundStyle(.secondary)
+                                    .lineLimit(1).truncationMode(.tail).help(artists)
+                            }
+                            Text("\(tracks.count) 首歌曲").font(.caption).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.tertiary)
+                    }.frame(height: 54)
+                } else {
+                    VStack(alignment: isArtist ? .center : .leading, spacing: 6) {
+                        cover(size: max(1, min(width - 16, isArtist ? 140 : 160)))
+                            .frame(maxWidth: .infinity).padding(.bottom, 4)
+                        Text(name).font(.system(size: 13, weight: .semibold))
+                            .lineLimit(2).truncationMode(.tail).help(name)
+                            .multilineTextAlignment(isArtist ? .center : .leading)
+                            .frame(maxWidth: .infinity, minHeight: 32, maxHeight: 32,
+                                   alignment: isArtist ? .top : .topLeading)
+                        if !isArtist {
+                            Text(artists).font(.caption).foregroundStyle(.secondary)
+                                .lineLimit(1).truncationMode(.tail).help(artists)
+                        }
+                        Text("\(tracks.count) 首歌曲").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(8)
+            .frame(width: width, alignment: .leading)
+            .background(hovered ? Color.primary.opacity(0.045) : .clear,
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: hovered)
+        .accessibilityLabel("\(name)，\(tracks.count) 首歌曲")
     }
 }
 
@@ -1647,7 +1746,7 @@ private struct PlayerPanelSurface: ViewModifier {
         let shape = RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
         content
             .background {
-                FrostedBackdrop(material: .hudWindow, blendingMode: .withinWindow)
+                FrostedBackdrop(material: .hudWindow, blendingMode: .withinWindow, cornerRadius: panelCornerRadius)
                     .opacity(colorScheme == .dark ? 0.76 : 1)
                 Color(nsColor: .windowBackgroundColor).opacity(colorScheme == .dark ? 0.18 : 0.22)
             }
@@ -1657,12 +1756,47 @@ private struct PlayerPanelSurface: ViewModifier {
     }
 }
 
+/// Native visual effects need their own mask; SwiftUI clipping alone can leave
+/// the AppKit backdrop visible outside the panel's rounded contour.
+private final class RoundedVisualEffectView: NSVisualEffectView {
+    var effectCornerRadius: CGFloat = 0 {
+        didSet { if effectCornerRadius != oldValue { updateEffectMask() } }
+    }
+    private var maskedSize: CGSize = .zero
+
+    override func layout() {
+        super.layout()
+        if bounds.size != maskedSize { updateEffectMask() }
+    }
+
+    private func updateEffectMask() {
+        maskedSize = bounds.size
+        wantsLayer = true
+        layer?.cornerRadius = effectCornerRadius
+        layer?.masksToBounds = effectCornerRadius > 0
+        guard effectCornerRadius > 0, bounds.width > 0, bounds.height > 0 else {
+            maskImage = nil
+            return
+        }
+        let size = bounds.size
+        let radius = min(effectCornerRadius, min(size.width, size.height) / 2)
+        maskImage = NSImage(size: size, flipped: false) { rect in
+            NSColor.white.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+    }
+}
+
 private struct FrostedBackdrop: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     var blendingMode: NSVisualEffectView.BlendingMode = .behindWindow
 
+    var cornerRadius: CGFloat = 0
+
     func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
+        let view = RoundedVisualEffectView()
+        view.effectCornerRadius = cornerRadius
         view.material = material
         view.blendingMode = blendingMode
         // Keep the artwork-tinted glass consistent when the window loses focus.
@@ -1671,6 +1805,7 @@ private struct FrostedBackdrop: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        (nsView as? RoundedVisualEffectView)?.effectCornerRadius = cornerRadius
         nsView.material = material
         nsView.blendingMode = blendingMode
         nsView.state = .active

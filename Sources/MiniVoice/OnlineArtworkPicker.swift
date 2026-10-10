@@ -75,6 +75,7 @@ struct OnlineArtworkPicker: View {
                     onApply(image)
                     dismiss()
                 }.buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
                     .disabled(downloaded == nil || downloading || searching)
             }
         }
