@@ -12,18 +12,24 @@ struct OnlineLyricsResult: Decodable, Identifiable, Sendable {
     let instrumental: Bool
 
     private enum CodingKeys: String, CodingKey {
-        case id, trackName, artistName, albumName, duration, syncedLyrics, plainLyrics, instrumental
+        case id, trackName, artistName, albumName, duration, syncedLyrics, plainLyrics, instrumental, lyricsfile
     }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try values.decodeIfPresent(String.self, forKey: .syncedLyrics)
+        let file = try values.decodeIfPresent(String.self, forKey: .lyricsfile).flatMap(LyricsTiming.lyricsfile)
+        let preferred = [file, legacy].compactMap { $0 }.max {
+            LyricTimingKind.detect(LRCParser.parse($0, placeholder: false)).rawValue
+                < LyricTimingKind.detect(LRCParser.parse($1, placeholder: false)).rawValue
+        }
         self.init(id: "lrclib:\(try values.decode(Int.self, forKey: .id))", source: "LRCLIB",
                   trackName: try values.decode(String.self, forKey: .trackName),
                   artistName: try values.decode(String.self, forKey: .artistName),
                   albumName: try values.decodeIfPresent(String.self, forKey: .albumName),
                   duration: try values.decodeIfPresent(Double.self, forKey: .duration),
-                  syncedLyrics: try values.decodeIfPresent(String.self, forKey: .syncedLyrics),
-                  plainLyrics: try values.decodeIfPresent(String.self, forKey: .plainLyrics),
+                  syncedLyrics: preferred.flatMap { LyricTimingKind.detect(LRCParser.parse($0, placeholder: false)) == .plain ? nil : $0 },
+                  plainLyrics: try values.decodeIfPresent(String.self, forKey: .plainLyrics) ?? file ?? legacy,
                   instrumental: try values.decode(Bool.self, forKey: .instrumental))
     }
 
@@ -41,7 +47,9 @@ struct OnlineLyricsResult: Decodable, Identifiable, Sendable {
         return plain?.isEmpty == false ? plain : nil
     }
 
-    var hasTimeline: Bool { syncedLyrics?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
+    var timingKind: LyricTimingKind { LyricTimingKind.detect(LRCParser.parse(usableLyrics ?? "", placeholder: false)) }
+    var hasTimeline: Bool { timingKind != .plain }
+    var hasTranslation: Bool { LRCParser.parse(usableLyrics ?? "", placeholder: false).contains { $0.translation != nil } }
 
     func score(title: String, artist: String, duration expectedDuration: Double) -> Int {
         var result = 0
@@ -54,6 +62,8 @@ struct OnlineLyricsResult: Decodable, Identifiable, Sendable {
             else if difference > 30 { result -= 80 }
         }
         if hasTimeline { result += 80 }
+        if timingKind == .word { result += 40 }
+        if hasTranslation { result += 10 }
         return result
     }
 }
@@ -82,6 +92,9 @@ enum OnlineLyricsSearch {
                 group.addTask { try? await fetchLRCLIB(query) }
             }
             group.addTask { try? await fetchLrcAPI(title: cleanedTitle, artist: cleanedArtist) }
+            group.addTask { try? await NetEaseLyrics.search(title: cleanedTitle, artist: cleanedArtist, duration: duration) }
+            group.addTask { try? await AdditionalLyricsSources.qq(title: cleanedTitle, artist: cleanedArtist) }
+            group.addTask { try? await AdditionalLyricsSources.kugou(title: cleanedTitle, artist: cleanedArtist, duration: duration) }
             if canUseOVH { group.addTask { try? await fetchLyricsOVH(title: cleanedTitle, artist: cleanedArtist) } }
             var successful: [[OnlineLyricsResult]] = []
             for await response in group {
@@ -122,7 +135,10 @@ enum OnlineLyricsSearch {
 
     static func parseLrcAPI(_ data: Data) throws -> [OnlineLyricsResult] {
         try JSONDecoder().decode([LrcAPIEntry].self, from: data).compactMap { item in
-            guard let lyrics = item.lrc?.trimmingCharacters(in: .whitespacesAndNewlines), !lyrics.isEmpty else { return nil }
+            let candidates = [item.yrc, item.lrc].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+            guard let lyrics = candidates.max(by: {
+                LyricTimingKind.detect(LRCParser.parse($0, placeholder: false)).rawValue < LyricTimingKind.detect(LRCParser.parse($1, placeholder: false)).rawValue
+            }) else { return nil }
             let timed = LRCParser.parse(lyrics, placeholder: false).contains { $0.timestamp != nil }
             return OnlineLyricsResult(id: "lrcapi:\(item.id)", source: "LrcAPI", trackName: item.title,
                                       artistName: item.artist, albumName: item.album, duration: nil,
@@ -162,6 +178,7 @@ private struct LrcAPIEntry: Decodable {
     let artist: String
     let album: String?
     let lrc: String?
+    let yrc: String?
 }
 
 private struct LyricsOVHResponse: Decodable { let lyrics: String }

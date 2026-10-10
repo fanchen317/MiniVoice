@@ -9,20 +9,32 @@ enum LRCParser {
            let range = Range(match.range(at: 1), in: source) { offset = (Double(source[range]) ?? 0) / 1000 }
         var parsed: [LyricLine] = []
         for raw in source.components(separatedBy: .newlines) {
-            let line = raw.replacingOccurrences(of: #"<\d+:\d{2}(?:\.\d{1,3})?>"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if line.isEmpty { continue }
+            if let yrc = LyricsTiming.yrcLine(line, offset: offset) { parsed.append(yrc); continue }
             let matches = timestamp.matches(in: line, range: NSRange(line.startIndex..., in: line))
             if matches.isEmpty {
                 if line.range(of: #"^\[[A-Za-z]+:.*\]$"#, options: .regularExpression) == nil {
-                    parsed.append(LyricLine(timestamp: nil, text: line))
+                    let enhanced = LyricsTiming.enhanced(line, offset: offset)
+                    let start = enhanced.words.first?.start
+                    parsed.append(LyricLine(timestamp: start, text: enhanced.text, endTime: enhanced.end,
+                                            words: LyricsTiming.validated(enhanced.words, text: enhanced.text, start: start, end: enhanced.end)))
                 }
                 continue
             }
-            let text = timestamp.stringByReplacingMatches(in: line, range: NSRange(line.startIndex..., in: line), withTemplate: "").trimmingCharacters(in: .whitespaces)
+            let body = timestamp.stringByReplacingMatches(in: line, range: NSRange(line.startIndex..., in: line), withTemplate: "")
+            let enhanced = LyricsTiming.enhanced(body, offset: offset)
+            var firstStart: Double?
             for match in matches {
                 guard let m = Range(match.range(at: 1), in: line), let s = Range(match.range(at: 2), in: line),
                       let minutes = Double(line[m]), let seconds = Double(line[s]), seconds < 60 else { continue }
-                parsed.append(LyricLine(timestamp: max(0, minutes * 60 + seconds + offset), text: text))
+                let start = max(0, minutes * 60 + seconds + offset)
+                let delta = start - (firstStart ?? start)
+                firstStart = firstStart ?? start
+                let words = enhanced.words.map { LyricWord(text: $0.text, start: max(0, $0.start + delta), end: $0.end.map { max(0, $0 + delta) }) }
+                let end = enhanced.end.map { max(0, $0 + delta) }
+                parsed.append(LyricLine(timestamp: start, text: enhanced.text, endTime: end,
+                                        words: LyricsTiming.validated(words, text: enhanced.text, start: start, end: end)))
             }
         }
         if !parsed.isEmpty && parsed.allSatisfy({ $0.timestamp != nil }) {
@@ -31,6 +43,7 @@ enum LRCParser {
                 return a == b ? $0.offset < $1.offset : a < b
             }.map(\.element)
         }
+        parsed = LyricsTranslation.apply(to: parsed, source: source, offset: offset)
         return parsed.isEmpty && placeholder ? [LyricLine(timestamp: nil, text: "尚未添加歌词")] : parsed
     }
 
@@ -44,6 +57,9 @@ enum LRCParser {
     /// also behaves consistently in players that ignore that tag.
     static func shifted(_ source: String, by seconds: TimeInterval) -> String {
         guard seconds.isFinite else { return source }
+        if source.range(of: #"(?m)^\[\d+,\d+\]"#, options: .regularExpression) != nil {
+            return shifted(encodedSource(source), by: seconds)
+        }
         let offsetPattern = try! NSRegularExpression(pattern: #"(?im)^\s*\[offset:([+-]?\d+)\]\s*\n?"#)
         let offset: Double
         if let match = offsetPattern.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)),
@@ -62,10 +78,16 @@ enum LRCParser {
                   let minutes = Double(result[minuteRange]),
                   let remaining = Double(result[secondRange]), remaining < 60 else { continue }
             let adjusted = max(0, minutes * 60 + remaining + offset + seconds)
-            let ticks = Int((adjusted * 100).rounded())
             let opening = (result as NSString).substring(with: match.range(at: 1))
             let closing = (result as NSString).substring(with: match.range(at: 4))
-            result.replaceSubrange(full, with: String(format: "%@%02d:%02d.%02d%@", opening, ticks / 6000, (ticks / 100) % 60, ticks % 100, closing))
+            let precision = result[secondRange].split(separator: ".").last?.count == 3 ? 3 : 2
+            let factor = precision == 3 ? 1000 : 100
+            let ticks = Int((adjusted * Double(factor)).rounded())
+            let format = precision == 3 ? "%@%02d:%02d.%03d%@" : "%@%02d:%02d.%02d%@"
+            result.replaceSubrange(full, with: String(format: format, opening, ticks / (60 * factor), (ticks / factor) % 60, ticks % factor, closing))
+        }
+        if let translation = LyricsTranslation.text(in: source) {
+            return LyricsTranslation.attaching(shifted(translation, by: seconds + offset), to: result)
         }
         return result
     }
@@ -73,6 +95,7 @@ enum LRCParser {
     /// Converts common SRT subtitles to timed lyrics, leaving LRC/plain text intact.
     static func imported(_ source: String) -> String {
         let normalized = source.replacingOccurrences(of: "\u{FEFF}", with: "").replacingOccurrences(of: "\r\n", with: "\n")
+        if normalized.range(of: #"(?m)^\[\d+,\d+\]"#, options: .regularExpression) != nil { return encodedSource(normalized) }
         let expression = try! NSRegularExpression(pattern: #"(?m)^(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->.*$"#)
         guard expression.firstMatch(in: normalized, range: NSRange(normalized.startIndex..., in: normalized)) != nil else { return normalized }
         return normalized.components(separatedBy: "\n\n").compactMap { block in
@@ -83,6 +106,13 @@ enum LRCParser {
             let time = values[0] * 3600 + values[1] * 60 + values[2] + values[3] / 1000
             return stamp(time, text: lines.dropFirst(index + 1).joined(separator: " / "))
         }.joined(separator: "\n")
+    }
+
+    private static func encodedSource(_ source: String) -> String {
+        let metadata = source.components(separatedBy: .newlines).filter {
+            $0.range(of: #"^\[(?!offset:)[A-Za-z]+:.*\]$"#, options: .regularExpression) != nil
+        }
+        return (metadata + [LyricsTiming.encoded(parse(source, placeholder: false))]).joined(separator: "\n")
     }
 
     static func timestamped(_ plainText: String, every seconds: TimeInterval = 4) -> String {

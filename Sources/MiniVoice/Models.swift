@@ -6,6 +6,9 @@ struct LyricLine: Identifiable, Equatable {
     let id = UUID()
     var timestamp: TimeInterval?
     var text: String
+    var endTime: TimeInterval? = nil
+    var words: [LyricWord] = []
+    var translation: String? = nil
 }
 
 enum LyricsDestination: Hashable {

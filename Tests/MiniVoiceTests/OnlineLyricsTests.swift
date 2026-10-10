@@ -2,6 +2,45 @@ import XCTest
 @testable import MiniVoice
 
 final class OnlineLyricsTests: XCTestCase {
+    func testNetEaseSearchAndWordLyricsPreserveMetadataAndTimings() throws {
+        let search = Data(#"{"code":200,"result":{"songs":[{"id":123,"name":"Numb","artists":[{"name":"Linkin Park"}],"album":{"name":"Meteora"},"duration":187520}]}}"#.utf8)
+        let song = try XCTUnwrap(NetEaseLyrics.parseSearch(search).first)
+        let payload: [String: Any] = ["code": 200,
+            "lrc": ["lyric": "[00:21.61]I'm tired"],
+            "yrc": ["lyric": "{\"t\":0,\"c\":[{\"tx\":\"作词: \"},{\"tx\":\"Artist\",\"li\":\"https://example.com\"}]}\n[21610,630](21610,180,0)I'm (21790,450,0)tired"]]
+        let result = try XCTUnwrap(NetEaseLyrics.parseLyrics(JSONSerialization.data(withJSONObject: payload), song: song))
+        XCTAssertEqual(result.source, "网易云")
+        XCTAssertEqual(result.timingKind, .word)
+        XCTAssertEqual(result.duration, 187.52)
+        let lyrics = try XCTUnwrap(result.usableLyrics)
+        XCTAssertFalse(lyrics.contains("https://"))
+        let lines = LRCParser.parse(lyrics)
+        XCTAssertEqual(lines.first?.text, "作词: Artist")
+        XCTAssertEqual(lines.last?.text, "I'm tired")
+        XCTAssertEqual(lines.last?.words.map(\.start), [21.61, 21.79])
+        XCTAssertEqual(lines.last?.words.map(\.end), [21.79, 22.24])
+    }
+
+    func testNetEaseFallsBackAndRejectsErrorPayloads() throws {
+        let song = NetEaseLyrics.Song(id: 1, name: "歌曲", artists: [], album: nil, duration: nil)
+        let line = try XCTUnwrap(NetEaseLyrics.parseLyrics(Data(#"{"code":200,"yrc":{"lyric":""},"lrc":{"lyric":"[00:01.00]逐行"}}"#.utf8), song: song))
+        XCTAssertEqual(line.timingKind, .line)
+        let plain = try XCTUnwrap(NetEaseLyrics.parseLyrics(Data(#"{"code":200,"lrc":{"lyric":"普通文本"}}"#.utf8), song: song))
+        XCTAssertEqual(plain.timingKind, .plain)
+        XCTAssertNil(try NetEaseLyrics.parseLyrics(Data(#"{"code":200,"nolyric":true}"#.utf8), song: song))
+        XCTAssertThrowsError(try NetEaseLyrics.parseLyrics(Data(#"{"code":403}"#.utf8), song: song))
+        XCTAssertThrowsError(try NetEaseLyrics.parseSearch(Data(#"{"code":403}"#.utf8)))
+    }
+
+    func testLiveNetEaseWordLyricsWhenRequested() async throws {
+        guard ProcessInfo.processInfo.environment["MINIVOICE_TEST_ONLINE"] == "1" else {
+            throw XCTSkip("Set MINIVOICE_TEST_ONLINE=1 to query public lyric services")
+        }
+        let results = try await NetEaseLyrics.search(title: "Numb", artist: "Linkin Park", duration: 187.52)
+        let match = try XCTUnwrap(results.first { $0.trackName == "Numb" && $0.artistName == "Linkin Park" && $0.timingKind == .word })
+        XCTAssertTrue(LRCParser.parse(try XCTUnwrap(match.usableLyrics)).contains { $0.words.count > 5 })
+    }
+
     func testSimplifiedVariantsPreserveTimingAndLanguage() {
         let source = "[offset:-120]\r\n[01:23.456]妳們在山峯 說愛我\r\n[01:30.00]佢喺度嘅 祂與祢"
         let result = ChineseLyricsScript.simplified(source)

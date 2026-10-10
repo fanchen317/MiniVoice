@@ -2,3 +2,7 @@
 .build/
 .idea/
 .claude/
+
+# Python runtime caches
+__pycache__/
+*.py[cod]

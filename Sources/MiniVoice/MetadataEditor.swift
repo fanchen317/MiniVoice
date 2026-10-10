@@ -20,6 +20,7 @@ struct MetadataEditor: View {
     @State private var artists: [ArtistEntry]
     @State private var album: String
     @State private var lyrics: String
+    @State private var translation: String
     @State private var artwork: NSImage?
     @State private var selectedPage = EditorPage.details
     @State private var showTimingTools = false
@@ -29,6 +30,8 @@ struct MetadataEditor: View {
     @State private var choosingArtwork = false
     @State private var choosingLyrics = false
     @State private var searchingLyrics = false
+    @State private var onlineSearchTask: Task<Void, Never>?
+    @State private var onlineSearchRequestID: UUID?
     @State private var onlineResults: [OnlineLyricsResult] = []
     @State private var onlineError: String?
     @State private var showingOnlineLyrics = false
@@ -41,6 +44,7 @@ struct MetadataEditor: View {
     @State private var saveError: String?
     @State private var isArtworkDropTarget = false
     @State private var showArtworkZoom = false
+    @State private var showingOnlineArtwork = false
     @State private var lyricsDestination: LyricsDestination
     private let lyricsSourceLabel: String
 
@@ -52,7 +56,8 @@ struct MetadataEditor: View {
         _title = State(initialValue: track.title)
         _artists = State(initialValue: track.artist.components(separatedBy: " / ").map { ArtistEntry(name: $0) })
         _album = State(initialValue: track.album)
-        _lyrics = State(initialValue: track.lyrics)
+        _lyrics = State(initialValue: LyricsTranslation.original(track.lyrics))
+        _translation = State(initialValue: LyricsTranslation.text(in: track.lyrics) ?? "")
         _onlineSearchTitle = State(initialValue: track.title)
         _onlineSearchArtist = State(initialValue: track.artist)
         _artwork = State(initialValue: track.artwork)
@@ -108,11 +113,13 @@ struct MetadataEditor: View {
             if let image = NSImage(contentsOf: url) { artwork = image; artworkChanged = true }
             else { saveError = "无法读取这张图片，请选择 PNG 或 JPEG。" }
         }
-        .fileImporter(isPresented: $choosingLyrics, allowedContentTypes: [UTType(filenameExtension: "lrc") ?? .plainText, UTType(filenameExtension: "srt") ?? .plainText, .plainText]) { result in
+        .fileImporter(isPresented: $choosingLyrics, allowedContentTypes: [UTType(filenameExtension: "lrc") ?? .plainText, UTType(filenameExtension: "yrc") ?? .plainText, UTType(filenameExtension: "srt") ?? .plainText, .plainText]) { result in
             do {
                 let url = try result.get()
                 var encoding = String.Encoding.utf8
-                lyrics = LyricsText.normalized(try String(contentsOf: url, usedEncoding: &encoding))
+                let imported = LyricsText.normalized(try String(contentsOf: url, usedEncoding: &encoding))
+                lyrics = LyricsTranslation.original(imported)
+                translation = LyricsTranslation.text(in: imported) ?? ""
                 timingIndex = 0
             } catch { saveError = "无法读取歌词，请使用 UTF-8 编码：\(error.localizedDescription)" }
         }
@@ -125,6 +132,7 @@ struct MetadataEditor: View {
                     HStack {
                         Text("封面预览").font(.headline)
                         Spacer()
+                        CopyArtworkButton(image: artwork, name: album.isEmpty ? title : album)
                         Button("关闭") { showArtworkZoom = false }
                             .keyboardShortcut(.cancelAction)
                     }
@@ -134,14 +142,23 @@ struct MetadataEditor: View {
                         .frame(maxWidth: 560, maxHeight: 560)
                         .background(Color.primary.opacity(0.04))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .modifier(ArtworkExportModifier(image: artwork, name: album.isEmpty ? title : album))
                 }
                 .padding(20)
                 .frame(width: 600, height: 640)
             }
         }
-        .sheet(isPresented: $showingOnlineLyrics) { onlineLyricsSheet }
+        .sheet(isPresented: $showingOnlineLyrics, onDismiss: cancelOnlineLyricsSearch) {
+            onlineLyricsSheet.onAppear { searchOnlineLyrics() }
+        }
+        .sheet(isPresented: $showingOnlineArtwork) {
+            OnlineArtworkPicker(title: title, artist: artists.map(\.name).filter { !$0.isEmpty }.joined(separator: " / "), album: album) { image in
+                artwork = image
+                artworkChanged = true
+            }
+        }
         .onAppear {
-            if openOnlineSearch { showingOnlineLyrics = true; searchOnlineLyrics() }
+            if openOnlineSearch { openOnlineLyricsSearch() }
         }
     }
 
@@ -221,7 +238,7 @@ struct MetadataEditor: View {
                     }
                 }.disabled(!track.canWriteTags)
             }
-            SettingsGroup(title: "专辑封面", footer: "支持拖入图片；点击已有封面可查看大图。") {
+            SettingsGroup(title: "专辑封面", footer: "支持在线查找高清封面或拖入图片；点击已有封面可查看大图。") {
                 HStack(spacing: 16) {
                     Button { showArtworkZoom = true } label: { ArtworkPreview(image: artwork, size: 80) }
                         .buttonStyle(.plain).disabled(artwork == nil)
@@ -229,6 +246,9 @@ struct MetadataEditor: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(artwork == nil ? "尚未设置封面" : "自定义歌曲封面")
                             .font(.system(size: 13, weight: .medium))
+                        Button { showingOnlineArtwork = true } label: {
+                            Label("在线查找高清封面…", systemImage: "magnifyingglass")
+                        }.disabled(!track.canWriteTags)
                         HStack(spacing: 10) {
                             Button(artwork == nil ? "添加封面…" : "更换封面…") { choosingArtwork = true }
                             Button("移除", role: .destructive) { artwork = nil; artworkChanged = true }
@@ -270,7 +290,7 @@ struct MetadataEditor: View {
             }
             SettingsGroup(title: "歌词内容") {
                 HStack {
-                    Label("支持 LRC、SRT、TXT", systemImage: "doc.text")
+                    Label("支持逐字 LRC、YRC、逐行 LRC、SRT、TXT", systemImage: "doc.text")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(16)
                 Divider().padding(.horizontal, 16)
@@ -305,6 +325,15 @@ struct MetadataEditor: View {
                     }
                 }
             }
+            SettingsGroup(title: "译文") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("在线结果含译文时会一并导入，并按时间轴显示在原文下方。也可粘贴带时间标签的译文；没有译文时保留原文显示。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    TextEditor(text: $translation)
+                        .font(.system(size: 13, design: .monospaced))
+                        .frame(height: 120).accessibilityLabel("歌词译文")
+                }.padding(16)
+            }
             SettingsGroup(title: "进阶工具") {
                 if LRCParser.parse(lyrics, placeholder: false).contains(where: { $0.timestamp != nil }) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -316,7 +345,9 @@ struct MetadataEditor: View {
                                 .textFieldStyle(.roundedBorder).frame(width: 90)
                             Text("秒").foregroundStyle(.secondary)
                             Button("应用偏移") {
-                                lyrics = LRCParser.shifted(lyrics, by: timingShiftSeconds)
+                                let shifted = LRCParser.shifted(LyricsTranslation.attaching(translation, to: lyrics), by: timingShiftSeconds)
+                                lyrics = LyricsTranslation.original(shifted)
+                                translation = LyricsTranslation.text(in: shifted) ?? ""
                                 timingIndex = 0
                             }.disabled(!timingShiftSeconds.isFinite || timingShiftSeconds == 0 || abs(timingShiftSeconds) > 60)
                         }
@@ -360,8 +391,11 @@ struct MetadataEditor: View {
         if LyricsAlignment.needsAlignment(lyrics) {
             return "当前是纯文本歌词。建议先在线查找；没有结果时可手动打点，或使用可选的本地 AI。"
         }
-        let timed = LRCParser.parse(lyrics).filter { $0.timestamp != nil }.count
-        return "已识别 \(timed) 行时间标签，保存后可自动跟随播放。"
+        let lines = LRCParser.parse(lyrics)
+        let timed = lines.filter { $0.timestamp != nil }.count
+        let words = lines.reduce(0) { $0 + $1.words.count }
+        return words > 0 ? "已识别 \(words) 个逐字时间片段、\(timed) 行歌词；缺少逐字时间的行自动使用逐行跟随。"
+            : "已识别 \(timed) 行时间标签，保存后可逐行跟随播放。"
     }
 
     private var filePage: some View {
@@ -379,11 +413,16 @@ struct MetadataEditor: View {
     }
 
     private func stampNextLine() {
-        var lines = LRCParser.parse(lyrics)
+        var lines = LRCParser.parse(LyricsTranslation.attaching(translation, to: lyrics))
         guard lines.indices.contains(timingIndex) else { return }
+        let delta = library.playbackTime - (lines[timingIndex].timestamp ?? library.playbackTime)
         lines[timingIndex].timestamp = library.playbackTime
-        lyrics = lines.map { line in
-            line.timestamp.map { LRCParser.stamp($0, text: line.text) } ?? line.text
+        lines[timingIndex].words = lines[timingIndex].words.map { LyricWord(text: $0.text, start: max(0, $0.start + delta), end: $0.end.map { max(0, $0 + delta) }) }
+        lines[timingIndex].endTime = lines[timingIndex].endTime.map { max(0, $0 + delta) }
+        lyrics = LyricsTiming.encoded(lines)
+        translation = lines.flatMap { line -> [String] in
+            guard let text = line.translation, let time = line.timestamp else { return [] }
+            return text.components(separatedBy: "\n").map { LRCParser.stamp(time, text: $0) }
         }.joined(separator: "\n")
         timingIndex += 1
     }
@@ -405,8 +444,8 @@ struct MetadataEditor: View {
         updated.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         updated.artist = artists.map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " / ")
         updated.album = album
-        updated.lyrics = LyricsAlignment.alignmentSource(lyrics, title: updated.title)
-        lyrics = updated.lyrics
+        updated.lyrics = LyricsTranslation.attaching(translation, to: LyricsAlignment.alignmentSource(lyrics, title: updated.title))
+        lyrics = LyricsTranslation.original(updated.lyrics)
         updated.artwork = artwork
         updated.artworkWasEdited = artworkChanged
         let shouldAlign = alignAfterSave && LyricsAlignment.needsAlignment(updated.lyrics)
@@ -420,7 +459,7 @@ struct MetadataEditor: View {
             defer { isSaving = false }
             do {
                 try await library.save(updated, lyricsDestination: destination)
-                lyrics = updated.lyrics
+                lyrics = LyricsTranslation.original(updated.lyrics)
                 if shouldAlign { lyricsSync.start(track: updated, destination: destination, library: library) }
                 alignAfterSave = false
                 closeEditor()
@@ -453,7 +492,7 @@ struct MetadataEditor: View {
             }
             Toggle("简体预览并应用", isOn: $preferSimplifiedOnlineLyrics)
                 .toggleStyle(.checkbox)
-            Text("查询 LRCLIB、LrcAPI；外文歌另查 lyrics.ovh。简体选项仅作用于本次预览和应用，不会自动修改已保存歌词；统一繁体及“妳”等用字，保留粤语用词与日文歌词。")
+            Text("查询网易云、QQ 音乐、酷狗音乐、LRCLIB、LrcAPI；优先展示逐字歌词，外文歌另查 lyrics.ovh。简体选项仅作用于本次预览和应用，不会自动修改已保存歌词；统一繁体及“妳”等用字，保留粤语用词与日文歌词。")
                 .font(.caption).foregroundStyle(.secondary)
             if let onlineError { Text(onlineError).foregroundStyle(.secondary) }
             if let candidate = onlineResults.first(where: { $0.id == selectedOnlineID }),
@@ -465,31 +504,7 @@ struct MetadataEditor: View {
                 Label("这份歌词没有时间轴；应用后可手动打点或使用本地 AI 匹配。", systemImage: "info.circle")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            HStack(alignment: .top, spacing: 16) {
-                List(onlineResults, selection: $selectedOnlineID) { item in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(item.trackName) : item.trackName).font(.headline)
-                        Text("\(item.source) · \(preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(item.artistName) : item.artistName)")
-                            .font(.caption).foregroundStyle(.secondary)
-                        let album = item.albumName?.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let albumLabel = album.flatMap { $0.isEmpty ? nil : $0 } ?? "未知专辑"
-                        Text("\(preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(albumLabel) : albumLabel)\(item.duration.map { " · \(Int($0) / 60):\(String(format: "%02d", Int($0) % 60))" } ?? "")")
-                            .font(.caption).foregroundStyle(.secondary)
-                            .lineLimit(2).help(albumLabel)
-                    }.tag(item.id)
-                }.frame(width: 250)
-                ScrollView {
-                    Text(onlineResults.first { $0.id == selectedOnlineID }.flatMap { displayedOnlineLyrics($0) } ?? "选择左侧结果预览歌词")
-                        .font(.system(.body, design: .monospaced))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                }.frame(maxWidth: .infinity)
-            }
-            .frame(maxHeight: .infinity)
-            .opacity(searchingLyrics ? 0 : 1)
-            .disabled(searchingLyrics)
-            .accessibilityHidden(searchingLyrics)
-            .overlay {
+            ZStack {
                 if searchingLyrics {
                     VStack(spacing: 12) {
                         ProgressView()
@@ -501,8 +516,34 @@ struct MetadataEditor: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    HStack(alignment: .top, spacing: 16) {
+                        List(onlineResults, selection: $selectedOnlineID) { item in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(item.trackName) : item.trackName).font(.headline)
+                                Text("\(item.source) · \(preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(item.artistName) : item.artistName)")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Text(item.timingKind.title)
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(item.timingKind == .word ? Color.accentColor : Color.secondary)
+                                if item.hasTranslation { Text("含译文").font(.caption).foregroundStyle(Color.accentColor) }
+                                let album = item.albumName?.trimmingCharacters(in: .whitespacesAndNewlines)
+                                let albumLabel = album.flatMap { $0.isEmpty ? nil : $0 } ?? "未知专辑"
+                                Text("\(preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(albumLabel) : albumLabel)\(item.duration.map { " · \(Int($0) / 60):\(String(format: "%02d", Int($0) % 60))" } ?? "")")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                    .lineLimit(2).help(albumLabel)
+                            }.tag(item.id)
+                        }.frame(width: 250)
+                        if let candidate = onlineResults.first(where: { $0.id == selectedOnlineID }),
+                           let source = displayedOnlineLyrics(candidate) {
+                            OnlineLyricsPreview(source: source).id(source)
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Text("选择左侧结果预览歌词").frame(maxWidth: .infinity)
+                        }
+                    }
                 }
-            }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
             HStack {
                 Text("确认后替换编辑框中的歌词，点击“保存更改”才写入歌曲。")
                     .font(.caption).foregroundStyle(.secondary)
@@ -510,7 +551,9 @@ struct MetadataEditor: View {
                 Button("使用这份歌词") {
                     guard let result = onlineResults.first(where: { $0.id == selectedOnlineID }),
                           let text = displayedOnlineLyrics(result) else { return }
-                    lyrics = LyricsText.normalized(text)
+                    let imported = LyricsText.normalized(text)
+                    lyrics = LyricsTranslation.original(imported)
+                    translation = LyricsTranslation.text(in: imported) ?? ""
                     timingIndex = 0
                     showingOnlineLyrics = false
                 }.buttonStyle(.borderedProminent).disabled(searchingLyrics || selectedOnlineID == nil)
@@ -520,37 +563,61 @@ struct MetadataEditor: View {
 
     private func displayedOnlineLyrics(_ result: OnlineLyricsResult) -> String? {
         guard let text = result.usableLyrics else { return nil }
-        return preferSimplifiedOnlineLyrics ? ChineseLyricsScript.simplified(text) : text
+        guard preferSimplifiedOnlineLyrics else { return text }
+        return LyricsTranslation.attaching(LyricsTranslation.text(in: text).map(ChineseLyricsScript.simplified),
+                                          to: ChineseLyricsScript.simplified(LyricsTranslation.original(text)))
+    }
+
+    private func cancelOnlineLyricsSearch() {
+        onlineSearchRequestID = nil
+        onlineSearchTask?.cancel()
+        onlineSearchTask = nil
+        searchingLyrics = false
     }
 
     private func searchOnlineLyrics() {
+        cancelOnlineLyricsSearch()
         let searchTitle = onlineSearchTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let searchArtist = onlineSearchArtist.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !searchTitle.isEmpty else {
             onlineError = "请先填写歌曲名称。"
             return
         }
+        let requestID = UUID()
+        onlineSearchRequestID = requestID
         searchingLyrics = true
         onlineError = nil
         onlineResults = []
         selectedOnlineID = nil
-        Task {
-            defer { searchingLyrics = false }
+        onlineSearchTask = Task { @MainActor in
+            defer {
+                if onlineSearchRequestID == requestID {
+                    searchingLyrics = false
+                    onlineSearchTask = nil
+                }
+            }
             do {
-                onlineResults = try await OnlineLyricsSearch.search(title: searchTitle, artist: searchArtist, duration: track.duration)
-                if onlineResults.isEmpty { onlineError = "没有找到歌词，可去掉歌名后缀或修改歌手后重试。" }
-                else { selectedOnlineID = onlineResults.first?.id }
+                let results = try await OnlineLyricsSearch.search(title: searchTitle, artist: searchArtist, duration: track.duration)
+                guard !Task.isCancelled, onlineSearchRequestID == requestID else { return }
+                onlineResults = results
+                if results.isEmpty { onlineError = "没有找到歌词，可去掉歌名后缀或修改歌手后重试。" }
+                else { selectedOnlineID = results.first?.id }
             } catch {
+                guard !Task.isCancelled, onlineSearchRequestID == requestID else { return }
                 onlineError = "查询失败：\(error.localizedDescription)"
             }
         }
     }
 
     private func openOnlineLyricsSearch() {
+        cancelOnlineLyricsSearch()
         onlineSearchTitle = title
         onlineSearchArtist = artists.map(\.name).filter { !$0.isEmpty }.joined(separator: " / ")
+        onlineResults = []
+        selectedOnlineID = nil
+        onlineError = nil
+        searchingLyrics = true
         showingOnlineLyrics = true
-        searchOnlineLyrics()
     }
 
     private func applyFilenameParsing() {

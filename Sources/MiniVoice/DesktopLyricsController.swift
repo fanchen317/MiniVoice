@@ -19,6 +19,9 @@ final class DesktopLyricsController: ObservableObject {
     @Published private(set) var secondaryLine = "桌面歌词"
     @Published private(set) var lineProgress: Double?
     @Published private(set) var lineIdentity = ""
+    @Published private(set) var timedLine: LyricLine?
+    @Published private(set) var wordTime: Double = 0
+    @Published private(set) var translationLine: String?
 
     private weak var library: MusicLibrary?
     private var cancellables = Set<AnyCancellable>()
@@ -62,6 +65,8 @@ final class DesktopLyricsController: ObservableObject {
         var secondary = "桌面歌词"
         var progress: Double?
         var identity = "idle"
+        var timed: LyricLine?
+        var translation: String?
         if let library, let track = library.playingTrack ?? library.selectedTrack {
             let lines = track.lyricLines
             if let active = library.activeLyricIndex(for: lines) {
@@ -70,6 +75,8 @@ final class DesktopLyricsController: ObservableObject {
                 progress = DesktopLyricScroll.progress(time: library.playbackTime, start: start, end: end)
                 identity = "\(track.id)-\(active)"
                 primary = lines[active].text
+                translation = lines[active].translation
+                if !lines[active].words.isEmpty { timed = lines[active] }
                 secondary = lines.dropFirst(active + 1).first(where: { !$0.text.isEmpty })?.text
                     ?? "\(track.title) - \(track.artist)"
             } else {
@@ -82,6 +89,9 @@ final class DesktopLyricsController: ObservableObject {
         if secondaryLine != secondary { secondaryLine = secondary }
         if lineProgress != progress { lineProgress = progress }
         if lineIdentity != identity { lineIdentity = identity }
+        if timedLine != timed { timedLine = timed }
+        if translationLine != translation { translationLine = translation }
+        if timed != nil, let time = library?.playbackTime, wordTime != time { wordTime = time }
     }
 
     private func updatePanelVisibility() {
@@ -248,16 +258,21 @@ private final class DesktopLyricsHostingView: NSHostingView<DesktopLyricsOverlay
 
 private struct DesktopLyricsOverlay: View {
     @ObservedObject var controller: DesktopLyricsController
+    @AppStorage("MiniVoice.showLyricsTranslation") private var showTranslation = true
+
+    private var secondaryText: String { showTranslation ? controller.translationLine ?? controller.secondaryLine : controller.secondaryLine }
 
     private var lyricKey: String {
-        controller.lineIdentity + controller.primaryLine + "\u{001F}" + controller.secondaryLine
+        controller.lineIdentity + controller.primaryLine + "\u{001F}" + secondaryText
     }
 
     var body: some View {
         ZStack {
             VStack(spacing: 5) {
-                DesktopLyricMarquee(text: controller.primaryLine, size: 27, weight: .semibold, progress: controller.lineProgress)
-                DesktopLyricMarquee(text: controller.secondaryLine, size: 18, weight: .medium, progress: controller.lineProgress)
+                DesktopLyricMarquee(text: controller.primaryLine, size: 27, weight: .semibold, progress: controller.lineProgress,
+                                    line: controller.timedLine, time: controller.wordTime)
+                    .foregroundStyle(TimedLyricText.activeColor)
+                DesktopLyricMarquee(text: secondaryText.replacingOccurrences(of: "\n", with: " / "), size: 18, weight: .medium, progress: controller.lineProgress)
                     .foregroundStyle(.secondary)
             }
             .id(lyricKey)
@@ -280,6 +295,8 @@ private struct DesktopLyricMarquee: View {
     let size: CGFloat
     let weight: Font.Weight
     let progress: Double?
+    var line: LyricLine? = nil
+    var time: Double = 0
     @State private var textWidth: CGFloat = 0
     @State private var startedAt = Date()
 
@@ -287,7 +304,7 @@ private struct DesktopLyricMarquee: View {
         GeometryReader { geometry in
             let overflow = max(0, textWidth - geometry.size.width)
             TimelineView(.animation(paused: overflow <= 0 || progress != nil)) { context in
-                Text(text)
+                TimedLyricText(line: line ?? LyricLine(timestamp: nil, text: text), time: time, active: line != nil, baseColor: .primary)
                     .font(.system(size: size, weight: weight, design: .rounded))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)

@@ -138,12 +138,19 @@ struct SettingsRow<Control: View>: View {
 }
 
 private struct GeneralSettingsPage: View {
+    @AppStorage(PlayerInterfaceStyle.preferenceKey) private var interfaceStyle = PlayerInterfaceStyle.simple.rawValue
     @AppStorage("MiniVoice.closeBehavior") private var closeBehavior = CloseBehavior.background.rawValue
     @AppStorage("MiniVoice.appearance") private var appearance = AppAppearance.system.rawValue
     @AppStorage(StatusBarController.preferenceKey) private var iconStyle = StatusIconStyle.colored.rawValue
 
     var body: some View {
         SettingsGroup(title: "外观") {
+            SettingsRow(title: "播放器样式", detail: "简易样式保留原布局；音乐库样式提供收藏、歌单和分类浏览") {
+                Picker("播放器样式", selection: $interfaceStyle) {
+                    ForEach(PlayerInterfaceStyle.allCases) { Text($0.title).tag($0.rawValue) }
+                }.labelsHidden().pickerStyle(.segmented).frame(width: 280)
+            }
+            Divider().padding(.horizontal, 16)
             SettingsRow(title: "界面外观") {
                 Picker("界面外观", selection: $appearance) {
                     ForEach(AppAppearance.allCases) { Text($0.title).tag($0.rawValue) }

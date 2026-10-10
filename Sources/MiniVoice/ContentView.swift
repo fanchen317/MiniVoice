@@ -22,6 +22,16 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var library: MusicLibrary
     @EnvironmentObject private var lyricsSync: LyricsSyncCoordinator
+    @AppStorage(PlayerInterfaceStyle.preferenceKey) private var interfaceStyle = PlayerInterfaceStyle.simple.rawValue
+    @StateObject private var collections = LibraryCollections()
+    @State private var destination: LibraryDestination = .all
+    @State private var browseGroup: String?
+    @State private var albumPlayback = false
+    @State private var showingPlaylistEditor = false
+    @State private var playlistName = ""
+    @State private var renamingPlaylist: UUID?
+    @AppStorage("MiniVoice.followLyrics") private var followLyrics = true
+    private var libraryStyle: Bool { interfaceStyle == PlayerInterfaceStyle.library.rawValue }
     @State private var sidebarVisible = true
     @State private var recent = false
     @State private var query = ""
@@ -54,6 +64,11 @@ struct ContentView: View {
                         recent: recent, query: query, field: sortField, ascending: sortAscending)
     }
 
+    private var workspaceRequest: WorkspaceListRequest {
+        WorkspaceListRequest(list: listRequest, destination: libraryStyle ? destination : .all,
+                             group: libraryStyle ? browseGroup : nil, collectionsRevision: collections.revision)
+    }
+
     private func updateSongs() async {
         if recent {
             let matches = library.recentTracks(matching: query)
@@ -66,7 +81,20 @@ struct ContentView: View {
         // Only metadata crosses to the worker; AppKit artwork stays on the main actor.
         let ids = await listIndex.orderedIDs(entries, request: request)
         guard !Task.isCancelled else { return }
-        songs = ids.compactMap { library.track(for: $0) }
+        let ordered = ids.compactMap { library.track(for: $0) }
+        guard libraryStyle else { songs = ordered; return }
+        switch destination {
+        case .favorites: songs = ordered.filter { collections.isFavorite($0.url.path) }
+        case .playlist(let id):
+            let paths = collections.playlists.first(where: { $0.id == id })?.paths ?? []
+            let matches = Set(ids)
+            songs = paths.compactMap { library.track(forPath: $0) }.filter { matches.contains($0.id) }
+        case .artists:
+            songs = ordered.filter { browseGroup == nil || artistName($0) == browseGroup }
+        case .albums:
+            songs = ordered.filter { browseGroup == nil || albumName($0) == browseGroup }
+        default: songs = ordered
+        }
     }
 
     private func migrateSortPreferenceIfNeeded() {
@@ -83,6 +111,9 @@ struct ContentView: View {
 
     var body: some View {
         GeometryReader { geometry in
+          if libraryStyle {
+            libraryWorkspace(size: geometry.size)
+          } else {
             let sidebarWidth = min(288, max(250, geometry.size.width * 0.25))
             let availableWidth = geometry.size.width - 24
             let playerWidth = sidebarVisible
@@ -133,13 +164,32 @@ struct ContentView: View {
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .background { CoverBackdrop(image: library.selectedTrack?.artwork) }
+          }
         }
         .ignoresSafeArea()
         // The player needs 280pt plus 24pt of outer margins.
         .frame(minWidth: 304, minHeight: 600)
         .tint(playerGreen)
         .background(PlayerInitialFocus())
-        .task(id: listRequest) { await updateSongs() }
+        .task(id: workspaceRequest) { await updateSongs() }
+        .onChange(of: interfaceStyle) { _ in
+            recent = false; destination = .all; browseGroup = nil
+            albumPlayback = false; selectedIDs.removeAll(); multiSelecting = false
+        }
+        .sheet(isPresented: $showingPlaylistEditor) {
+            VStack(alignment: .leading, spacing: 18) {
+                Text(renamingPlaylist == nil ? "新建歌单" : "重命名歌单").font(.title3.bold())
+                TextField("歌单名称", text: $playlistName).textFieldStyle(.roundedBorder)
+                    .onSubmit { savePlaylistName() }
+                HStack {
+                    Spacer()
+                    Button("取消") { showingPlaylistEditor = false }
+                    Button("保存") { savePlaylistName() }
+                        .disabled(playlistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .keyboardShortcut(.defaultAction)
+                }
+            }.padding(24).frame(width: 340)
+        }
         .onAppear {
             migrateSortPreferenceIfNeeded()
             AppDelegate.reopenMainWindow = { openWindow(id: "main") }
@@ -257,41 +307,7 @@ struct ContentView: View {
 
     private func sidebar(closeProgress: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 0) {
-                Image(nsImage: NSApplication.shared.applicationIconImage)
-                    .resizable().scaledToFit().frame(width: 46, height: 46)
-                    .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
-                    .accessibilityLabel("MiniVoice")
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("MiniVoice").font(.title3.weight(.bold)).lineLimit(1)
-                    Text("音乐让生活更美好").font(.caption).foregroundStyle(.secondary)
-                        .lineLimit(1).minimumScaleFactor(0.75)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 8)
-                if showingTasks || lyricsSync.activeCount > 0 || library.isImporting || lyricsSync.downloadingModel || lyricsSync.hasUnread || unreadScan {
-                  Image(systemName: "exclamationmark.circle")
-                    .font(.system(size: 19)).foregroundStyle(playerGreen)
-                    .frame(width: 22, height: 24)
-                    .padding(.leading, 8)
-                    .help("后台任务").accessibilityLabel("后台任务")
-                    .onTapGesture { showingTasks.toggle() }
-                    .popover(isPresented: $showingTasks) { backgroundTasks }
-                }
-                Button(action: toggleSidebar) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 24, height: 24)
-                }
-                .buttonStyle(.plain)
-                .frame(width: 32 * closeProgress, alignment: .trailing)
-                .opacity(closeProgress)
-                .clipped()
-                .allowsHitTesting(closeProgress >= 1)
-                .accessibilityHidden(closeProgress < 1)
-                .help("收起侧栏")
-                .accessibilityLabel("收起侧栏")
-            }
+            sidebarBrand(closeProgress: closeProgress)
             .onChange(of: library.isImporting) { importing in
                 if importing { hideFinishedScan = false } else { unreadScan = true }
             }
@@ -349,6 +365,45 @@ struct ContentView: View {
         .frame(maxHeight: .infinity)
     }
 
+    private func sidebarBrand(closeProgress: CGFloat) -> some View {
+            HStack(spacing: 0) {
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable().scaledToFit().frame(width: 46, height: 46)
+                    .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
+                    .accessibilityLabel("MiniVoice")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("MiniVoice").font(.title3.weight(.bold)).lineLimit(1)
+                    Text("音乐让生活更美好").font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 8)
+                if showingTasks || lyricsSync.activeCount > 0 || library.isImporting || lyricsSync.downloadingModel || lyricsSync.hasUnread || unreadScan {
+                  Image(systemName: "exclamationmark.circle")
+                    .font(.system(size: 19)).foregroundStyle(playerGreen)
+                    .frame(width: 22, height: 24)
+                    .padding(.leading, 8)
+                    .help("后台任务").accessibilityLabel("后台任务")
+                    .onTapGesture { showingTasks.toggle() }
+                    .popover(isPresented: $showingTasks) { backgroundTasks }
+                }
+                Button(action: toggleSidebar) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .frame(width: 32 * closeProgress, alignment: .trailing)
+                .opacity(closeProgress)
+                .clipped()
+                .allowsHitTesting(closeProgress >= 1)
+                .accessibilityHidden(closeProgress < 1)
+                .help("收起侧栏")
+                .accessibilityLabel("收起侧栏")
+            }
+    }
+
     private func navigationItem(_ title: String, symbol: String, isRecent: Bool) -> some View {
         Button {
             recent = isRecent
@@ -370,20 +425,27 @@ struct ContentView: View {
 
     private var libraryToolbar: some View {
         HStack(spacing: 4) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(recent ? "最近播放" : "我的歌曲")
-                    .font(.caption.weight(.semibold))
-                Text("\(songs.count) 首")
-                    .font(.caption2.monospacedDigit())
+            if libraryStyle {
+                HStack(spacing: 8) {
+                    Text(destinationTitle).font(.caption.weight(.semibold))
+                        .lineLimit(1).truncationMode(.tail).help(destinationTitle)
+                    Text("\(songs.count) 首").font(.caption.monospacedDigit()).fixedSize()
+                }.foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(recent ? "最近播放" : "我的歌曲").font(.caption.weight(.semibold))
+                    Text("\(songs.count) 首").font(.caption2.monospacedDigit())
+                }.foregroundStyle(.secondary).fixedSize(horizontal: true, vertical: false)
             }
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: true, vertical: false)
             Spacer(minLength: 0)
             Button {
                 guard let id = library.playingID else { return }
                 locateTarget = id
                 library.selectedID = id
-                if !songs.contains(where: { $0.id == id }) { query = ""; recent = false }
+                if !songs.contains(where: { $0.id == id }) {
+                    query = ""; recent = false; destination = .all; browseGroup = nil
+                }
+                if libraryStyle { albumPlayback = false }
                 locateRequest = UUID()
             } label: {
                 ZStack {
@@ -437,7 +499,7 @@ struct ContentView: View {
             }
         }
         .buttonStyle(.plain)
-        .frame(height: 36)
+        .frame(height: libraryStyle ? 28 : 36)
     }
 
     private func sortFieldButton(_ title: String, field: String) -> some View {
@@ -465,19 +527,27 @@ struct ContentView: View {
         }
     }
 
-    private func songRow(_ track: Track) -> some View {
-        HStack(spacing: 10) {
-            if multiSelecting {
-                Image(systemName: selectedIDs.contains(track.id) ? "checkmark.circle.fill" : "circle").foregroundStyle(playerGreen)
-            }
-            Artwork(image: track.artwork, size: 44)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(track.title).lineLimit(1)
-                Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer(minLength: 0)
-            if library.playingID == track.id && !multiSelecting {
-                NowPlayingIndicator(isPlaying: library.isPlaying)
+    private func songRow(_ track: Track, columns: MusicListColumns? = nil) -> some View {
+        Group {
+            if let columns {
+                workspaceSongCells(track, columns: columns)
+            } else {
+                HStack(spacing: 10) {
+                    if multiSelecting {
+                        Image(systemName: selectedIDs.contains(track.id) ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(playerGreen)
+                    }
+                    Artwork(image: track.artwork, size: 44)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(track.title).lineLimit(1).truncationMode(.tail).help(track.title)
+                        Text(track.artist).font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.tail).help(track.artist)
+                    }
+                    Spacer(minLength: 0)
+                    if library.playingID == track.id && !multiSelecting {
+                        NowPlayingIndicator(isPlaying: library.isPlaying)
+                    }
+                }
             }
         }
         .padding(7)
@@ -492,6 +562,20 @@ struct ContentView: View {
         .contextMenu {
             Button("播放") { library.play(track.id, in: songs.map(\.id)) }
             Button("编辑歌曲信息与歌词") { openSongInfo(track) }
+            if libraryStyle {
+                Button(collections.isFavorite(track.url.path) ? "取消收藏" : "收藏歌曲") { collections.toggleFavorite(track.url.path) }
+                Menu("加入歌单") {
+                    ForEach(collections.playlists) { playlist in
+                        Button(playlist.name) { collections.add([track.url.path], to: playlist.id) }
+                    }
+                    if collections.playlists.isEmpty { Text("请先在侧栏新建歌单") }
+                }
+                if case .playlist(let id) = destination {
+                    Button("从此歌单移除") { collections.remove(track.url.path, from: id) }
+                }
+                Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([track.url]) }
+                Divider()
+            }
             Button("删除歌曲") { requestDelete([track.id]) }
         }
     }
@@ -502,6 +586,363 @@ struct ContentView: View {
         guard !deleteTargets.isEmpty else { return }
         deleteFiles = false
         deleting = true
+    }
+}
+
+private extension ContentView {
+    var destinationTitle: String {
+        switch destination {
+        case .all: return "音乐库"
+        case .recent: return "最近播放"
+        case .favorites: return "收藏"
+        case .artists: return browseGroup ?? "歌手"
+        case .albums: return browseGroup ?? "专辑"
+        case .playlist(let id): return collections.playlists.first(where: { $0.id == id })?.name ?? "歌单"
+        }
+    }
+
+    func artistName(_ track: Track) -> String { track.artist.isEmpty ? "未知歌手" : track.artist }
+    func albumName(_ track: Track) -> String { track.album.isEmpty ? "未知专辑" : track.album }
+    var browsingGroups: Bool { (destination == .artists || destination == .albums) && browseGroup == nil }
+    var groupedSongs: [(name: String, tracks: [Track])] {
+        Dictionary(grouping: songs, by: { destination == .artists ? artistName($0) : albumName($0) })
+            .map { (name: $0.key, tracks: $0.value) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    func navigate(_ target: LibraryDestination) {
+        destination = target; recent = target == .recent
+        browseGroup = nil; albumPlayback = false
+        selectedIDs.removeAll(); multiSelecting = false
+    }
+
+    func savePlaylistName() {
+        if let id = renamingPlaylist { collections.renamePlaylist(id, name: playlistName) }
+        else if let id = collections.createPlaylist(name: playlistName) { navigate(.playlist(id)) }
+        showingPlaylistEditor = false
+    }
+
+    func libraryWorkspace(size: CGSize) -> some View {
+        let sidebarWidth: CGFloat = min(288, max(250, size.width * 0.25))
+        let availableWidth = size.width - 24
+        let playerWidth = sidebarVisible ? max(280, availableWidth - sidebarWidth - 12) : availableWidth
+        let overlap = max(0, sidebarWidth + 12 + 280 - availableWidth)
+        let depth = sidebarVisible ? min(1, overlap / 60) : 0
+        let height = size.height - 46
+        return ZStack(alignment: .topLeading) {
+            workspaceDetail(width: playerWidth, height: height)
+                .frame(width: playerWidth, height: height)
+                .scaleEffect(1 - 0.025 * depth, anchor: .trailing)
+                .offset(y: 8 * depth)
+                .position(x: size.width - 12 - playerWidth / 2, y: 34 + height / 2)
+            // Keep exposed header controls clickable above the sidebar's dismiss layer.
+            Color.black.opacity(0.18 * depth)
+                .frame(width: size.width, height: max(0, size.height - 84))
+                .offset(y: 84)
+                .contentShape(Rectangle())
+                .allowsHitTesting(sidebarVisible && overlap > 0)
+                .onTapGesture(perform: toggleSidebar)
+                .accessibilityHidden(depth == 0)
+            workspaceSidebar(closeProgress: min(1, overlap / 24))
+                .frame(width: sidebarWidth, height: height)
+                .modifier(PlayerPanelSurface())
+                .position(x: 12 + sidebarWidth / 2, y: 34 + height / 2)
+                .offset(x: sidebarVisible ? 0 : -sidebarWidth - 12)
+                .allowsHitTesting(sidebarVisible)
+                .accessibilityHidden(!sidebarVisible)
+        }
+        .frame(width: size.width, height: size.height)
+        .background { CoverBackdrop(image: (library.playingTrack ?? library.selectedTrack)?.artwork) }
+    }
+
+    func workspaceSidebar(closeProgress: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sidebarBrand(closeProgress: closeProgress)
+            PlayerScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    workspaceNavigation("音乐库", symbol: "music.note", target: .all)
+                    workspaceNavigation("最近播放", symbol: "clock", target: .recent)
+                    workspaceNavigation("收藏", symbol: "heart", target: .favorites)
+                    workspaceNavigation("歌手", symbol: "mic", target: .artists)
+                    workspaceNavigation("专辑", symbol: "opticaldisc", target: .albums)
+                    Text("我的歌单").font(.callout).foregroundStyle(.secondary)
+                        .padding(.horizontal, 12).padding(.top, 22).padding(.bottom, 8)
+                    ForEach(collections.playlists) { playlist in
+                        workspaceNavigation(playlist.name, symbol: "list.bullet", target: .playlist(playlist.id))
+                            .contextMenu {
+                                Button("重命名歌单") {
+                                    renamingPlaylist = playlist.id; playlistName = playlist.name
+                                    showingPlaylistEditor = true
+                                }
+                                Button("删除歌单", role: .destructive) {
+                                    collections.deletePlaylist(playlist.id)
+                                    if destination == .playlist(playlist.id) { navigate(.all) }
+                                }
+                            }
+                    }
+                    Button {
+                        renamingPlaylist = nil; playlistName = ""; showingPlaylistEditor = true
+                    } label: {
+                        Label("新建歌单", systemImage: "plus")
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                    }.buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(12)
+        .onChange(of: library.isImporting) { importing in
+            if importing { hideFinishedScan = false } else { unreadScan = true }
+        }
+        .onChange(of: showingTasks) { showing in
+            if !showing { lyricsSync.hasUnread = false; unreadScan = false }
+        }
+    }
+
+    func workspaceNavigation(_ title: String, symbol: String, target: LibraryDestination) -> some View {
+        Button { navigate(target) } label: {
+            HStack(spacing: 12) {
+                Image(systemName: symbol).font(.system(size: 17)).frame(width: 22)
+                Text(title).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(12).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .foregroundStyle(destination == target ? playerGreen : Color.primary)
+            .background(destination == target ? playerGreen.opacity(0.12) : .clear,
+                        in: RoundedRectangle(cornerRadius: 12))
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain).help(title)
+            .accessibilityAddTraits(destination == target ? [.isSelected] : [])
+    }
+
+    func workspaceDetail(width: CGFloat, height: CGFloat) -> some View {
+        let track = library.playingTrack ?? library.selectedTrack
+        let controlsHeight = track == nil ? 0 : PlayerControlsGeometry(width: width).height
+        return VStack(spacing: 12) {
+            workspaceHeader(width: width, track: track).frame(height: 38).zIndex(1)
+            ZStack {
+                // Keep the list and its native scroll view mounted while lyrics are shown.
+                workspaceSongs(width: width)
+                    .opacity(albumPlayback ? 0 : 1)
+                    .scaleEffect(albumPlayback && !reduceMotion ? 0.98 : 1)
+                    .allowsHitTesting(!albumPlayback)
+                    .accessibilityHidden(albumPlayback)
+                if albumPlayback, let track {
+                    WorkspaceLyricsPanel(track: track, follow: $followLyrics, onEdit: { openSongInfo(track) })
+                        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity).clipped()
+            if let track {
+                PlayerControls(track: track, albumExpanded: albumPlayback, onToggleAlbum: toggleAlbumPlayback)
+                    .frame(height: controlsHeight)
+            }
+        }
+        .frame(width: width, height: height)
+    }
+
+    func toggleAlbumPlayback() { setAlbumPlayback(!albumPlayback) }
+
+    func setAlbumPlayback(_ expanded: Bool) {
+        guard albumPlayback != expanded else { return }
+        withAnimation(reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.9)) {
+            albumPlayback = expanded
+        }
+    }
+
+    func workspaceHeader(width: CGFloat, track: Track?) -> some View {
+        HStack(spacing: 10) {
+            Button(action: toggleSidebar) {
+                Image(systemName: "sidebar.left").font(.system(size: 22, weight: .medium))
+                    .frame(width: 38, height: 38).contentShape(Rectangle())
+            }.buttonStyle(PressScaleButtonStyle()).modifier(HeaderButtonSurface())
+                .help("显示或隐藏侧栏").accessibilityLabel("显示或隐藏侧栏")
+            Spacer(minLength: 0)
+            if albumPlayback, let track {
+                Button { openSongInfo(track) } label: {
+                    Image(systemName: "info.circle").font(.system(size: 22, weight: .medium))
+                        .frame(width: 38, height: 38)
+                }.buttonStyle(.plain).modifier(HeaderButtonSurface())
+                    .help("编辑歌曲信息与歌词").accessibilityLabel("编辑歌曲信息与歌词")
+                Button { setAlbumPlayback(false) } label: {
+                    Image(systemName: "chevron.down").font(.system(size: 20, weight: .medium))
+                        .frame(width: 38, height: 38)
+                        .contentShape(Rectangle())
+                }.buttonStyle(PressScaleButtonStyle()).modifier(HeaderButtonSurface())
+                    .help("关闭专辑播放模式，返回歌曲列表").accessibilityLabel("返回歌曲列表")
+            } else {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("搜索歌曲、歌手或专辑", text: $query).textFieldStyle(.plain)
+                        .accessibilityLabel("搜索歌曲、歌手或专辑")
+                    if !query.isEmpty {
+                        Button { query = "" } label: { Image(systemName: "xmark") }
+                            .buttonStyle(.plain).help("清空搜索").accessibilityLabel("清空搜索")
+                    }
+                }.padding(.horizontal, 12).frame(width: min(320, width - 58), height: 36)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.58 : 0.65),
+                                in: RoundedRectangle(cornerRadius: 12))
+                    .background(SearchFocusBoundary())
+            }
+        }
+    }
+
+    func workspaceSongs(width: CGFloat) -> some View {
+        let columns = MusicListColumns(width: width, multiSelecting: multiSelecting)
+        return VStack(alignment: .leading, spacing: 4) {
+            if let browseGroup {
+                HStack {
+                    Button { self.browseGroup = nil; selectedIDs.removeAll() } label: {
+                        Label(destination == .artists ? "所有歌手" : "所有专辑", systemImage: "chevron.left")
+                    }.buttonStyle(.plain).foregroundStyle(playerGreen)
+                    Spacer()
+                    Text(browseGroup).font(.headline).lineLimit(1)
+                }
+            }
+            libraryToolbar
+            Divider().opacity(0.4)
+            ScrollViewReader { proxy in
+                PlayerScrollView(contentTrailingInset: 16, thumbOffset: 8) {
+                    if browsingGroups {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 135), spacing: 16)], spacing: 18) {
+                            ForEach(groupedSongs, id: \.name) { group in
+                                Button {
+                                    browseGroup = group.name; selectedIDs.removeAll()
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Artwork(image: group.tracks.first?.artwork, size: 100)
+                                        Text(group.name).font(.headline).lineLimit(2)
+                                        Text("\(group.tracks.count) 首歌曲").font(.caption).foregroundStyle(.secondary)
+                                    }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
+                                }.buttonStyle(.plain).help(group.name)
+                            }
+                        }
+                    } else {
+                        LazyVStack(spacing: 4) {
+                            ForEach(songs) { track in songRow(track, columns: columns).id(track.id) }
+                        }
+                        // Fixed row geometry keeps the lazy document extent stable while dragging.
+                        .frame(height: CGFloat(songs.count) * 58 + CGFloat(max(0, songs.count - 1)) * 4, alignment: .top)
+                    }
+                    if songs.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: destination == .favorites ? "heart" : "music.note.list").font(.largeTitle)
+                            Text(emptyListMessage).font(.callout)
+                            if library.folders.isEmpty { OpenSettingsButton() }
+                        }.foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 40)
+                    }
+                }
+                .onChange(of: locateRequest) { _ in
+                    if let target = locateTarget, songs.contains(where: { $0.id == target }) {
+                        withAnimation { proxy.scrollTo(target, anchor: .center) }
+                    }
+                }
+                .onChange(of: songs.map(\.id)) { ids in
+                    if let target = locateTarget, ids.contains(target) {
+                        withAnimation { proxy.scrollTo(target, anchor: .center) }
+                        locateTarget = nil
+                    }
+                }
+            }
+            if case .playlist(let id) = destination, multiSelecting, !selectedIDs.isEmpty {
+                Button("从歌单移除所选歌曲") {
+                    for track in songs where selectedIDs.contains(track.id) { collections.remove(track.url.path, from: id) }
+                    selectedIDs.removeAll()
+                }.buttonStyle(.plain).foregroundStyle(playerGreen)
+            }
+        }.padding(.horizontal, 12).padding(.vertical, 8).modifier(PlayerPanelSurface())
+    }
+
+    func workspaceSongCells(_ track: Track, columns: MusicListColumns) -> some View {
+        ZStack(alignment: .topLeading) {
+            Image(systemName: selectedIDs.contains(track.id) ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(playerGreen)
+                .modifier(SongCellFrame(rect: columns.selection))
+                .opacity(multiSelecting ? 1 : 0).accessibilityHidden(!multiSelecting)
+            Artwork(image: track.artwork, size: 44)
+                .modifier(SongCellFrame(rect: columns.artwork))
+                .overlay(alignment: .bottomTrailing) {
+                    if library.playingID == track.id {
+                        NowPlayingIndicator(isPlaying: library.isPlaying)
+                            .padding(3).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
+                            .offset(x: columns.artwork.minX)
+                    }
+                }
+            Text(track.title).lineLimit(1).truncationMode(.tail).help(track.title)
+                .modifier(SongCellFrame(rect: columns.title))
+            Text(track.artist).font(columns.isCompact ? .caption : .callout).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.tail).help(track.artist)
+                .modifier(SongCellFrame(rect: columns.artist))
+            Text(track.album).font(.caption).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.tail).help(track.album)
+                .modifier(SongCellFrame(rect: columns.album))
+                .opacity(columns.showsAlbum ? 1 : 0).accessibilityHidden(!columns.showsAlbum)
+            Text(String(format: "%d:%02d", Int(max(0, track.duration)) / 60, Int(max(0, track.duration)) % 60))
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                .modifier(SongCellFrame(rect: columns.duration, alignment: .trailing))
+                .opacity(columns.showsDuration ? 1 : 0).accessibilityHidden(!columns.showsDuration)
+        }
+        // Animate changes of presentation, not every pixel of a live window resize.
+        .animation(reduceMotion ? nil : .timingCurve(0.22, 0.68, 0.20, 1, duration: 0.48), value: columns.isCompact)
+        .animation(reduceMotion ? nil : .timingCurve(0.22, 0.68, 0.20, 1, duration: 0.48), value: columns.showsAlbum)
+        .animation(reduceMotion ? nil : .timingCurve(0.22, 0.68, 0.20, 1, duration: 0.48), value: columns.showsDuration)
+        .frame(width: columns.width, height: 44, alignment: .topLeading)
+        .overlay(alignment: .trailing) {
+            Button { collections.toggleFavorite(track.url.path) } label: {
+                Image(systemName: collections.isFavorite(track.url.path) ? "heart.fill" : "heart")
+                    .foregroundStyle(collections.isFavorite(track.url.path) ? playerGreen : Color.secondary)
+                    .frame(width: 28, height: 28)
+            }.buttonStyle(.plain)
+                .help(collections.isFavorite(track.url.path) ? "取消收藏" : "收藏歌曲")
+                .accessibilityLabel(collections.isFavorite(track.url.path) ? "取消收藏" : "收藏歌曲")
+                .offset(x: 6)
+                .transaction { $0.animation = nil }
+        }
+    }
+
+    var emptyListMessage: String {
+        if !query.isEmpty { return "没有找到匹配的歌曲" }
+        if library.folders.isEmpty { return "在设置中添加你的音乐文件夹" }
+        switch destination {
+        case .favorites: return "点击歌曲旁的爱心，将喜欢的音乐收藏在这里"
+        case .playlist: return "右键点击歌曲，选择“加入歌单”"
+        case .recent: return "播放歌曲后，记录会保存在这里"
+        default: return "没有找到歌曲"
+        }
+    }
+}
+
+private struct SongCellFrame: ViewModifier {
+    let rect: CGRect
+    var alignment: Alignment = .leading
+    func body(content: Content) -> some View {
+        content.frame(width: rect.width, height: rect.height, alignment: alignment)
+            .clipped().offset(x: rect.minX, y: rect.minY)
+    }
+}
+
+private struct WorkspaceLyricsPanel: View {
+    let track: Track
+    @Binding var follow: Bool
+    let onEdit: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("歌词").font(.headline)
+                Spacer()
+                TranslationDisplayToggle(lines: track.lyricLines)
+                Toggle("自动跟随", isOn: $follow).toggleStyle(.switch).controlSize(.small)
+                    .fixedSize().disabled(!track.lyricLines.contains { $0.timestamp != nil })
+            }.padding(12)
+            if track.lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                VStack(spacing: 14) {
+                    Image(systemName: "text.alignleft").font(.largeTitle).foregroundStyle(.secondary)
+                    Text("尚未添加歌词").font(.headline)
+                    Button("添加歌词", action: onEdit).buttonStyle(GlassButtonStyle())
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                SyncedLyrics(track: track, follow: follow)
+            }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity).modifier(PlayerPanelSurface())
     }
 }
 
@@ -588,6 +1029,7 @@ private struct PlayerDetail: View {
             HStack {
                 Text("歌词").font(.headline)
                 Spacer()
+                TranslationDisplayToggle(lines: playbackTrack.lyricLines)
                 Toggle("自动跟随", isOn: $followLyrics).toggleStyle(.switch).controlSize(.small)
                     .fixedSize().disabled(!playbackTrack.lyricLines.contains { $0.timestamp != nil })
                 Button {
@@ -645,6 +1087,7 @@ private struct PlayerDetail: View {
 }
 
 private struct SyncedLyrics: View {
+    @AppStorage("MiniVoice.showLyricsTranslation") private var showTranslation = true
     @EnvironmentObject private var library: MusicLibrary
     let track: Track
     let follow: Bool
@@ -659,32 +1102,60 @@ private struct SyncedLyrics: View {
         let follow: Bool
         let size: CGSize
         let lyrics: String
+        let showTranslation: Bool
     }
 
     private var active: Int? { MusicLibrary.activeLyricIndex(for: track.lyricLines, at: clock.time) }
     var body: some View {
+        if LyricTimingKind.detect(track.lyricLines) == .plain {
+            PlayerScrollView(fadesEdges: true) {
+                Text(track.lyricLines.map { line in
+                    [line.text, showTranslation ? line.translation : nil].compactMap { $0 }.joined(separator: "\n")
+                }.joined(separator: "\n\n"))
+                    .font(.system(size: 22, weight: .medium))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(24)
+                    .textSelection(.enabled)
+            }
+        } else {
+            timedBody
+        }
+    }
+
+    private var timedBody: some View {
         let active = active
         let lines = track.lyricLines
-        GeometryReader { geometry in
-            let rowHeight = min(92.0, max(28.0, (geometry.size.height - 36) / 5))
-            let fontSize = min(34.0, max(19.0, rowHeight * 0.56))
+        return GeometryReader { geometry in
+            let bilingual = showTranslation && lines.contains { $0.translation != nil }
+            let baseHeight = min(92.0, max(28.0, (geometry.size.height - 36) / 5))
+            let rowHeight = bilingual ? max(62.0, baseHeight * 1.45) : baseHeight
+            let fontSize = min(34.0, max(19.0, baseHeight * 0.56))
             ScrollViewReader { proxy in
                 PlayerScrollView(fadesEdges: true) {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                             let distance = active.map { abs(index - $0) } ?? 0
-                            Text(line.text.isEmpty ? "•••" : line.text)
+                            VStack(alignment: .leading, spacing: 6) {
+                              TimedLyricText(line: line, time: clock.time, active: active == index,
+                                           baseColor: colorScheme == .dark ? .white : Color(red: 0.23, green: 0.27, blue: 0.31))
                                 .font(.system(size: fontSize, weight: .bold))
                                 .lineLimit(2)
                                 .minimumScaleFactor(0.6)
                                 .multilineTextAlignment(.leading)
+                              if showTranslation, let translation = line.translation {
+                                Text(translation)
+                                    .font(.system(size: max(13, fontSize * 0.58), weight: .medium))
+                                    .lineLimit(2).minimumScaleFactor(0.75)
+                                    .foregroundStyle(active == index ? Color.primary.opacity(0.85) : Color.secondary)
+                              }
+                            }
                                 .foregroundStyle((colorScheme == .dark ? Color.white : Color(red: 0.23, green: 0.27, blue: 0.31))
-                                    .opacity(active == nil ? 0.78 : (active == index ? 1 : (distance == 1 ? 0.40 : 0.27))))
-                                .blur(radius: active == nil || active == index ? 0 : (distance == 1 ? 0.45 : 1.1))
-                                .scaleEffect(active == index || active == nil ? 1 : 0.94, anchor: .leading)
+                                    .opacity(active == nil ? 0.78 : (active == index ? 1 : (distance == 1 ? 0.54 : 0.36))))
+                                .blur(radius: active == nil || active == index ? 0 : (distance == 1 ? 0.2 : 0.6))
+                                .scaleEffect(active == index || active == nil ? 1 : 0.97, anchor: .leading)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .frame(height: rowHeight)
-                                .animation(.easeInOut(duration: 0.4), value: active)
+                                .frame(minHeight: rowHeight, maxHeight: bilingual ? nil : rowHeight)
+                                .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: active)
                                 .contentShape(Rectangle()).id(index)
                                 .onTapGesture { if let time = line.timestamp { library.seek(to: time) } }
                         }
@@ -696,12 +1167,12 @@ private struct SyncedLyrics: View {
                     .padding(.bottom, 8)
                 }
                 .task(id: ScrollTarget(trackID: track.id, active: active, follow: follow,
-                                       size: geometry.size, lyrics: track.lyrics)) {
+                                       size: geometry.size, lyrics: track.lyrics, showTranslation: showTranslation)) {
                     // Wait for new text/viewport geometry before resolving the line's scroll frame.
                     await Task.yield()
                     guard !Task.isCancelled, follow else { return }
                     let target = ScrollTarget(trackID: track.id, active: active, follow: follow,
-                                              size: geometry.size, lyrics: track.lyrics)
+                                              size: geometry.size, lyrics: track.lyrics, showTranslation: showTranslation)
                     let animate = !reduceMotion && previousScrollTarget?.trackID == target.trackID
                         && previousScrollTarget?.size == target.size
                         && previousScrollTarget?.active != target.active
@@ -766,6 +1237,9 @@ private struct PlayerControls: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let track: Track
+    var albumExpanded = false
+    var onToggleAlbum: (() -> Void)? = nil
+    @State private var hoveringArtwork = false
     @State private var scrub: Double?
     var body: some View {
         GeometryReader { geometry in
@@ -786,7 +1260,30 @@ private struct PlayerControls: View {
 
     private func trackInfo(artworkSize: CGFloat) -> some View {
         HStack(spacing: 8) {
-            Artwork(image: track.artwork, size: artworkSize)
+            if let onToggleAlbum {
+                Button(action: onToggleAlbum) {
+                    Artwork(image: track.artwork, size: artworkSize)
+                        .overlay {
+                            Image(systemName: albumExpanded ? "chevron.down" : "chevron.up")
+                                .font(.system(size: 14, weight: .semibold))
+                                .frame(width: 26, height: 26)
+                                .background(.regularMaterial, in: Circle())
+                                .opacity(hoveringArtwork ? 1 : 0)
+                                .offset(y: hoveringArtwork && !reduceMotion ? (albumExpanded ? 3 : -3) : 0)
+                                .accessibilityHidden(true)
+                        }
+                        .scaleEffect(hoveringArtwork && !reduceMotion ? (albumExpanded ? 0.98 : 1.04) : 1)
+                        .offset(y: hoveringArtwork && !reduceMotion ? (albumExpanded ? 3 : -4) : 0)
+                        .shadow(color: .black.opacity(hoveringArtwork ? 0.18 : 0), radius: hoveringArtwork ? 6 : 0, y: 3)
+                }
+                .buttonStyle(PressScaleButtonStyle())
+                .accessibilityLabel(albumExpanded ? "收起专辑播放模式" : "打开专辑播放模式")
+                .onHover { hoveringArtwork = $0 }
+                .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.8), value: hoveringArtwork)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: albumExpanded)
+            } else {
+                Artwork(image: track.artwork, size: artworkSize)
+            }
             VStack(alignment: .leading, spacing: 4) {
                 Text(track.title).font(.subheadline.weight(.semibold))
                     .lineLimit(1).help(track.title)
@@ -921,16 +1418,28 @@ private final class ScrollbarHiderView: NSView {
     var onUserScroll: (() -> Void)?
     private nonisolated(unsafe) var scrollMonitor: Any?
     private weak var observedScroll: NSScrollView?
+    private var metricsPending = false
+    private var lastMetrics: ScrollMetrics?
 
     @objc private func scrollMetricsChanged(_ notification: Notification) {
         publishMetrics()
     }
 
     private func publishMetrics() {
-        guard let scroll = observedScroll else { return }
-        let offset = scroll.contentView.bounds.minY
-        let height = scroll.documentView?.frame.height ?? 0
-        DispatchQueue.main.async { [weak self] in self?.onMetrics?(offset, height) }
+        guard observedScroll != nil else { return }
+        guard !metricsPending else { return }
+        metricsPending = true
+        // Coalesce layout and bounds notifications; read the latest values at delivery.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.metricsPending = false
+            guard let scroll = self.observedScroll else { return }
+            let latest = ScrollMetrics(offset: scroll.contentView.bounds.minY,
+                                       height: scroll.documentView?.frame.height ?? 0)
+            guard latest != self.lastMetrics else { return }
+            self.lastMetrics = latest
+            self.onMetrics?(latest.offset, latest.height)
+        }
     }
 
     override func viewDidMoveToWindow() {
@@ -1008,18 +1517,23 @@ private final class ScrollViewReference {
 /// One thumb geometry and interaction model for both songs and lyrics.
 private struct PlayerScrollView<Content: View>: View {
     var fadesEdges = false
+    var contentTrailingInset: CGFloat = 24
+    var thumbOffset: CGFloat = 0
     @ViewBuilder var content: () -> Content
     @State private var metrics = ScrollMetrics()
     @State private var scrollReference = ScrollViewReference()
     @State private var isThumbVisible = false
     @State private var isDragging = false
     @State private var grabOffset: CGFloat?
+    @State private var dragThumbHeight: CGFloat?
+    @State private var dragProgress: CGFloat?
     @State private var hideTask: Task<Void, Never>?
     @Namespace private var coordinateSpace
 
     private func revealThumb() {
         hideTask?.cancel()
         isThumbVisible = true
+        guard !isDragging else { return }
         hideTask = Task {
             try? await Task.sleep(nanoseconds: 1_400_000_000)
             if !Task.isCancelled && !isDragging { isThumbVisible = false }
@@ -1030,7 +1544,7 @@ private struct PlayerScrollView<Content: View>: View {
         GeometryReader { viewport in
             ScrollView(.vertical, showsIndicators: false) {
                 content()
-                    .padding(.trailing, 24)
+                    .padding(.trailing, contentTrailingInset)
                     .background(HiddenScrollerConfigurator(onMetrics: { offset, height in
                         let updated = ScrollMetrics(offset: offset, height: height)
                         if metrics != updated {
@@ -1050,9 +1564,9 @@ private struct PlayerScrollView<Content: View>: View {
             }
             .overlay(alignment: .trailing) {
                 if metrics.height > viewport.size.height, viewport.size.height > 0 {
-                    let thumbHeight = min(viewport.size.height, max(44, viewport.size.height * viewport.size.height / metrics.height))
+                    let thumbHeight = dragThumbHeight ?? min(viewport.size.height, max(44, viewport.size.height * viewport.size.height / metrics.height))
                     let travel = viewport.size.height - thumbHeight
-                    let progress = min(1, max(0, metrics.offset / (metrics.height - viewport.size.height)))
+                    let progress = dragProgress ?? min(1, max(0, metrics.offset / (metrics.height - viewport.size.height)))
                     Capsule()
                         .fill(Color.primary.opacity(0.55))
                         .frame(width: isDragging ? 12 : 10, height: thumbHeight)
@@ -1069,6 +1583,7 @@ private struct PlayerScrollView<Content: View>: View {
                         .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named(coordinateSpace))
                             .onChanged { value in
                                 if grabOffset == nil {
+                                    dragThumbHeight = thumbHeight
                                     let withinThumb = value.startLocation.y - progress * travel
                                     grabOffset = (0...thumbHeight).contains(withinThumb) ? withinThumb : thumbHeight / 2
                                 }
@@ -1076,12 +1591,26 @@ private struct PlayerScrollView<Content: View>: View {
                                 revealThumb()
                                 guard let scroll = scrollReference.view else { return }
                                 let fraction = min(1, max(0, (value.location.y - (grabOffset ?? thumbHeight / 2)) / max(1, travel)))
-                                let offset = fraction * max(0, metrics.height - viewport.size.height)
+                                // The thumb follows the pointer directly, independent of queued metrics.
+                                dragProgress = fraction
+                                let documentHeight = scroll.documentView?.frame.height ?? metrics.height
+                                let offset = fraction * max(0, documentHeight - scroll.contentView.bounds.height)
                                 scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: offset))
                                 scroll.reflectScrolledClipView(scroll.contentView)
                             }
-                            .onEnded { _ in isDragging = false; grabOffset = nil; revealThumb() })
+                            .onEnded { _ in
+                                isDragging = false
+                                grabOffset = nil
+                                dragThumbHeight = nil
+                                dragProgress = nil
+                                if let scroll = scrollReference.view {
+                                    metrics = ScrollMetrics(offset: scroll.contentView.bounds.minY,
+                                                            height: scroll.documentView?.frame.height ?? 0)
+                                }
+                                revealThumb()
+                            })
                         .clipped()
+                        .offset(x: thumbOffset)
                 }
             }
             .onDisappear { hideTask?.cancel(); scrollReference.view = nil }

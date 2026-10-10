@@ -155,6 +155,7 @@ final class LyricsAlignment: ObservableObject {
             }
             previous = (time * 100).rounded()
             matchedCount += 1
+            if !line.words.isEmpty { return LyricsTiming.encoded([line]) }
             return LRCParser.stamp(time, text: line.text)
         }
         guard Double(matchedCount) / Double(lines.count) >= 0.65 else {
