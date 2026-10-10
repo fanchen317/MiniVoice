@@ -9,7 +9,7 @@ final class PlayerControlsGeometryTests: XCTestCase {
             let width = scenario.width
             let layout = PlayerControlsGeometry(width: width, expanded: scenario.expanded)
             let panel = CGRect(x: 0, y: 0, width: width, height: layout.height)
-            let frames = [layout.progress, layout.buttons, layout.song, layout.output]
+            let frames = [layout.center, layout.song, layout.output]
             for frame in frames {
                 XCTAssertTrue(panel.contains(frame), "Control outside panel at width \(width): \(frame)")
             }
@@ -55,8 +55,12 @@ final class PlayerControlsGeometryTests: XCTestCase {
                 XCTAssertEqual(layout.buttons.midX, width / 2)
                 XCTAssertEqual(layout.progress.midX, layout.buttons.midX)
                 XCTAssertEqual(layout.song.midY, layout.output.midY)
-                XCTAssertEqual(layout.song.midY, layout.progress.union(layout.buttons).midY)
-                XCTAssertEqual(layout.artworkSize, expanded ? 82 : 58)
+                XCTAssertEqual(layout.song.minY, layout.center.minY)
+                XCTAssertEqual(layout.song.maxY, layout.center.maxY)
+                XCTAssertEqual(layout.output.minY, layout.center.minY)
+                XCTAssertEqual(layout.output.maxY, layout.center.maxY)
+                XCTAssertGreaterThanOrEqual(layout.buttons.minY - layout.progress.maxY, 8)
+                XCTAssertEqual(layout.artworkSize, expanded ? 96 : 82)
                 XCTAssertGreaterThanOrEqual(layout.song.height, layout.artworkSize)
             }
         }

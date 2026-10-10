@@ -25,23 +25,25 @@ struct PlayerControlsGeometry {
         let songLimit = Self.mix(narrowSongWidth, min(240, sideWidth), sideProgress)
         let songWidth = songLimit
 
-        artworkSize = 44 + (expanded ? 38 : 14) * Self.smoothStep((width - 280) / 260)
-        let songHeight = max(58, artworkSize)
-        height = Self.mix(176 + songHeight - 58, 106, rowProgress)
+        artworkSize = 44 + (expanded ? 52 : 38) * Self.smoothStep((width - 280) / 260)
+        let sideHeight = max(58, artworkSize)
+        let centerHeight = max(82, artworkSize)
+        let regionHeight = Self.mix(sideHeight, centerHeight, rowProgress)
+        height = Self.mix(centerHeight + sideHeight + 32, centerHeight + 24, rowProgress)
         // Four 36pt targets plus the 52pt primary button.
         buttonSpacing = (buttonsWidth - 36 * 4 - 52) / 4
-        let rowCenter = Self.mix(height - inset - songHeight / 2, height / 2, rowProgress)
-        let buttonsCenter = Self.mix(70, 68, rowProgress)
-        // Keep the center stable regardless of the song title's length.
-        buttons = CGRect(x: (width - buttonsWidth) / 2, y: buttonsCenter - 26,
+        let centerX = (width - buttonsWidth) / 2
+        progress = CGRect(x: centerX, y: inset, width: buttonsWidth, height: 22)
+        buttons = CGRect(x: centerX, y: inset + centerHeight - 52,
                          width: buttonsWidth, height: 52)
-        // The timeline belongs to the transport column, including when side
-        // content wraps below it in a narrow window.
-        progress = CGRect(x: buttons.minX, y: inset, width: buttonsWidth, height: 22)
-        song = CGRect(x: inset, y: rowCenter - songHeight / 2, width: songWidth, height: songHeight)
-        output = CGRect(x: width - inset - outputWidth, y: rowCenter - 29,
-                        width: outputWidth, height: 58)
+        // All three columns have the same top and bottom in the wide layout.
+        let sideY = Self.mix(height - inset - regionHeight, inset, rowProgress)
+        song = CGRect(x: inset, y: sideY, width: songWidth, height: regionHeight)
+        output = CGRect(x: width - inset - outputWidth, y: sideY,
+                        width: outputWidth, height: regionHeight)
     }
+
+    var center: CGRect { progress.union(buttons) }
 
     private static func smoothStep(_ value: CGFloat) -> CGFloat {
         let t = min(1, max(0, value))

@@ -1368,9 +1368,9 @@ private struct AdaptivePlayerControlsLayout: Layout {
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        guard subviews.count == 4 else { return }
+        guard subviews.count == 3 else { return }
         let layout = PlayerControlsGeometry(width: bounds.width, expanded: expanded)
-        for (view, frame) in zip(subviews, [layout.progress, layout.buttons, layout.song, layout.output]) {
+        for (view, frame) in zip(subviews, [layout.song, layout.center, layout.output]) {
             view.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
                        anchor: .topLeading, proposal: ProposedViewSize(frame.size))
         }
@@ -1393,11 +1393,15 @@ private struct PlayerControls: View {
         GeometryReader { geometry in
             let layout = PlayerControlsGeometry(width: geometry.size.width, expanded: albumExpanded)
             AdaptivePlayerControlsLayout(expanded: albumExpanded) {
-                progress.frame(height: 22)
-                transport(spacing: layout.buttonSpacing)
                 trackInfo(artworkSize: layout.artworkSize)
                     .frame(height: layout.song.height, alignment: .leading)
-                output.frame(height: 58)
+                VStack(spacing: 0) {
+                    progress.frame(height: 22)
+                    Spacer(minLength: 8)
+                    transport(spacing: layout.buttonSpacing).frame(height: 52)
+                }
+                .frame(height: layout.center.height)
+                output.frame(height: layout.output.height)
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
@@ -1493,7 +1497,7 @@ private struct PlayerControls: View {
     }
 
     private var output: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 outputIcon(library.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
                 Slider(value: Binding(get: { Double(library.volume) }, set: { library.volume = Float($0) }), in: 0...1)
@@ -1508,6 +1512,7 @@ private struct PlayerControls: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 24)
+            .frame(maxHeight: .infinity)
             Menu {
                 ForEach(volume.outputDevices) { device in
                     Button {
@@ -1537,6 +1542,8 @@ private struct PlayerControls: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 24)
+            .frame(maxHeight: .infinity)
             .help(volume.error ?? volume.deviceName)
         }.font(.system(size: 12)).foregroundStyle(.secondary)
     }
