@@ -12,6 +12,44 @@ enum ArtworkPresentation {
         return result
     }
 
+    @MainActor private static let backdropCache = NSCache<NSImage, NSImage>()
+
+    /// A blurred background only needs a small raster, even when artwork is a 4K original.
+    @MainActor static func backdrop(for source: NSImage) -> NSImage {
+        if let cached = backdropCache.object(forKey: source) { return cached }
+        guard let cg = source.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let scaled = raster(cg, width: 512, height: 512) else { return source }
+        let image = NSImage(cgImage: scaled, size: source.size)
+        backdropCache.totalCostLimit = 8 * 512 * 512 * 4
+        backdropCache.setObject(image, forKey: source, cost: 512 * 512 * 4)
+        return image
+    }
+
+    static func averageColor(of source: NSImage) -> NSColor? {
+        guard let cg = source.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let sampled = raster(cg, width: 18, height: 18),
+              let data = sampled.dataProvider?.data, let pixels = CFDataGetBytePtr(data) else { return nil }
+        var red = 0, green = 0, blue = 0, alpha = 0
+        for y in 0..<18 {
+            for x in 0..<18 {
+                let i = y * sampled.bytesPerRow + x * 4
+                red += Int(pixels[i]); green += Int(pixels[i + 1]); blue += Int(pixels[i + 2]); alpha += Int(pixels[i + 3])
+            }
+        }
+        guard alpha > 0 else { return nil }
+        return NSColor(red: CGFloat(red) / CGFloat(alpha), green: CGFloat(green) / CGFloat(alpha),
+                       blue: CGFloat(blue) / CGFloat(alpha), alpha: 1)
+    }
+
+    private static func raster(_ cg: CGImage, width: Int, height: Int) -> CGImage? {
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return nil }
+        context.interpolationQuality = .medium
+        context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()
+    }
+
     static func removingWhiteMargins(_ source: NSImage) -> NSImage {
         guard let cg = source.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return source }
         let side = 128

@@ -20,6 +20,7 @@ struct MetadataEditor: View {
     @State private var artists: [ArtistEntry]
     @State private var album: String
     @State private var lyrics: String
+    @State private var lyricsAnalysis = LyricsDraftAnalysis()
     @State private var translation: String
     @State private var artwork: NSImage?
     @State private var selectedPage = EditorPage.details
@@ -335,7 +336,7 @@ struct MetadataEditor: View {
                 }.padding(16)
             }
             SettingsGroup(title: "进阶工具") {
-                if LRCParser.parse(lyrics, placeholder: false).contains(where: { $0.timestamp != nil }) {
+                if lyricsAnalysis.lines(for: lyrics).contains(where: { $0.timestamp != nil }) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("整体校正时间轴").font(.system(size: 13, weight: .medium))
                         Text("正数让歌词晚出现，负数让歌词早出现；只修改编辑框，保存更改后才写入歌曲。")
@@ -354,7 +355,7 @@ struct MetadataEditor: View {
                     }.padding(16)
                     Divider().padding(.horizontal, 16)
                 }
-                if LyricsAlignment.needsAlignment(lyrics) {
+                if lyricsAnalysis.needsAlignment(for: lyrics) {
                     Button("使用本地 AI 匹配当前歌词") {
                         alignAfterSave = true
                         save()
@@ -375,7 +376,7 @@ struct MetadataEditor: View {
                                 else { library.play(track.id) }
                             }
                             Button("标记第 \(timingIndex + 1) 行") { stampNextLine() }
-                                .disabled(lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || timingIndex >= LRCParser.parse(lyrics).count || library.playingID != track.id)
+                                .disabled(lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || timingIndex >= lyricsAnalysis.lines(for: lyrics).count || library.playingID != track.id)
                             Button("从头打点") { timingIndex = 0 }
                         }
                     }.padding(.top, 12)
@@ -388,10 +389,10 @@ struct MetadataEditor: View {
         if lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return "保存时自动整理空行；已有时间标签保持不变。"
         }
-        if LyricsAlignment.needsAlignment(lyrics) {
+        if lyricsAnalysis.needsAlignment(for: lyrics) {
             return "当前是纯文本歌词。建议先在线查找；没有结果时可手动打点，或使用可选的本地 AI。"
         }
-        let lines = LRCParser.parse(lyrics)
+        let lines = lyricsAnalysis.lines(for: lyrics)
         let timed = lines.filter { $0.timestamp != nil }.count
         let words = lines.reduce(0) { $0 + $1.words.count }
         return words > 0 ? "已识别 \(words) 个逐字时间片段、\(timed) 行歌词；缺少逐字时间的行自动使用逐行跟随。"
@@ -768,5 +769,21 @@ struct SongInfoWindowPresenter: NSViewRepresentable {
         var window: NSWindow?
         var trackID: UUID?
         var lastRequest: UUID?
+    }
+}
+
+/// Reuse the draft's parse across status labels and tools, including unrelated playback updates.
+private final class LyricsDraftAnalysis {
+    private var source: String?
+    private var parsed: [LyricLine] = []
+    func lines(for text: String) -> [LyricLine] {
+        if source != text {
+            parsed = LRCParser.parse(LRCParser.imported(text), placeholder: false)
+            source = text
+        }
+        return parsed
+    }
+    func needsAlignment(for text: String) -> Bool {
+        lines(for: text).contains { !$0.text.isEmpty && $0.timestamp == nil }
     }
 }

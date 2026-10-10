@@ -58,6 +58,9 @@ struct ContentView: View {
 
     @State private var songs: [Track] = []
     @State private var listIndex = SongListIndex()
+    @State private var listEntriesRevision: Int?
+    @State private var listEntries: [SongListEntry] = []
+    @State private var songGroups: [(name: String, tracks: [Track])] = []
 
     private var listRequest: SongListRequest {
         SongListRequest(revision: library.tracksRevision, recentPaths: recent ? library.recentPaths : [],
@@ -70,17 +73,25 @@ struct ContentView: View {
     }
 
     private func updateSongs() async {
+        let workspace = workspaceRequest
+        if !workspace.list.query.isEmpty {
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+        }
         if recent {
             let matches = library.recentTracks(matching: query)
             if !Task.isCancelled { songs = matches }
             return
         }
-        let source = library.tracks
-        let request = listRequest
-        let entries = source.map { SongListEntry(id: $0.id, url: $0.url, title: $0.title, artist: $0.artist, album: $0.album) }
+        let request = workspace.list
+        if listEntriesRevision != request.revision {
+            listEntries = library.tracks.map { SongListEntry(id: $0.id, url: $0.url, title: $0.title, artist: $0.artist, album: $0.album) }
+            listEntriesRevision = request.revision
+        }
+        let entries = listEntries
         // Only metadata crosses to the worker; AppKit artwork stays on the main actor.
         let ids = await listIndex.orderedIDs(entries, request: request)
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, workspaceRequest == workspace else { return }
         let ordered = ids.compactMap { library.track(for: $0) }
         guard libraryStyle else { songs = ordered; return }
         switch destination {
@@ -95,6 +106,11 @@ struct ContentView: View {
             songs = ordered.filter { browseGroup == nil || albumName($0) == browseGroup }
         default: songs = ordered
         }
+        if browsingGroups {
+            songGroups = Dictionary(grouping: songs, by: { destination == .artists ? artistName($0) : albumName($0) })
+                .map { (name: $0.key, tracks: $0.value) }
+                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        } else { songGroups = [] }
     }
 
     private func migrateSortPreferenceIfNeeded() {
@@ -433,7 +449,7 @@ struct ContentView: View {
                 HStack(spacing: 8) {
                     Text(destinationTitle).font(.caption.weight(.semibold))
                         .lineLimit(1).truncationMode(.tail).help(destinationTitle)
-                    Text(browsingGroups ? "\(groupedSongs.count) \(destination == .artists ? "位" : "张")" : "\(songs.count) 首")
+                    Text(browsingGroups ? "\(songGroups.count) \(destination == .artists ? "位" : "张")" : "\(songs.count) 首")
                         .font(.caption.monospacedDigit()).lineLimit(1).truncationMode(.tail)
                 }.foregroundStyle(.secondary)
             } else {
@@ -609,11 +625,6 @@ private extension ContentView {
     func artistName(_ track: Track) -> String { track.artist.isEmpty ? "未知歌手" : track.artist }
     func albumName(_ track: Track) -> String { track.album.isEmpty ? "未知专辑" : track.album }
     var browsingGroups: Bool { (destination == .artists || destination == .albums) && browseGroup == nil }
-    var groupedSongs: [(name: String, tracks: [Track])] {
-        Dictionary(grouping: songs, by: { destination == .artists ? artistName($0) : albumName($0) })
-            .map { (name: $0.key, tracks: $0.value) }
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-    }
 
     func navigate(_ target: LibraryDestination) {
         destination = target; recent = target == .recent
@@ -807,7 +818,7 @@ private extension ContentView {
             ScrollViewReader { proxy in
                 PlayerScrollView(contentTrailingInset: 16, thumbOffset: 8) {
                     if browsingGroups {
-                        let groups = groupedSongs
+                        let groups = songGroups
                         let availableWidth = max(1, width - 56)
                         if width < 480 {
                             LazyVStack(spacing: 4) {
@@ -1185,7 +1196,70 @@ private struct PlayerDetail: View {
     }
 }
 
+/// Inactive lyric rows do not rebuild attributed text or relayout on each playback tick.
+private struct PlayerLyricRow: View, Equatable {
+    let line: LyricLine
+    // -1: before playback, 0: active, 1: adjacent, 2: distant.
+    let emphasis: Int
+    let time: Double
+    let fontSize: CGFloat
+    let rowHeight: CGFloat
+    let bilingual: Bool
+    let showTranslation: Bool
+    let baseColor: Color
+    let reduceMotion: Bool
+    private var isActive: Bool { emphasis == 0 }
+    private var beforeFirstLine: Bool { emphasis == -1 }
+    private var distance: Int { emphasis }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+          TimedLyricText(line: line, time: time, active: isActive,
+                       baseColor: baseColor)
+            .font(.system(size: fontSize, weight: .bold))
+            .lineLimit(2)
+            .minimumScaleFactor(0.6)
+            .multilineTextAlignment(.leading)
+          if showTranslation, let translation = line.translation {
+            Text(translation)
+                .font(.system(size: max(13, fontSize * 0.58), weight: .medium))
+                .lineLimit(2).minimumScaleFactor(0.75)
+                .foregroundStyle(isActive ? Color.primary.opacity(0.85) : Color.secondary)
+          }
+        }
+            .foregroundStyle(baseColor
+                .opacity(beforeFirstLine ? 0.78 : (isActive ? 1 : (distance == 1 ? 0.54 : 0.36))))
+            .blur(radius: beforeFirstLine || isActive ? 0 : (distance == 1 ? 0.2 : 0.6))
+            .scaleEffect(isActive || beforeFirstLine ? 1 : 0.97, anchor: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: rowHeight, maxHeight: bilingual ? nil : rowHeight)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: emphasis)
+    }
+}
+
 private struct SyncedLyrics: View {
+    @AppStorage("MiniVoice.showLyricsTranslation") private var showTranslation = true
+    let track: Track
+    let follow: Bool
+
+    var body: some View {
+        if track.lyricSnapshot.kind == .plain {
+            PlayerScrollView(fadesEdges: true) {
+                Text(track.lyricLines.map { line in
+                    [line.text, showTranslation ? line.translation : nil].compactMap { $0 }.joined(separator: "\n")
+                }.joined(separator: "\n\n"))
+                    .font(.system(size: 22, weight: .medium))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(24)
+                    .textSelection(.enabled)
+            }
+        } else {
+            TimedLyrics(track: track, follow: follow)
+        }
+    }
+}
+
+private struct TimedLyrics: View {
     @AppStorage("MiniVoice.showLyricsTranslation") private var showTranslation = true
     @EnvironmentObject private var library: MusicLibrary
     let track: Track
@@ -1204,28 +1278,14 @@ private struct SyncedLyrics: View {
         let showTranslation: Bool
     }
 
-    private var active: Int? { MusicLibrary.activeLyricIndex(for: track.lyricLines, at: clock.time) }
-    var body: some View {
-        if LyricTimingKind.detect(track.lyricLines) == .plain {
-            PlayerScrollView(fadesEdges: true) {
-                Text(track.lyricLines.map { line in
-                    [line.text, showTranslation ? line.translation : nil].compactMap { $0 }.joined(separator: "\n")
-                }.joined(separator: "\n\n"))
-                    .font(.system(size: 22, weight: .medium))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(24)
-                    .textSelection(.enabled)
-            }
-        } else {
-            timedBody
-        }
-    }
+    private var active: Int? { track.lyricSnapshot.activeIndex(at: clock.time) }
+    var body: some View { timedBody }
 
     private var timedBody: some View {
         let active = active
         let lines = track.lyricLines
         return GeometryReader { geometry in
-            let bilingual = showTranslation && lines.contains { $0.translation != nil }
+            let bilingual = showTranslation && track.lyricSnapshot.hasTranslation
             let baseHeight = min(92.0, max(28.0, (geometry.size.height - 36) / 5))
             let rowHeight = bilingual ? max(62.0, baseHeight * 1.45) : baseHeight
             let fontSize = min(34.0, max(19.0, baseHeight * 0.56))
@@ -1233,28 +1293,12 @@ private struct SyncedLyrics: View {
                 PlayerScrollView(fadesEdges: true) {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                            let distance = active.map { abs(index - $0) } ?? 0
-                            VStack(alignment: .leading, spacing: 6) {
-                              TimedLyricText(line: line, time: clock.time, active: active == index,
-                                           baseColor: colorScheme == .dark ? .white : Color(red: 0.23, green: 0.27, blue: 0.31))
-                                .font(.system(size: fontSize, weight: .bold))
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.6)
-                                .multilineTextAlignment(.leading)
-                              if showTranslation, let translation = line.translation {
-                                Text(translation)
-                                    .font(.system(size: max(13, fontSize * 0.58), weight: .medium))
-                                    .lineLimit(2).minimumScaleFactor(0.75)
-                                    .foregroundStyle(active == index ? Color.primary.opacity(0.85) : Color.secondary)
-                              }
-                            }
-                                .foregroundStyle((colorScheme == .dark ? Color.white : Color(red: 0.23, green: 0.27, blue: 0.31))
-                                    .opacity(active == nil ? 0.78 : (active == index ? 1 : (distance == 1 ? 0.54 : 0.36))))
-                                .blur(radius: active == nil || active == index ? 0 : (distance == 1 ? 0.2 : 0.6))
-                                .scaleEffect(active == index || active == nil ? 1 : 0.97, anchor: .leading)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .frame(minHeight: rowHeight, maxHeight: bilingual ? nil : rowHeight)
-                                .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: active)
+                            PlayerLyricRow(line: line, emphasis: active.map { min(2, abs(index - $0)) } ?? -1,
+                                           time: active == index && !line.words.isEmpty ? clock.time : 0,
+                                           fontSize: fontSize, rowHeight: rowHeight, bilingual: bilingual,
+                                           showTranslation: showTranslation, baseColor: colorScheme == .dark ? .white : Color(red: 0.23, green: 0.27, blue: 0.31),
+                                           reduceMotion: reduceMotion)
+                                .equatable()
                                 .contentShape(Rectangle()).id(index)
                                 .onTapGesture { if let time = line.timestamp { library.seek(to: time) } }
                         }
@@ -1613,31 +1657,47 @@ private final class ScrollViewReference {
     weak var view: NSScrollView?
 }
 
+/// Scroll notifications only invalidate the thumb, never the list or lyric content.
+@MainActor
+private final class PlayerScrollState: ObservableObject {
+    @Published var metrics = ScrollMetrics()
+    @Published var isThumbVisible = false
+    var isDragging = false
+    private var lastInteraction = ProcessInfo.processInfo.systemUptime
+    private var hideTask: Task<Void, Never>?
+
+    func revealThumb() {
+        lastInteraction = ProcessInfo.processInfo.systemUptime
+        if !isThumbVisible { isThumbVisible = true }
+        guard hideTask == nil else { return }
+        hideTask = Task { [weak self] in
+            // One task per scroll session, rather than canceling and spawning at every wheel event.
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(1400))
+                guard !Task.isCancelled, let self else { return }
+                if !self.isDragging && ProcessInfo.processInfo.systemUptime - self.lastInteraction >= 1.4 {
+                    self.isThumbVisible = false
+                    self.hideTask = nil
+                    return
+                }
+            }
+        }
+    }
+
+    func cancelHide() { hideTask?.cancel(); hideTask = nil }
+    func reset() { cancelHide(); isDragging = false; isThumbVisible = false }
+}
+
 /// One thumb geometry and interaction model for both songs and lyrics.
 private struct PlayerScrollView<Content: View>: View {
     var fadesEdges = false
     var contentTrailingInset: CGFloat = 24
     var thumbOffset: CGFloat = 0
     @ViewBuilder var content: () -> Content
-    @State private var metrics = ScrollMetrics()
+    // Retain without observing: only PlayerScrollThumb subscribes to publications.
+    @State private var scrollState = PlayerScrollState()
     @State private var scrollReference = ScrollViewReference()
-    @State private var isThumbVisible = false
-    @State private var isDragging = false
-    @State private var grabOffset: CGFloat?
-    @State private var dragThumbHeight: CGFloat?
-    @State private var dragProgress: CGFloat?
-    @State private var hideTask: Task<Void, Never>?
     @Namespace private var coordinateSpace
-
-    private func revealThumb() {
-        hideTask?.cancel()
-        isThumbVisible = true
-        guard !isDragging else { return }
-        hideTask = Task {
-            try? await Task.sleep(nanoseconds: 1_400_000_000)
-            if !Task.isCancelled && !isDragging { isThumbVisible = false }
-        }
-    }
 
     var body: some View {
         GeometryReader { viewport in
@@ -1646,10 +1706,8 @@ private struct PlayerScrollView<Content: View>: View {
                     .padding(.trailing, contentTrailingInset)
                     .background(HiddenScrollerConfigurator(onMetrics: { offset, height in
                         let updated = ScrollMetrics(offset: offset, height: height)
-                        if metrics != updated {
-                            metrics = updated
-                        }
-                    }, onScrollView: { scrollReference.view = $0 }, onUserScroll: { revealThumb() })
+                        if scrollState.metrics != updated { scrollState.metrics = updated }
+                    }, onScrollView: { scrollReference.view = $0 }, onUserScroll: { scrollState.revealThumb() })
                         .frame(width: 0, height: 0).allowsHitTesting(false))
             }
             .scrollIndicators(.hidden)
@@ -1662,57 +1720,79 @@ private struct PlayerScrollView<Content: View>: View {
                 } else { Rectangle() }
             }
             .overlay(alignment: .trailing) {
-                if metrics.height > viewport.size.height, viewport.size.height > 0 {
-                    let thumbHeight = dragThumbHeight ?? min(viewport.size.height, max(44, viewport.size.height * viewport.size.height / metrics.height))
-                    let travel = viewport.size.height - thumbHeight
-                    let progress = dragProgress ?? min(1, max(0, metrics.offset / (metrics.height - viewport.size.height)))
-                    Capsule()
-                        .fill(Color.primary.opacity(0.55))
-                        .frame(width: isDragging ? 12 : 10, height: thumbHeight)
-                        .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
-                        .offset(y: progress * travel)
-                        .opacity(isThumbVisible ? 1 : 0)
-                        .animation(.easeInOut(duration: 0.2), value: isThumbVisible)
-                        .frame(width: 24, height: viewport.size.height, alignment: .top)
-                        .contentShape(Rectangle())
-                        .onHover { hovering in
-                            if hovering && isThumbVisible { hideTask?.cancel() }
-                            else if !hovering && isThumbVisible { revealThumb() }
-                        }
-                        .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named(coordinateSpace))
-                            .onChanged { value in
-                                if grabOffset == nil {
-                                    dragThumbHeight = thumbHeight
-                                    let withinThumb = value.startLocation.y - progress * travel
-                                    grabOffset = (0...thumbHeight).contains(withinThumb) ? withinThumb : thumbHeight / 2
-                                }
-                                isDragging = true
-                                revealThumb()
-                                guard let scroll = scrollReference.view else { return }
-                                let fraction = min(1, max(0, (value.location.y - (grabOffset ?? thumbHeight / 2)) / max(1, travel)))
-                                // The thumb follows the pointer directly, independent of queued metrics.
-                                dragProgress = fraction
-                                let documentHeight = scroll.documentView?.frame.height ?? metrics.height
-                                let offset = fraction * max(0, documentHeight - scroll.contentView.bounds.height)
-                                scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: offset))
-                                scroll.reflectScrolledClipView(scroll.contentView)
-                            }
-                            .onEnded { _ in
-                                isDragging = false
-                                grabOffset = nil
-                                dragThumbHeight = nil
-                                dragProgress = nil
-                                if let scroll = scrollReference.view {
-                                    metrics = ScrollMetrics(offset: scroll.contentView.bounds.minY,
-                                                            height: scroll.documentView?.frame.height ?? 0)
-                                }
-                                revealThumb()
-                            })
-                        .clipped()
-                        .offset(x: thumbOffset)
-                }
+                PlayerScrollThumb(state: scrollState, scrollReference: scrollReference,
+                                  height: viewport.size.height, thumbOffset: thumbOffset, coordinateSpace: coordinateSpace)
             }
-            .onDisappear { hideTask?.cancel(); scrollReference.view = nil }
+            .onDisappear { scrollState.reset(); scrollReference.view = nil }
+        }
+    }
+}
+
+private struct PlayerScrollThumb: View {
+    @ObservedObject var state: PlayerScrollState
+    let scrollReference: ScrollViewReference
+    let height: CGFloat
+    let thumbOffset: CGFloat
+    let coordinateSpace: Namespace.ID
+    @State private var isDragging = false
+    @State private var grabOffset: CGFloat?
+    @State private var dragThumbHeight: CGFloat?
+    @State private var dragProgress: CGFloat?
+    private var metrics: ScrollMetrics { state.metrics }
+
+    var body: some View {
+        Group {
+            if metrics.height > height, height > 0 {
+                let thumbHeight = dragThumbHeight ?? min(height, max(44, height * height / metrics.height))
+                let travel = height - thumbHeight
+                let progress = dragProgress ?? min(1, max(0, metrics.offset / (metrics.height - height)))
+                Capsule()
+                    .fill(Color.primary.opacity(0.55))
+                    .frame(width: isDragging ? 12 : 10, height: thumbHeight)
+                    .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
+                    .offset(y: progress * travel)
+                    .opacity(state.isThumbVisible ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.2), value: state.isThumbVisible)
+                    .frame(width: 24, height: height, alignment: .top)
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        if hovering && state.isThumbVisible { state.cancelHide() }
+                        else if !hovering && state.isThumbVisible { state.revealThumb() }
+                    }
+                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named(coordinateSpace))
+                        .onChanged { value in
+                            if grabOffset == nil {
+                                dragThumbHeight = thumbHeight
+                                let withinThumb = value.startLocation.y - progress * travel
+                                grabOffset = (0...thumbHeight).contains(withinThumb) ? withinThumb : thumbHeight / 2
+                            }
+                            isDragging = true
+                            state.isDragging = true
+                            state.revealThumb()
+                            guard let scroll = scrollReference.view else { return }
+                            let fraction = min(1, max(0, (value.location.y - (grabOffset ?? thumbHeight / 2)) / max(1, travel)))
+                            // The thumb follows the pointer directly, independent of queued metrics.
+                            dragProgress = fraction
+                            let documentHeight = scroll.documentView?.frame.height ?? metrics.height
+                            let offset = fraction * max(0, documentHeight - scroll.contentView.bounds.height)
+                            scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: offset))
+                            scroll.reflectScrolledClipView(scroll.contentView)
+                        }
+                        .onEnded { _ in
+                            isDragging = false
+                            state.isDragging = false
+                            grabOffset = nil
+                            dragThumbHeight = nil
+                            dragProgress = nil
+                            if let scroll = scrollReference.view {
+                                state.metrics = ScrollMetrics(offset: scroll.contentView.bounds.minY,
+                                                        height: scroll.documentView?.frame.height ?? 0)
+                            }
+                            state.revealThumb()
+                        })
+                    .clipped()
+                    .offset(x: thumbOffset)
+            }
         }
     }
 }
@@ -1831,7 +1911,7 @@ private struct CoverBackdrop: View {
             .opacity(colorScheme == .dark ? 0.42 : 0.66)
 
             if let image {
-                Image(nsImage: image)
+                Image(nsImage: ArtworkPresentation.backdrop(for: image))
                     .resizable()
                     .scaledToFill()
                     .frame(width: geometry.size.width, height: geometry.size.height)
@@ -1862,24 +1942,12 @@ private enum CoverPalette {
         if let image, let cached = cache.object(forKey: image) as? [NSColor] {
             return cached.map { Color(nsColor: $0) }
         }
-        guard let data = image?.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: data), bitmap.pixelsWide > 0, bitmap.pixelsHigh > 0
-        else {
+        guard let image, let base = ArtworkPresentation.averageColor(of: image) else {
             return [Color(red: 0.90, green: 0.97, blue: 0.98), Color(red: 0.94, green: 0.99, blue: 0.97)]
         }
-        let sampleStep = max(1, min(bitmap.pixelsWide, bitmap.pixelsHigh) / 18)
-        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, count: CGFloat = 0
-        for x in Swift.stride(from: 0, to: bitmap.pixelsWide, by: sampleStep) {
-            for y in Swift.stride(from: 0, to: bitmap.pixelsHigh, by: sampleStep) {
-                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
-                red += color.redComponent; green += color.greenComponent; blue += color.blueComponent; count += 1
-            }
-        }
-        guard count > 0 else { return [Color.white, Color(red: 0.91, green: 0.97, blue: 0.97)] }
-        let base = NSColor(red: red / count, green: green / count, blue: blue / count, alpha: 1)
         let bright = NSColor(red: min(1, base.redComponent * 0.38 + 0.62), green: min(1, base.greenComponent * 0.38 + 0.62), blue: min(1, base.blueComponent * 0.38 + 0.62), alpha: 1)
         let soft = NSColor(red: min(1, base.redComponent * 0.20 + 0.80), green: min(1, base.greenComponent * 0.20 + 0.80), blue: min(1, base.blueComponent * 0.20 + 0.80), alpha: 1)
-        if let image { cache.setObject([bright, soft] as NSArray, forKey: image) }
+        cache.setObject([bright, soft] as NSArray, forKey: image)
         return [Color(nsColor: bright), Color(nsColor: soft)]
     }
 }

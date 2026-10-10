@@ -16,6 +16,7 @@ enum StatusIconStyle: String, CaseIterable, Identifiable {
 @MainActor
 final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private var item: NSStatusItem?
+    private var renderedStyle: StatusIconStyle?
     private weak var library: MusicLibrary?
     private var openMainWindow: (() -> Void)?
     private var observer: NSObjectProtocol?
@@ -35,6 +36,9 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private func refresh() {
+        let style = style
+        guard renderedStyle != style else { return }
+        renderedStyle = style
         if style == .hidden {
             if let item { NSStatusBar.system.removeStatusItem(item) }
             item = nil

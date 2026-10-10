@@ -137,4 +137,61 @@ final class PerformanceTests: XCTestCase {
         XCTAssertEqual(ids.first, entries.last?.id)
         XCTAssertEqual(ids.last, entries.first?.id)
     }
+    func testSearchPrefixesReuseOrderingAndRevisionInvalidatesCache() async {
+        let entries = (0..<1000).map { entry("歌曲\($0)", artist: "Artist\($0 % 10)") }
+        let index = SongListIndex()
+        var request = SongListRequest(revision: 1, field: "title", ascending: true)
+        let ordered = await index.orderedIDs(entries, request: request)
+        let byID = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0) })
+        for query in ["歌", "歌曲", "歌曲1", "ARTIST2", "不存在"] {
+            request.query = query
+            let actual = await index.orderedIDs(entries, request: request)
+            let expected = ordered.filter { id in
+                let item = byID[id]!
+                return "\(item.title) \(item.artist) \(item.album)".localizedCaseInsensitiveContains(query)
+            }
+            XCTAssertEqual(actual, expected)
+        }
+        let count = await index.cachedOrderingCount
+        XCTAssertEqual(count, 1, "Typing must not retain a sorted copy for every query")
+        request.revision = 2
+        request.query = "新歌曲"
+        let updated = [entry("新歌曲")]
+        let actual = await index.orderedIDs(updated, request: request)
+        XCTAssertEqual(actual, updated.map(\.id))
+        let updatedCount = await index.cachedOrderingCount
+        XCTAssertEqual(updatedCount, 1)
+    }
+
+    func testLyricTimingIndexPreservesDuplicatesMixedLinesAndUnsortedPrecedence() {
+        let cases: [[LyricLine]] = [
+            [],
+            [LyricLine(timestamp: nil, text: "普通文本")],
+            [LyricLine(timestamp: nil, text: "说明"), LyricLine(timestamp: 1, text: "一"),
+             LyricLine(timestamp: 1, text: "重复"), LyricLine(timestamp: nil, text: "未打点"),
+             LyricLine(timestamp: 3, text: "三")],
+            [LyricLine(timestamp: 3, text: "三"), LyricLine(timestamp: nil, text: "说明"),
+             LyricLine(timestamp: 1, text: "一"), LyricLine(timestamp: 2, text: "二")]
+        ]
+        for lines in cases {
+            let snapshot = LyricsPlaybackSnapshot(lines: lines)
+            for time in [-1.0, 0, 1, 1.5, 2, 3, 10, .nan] {
+                XCTAssertEqual(snapshot.activeIndex(at: time), MusicLibrary.activeLyricIndex(for: lines, at: time))
+            }
+        }
+    }
+
+    func testLargeLyricIndexMatchesReferenceDuringSeek() {
+        let lines = (0..<10_000).map { LyricLine(timestamp: Double($0) * 0.5, text: "第\($0)句") }
+        let snapshot = LyricsPlaybackSnapshot(lines: lines)
+        let start = ContinuousClock.now
+        var checksum = 0
+        for i in 0..<100_000 { checksum += snapshot.activeIndex(at: Double(i % 10_000) * 0.5) ?? 0 }
+        print("PERF: 100,000 indexed lyric lookups: \(start.duration(to: .now))")
+        XCTAssertEqual(checksum, 499_950_000)
+        for time in [0.0, 123.75, 4999.5, 100.0, 1.0] {
+            XCTAssertEqual(snapshot.activeIndex(at: time), MusicLibrary.activeLyricIndex(for: lines, at: time))
+        }
+    }
+
 }

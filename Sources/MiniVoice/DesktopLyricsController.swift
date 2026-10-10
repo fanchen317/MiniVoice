@@ -69,9 +69,9 @@ final class DesktopLyricsController: ObservableObject {
         var translation: String?
         if let library, let track = library.playingTrack ?? library.selectedTrack {
             let lines = track.lyricLines
-            if let active = library.activeLyricIndex(for: lines) {
+            if let active = track.lyricSnapshot.activeIndex(at: library.playbackTime) {
                 let start = lines[active].timestamp ?? 0
-                let end = lines.dropFirst(active + 1).compactMap(\.timestamp).first(where: { $0 > start }) ?? track.duration
+                let end = lines.dropFirst(active + 1).lazy.compactMap(\.timestamp).first(where: { $0 > start }) ?? track.duration
                 progress = DesktopLyricScroll.progress(time: library.playbackTime, start: start, end: end)
                 identity = "\(track.id)-\(active)"
                 primary = lines[active].text
@@ -303,7 +303,7 @@ private struct DesktopLyricMarquee: View {
     var body: some View {
         GeometryReader { geometry in
             let overflow = max(0, textWidth - geometry.size.width)
-            TimelineView(.animation(paused: overflow <= 0 || progress != nil)) { context in
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: overflow <= 0 || progress != nil)) { context in
                 TimedLyricText(line: line ?? LyricLine(timestamp: nil, text: text), time: time, active: line != nil, baseColor: .primary)
                     .font(.system(size: size, weight: weight, design: .rounded))
                     .lineLimit(1)

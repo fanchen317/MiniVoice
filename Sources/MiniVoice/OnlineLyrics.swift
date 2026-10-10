@@ -10,6 +10,8 @@ struct OnlineLyricsResult: Decodable, Identifiable, Sendable {
     let syncedLyrics: String?
     let plainLyrics: String?
     let instrumental: Bool
+    let timingKind: LyricTimingKind
+    let hasTranslation: Bool
 
     private enum CodingKeys: String, CodingKey {
         case id, trackName, artistName, albumName, duration, syncedLyrics, plainLyrics, instrumental, lyricsfile
@@ -38,6 +40,11 @@ struct OnlineLyricsResult: Decodable, Identifiable, Sendable {
         self.id = id; self.source = source; self.trackName = trackName; self.artistName = artistName
         self.albumName = albumName; self.duration = duration; self.syncedLyrics = syncedLyrics
         self.plainLyrics = plainLyrics; self.instrumental = instrumental
+        let synced = syncedLyrics?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let usable = synced?.isEmpty == false ? synced : plainLyrics?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lines = LRCParser.parse(usable ?? "", placeholder: false)
+        timingKind = LyricTimingKind.detect(lines)
+        hasTranslation = lines.contains { $0.translation != nil }
     }
 
     var usableLyrics: String? {
@@ -47,9 +54,7 @@ struct OnlineLyricsResult: Decodable, Identifiable, Sendable {
         return plain?.isEmpty == false ? plain : nil
     }
 
-    var timingKind: LyricTimingKind { LyricTimingKind.detect(LRCParser.parse(usableLyrics ?? "", placeholder: false)) }
     var hasTimeline: Bool { timingKind != .plain }
-    var hasTranslation: Bool { LRCParser.parse(usableLyrics ?? "", placeholder: false).contains { $0.translation != nil } }
 
     func score(title: String, artist: String, duration expectedDuration: Double) -> Int {
         var result = 0

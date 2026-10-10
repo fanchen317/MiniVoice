@@ -23,10 +23,11 @@ actor SongListIndex {
     private var dates: [URL: Date] = [:]
     private struct CacheKey: Hashable {
         let revision: Int
-        let query: String
         let field: String
         let ascending: Bool
     }
+    private var searchText: [UUID: String] = [:]
+    var cachedOrderingCount: Int { sortedCache.count }
     private var sortedCache: [CacheKey: [UUID]] = [:]
 
     func orderedIDs(_ entries: [SongListEntry], request: SongListRequest) -> [UUID] {
@@ -34,13 +35,16 @@ actor SongListIndex {
             dates.removeAll(keepingCapacity: true)
             sortedCache.removeAll(keepingCapacity: true)
             revision = request.revision
+            searchText = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, "\($0.title) \($0.artist) \($0.album)") })
         }
-        var filtered = entries.filter {
-            request.query.isEmpty || "\($0.title) \($0.artist) \($0.album)".localizedCaseInsensitiveContains(request.query)
+        guard !Task.isCancelled else { return [] }
+        if request.recent {
+            return entries.filter { matches($0, query: request.query) }.map(\.id)
         }
-        guard !request.recent else { return filtered.map(\.id) }
-        let key = CacheKey(revision: request.revision, query: request.query, field: request.field, ascending: request.ascending)
-        if let cached = sortedCache[key] { return cached }
+        // Search reuses one complete ordering. Query prefixes never create a new sort or cache entry.
+        let key = CacheKey(revision: request.revision, field: request.field, ascending: request.ascending)
+        if let cached = sortedCache[key] { return matchingIDs(cached, query: request.query) }
+        var filtered = entries
         if request.field != "artist" && request.field != "title" {
             for entry in filtered where dates[entry.url] == nil {
                 guard !Task.isCancelled else { return [] }
@@ -74,8 +78,21 @@ actor SongListIndex {
             return left.url.path < right.url.path
         }
         let ids = filtered.map(\.id)
+        guard !Task.isCancelled else { return [] }
         sortedCache[key] = ids
-        return ids
+        return matchingIDs(ids, query: request.query)
+    }
+
+    private func matches(_ entry: SongListEntry, query: String) -> Bool {
+        query.isEmpty || (searchText[entry.id] ?? "\(entry.title) \(entry.artist) \(entry.album)")
+            .localizedCaseInsensitiveContains(query)
+    }
+
+    private func matchingIDs(_ ordered: [UUID], query: String) -> [UUID] {
+        guard !query.isEmpty else { return ordered }
+        return ordered.filter { id in
+            searchText[id]?.localizedCaseInsensitiveContains(query) == true
+        }
     }
 
     private static func letterBucket(_ string: String) -> Int {

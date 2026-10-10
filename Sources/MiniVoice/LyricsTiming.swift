@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 import Yams
 
-struct LyricWord: Equatable {
+struct LyricWord: Equatable, Sendable {
     var text: String
     var start: TimeInterval
     var end: TimeInterval?
@@ -206,12 +206,13 @@ struct TimedLyricText: View {
 struct OnlineLyricsPreview: View {
     let source: String
     @State private var time: Double = 0
+    @State private var snapshot = LyricsPlaybackSnapshot(lines: [])
+    @State private var end: Double = 1
 
     var body: some View {
-        let lines = LRCParser.parse(source, placeholder: false)
-        let kind = LyricTimingKind.detect(lines)
-        let active = MusicLibrary.activeLyricIndex(for: lines, at: time)
-        let end = previewEnd(lines)
+        let lines = snapshot.lines
+        let kind = snapshot.kind
+        let active = snapshot.activeIndex(at: time)
         VStack(alignment: .leading, spacing: 12) {
             Text("\(kind.title)歌词预览").font(.headline)
             if kind != .plain {
@@ -261,6 +262,16 @@ struct OnlineLyricsPreview: View {
                     if let index { proxy.scrollTo(index, anchor: .center) }
                 }
             }
+        }
+        .task(id: source) {
+            let source = source
+            let parsed = await Task.detached(priority: .userInitiated) {
+                LyricsPlaybackSnapshot(lines: LRCParser.parse(source, placeholder: false))
+            }.value
+            guard !Task.isCancelled else { return }
+            snapshot = parsed
+            end = previewEnd(parsed.lines)
+            time = 0
         }
     }
 

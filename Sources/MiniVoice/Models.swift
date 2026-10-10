@@ -2,7 +2,7 @@ import AppKit
 import AVFoundation
 import Foundation
 
-struct LyricLine: Identifiable, Equatable {
+struct LyricLine: Identifiable, Equatable, Sendable {
     let id = UUID()
     var timestamp: TimeInterval?
     var text: String
@@ -31,7 +31,8 @@ struct Track: Identifiable {
     var canWriteTags: Bool { ["mp3", "flac", "m4a"].contains(url.pathExtension.lowercased()) }
 
     private var lyricCache = LyricCache()
-    var lyricLines: [LyricLine] { lyricCache.lines(for: lyrics) }
+    var lyricLines: [LyricLine] { lyricSnapshot.lines }
+    var lyricSnapshot: LyricsPlaybackSnapshot { lyricCache.snapshot(for: lyrics) }
 
     init(id: UUID = UUID(), url: URL, title: String, artist: String, album: String,
          lyrics: String, artwork: NSImage?, artworkWasEdited: Bool = false, duration: TimeInterval) {
@@ -45,12 +46,42 @@ struct Track: Identifiable {
 }
 
 private final class LyricCache {
-    private var parsed: [LyricLine]?
-    func lines(for source: String) -> [LyricLine] {
-        if let parsed { return parsed }
-        let lines = LRCParser.parse(source)
-        parsed = lines
-        return lines
+    private var cached: LyricsPlaybackSnapshot?
+    func snapshot(for source: String) -> LyricsPlaybackSnapshot {
+        if let cached { return cached }
+        let snapshot = LyricsPlaybackSnapshot(lines: LRCParser.parse(source))
+        cached = snapshot
+        return snapshot
+    }
+}
+
+/// Build timing metadata once, keeping mixed or unordered lyrics' original precedence.
+struct LyricsPlaybackSnapshot: Sendable {
+    let lines: [LyricLine]
+    let kind: LyricTimingKind
+    let hasTranslation: Bool
+    private let timedIndices: [Int]
+    private let ordered: Bool
+
+    init(lines: [LyricLine]) {
+        self.lines = lines
+        kind = LyricTimingKind.detect(lines)
+        hasTranslation = lines.contains { $0.translation != nil }
+        timedIndices = lines.indices.filter { lines[$0].timestamp != nil }
+        ordered = zip(timedIndices, timedIndices.dropFirst()).allSatisfy {
+            lines[$0.0].timestamp! <= lines[$0.1].timestamp!
+        }
+    }
+
+    func activeIndex(at time: TimeInterval) -> Int? {
+        guard ordered else { return MusicLibrary.activeLyricIndex(for: lines, at: time) }
+        var lower = 0, upper = timedIndices.count
+        while lower < upper {
+            let middle = (lower + upper) / 2
+            if lines[timedIndices[middle]].timestamp! <= time { lower = middle + 1 }
+            else { upper = middle }
+        }
+        return lower > 0 ? timedIndices[lower - 1] : nil
     }
 }
 
@@ -458,7 +489,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         Self.activeLyricIndex(for: lines, at: playbackTime)
     }
 
-    static func activeLyricIndex(for lines: [LyricLine], at time: TimeInterval) -> Int? {
+    nonisolated static func activeLyricIndex(for lines: [LyricLine], at time: TimeInterval) -> Int? {
         lines.indices.reversed().first { index in
             guard let timestamp = lines[index].timestamp else { return false }
             return timestamp <= time

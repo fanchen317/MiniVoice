@@ -9,6 +9,7 @@ struct OnlineArtworkPicker: View {
     @State private var results: [OnlineArtworkResult] = []
     @State private var selectedID: String?
     @State private var downloaded: DownloadedArtwork?
+    @State private var downloadedImage: NSImage?
     @State private var searching = false
     @State private var downloading = false
     @State private var searchError: String?
@@ -71,7 +72,7 @@ struct OnlineArtworkPicker: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("使用这张封面") {
-                    guard let downloaded, let image = NSImage(data: downloaded.data) else { return }
+                    guard let image = downloadedImage else { return }
                     onApply(image)
                     dismiss()
                 }.buttonStyle(.borderedProminent)
@@ -91,7 +92,7 @@ struct OnlineArtworkPicker: View {
                 ProgressView()
                 Text("正在下载高清封面…").foregroundStyle(.secondary)
             }
-        } else if let downloaded, let image = NSImage(data: downloaded.data) {
+        } else if let downloaded, let image = downloadedImage {
             VStack(spacing: 10) {
                 Image(nsImage: image).resizable().scaledToFit()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -142,6 +143,7 @@ struct OnlineArtworkPicker: View {
         searchError = nil
         imageError = nil
         downloaded = nil
+        downloadedImage = nil
         selectedID = nil
         results = []
         let queryTitle = title, queryArtist = artist, queryAlbum = album
@@ -163,6 +165,7 @@ struct OnlineArtworkPicker: View {
     private func loadSelectedImage() {
         imageTask?.cancel()
         downloaded = nil
+        downloadedImage = nil
         imageError = nil
         guard let item = results.first(where: { $0.id == selectedID }) else { downloading = false; return }
         downloading = true
@@ -171,6 +174,7 @@ struct OnlineArtworkPicker: View {
                 let image = try await OnlineArtworkSearch.download(item)
                 guard !Task.isCancelled, selectedID == item.id else { return }
                 downloaded = image
+                downloadedImage = NSImage(data: image.data)
                 downloading = false
             } catch {
                 guard !Task.isCancelled, selectedID == item.id else { return }
