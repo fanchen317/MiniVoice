@@ -56,24 +56,13 @@ ditto "$RESOURCE_BUNDLE" "$APP_PATH/Contents/Resources/MiniVoice_MiniVoice.bundl
 printf 'APPL????' > "$APP_PATH/Contents/PkgInfo"
 chmod +x "$APP_PATH/Contents/MacOS/$APP_NAME"
 
-echo "==> 生成应用图标..."
-swiftc "$ROOT/Sources/MiniVoice/BrandIcon.swift" "$ROOT/Scripts/IconGenerator.swift" -o "$ROOT/.build/icon-generator" -framework AppKit
-"$ROOT/.build/icon-generator" "$ROOT/.build/MiniVoice.iconset"
-if ! iconutil -c icns "$ROOT/.build/MiniVoice.iconset" -o "$APP_PATH/Contents/Resources/MiniVoice.icns"; then
-    # Some constrained macOS sessions reject iconutil despite a valid PNG iconset.
-  # Keep deployment usable by reusing the currently installed icon in that case.
-  INSTALLED_ICON="/Applications/${APP_NAME}.app/Contents/Resources/MiniVoice.icns"
-  if [[ -f "$INSTALLED_ICON" ]]; then
-    cp "$INSTALLED_ICON" "$APP_PATH/Contents/Resources/MiniVoice.icns"
-  else
-    echo "error: 未能生成应用图标，且没有可复用的已安装图标" >&2
-    exit 1
-  fi
-fi
-if [[ ! -s "$APP_PATH/Contents/Resources/MiniVoice.icns" ]]; then
-  echo "error: 未能生成应用图标" >&2
+echo "==> 复制应用图标..."
+ICON_SOURCE="$ROOT/AppBundle/MiniVoice.icns"
+if [[ ! -s "$ICON_SOURCE" ]]; then
+  echo "error: 缺少应用图标，请先运行 Scripts/generate-icon.sh" >&2
   exit 1
 fi
+cp "$ICON_SOURCE" "$APP_PATH/Contents/Resources/MiniVoice.icns"
 
 echo "==> 签名..."
 codesign --force --sign - \

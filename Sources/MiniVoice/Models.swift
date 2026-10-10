@@ -114,7 +114,12 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
     @Published var errorMessage: String?
     @Published var isImporting = false
-    var volume: Float = 1 { didSet { player?.volume = volume } }
+    @Published var volume: Float = 1 {
+        didSet {
+            player?.volume = volume
+            defaults.set(volume, forKey: "MiniVoice.appVolume")
+        }
+    }
     @Published var playbackMode: PlaybackMode = .list {
         didSet { defaults.set(playbackMode.rawValue, forKey: "MiniVoice.playbackMode"); queue.reset(current: playingID ?? selectedID, ids: playbackIDs) }
     }
@@ -161,6 +166,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         folders = (defaults.stringArray(forKey: "MiniVoice.musicFolders") ?? []).map { URL(fileURLWithPath: $0) }
         playbackMode = PlaybackMode(rawValue: defaults.string(forKey: "MiniVoice.playbackMode") ?? "list") ?? .list
         recursiveScan = defaults.object(forKey: "MiniVoice.recursiveScan") as? Bool ?? true
+        volume = min(1, max(0, defaults.object(forKey: "MiniVoice.appVolume") as? Float ?? 1))
         super.init()
         recentPaths = defaults.stringArray(forKey: "MiniVoice.recentPlayback") ?? []
         if scanOnLaunch { rescan(preferCache: true) }

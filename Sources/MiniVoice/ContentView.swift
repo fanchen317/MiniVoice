@@ -746,7 +746,11 @@ private extension ContentView {
                     WorkspaceLyricsPanel(track: track, follow: $followLyrics, onEdit: { openSongInfo(track) })
                         .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 }
-            }.frame(maxWidth: .infinity, maxHeight: .infinity).clipped()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Clip the entire panel transition, including its shadow, to the
+            // same contour. A rectangular clip cuts the shadow into four corners.
+            .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
             if let track {
                 PlayerControls(track: track, albumExpanded: albumPlayback, onToggleAlbum: toggleAlbumPlayback)
                     .frame(height: controlsHeight)
@@ -1490,18 +1494,19 @@ private struct PlayerControls: View {
     private var output: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: volume.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .frame(width: 14)
-                Slider(value: Binding(get: { volume.value }, set: { volume.set($0) }), in: 0...1)
-                    .disabled(!volume.canSetVolume).accessibilityLabel("系统音量")
+                outputIcon(library.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                Slider(value: Binding(get: { Double(library.volume) }, set: { library.volume = Float($0) }), in: 0...1)
+                    .accessibilityLabel("播放器音量")
                 // Reserve a width just wide enough for "100%" so the slider
                 // doesn't shrink/grow as the digit count changes.
-                Text(volume.canSetVolume ? "\(Int(volume.value * 100))%" : "—")
+                Text("\(Int((library.volume * 100).rounded()))%")
                     .monospacedDigit()
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                     .frame(width: 32, alignment: .trailing)
             }
+            .frame(maxWidth: .infinity)
+            .frame(height: 24)
             Menu {
                 ForEach(volume.outputDevices) { device in
                     Button {
@@ -1514,13 +1519,34 @@ private struct PlayerControls: View {
                     }
                 }
             } label: {
-                Label(volume.error ?? volume.deviceName, systemImage: "airplayaudio")
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    outputIcon("airplayaudio")
+                    Text(volume.error ?? volume.deviceName)
+                        .font(.system(size: 12))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 32, alignment: .trailing)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 24)
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
             .frame(maxWidth: .infinity, alignment: .leading)
             .help(volume.error ?? volume.deviceName)
-        }.font(.caption).foregroundStyle(.secondary)
+        }.font(.system(size: 12)).foregroundStyle(.secondary)
+    }
+
+    private func outputIcon(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .resizable()
+            .scaledToFit()
+            .frame(width: 16, height: 16)
+            .frame(width: 20, height: 24)
+            .accessibilityHidden(true)
     }
     private func time(_ value: Double) -> String { String(format: "%d:%02d", Int(max(0, value)) / 60, Int(max(0, value)) % 60) }
 }
@@ -1833,38 +1859,6 @@ private struct PlayerPanelSurface: ViewModifier {
             .clipShape(shape)
             .overlay { shape.stroke(.white.opacity(colorScheme == .dark ? 0.14 : 0.55), lineWidth: 1).allowsHitTesting(false) }
             .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
-    }
-}
-
-/// Native visual effects need their own mask; SwiftUI clipping alone can leave
-/// the AppKit backdrop visible outside the panel's rounded contour.
-private final class RoundedVisualEffectView: NSVisualEffectView {
-    var effectCornerRadius: CGFloat = 0 {
-        didSet { if effectCornerRadius != oldValue { updateEffectMask() } }
-    }
-    private var maskedSize: CGSize = .zero
-
-    override func layout() {
-        super.layout()
-        if bounds.size != maskedSize { updateEffectMask() }
-    }
-
-    private func updateEffectMask() {
-        maskedSize = bounds.size
-        wantsLayer = true
-        layer?.cornerRadius = effectCornerRadius
-        layer?.masksToBounds = effectCornerRadius > 0
-        guard effectCornerRadius > 0, bounds.width > 0, bounds.height > 0 else {
-            maskImage = nil
-            return
-        }
-        let size = bounds.size
-        let radius = min(effectCornerRadius, min(size.width, size.height) / 2)
-        maskImage = NSImage(size: size, flipped: false) { rect in
-            NSColor.white.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
-            return true
-        }
     }
 }
 

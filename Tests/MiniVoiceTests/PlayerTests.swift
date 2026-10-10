@@ -3,6 +3,20 @@ import XCTest
 
 final class PlayerTests: XCTestCase {
     @MainActor
+    func testAppVolumePersistsIndependently() throws {
+        let name = "MiniVoiceVolume-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let library = MusicLibrary(defaults: defaults, scanOnLaunch: false)
+        XCTAssertEqual(library.volume, 1)
+        library.volume = 0.35
+        let restored = MusicLibrary(defaults: defaults, scanOnLaunch: false)
+        XCTAssertEqual(restored.volume, 0.35, accuracy: 0.001)
+        library.volume = 0
+        XCTAssertEqual(MusicLibrary(defaults: defaults, scanOnLaunch: false).volume, 0)
+    }
+
+    @MainActor
     func testVisiblePlaybackSnapshotAndModes() async throws {
         let name = "MiniVoiceQueue-\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
