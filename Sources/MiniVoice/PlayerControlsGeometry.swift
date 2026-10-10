@@ -1,7 +1,7 @@
 import Foundation
 
 /// Keep the same controls mounted while the window resizes. Side content first
-/// narrows to make room, then moves up beside the centered transport buttons.
+/// narrows to make room, then moves up beside the progress/transport column.
 struct PlayerControlsGeometry {
     let height: CGFloat
     let artworkSize: CGFloat
@@ -11,7 +11,7 @@ struct PlayerControlsGeometry {
     let song: CGRect
     let output: CGRect
 
-    init(width: CGFloat, songIdealWidth: CGFloat? = nil) {
+    init(width: CGFloat, expanded: Bool = false) {
         let width = max(280, width)
         let inset: CGFloat = 12
         let innerWidth = width - inset * 2
@@ -20,24 +20,25 @@ struct PlayerControlsGeometry {
         let sideProgress = Self.smoothStep((width - 620) / 100)
         let rowProgress = Self.smoothStep((width - 720) / 120)
         let narrowOutputWidth = min(180, max(110, width * 0.27))
-        let outputWidth = Self.mix(narrowOutputWidth, min(200, sideWidth), sideProgress)
+        let outputWidth = Self.mix(narrowOutputWidth, min(240, sideWidth), sideProgress)
         let narrowSongWidth = min(280, innerWidth - narrowOutputWidth - 16)
         let songLimit = Self.mix(narrowSongWidth, min(240, sideWidth), sideProgress)
-        let songWidth = min(songLimit, songIdealWidth ?? songLimit)
+        let songWidth = songLimit
 
-        height = Self.mix(176, 124, rowProgress)
-        artworkSize = 44 + 14 * Self.smoothStep((width - 280) / 260)
+        artworkSize = 44 + (expanded ? 38 : 14) * Self.smoothStep((width - 280) / 260)
+        let songHeight = max(58, artworkSize)
+        height = Self.mix(176 + songHeight - 58, 106, rowProgress)
         // Four 36pt targets plus the 52pt primary button.
         buttonSpacing = (buttonsWidth - 36 * 4 - 52) / 4
-        progress = CGRect(x: inset, y: inset, width: innerWidth, height: 22)
-        let rowCenter = height - inset - 29
-        let buttonsCenter = Self.mix(70, 83, rowProgress)
-        // Balance the visible gaps, not reserved columns. Short song titles
-        // occupy less space than a volume slider plus output-device name.
-        let horizontalOffset = (songWidth - outputWidth) * rowProgress / 2
-        buttons = CGRect(x: (width - buttonsWidth) / 2 + horizontalOffset, y: buttonsCenter - 26,
+        let rowCenter = Self.mix(height - inset - songHeight / 2, height / 2, rowProgress)
+        let buttonsCenter = Self.mix(70, 68, rowProgress)
+        // Keep the center stable regardless of the song title's length.
+        buttons = CGRect(x: (width - buttonsWidth) / 2, y: buttonsCenter - 26,
                          width: buttonsWidth, height: 52)
-        song = CGRect(x: inset, y: rowCenter - 29, width: songWidth, height: 58)
+        // The timeline belongs to the transport column, including when side
+        // content wraps below it in a narrow window.
+        progress = CGRect(x: buttons.minX, y: inset, width: buttonsWidth, height: 22)
+        song = CGRect(x: inset, y: rowCenter - songHeight / 2, width: songWidth, height: songHeight)
         output = CGRect(x: width - inset - outputWidth, y: rowCenter - 29,
                         width: outputWidth, height: 58)
     }

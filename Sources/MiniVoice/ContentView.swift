@@ -732,7 +732,7 @@ private extension ContentView {
 
     func workspaceDetail(width: CGFloat, height: CGFloat) -> some View {
         let track = library.playingTrack ?? library.selectedTrack
-        let controlsHeight = track == nil ? 0 : PlayerControlsGeometry(width: width).height
+        let controlsHeight = track == nil ? 0 : PlayerControlsGeometry(width: width, expanded: albumPlayback).height
         return VStack(spacing: 12) {
             workspaceHeader(width: width, track: track).frame(height: 38).zIndex(1)
             ZStack {
@@ -1074,7 +1074,7 @@ private struct PlayerDetail: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let controlsHeight = PlayerControlsGeometry(width: geometry.size.width).height
+            let controlsHeight = PlayerControlsGeometry(width: geometry.size.width, expanded: expandedLyrics).height
             let headerHeight: CGFloat = 38
             let gap: CGFloat = 12
             // Fix the top and bottom sections first. Lyrics take the remaining
@@ -1093,7 +1093,7 @@ private struct PlayerDetail: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .topLeading)))
                 }
                 lyrics.frame(height: lyricsHeight)
-                PlayerControls(track: playbackTrack)
+                PlayerControls(track: playbackTrack, albumExpanded: expandedLyrics)
                     .frame(height: controlsHeight)
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
@@ -1360,15 +1360,16 @@ private struct NowPlayingIndicator: View {
 }
 
 private struct AdaptivePlayerControlsLayout: Layout {
+    var expanded: Bool
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? 840
-        return CGSize(width: width, height: PlayerControlsGeometry(width: width).height)
+        return CGSize(width: width, height: PlayerControlsGeometry(width: width, expanded: expanded).height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         guard subviews.count == 4 else { return }
-        let songWidth = subviews[2].sizeThatFits(ProposedViewSize(width: nil, height: 58)).width
-        let layout = PlayerControlsGeometry(width: bounds.width, songIdealWidth: songWidth)
+        let layout = PlayerControlsGeometry(width: bounds.width, expanded: expanded)
         for (view, frame) in zip(subviews, [layout.progress, layout.buttons, layout.song, layout.output]) {
             view.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
                        anchor: .topLeading, proposal: ProposedViewSize(frame.size))
@@ -1390,12 +1391,12 @@ private struct PlayerControls: View {
     @State private var scrub: Double?
     var body: some View {
         GeometryReader { geometry in
-            let layout = PlayerControlsGeometry(width: geometry.size.width)
-            AdaptivePlayerControlsLayout {
+            let layout = PlayerControlsGeometry(width: geometry.size.width, expanded: albumExpanded)
+            AdaptivePlayerControlsLayout(expanded: albumExpanded) {
                 progress.frame(height: 22)
                 transport(spacing: layout.buttonSpacing)
                 trackInfo(artworkSize: layout.artworkSize)
-                    .frame(height: 58, alignment: .leading)
+                    .frame(height: layout.song.height, alignment: .leading)
                 output.frame(height: 58)
             }
             .frame(width: geometry.size.width, height: geometry.size.height)

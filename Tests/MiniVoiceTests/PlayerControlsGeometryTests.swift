@@ -3,8 +3,11 @@ import XCTest
 
 final class PlayerControlsGeometryTests: XCTestCase {
     func testControlsStayInsidePanelAndNeverOverlapAcrossResizeRange() {
-        for width in stride(from: CGFloat(280), through: 1600, by: 1) {
-            let layout = PlayerControlsGeometry(width: width)
+        for scenario in [false, true].flatMap({ expanded in
+            stride(from: CGFloat(280), through: 1600, by: 1).map { (width: $0, expanded: expanded) }
+        }) {
+            let width = scenario.width
+            let layout = PlayerControlsGeometry(width: width, expanded: scenario.expanded)
             let panel = CGRect(x: 0, y: 0, width: width, height: layout.height)
             let frames = [layout.progress, layout.buttons, layout.song, layout.output]
             for frame in frames {
@@ -15,13 +18,14 @@ final class PlayerControlsGeometryTests: XCTestCase {
                     XCTAssertFalse(frames[i].intersects(frames[j]), "Controls overlap at width \(width)")
                 }
             }
-            if width <= 720 { XCTAssertEqual(layout.buttons.midX, width / 2, accuracy: 0.001) }
+            XCTAssertEqual(layout.buttons.midX, width / 2, accuracy: 0.001)
             if width >= 840 {
                 XCTAssertEqual(layout.buttons.minX - layout.song.maxX,
                                layout.output.minX - layout.buttons.maxX, accuracy: 0.001)
             }
-            XCTAssertEqual(layout.progress.minX, 12)
-            XCTAssertEqual(width - layout.progress.maxX, 12)
+            XCTAssertEqual(layout.progress.minX, layout.buttons.minX)
+            XCTAssertEqual(layout.progress.maxX, layout.buttons.maxX)
+            XCTAssertLessThanOrEqual(layout.progress.width, 300)
             XCTAssertGreaterThanOrEqual(layout.buttonSpacing, 15)
         }
     }
@@ -40,14 +44,20 @@ final class PlayerControlsGeometryTests: XCTestCase {
         }
     }
 
-    func testWideLayoutBalancesGapsForShortAndLongSongNames() {
+    func testExpandedArtworkAndBalancedWideColumns() {
         for width in [CGFloat(840), 1000, 1400] {
-            for songWidth in [CGFloat(100), 170, 300] {
-                let layout = PlayerControlsGeometry(width: width, songIdealWidth: songWidth)
+            for expanded in [false, true] {
+                let layout = PlayerControlsGeometry(width: width, expanded: expanded)
                 let leftGap = layout.buttons.minX - layout.song.maxX
                 let rightGap = layout.output.minX - layout.buttons.maxX
                 XCTAssertEqual(leftGap, rightGap, accuracy: 0.001)
                 XCTAssertGreaterThanOrEqual(leftGap, 12)
+                XCTAssertEqual(layout.buttons.midX, width / 2)
+                XCTAssertEqual(layout.progress.midX, layout.buttons.midX)
+                XCTAssertEqual(layout.song.midY, layout.output.midY)
+                XCTAssertEqual(layout.song.midY, layout.progress.union(layout.buttons).midY)
+                XCTAssertEqual(layout.artworkSize, expanded ? 82 : 58)
+                XCTAssertGreaterThanOrEqual(layout.song.height, layout.artworkSize)
             }
         }
     }
