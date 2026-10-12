@@ -2,14 +2,13 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 private enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, library, lyrics, audio, shortcuts
+    case general, library, lyrics, shortcuts
     var id: Self { self }
     var title: String {
         switch self {
         case .general: return "通用"
         case .library: return "音乐库"
         case .lyrics: return "歌词匹配"
-        case .audio: return "音频设备"
         case .shortcuts: return "快捷键"
         }
     }
@@ -18,7 +17,6 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
         case .general: return "gearshape"
         case .library: return "music.note.list"
         case .lyrics: return "text.alignleft"
-        case .audio: return "speaker.wave.2"
         case .shortcuts: return "keyboard"
         }
     }
@@ -27,7 +25,6 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
         case .general: return "让 MiniVoice 更符合你的使用习惯。"
         case .library: return "管理音乐所在的位置与扫描方式。"
         case .lyrics: return "在本机为歌词匹配时间轴。"
-        case .audio: return "选择音乐播放的输出设备。"
         case .shortcuts: return "用熟悉的组合键控制播放。"
         }
     }
@@ -64,7 +61,6 @@ struct AppSettings: View {
                     }
                 }
                 Spacer()
-                Text("更改会自动保存").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12)
             }
             .padding(14).frame(width: 180).frame(maxHeight: .infinity)
             .background(.regularMaterial)
@@ -80,7 +76,6 @@ struct AppSettings: View {
                         case .general: GeneralSettingsPage()
                         case .library: LibrarySettingsPage()
                         case .lyrics: LyricsSettingsPage()
-                        case .audio: AudioSettingsPage()
                         case .shortcuts: ShortcutSettingsPage()
                         }
                     }
@@ -145,7 +140,7 @@ private struct GeneralSettingsPage: View {
 
     var body: some View {
         SettingsGroup(title: "外观") {
-            SettingsRow(title: "播放器样式", detail: "简易样式保留原布局；音乐库样式提供收藏、歌单和分类浏览") {
+            SettingsRow(title: "播放器样式") {
                 Picker("播放器样式", selection: $interfaceStyle) {
                     ForEach(PlayerInterfaceStyle.allCases) { Text($0.title).tag($0.rawValue) }
                 }.labelsHidden().pickerStyle(.segmented).frame(width: 280)
@@ -157,13 +152,13 @@ private struct GeneralSettingsPage: View {
                 }.labelsHidden().pickerStyle(.segmented).frame(width: 280)
             }
             Divider().padding(.horizontal, 16)
-            SettingsRow(title: "菜单栏图标", detail: "在菜单栏快速控制播放") {
+            SettingsRow(title: "菜单栏图标") {
                 Picker("菜单栏图标", selection: $iconStyle) {
                     ForEach(StatusIconStyle.allCases) { Text($0 == .hidden ? "隐藏图标" : $0.title).tag($0.rawValue) }
                 }.labelsHidden().frame(width: 180)
             }
         }
-        SettingsGroup(title: "窗口与播放", footer: "关闭窗口后，可通过 Dock 或菜单栏重新打开。⌘Q 始终退出应用。") {
+        SettingsGroup(title: "窗口与播放") {
             SettingsRow(title: "关闭主窗口时") {
                 Picker("关闭主窗口时", selection: $closeBehavior) {
                     ForEach(CloseBehavior.allCases) { Text($0.title).tag($0.rawValue) }
@@ -178,7 +173,7 @@ private struct LibrarySettingsPage: View {
     @State private var choosingFolders = false
 
     var body: some View {
-        SettingsGroup(title: "音乐文件夹", footer: "移除文件夹只会将它移出音乐库，不会删除原始歌曲。") {
+        SettingsGroup(title: "音乐文件夹") {
             if library.folders.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "folder.badge.plus").font(.system(size: 30)).foregroundStyle(.secondary)
@@ -208,7 +203,7 @@ private struct LibrarySettingsPage: View {
                     .buttonStyle(.borderedProminent)
             }.padding(16)
         }
-        SettingsGroup(title: "扫描", footer: "启动时优先读取已保存的歌单。文件夹内容变化后，重新扫描以更新音乐库。") {
+        SettingsGroup(title: "扫描") {
             SettingsRow(title: "包含子文件夹", detail: "同时读取所选文件夹内的音乐") {
                 Toggle("包含子文件夹", isOn: $library.recursiveScan).labelsHidden().toggleStyle(.switch)
             }
@@ -238,27 +233,19 @@ private struct LibrarySettingsPage: View {
 }
 
 private struct LyricsSettingsPage: View {
-    @EnvironmentObject private var library: MusicLibrary
     @EnvironmentObject private var sync: LyricsSyncCoordinator
     @AppStorage("MiniVoice.lyricsModel") private var model = "small"
     @State private var pendingDeletion: LyricsModel?
-    @State private var onlineTrack: Track?
 
     var body: some View {
-        SettingsGroup(title: "在线歌词", footer: "使用歌名和歌手查询 LRCLIB、LrcAPI；外文歌可由 lyrics.ovh 补充纯文本。预览并确认后才会保存。") {
-            SettingsRow(title: "当前选中歌曲", detail: library.selectedTrack?.title ?? "请先在音乐库中选择歌曲") {
-                Button("查询并预览…") { onlineTrack = library.selectedTrack }
-                    .disabled(library.selectedTrack == nil)
-            }
-        }
-        SettingsGroup(title: "匹配偏好", footer: "在线查询会向所选歌词源发送歌曲名称与歌手。本地 AI 会分析音频，歌曲不会上传。") {
+        SettingsGroup(title: "匹配偏好") {
             SettingsRow(title: "匹配模式", detail: "应用于下一次歌词匹配") {
                 Picker("匹配模式", selection: $model) {
                     ForEach(LyricsModel.allCases) { Text($0.title).tag($0.rawValue) }
                 }.labelsHidden().pickerStyle(.segmented).frame(width: 210)
             }
         }
-        SettingsGroup(title: "本地 AI（可选）", footer: "仅在需要把纯文本歌词与音频对齐时使用。首次启用需安装 Python 3.11/3.12，并按需下载运行环境和模型。已下载资源继续保留。") {
+        SettingsGroup(title: "本地 AI（可选）") {
             ForEach(LyricsModel.allCases) { resource in
                 SettingsRow(title: resource.title, detail: resource.rawValue == "small" ? "约 460 MB · 处理更快" : "约 1.5 GB · 适合更复杂的歌曲") {
                     if LyricsAlignment.isBundled(resource) {
@@ -289,9 +276,6 @@ private struct LyricsSettingsPage: View {
             }.padding(.horizontal, 2)
         }
         Color.clear.frame(height: 0)
-            .sheet(item: $onlineTrack) { track in
-                MetadataEditor(track: track, openOnlineSearch: true)
-            }
             .onAppear { sync.refreshModels() }
             .alert("删除本地资源？", isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } })) {
                 Button("取消", role: .cancel) { pendingDeletion = nil }
@@ -303,29 +287,12 @@ private struct LyricsSettingsPage: View {
     }
 }
 
-private struct AudioSettingsPage: View {
-    @EnvironmentObject private var systemVolume: SystemVolume
-    var body: some View {
-        SettingsGroup(title: "播放输出", footer: "此设置会更改 Mac 的默认输出设备，其他 App 的声音也会切换到所选设备。") {
-            SettingsRow(title: "输出设备", detail: systemVolume.outputDevices.isEmpty ? "暂未发现可用设备" : "使用 Mac 系统音频输出") {
-                Picker("输出设备", selection: Binding(get: { systemVolume.outputDeviceID }, set: { systemVolume.selectOutputDevice($0) })) {
-                    ForEach(systemVolume.outputDevices) { Text($0.name).tag($0.id) }
-                }.labelsHidden().frame(width: 240).disabled(systemVolume.outputDevices.isEmpty)
-            }
-        }
-        if let error = systemVolume.error {
-            Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.red)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}
-
 private struct ShortcutSettingsPage: View {
     @EnvironmentObject private var shortcuts: PlaybackShortcutController
     @EnvironmentObject private var windowToggle: WindowToggleController
 
     var body: some View {
-        SettingsGroup(title: "播放控制", footer: "点击组合键后按下新快捷键，按 Esc 取消。在 MiniVoice 位于前台且未输入文字时生效。") {
+        SettingsGroup(title: "播放控制") {
             ForEach(PlaybackShortcutAction.allCases) { action in
                 ShortcutRow(title: action.title, shortcut: shortcuts.shortcut(for: action), isRecording: shortcuts.recordingAction == action, conflicts: shortcuts.conflicts(for: shortcuts.shortcut(for: action), excluding: action)) {
                     shortcuts.beginRecording(action)
@@ -336,7 +303,7 @@ private struct ShortcutSettingsPage: View {
                 if action.id != PlaybackShortcutAction.allCases.last?.id { Divider().padding(.horizontal, 16) }
             }
         }
-        SettingsGroup(title: "窗口", footer: "全局快捷键可在任何应用下唤起 MiniVoice 主窗口。无需额外权限。") {
+        SettingsGroup(title: "窗口") {
             ShortcutRow(
                 title: "显示 / 隐藏主窗口",
                 shortcut: windowToggle.configuredShortcut,

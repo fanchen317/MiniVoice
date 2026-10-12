@@ -68,7 +68,7 @@ struct OnlineArtworkPicker: View {
                 }
             }
             HStack {
-                Text("应用后预览封面，点击歌曲信息页的“保存更改”才写入文件。")
+                Text("应用后预览封面，点击歌曲信息页的“保存”才写入文件。")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("使用这张封面") {

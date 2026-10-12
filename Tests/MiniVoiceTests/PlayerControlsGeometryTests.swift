@@ -33,7 +33,7 @@ final class PlayerControlsGeometryTests: XCTestCase {
             XCTAssertLessThanOrEqual(layout.buttonSpacing, 26)
             XCTAssertLessThanOrEqual(layout.output.width, 240)
             if width >= 680 {
-                XCTAssertEqual(layout.progress.width, 300)
+                XCTAssertEqual(layout.progress.width, 280)
             } else {
                 XCTAssertEqual(layout.progress.width, width - 24)
                 XCTAssertGreaterThanOrEqual(layout.output.minX - layout.song.maxX, 16)
@@ -51,7 +51,7 @@ final class PlayerControlsGeometryTests: XCTestCase {
             XCTAssertEqual(before.center.width, 679.99 - 24, accuracy: 0.001)
             XCTAssertEqual(after.center.minY, after.song.minY)
             XCTAssertEqual(after.center.maxY, after.song.maxY)
-            XCTAssertEqual(after.center.width, 300)
+            XCTAssertEqual(after.center.width, 280)
         }
     }
 
@@ -62,7 +62,7 @@ final class PlayerControlsGeometryTests: XCTestCase {
                 let leftGap = layout.buttons.minX - layout.song.maxX
                 let rightGap = layout.output.minX - layout.buttons.maxX
                 XCTAssertEqual(leftGap, rightGap, accuracy: 0.001)
-                XCTAssertGreaterThanOrEqual(leftGap, 12)
+                XCTAssertGreaterThanOrEqual(leftGap, PlayerControlsGeometry.columnGap)
                 XCTAssertEqual(layout.buttons.midX, width / 2)
                 XCTAssertEqual(layout.progress.midX, layout.buttons.midX)
                 XCTAssertEqual(layout.song.midY, layout.output.midY)

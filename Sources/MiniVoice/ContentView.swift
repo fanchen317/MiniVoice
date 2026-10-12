@@ -26,6 +26,26 @@ struct ContentView: View {
     @StateObject private var collections = LibraryCollections()
     @State private var destination: LibraryDestination = .all
     @State private var browseGroup: String?
+    @Namespace private var browseExpansion
+    @State private var browseScrollPositions = BrowseScrollPositions()
+    @State private var browseArtwork: [String: CachedArtwork] = [:]
+    @State private var browsePages: [LibraryDestination: BrowsePageSnapshot] = [:]
+
+    private struct BrowsePageSnapshot {
+        let request: WorkspaceListRequest
+        let songs: [Track]
+        let groups: [(name: String, tracks: [Track])]
+        let artwork: [String: CachedArtwork]
+    }
+
+    @discardableResult
+    private func restoreBrowsePage() -> Bool {
+        guard browsingGroups, let page = browsePages[destination], page.request == workspaceRequest else { return false }
+        songs = page.songs
+        songGroups = page.groups
+        browseArtwork = page.artwork
+        return true
+    }
     @State private var albumPlayback = false
     @State private var showingPlaylistEditor = false
     @State private var playlistName = ""
@@ -33,6 +53,7 @@ struct ContentView: View {
     @AppStorage("MiniVoice.followLyrics") private var followLyrics = true
     private var libraryStyle: Bool { interfaceStyle == PlayerInterfaceStyle.library.rawValue }
     @State private var sidebarVisible = true
+    @StateObject private var styleTransition = PlayerStyleTransition()
     @State private var recent = false
     @State private var query = ""
     @State private var showingTasks = false
@@ -62,6 +83,10 @@ struct ContentView: View {
     @AppStorage("MiniVoice.trackSortOrder") private var sortOrder = "modified"
     @AppStorage("MiniVoice.trackSortField") private var sortField = "added"
     @AppStorage("MiniVoice.trackSortAscending") private var sortAscending = false
+    @AppStorage("MiniVoice.artistSortField") private var artistSortField = "name"
+    @AppStorage("MiniVoice.albumSortField") private var albumSortField = "name"
+    @AppStorage("MiniVoice.artistSortAscending") private var artistSortAscending = true
+    @AppStorage("MiniVoice.albumSortAscending") private var albumSortAscending = true
 
     @State private var songs: [Track] = []
     @State private var listIndex = SongListIndex()
@@ -72,24 +97,34 @@ struct ContentView: View {
 
     private var listRequest: SongListRequest {
         SongListRequest(revision: library.tracksRevision, recentPaths: recent ? library.recentPaths : [],
-                        recent: recent, query: query, field: sortField, ascending: sortAscending)
+                        recent: recent, query: query, field: effectiveSortField, ascending: sortAscending)
+    }
+
+    private var effectiveSortField: String {
+        if libraryStyle && browseGroup != nil &&
+            ((destination == .artists && sortField == "artist") || (destination == .albums && sortField == "album")) {
+            return "title"
+        }
+        return sortField
     }
 
     private var workspaceRequest: WorkspaceListRequest {
         WorkspaceListRequest(list: listRequest, destination: libraryStyle ? destination : .all,
-                             group: libraryStyle ? browseGroup : nil, collectionsRevision: collections.revision)
+                             group: libraryStyle ? browseGroup : nil, collectionsRevision: collections.revision,
+                             groupSortField: destination == .artists ? artistSortField : (albumSortField == "count" ? "count" : "name"),
+                             groupSortAscending: destination == .artists ? artistSortAscending : albumSortAscending)
     }
 
     private func updateSongs() async {
+        if restoreBrowsePage() { return }
         let workspace = workspaceRequest
         let preparation = UUID()
         artworkPreparationRequest = preparation
         defer {
             if artworkPreparationRequest == preparation { artworkPreparationRequest = nil }
         }
-        // Decode all 96px library thumbnails off-main before rows are published.
-        // Cached body lookups can then display covers on their very first frame.
-        await ThumbnailLoader.shared.prefetch(library.tracks.compactMap(\.artworkKey))
+        // Publish the selected list immediately; visible rows warm nearby covers
+        // in the background rather than waiting for every library thumbnail.
         guard !Task.isCancelled, workspaceRequest == workspace else { return }
         if !workspace.list.query.isEmpty {
             try? await Task.sleep(for: .milliseconds(120))
@@ -97,7 +132,10 @@ struct ContentView: View {
         }
         if recent {
             let matches = library.recentTracks(matching: query)
-            if !Task.isCancelled { songs = matches }
+            if !Task.isCancelled {
+                songs = matches
+                selectedIDs.formIntersection(Set(matches.map(\.id)))
+            }
             return
         }
         let request = workspace.list
@@ -110,7 +148,11 @@ struct ContentView: View {
         let ids = await listIndex.orderedIDs(entries, request: request)
         guard !Task.isCancelled, workspaceRequest == workspace else { return }
         let ordered = ids.compactMap { library.track(for: $0) }
-        guard libraryStyle else { songs = ordered; return }
+        guard libraryStyle else {
+            songs = ordered
+            selectedIDs.formIntersection(Set(ordered.map(\.id)))
+            return
+        }
         switch destination {
         case .favorites: songs = ordered.filter { collections.isFavorite($0.url.path) }
         case .playlist(let id):
@@ -124,10 +166,28 @@ struct ContentView: View {
         default: songs = ordered
         }
         if browsingGroups {
-            songGroups = Dictionary(grouping: songs, by: { destination == .artists ? artistName($0) : albumName($0) })
-                .map { (name: $0.key, tracks: $0.value) }
-                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        } else { songGroups = [] }
+            let artist = workspace.destination == .artists
+            let metadata = songs.map { SongListEntry(id: $0.id, url: $0.url, title: $0.title, artist: $0.artist, album: $0.album) }
+            let field = workspace.groupSortField, ascending = workspace.groupSortAscending
+            let groups = await Task.detached { LibraryBrowseIndex.groups(metadata, artist: artist, field: field, ascending: ascending) }.value
+            guard !Task.isCancelled, workspaceRequest == workspace else { return }
+            var prepared: [String: CachedArtwork] = [:]
+            for group in groups {
+                guard !Task.isCancelled else { return }
+                if let track = group.ids.compactMap({ library.track(for: $0) }).first(where: { $0.artworkKey != nil || $0.artwork != nil }),
+                   let key = track.artworkKey {
+                    if let existing = browseArtwork[key] ?? browsePages.values.lazy.compactMap({ $0.artwork[key] }).first {
+                        prepared[key] = existing
+                    }
+                    else { prepared[key] = await BrowseArtworkLoader.shared.image(key, source: track.url) }
+                }
+            }
+            guard !Task.isCancelled, workspaceRequest == workspace else { return }
+            browseArtwork = prepared
+            songGroups = groups.map { (name: $0.name, tracks: $0.ids.compactMap { library.track(for: $0) }) }
+            browsePages[destination] = BrowsePageSnapshot(request: workspace, songs: songs, groups: songGroups, artwork: prepared)
+        }
+        selectedIDs.formIntersection(Set(songs.map(\.id)))
     }
 
     private func migrateSortPreferenceIfNeeded() {
@@ -203,6 +263,16 @@ struct ContentView: View {
         // The player needs 280pt plus 24pt of outer margins.
         .frame(minWidth: 304, minHeight: 600)
         .tint(playerGreen)
+        .background(StyleTransitionProbe(transition: styleTransition))
+        .allowsHitTesting(styleTransition.snapshot == nil)
+        .overlay {
+            if let snapshot = styleTransition.snapshot {
+                StyleFragmentSweep(snapshot: snapshot)
+                    .id(snapshot.id)
+                    .clipped()
+                    .onDisappear { styleTransition.finish() }
+            }
+        }
         .background(PlayerInitialFocus())
         .task(id: workspaceRequest) { await updateSongs() }
         .onChange(of: interfaceStyle) { _ in
@@ -402,10 +472,8 @@ struct ContentView: View {
 
     private func sidebarBrand(closeProgress: CGFloat) -> some View {
             HStack(spacing: 0) {
-                Image(nsImage: NSApplication.shared.applicationIconImage)
-                    .resizable().scaledToFit().frame(width: 46, height: 46)
-                    .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
-                    .accessibilityLabel("MiniVoice")
+                PlayerStyleSwitchButton(targetTitle: libraryStyle ? "简易样式" : "音乐库样式",
+                                        transition: styleTransition, action: switchPlayerStyle)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("MiniVoice").font(.title3.weight(.bold)).lineLimit(1)
                     Text("音乐让生活更美好").font(.caption).foregroundStyle(.secondary)
@@ -441,6 +509,21 @@ struct ContentView: View {
             }
     }
 
+    private func switchPlayerStyle() {
+        guard styleTransition.snapshot == nil else { return }
+        let next = libraryStyle ? PlayerInterfaceStyle.simple : .library
+        if reduceMotion {
+            withAnimation(.easeInOut(duration: 0.16)) { interfaceStyle = next.rawValue }
+        } else if styleTransition.capture() {
+            // The snapshot supplies the animation; new content renders beneath it.
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { interfaceStyle = next.rawValue }
+        } else {
+            withAnimation(.easeInOut(duration: 0.20)) { interfaceStyle = next.rawValue }
+        }
+    }
+
     private func navigationItem(_ title: String, symbol: String, isRecent: Bool) -> some View {
         Button {
             recent = isRecent
@@ -461,10 +544,56 @@ struct ContentView: View {
     }
 
     private var libraryToolbar: some View {
+        VStack(spacing: 6) {
+            libraryToolbarMainRow
+            if !libraryStyle && multiSelecting && !recent {
+                simpleSelectionToolbar
+            }
+        }
+    }
+
+    private var selectAllButton: some View {
+        let allSelected = !songs.isEmpty && selectedIDs.count == songs.count
+        return Button {
+            selectedIDs = allSelected ? [] : Set(songs.map(\.id))
+        } label: {
+            Label(allSelected ? "取消全选" : "全选", systemImage: allSelected ? "minus.circle" : "checkmark.circle")
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .frame(width: 84, height: 28)
+        }
+        .buttonStyle(SelectionActionButtonStyle())
+        .disabled(songs.isEmpty)
+        .help(allSelected ? "取消选择当前列表的所有歌曲" : "选择当前列表的所有歌曲")
+    }
+
+    private var simpleSelectionToolbar: some View {
+        HStack(spacing: 8) {
+            Text("已选 \(selectedIDs.count) 首")
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+            Spacer(minLength: 0)
+            selectAllButton
+            Button { requestDelete(Array(selectedIDs)) } label: {
+                LibraryToolbarIcon(symbol: "trash")
+            }
+            .disabled(selectedIDs.isEmpty)
+            .help("删除所选歌曲").accessibilityLabel("删除所选歌曲")
+        }.buttonStyle(.plain).frame(height: 28)
+    }
+
+    private var libraryToolbarMainRow: some View {
         HStack(spacing: 4) {
             if libraryStyle {
                 HStack(spacing: 8) {
-                    Text(destinationTitle).font(.caption.weight(.semibold))
+                    if browseGroup != nil {
+                        Button(action: closeBrowseGroup) {
+                            Label("返回", systemImage: "chevron.left")
+                                .font(.caption.weight(.semibold)).padding(.horizontal, 8).frame(height: 28)
+                        }.buttonStyle(SelectionActionButtonStyle())
+                            .help(destination == .artists ? "返回歌手卡片" : "返回专辑卡片")
+                    }
+                    Text(destinationTitle).font(browseGroup == nil ? .caption.weight(.semibold) : .headline)
                         .lineLimit(1).truncationMode(.tail).help(destinationTitle)
                     Text(browsingGroups ? "\(songGroups.count) \(destination == .artists ? "位" : "张")" : "\(songs.count) 首")
                         .font(.caption.monospacedDigit()).lineLimit(1).truncationMode(.tail)
@@ -502,9 +631,20 @@ struct ContentView: View {
             }
             if !recent {
                 Menu {
-                    sortFieldButton("添加时间", field: "added")
-                    sortFieldButton("歌曲名称", field: "title")
-                    sortFieldButton("歌手姓名", field: "artist")
+                    if browsingGroups {
+                        sortFieldButton(destination == .artists ? "歌手姓名" : "专辑名称", field: "name")
+                        sortFieldButton("歌曲数量", field: "count")
+                    } else {
+                        sortFieldButton("歌曲名称", field: "title")
+                        if !libraryStyle || destination != .artists || browseGroup == nil {
+                            sortFieldButton("歌手姓名", field: "artist")
+                        }
+                        if !libraryStyle || destination != .albums || browseGroup == nil {
+                            sortFieldButton("专辑名称", field: "album")
+                        }
+                        sortFieldButton("添加时间", field: "sourceAdded")
+                        sortFieldButton("更新时间", field: "added")
+                    }
                     Divider()
                     sortDirectionButton("正序", ascending: true)
                     sortDirectionButton("降序", ascending: false)
@@ -515,19 +655,33 @@ struct ContentView: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .modifier(LibraryToolbarSurface())
-                .help("歌曲排序").accessibilityLabel("歌曲排序")
+                .help(browsingGroups ? "分类排序" : "歌曲排序").accessibilityLabel(browsingGroups ? "分类排序" : "歌曲排序")
                 .disabled(songs.isEmpty)
+                if !browsingGroups {
                 Button { multiSelecting.toggle(); selectedIDs.removeAll() } label: {
                     LibraryToolbarIcon(symbol: multiSelecting ? "checkmark.circle.fill" : "checklist", showBorder: false)
                 }
                 .help(multiSelecting ? "退出多选" : "多选歌曲")
                 .accessibilityLabel(multiSelecting ? "退出多选" : "多选歌曲")
                 .disabled(songs.isEmpty && !multiSelecting)
+                if multiSelecting && libraryStyle {
+                    selectAllButton
+                    Text("\(selectedIDs.count)")
+                        .font(.caption.monospacedDigit().weight(.medium)).foregroundStyle(.secondary)
+                        .padding(.horizontal, 6).frame(minWidth: 24, minHeight: 24)
+                        .background(Color.primary.opacity(0.05), in: Capsule())
+                        .accessibilityLabel("已选 \(selectedIDs.count) 首")
+                        .fixedSize(horizontal: true, vertical: false)
+
+                }
+                if libraryStyle {
                 Button { requestDelete(Array(selectedIDs)) } label: {
                     LibraryToolbarIcon(symbol: "trash")
                 }
                 .disabled(!multiSelecting || selectedIDs.isEmpty)
                 .help("删除所选歌曲").accessibilityLabel("删除所选歌曲")
+                }
+                }
             } else {
                 Menu { Button("清空最近播放记录") { library.clearRecentPlayback() } }
                     label: { Image(systemName: "ellipsis") }
@@ -542,11 +696,15 @@ struct ContentView: View {
 
     private func sortFieldButton(_ title: String, field: String) -> some View {
         Button {
-            sortField = field
-            sortOrder = field == "added" ? "modified" : field
+            if browsingGroups {
+                if destination == .artists { artistSortField = field } else { albumSortField = field }
+            } else {
+                sortField = field
+                sortOrder = field == "added" ? "modified" : field
+            }
         } label: {
             HStack {
-                if sortField == field {
+                if (browsingGroups ? workspaceRequest.groupSortField : effectiveSortField) == field {
                     Image(systemName: "checkmark")
                 }
                 Text(title)
@@ -555,9 +713,13 @@ struct ContentView: View {
     }
 
     private func sortDirectionButton(_ title: String, ascending: Bool) -> some View {
-        Button { sortAscending = ascending } label: {
+        Button {
+            if browsingGroups {
+                if destination == .artists { artistSortAscending = ascending } else { albumSortAscending = ascending }
+            } else { sortAscending = ascending }
+        } label: {
             HStack {
-                if sortAscending == ascending {
+                if (browsingGroups ? (destination == .artists ? artistSortAscending : albumSortAscending) : sortAscending) == ascending {
                     Image(systemName: "checkmark")
                 }
                 Text(title)
@@ -566,6 +728,18 @@ struct ContentView: View {
     }
 
     private func songRow(_ track: Track, columns: MusicListColumns? = nil) -> some View {
+        StableSongRow(key: SongRowRenderKey(id: track.id, revision: library.tracksRevision,
+            title: track.title, artist: track.artist, album: track.album, duration: track.duration,
+            artworkKey: track.artworkKey, artworkIdentity: track.artwork.map(ObjectIdentifier.init), columns: columns,
+            selected: multiSelecting ? selectedIDs.contains(track.id) : library.selectedID == track.id,
+            multiSelecting: multiSelecting, playing: library.playingID == track.id,
+            isPlaying: library.playingID == track.id && library.isPlaying,
+            collectionsRevision: collections.revision, destination: destination)) {
+                songRowContent(track, columns: columns)
+            }.equatable()
+    }
+
+    private func songRowContent(_ track: Track, columns: MusicListColumns? = nil) -> some View {
         Group {
             if let columns {
                 workspaceSongCells(track, columns: columns)
@@ -597,12 +771,11 @@ struct ContentView: View {
             let keys = songs[max(0, index - 12)..<min(songs.count, index + 25)].compactMap(\.artworkKey)
             Task(priority: .utility) { await ThumbnailLoader.shared.prefetch(keys) }
         }
-        .onTapGesture(count: 2) { if !multiSelecting { library.play(track.id, in: songs.map(\.id)) } }
-        .onTapGesture {
+        .modifier(SongRowTapHandler(multiSelecting: multiSelecting, onPlay: { library.play(track.id, in: songs.map(\.id)) }, onSelect: {
             if multiSelecting {
                 if selectedIDs.contains(track.id) { selectedIDs.remove(track.id) } else { selectedIDs.insert(track.id) }
             } else { library.select(track.id) }
-        }
+        }))
         .contextMenu {
             Button("播放") { library.play(track.id, in: songs.map(\.id)) }
             Button("编辑歌曲信息与歌词") { openSongInfo(track) }
@@ -645,13 +818,15 @@ private extension ContentView {
         }
     }
 
-    func artistName(_ track: Track) -> String { track.artist.isEmpty ? "未知歌手" : track.artist }
-    func albumName(_ track: Track) -> String { track.album.isEmpty ? "未知专辑" : track.album }
-    var browsingGroups: Bool { (destination == .artists || destination == .albums) && browseGroup == nil }
+    func artistName(_ track: Track) -> String { LibraryBrowseIndex.name(track.artist, artist: true) }
+    func albumName(_ track: Track) -> String { LibraryBrowseIndex.name(track.album, artist: false) }
+    var browsingGroups: Bool { libraryStyle && (destination == .artists || destination == .albums) && browseGroup == nil }
 
     func navigate(_ target: LibraryDestination) {
+        if destination != target { songGroups = [] }
         destination = target; recent = target == .recent
         browseGroup = nil; albumPlayback = false
+        restoreBrowsePage()
         selectedIDs.removeAll(); multiSelecting = false
     }
 
@@ -830,22 +1005,46 @@ private extension ContentView {
         }
     }
 
-    func workspaceSongs(width: CGFloat) -> some View {
+    private func browseAnimationID(_ name: String) -> String {
+        "\(destination):\(name)"
+    }
+
+    private func openBrowseGroup(_ name: String, tracks: [Track]) {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.46, dampingFraction: 0.90)) {
+            songs = tracks
+            selectedIDs.removeAll()
+            browseGroup = name
+        }
+    }
+
+    private func closeBrowseGroup() {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.46, dampingFraction: 0.90)) {
+            browseGroup = nil
+            selectedIDs.removeAll()
+            multiSelecting = false
+            restoreBrowsePage()
+        }
+    }
+
+    @ViewBuilder func workspaceSongs(width: CGFloat) -> some View {
+        if let group = browseGroup {
+            workspaceSongsContent(width: width)
+                .matchedGeometryEffect(id: browseAnimationID(group), in: browseExpansion, properties: .frame)
+                .transition(.opacity)
+        } else {
+            workspaceSongsContent(width: width)
+                .transition(.opacity)
+        }
+    }
+
+    private func workspaceSongsContent(width: CGFloat) -> some View {
         let columns = MusicListColumns(width: width, multiSelecting: multiSelecting)
         return VStack(alignment: .leading, spacing: 4) {
-            if browseGroup != nil {
-                HStack {
-                    Button { self.browseGroup = nil; selectedIDs.removeAll() } label: {
-                        Label(destination == .artists ? "所有歌手" : "所有专辑", systemImage: "chevron.left")
-                    }.buttonStyle(.plain).foregroundStyle(playerGreen)
-                    Spacer()
-                    Text("\(songs.count) 首歌曲").font(.caption).foregroundStyle(.secondary)
-                }
-            }
             libraryToolbar
             Divider().opacity(0.4)
             ScrollViewReader { proxy in
-                PlayerScrollView(contentTrailingInset: 16, thumbOffset: 8) {
+                PlayerScrollView(contentTrailingInset: 16, thumbOffset: 8,
+                                 savedPosition: browsingGroups ? browseScrollPositions.position(destination) : nil) {
                     if browsingGroups {
                         let groups = songGroups
                         let availableWidth = max(1, width - 56)
@@ -855,20 +1054,24 @@ private extension ContentView {
                                     LibraryBrowseCard(name: group.name, tracks: group.tracks,
                                                       isArtist: destination == .artists, width: availableWidth,
                                                       compact: true) {
-                                        browseGroup = group.name; selectedIDs.removeAll()
+                                        openBrowseGroup(group.name, tracks: group.tracks)
                                     }
+                                    .matchedGeometryEffect(id: browseAnimationID(group.name), in: browseExpansion, properties: .frame)
                                 }
                             }.padding(8)
                         } else {
-                            let columnCount = max(2, Int((availableWidth + 16) / 166))
+                            // Reserve 160pt artwork + 16pt card padding. Column changes
+                            // redistribute whitespace without rescaling every cover.
+                            let columnCount = max(2, Int((availableWidth + 16) / 192))
                             let cardWidth = (availableWidth - CGFloat(columnCount - 1) * 16) / CGFloat(columnCount)
                             LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 16, alignment: .top), count: columnCount),
                                       alignment: .leading, spacing: 16) {
                                 ForEach(groups, id: \.name) { group in
                                     LibraryBrowseCard(name: group.name, tracks: group.tracks,
                                                       isArtist: destination == .artists, width: cardWidth) {
-                                        browseGroup = group.name; selectedIDs.removeAll()
+                                        openBrowseGroup(group.name, tracks: group.tracks)
                                     }
+                                    .matchedGeometryEffect(id: browseAnimationID(group.name), in: browseExpansion, properties: .frame)
                                 }
                             }.padding(8)
                         }
@@ -880,7 +1083,7 @@ private extension ContentView {
                         // Fixed row geometry keeps the lazy document extent stable while dragging.
                         .frame(height: CGFloat(songs.count) * 58 + CGFloat(max(0, songs.count - 1)) * 4, alignment: .top)
                     }
-                    if songs.isEmpty {
+                    if songs.isEmpty || (browsingGroups && songGroups.isEmpty) {
                         VStack(spacing: 12) {
                             if artworkPreparationRequest != nil && !library.tracks.isEmpty {
                                 ProgressView("正在准备歌曲封面…")
@@ -904,6 +1107,8 @@ private extension ContentView {
                     }
                 }
             }
+            .id(LibraryListLocation(destination: destination, group: browseGroup))
+            .environment(\.browseArtwork, browseArtwork)
             if case .playlist(let id) = destination, multiSelecting, !selectedIDs.isEmpty {
                 Button("从歌单移除所选歌曲") {
                     for track in songs where selectedIDs.contains(track.id) { collections.remove(track.url.path, from: id) }
@@ -930,33 +1135,52 @@ private extension ContentView {
                 }
             Text(track.title).lineLimit(1).truncationMode(.tail).help(track.title)
                 .modifier(SongCellFrame(rect: columns.title))
-            Text(track.artist).font(columns.isCompact ? .caption : .callout).foregroundStyle(.secondary)
+            Text(track.artist).font(.callout).foregroundStyle(.secondary)
                 .lineLimit(1).truncationMode(.tail).help(track.artist)
                 .modifier(SongCellFrame(rect: columns.artist))
+                .opacity(columns.horizontalProgress)
+                .accessibilityHidden(columns.horizontalProgress < 0.5)
+            Text(track.artist).font(.caption).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.tail).help(track.artist)
+                .modifier(SongCellFrame(rect: columns.compactArtist))
+                .opacity(1 - columns.horizontalProgress)
+                .accessibilityHidden(columns.horizontalProgress >= 0.5)
             Text(track.album).font(.caption).foregroundStyle(.secondary)
                 .lineLimit(1).truncationMode(.tail).help(track.album)
                 .modifier(SongCellFrame(rect: columns.album))
-                .opacity(columns.showsAlbum ? 1 : 0).accessibilityHidden(!columns.showsAlbum)
+                .opacity(columns.albumOpacity).accessibilityHidden(!columns.showsAlbum)
             Text(String(format: "%d:%02d", Int(max(0, track.duration)) / 60, Int(max(0, track.duration)) % 60))
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 .modifier(SongCellFrame(rect: columns.duration, alignment: .trailing))
-                .opacity(columns.showsDuration ? 1 : 0).accessibilityHidden(!columns.showsDuration)
+                .opacity(columns.durationOpacity).accessibilityHidden(!columns.showsDuration)
         }
-        // Animate changes of presentation, not every pixel of a live window resize.
-        .animation(reduceMotion ? nil : .timingCurve(0.22, 0.68, 0.20, 1, duration: 0.48), value: columns.isCompact)
-        .animation(reduceMotion ? nil : .timingCurve(0.22, 0.68, 0.20, 1, duration: 0.48), value: columns.showsAlbum)
-        .animation(reduceMotion ? nil : .timingCurve(0.22, 0.68, 0.20, 1, duration: 0.48), value: columns.showsDuration)
+        // Geometry and opacity track the drag itself. An ancestor's player-control
+        // transition must not make list columns lag behind the window edge.
+        .transaction { $0.animation = nil }
         .frame(width: columns.width, height: 44, alignment: .topLeading)
         .overlay(alignment: .trailing) {
+            HStack(spacing: 4 * columns.editSpaceProgress) {
             Button { collections.toggleFavorite(track.url.path) } label: {
                 Image(systemName: collections.isFavorite(track.url.path) ? "heart.fill" : "heart")
                     .foregroundStyle(collections.isFavorite(track.url.path) ? playerGreen : Color.secondary)
-                    .frame(width: 28, height: 28)
-            }.buttonStyle(.plain)
+                    .font(.system(size: 18, weight: .medium))
+                    .frame(width: 34, height: 34)
+            }.buttonStyle(SongActionButtonStyle())
                 .help(collections.isFavorite(track.url.path) ? "取消收藏" : "收藏歌曲")
                 .accessibilityLabel(collections.isFavorite(track.url.path) ? "取消收藏" : "收藏歌曲")
-                .offset(x: 6)
-                .transaction { $0.animation = nil }
+                Button { openSongInfo(track) } label: {
+                    Image(systemName: "info.circle").foregroundStyle(.secondary)
+                        .font(.system(size: 18, weight: .medium))
+                        .frame(width: 34, height: 34)
+                }.buttonStyle(SongActionButtonStyle()).help("编辑歌曲信息").accessibilityLabel("编辑歌曲信息")
+                    .frame(width: 34 * columns.editSpaceProgress)
+                    .clipped()
+                    .opacity(columns.showsEdit ? 1 : 0)
+                    .scaleEffect(reduceMotion || columns.showsEdit ? 1 : 0.92)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: columns.showsEdit)
+                    .allowsHitTesting(columns.showsEdit)
+                    .accessibilityHidden(!columns.showsEdit)
+            }
         }
     }
 
@@ -992,7 +1216,7 @@ private struct LibraryBrowseCard: View {
     private func cover(size: CGFloat) -> some View {
         ZStack {
             if let track = coverTrack {
-                ListArtwork(track: track, size: size)
+                ListArtwork(track: track, size: size, highResolution: true)
             } else {
                 Color.clear.background(playerGreen.opacity(0.09))
                 Image(systemName: isArtist ? "person.fill" : "opticaldisc")
@@ -1025,7 +1249,7 @@ private struct LibraryBrowseCard: View {
                     }.frame(height: 54)
                 } else {
                     VStack(alignment: isArtist ? .center : .leading, spacing: 6) {
-                        cover(size: max(1, min(width - 16, isArtist ? 140 : 160)))
+                        cover(size: isArtist ? 140 : 160)
                             .frame(maxWidth: .infinity).padding(.bottom, 4)
                         Text(name).font(.system(size: 13, weight: .semibold))
                             .lineLimit(2).truncationMode(.tail).help(name)
@@ -1420,20 +1644,22 @@ private struct PlayerControls: View {
     var onToggleAlbum: (() -> Void)? = nil
     @State private var hoveringArtwork = false
     @State private var scrub: Double?
+    @State private var showingOutputDevices = false
     var body: some View {
         GeometryReader { geometry in
             let layout = PlayerControlsGeometry(width: geometry.size.width, expanded: albumExpanded)
             AdaptivePlayerControlsLayout(expanded: albumExpanded) {
                 trackInfo(artworkSize: layout.artworkSize)
-                    .frame(height: layout.song.height, alignment: .leading)
+                    .frame(width: layout.song.width, height: layout.song.height, alignment: .leading)
                 VStack(spacing: 0) {
                     progress.frame(height: 22)
                     Spacer(minLength: 8)
                     transport(spacing: layout.buttonSpacing)
                         .frame(width: layout.buttons.width, height: 52)
                 }
-                .frame(height: layout.center.height)
-                output.frame(height: layout.output.height)
+                .frame(width: layout.center.width, height: layout.center.height)
+                output(width: layout.output.width)
+                    .frame(width: layout.output.width, height: layout.output.height)
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
@@ -1482,7 +1708,8 @@ private struct PlayerControls: View {
         HStack(spacing: 8) {
             Text(time(scrub ?? clock.time))
                 .frame(width: 34, alignment: .leading)
-            Slider(value: Binding(get: { scrub ?? clock.time }, set: { scrub = $0 }), in: 0...max(track.duration, 1)) { editing in
+            PlaybackGlassSlider(value: Binding(get: { scrub ?? clock.time }, set: { scrub = $0 }),
+                range: 0...max(track.duration, 1), tint: playerGreen, label: "播放进度", rectangularThumb: true) { editing in
                 if !editing, let scrub { library.seek(to: scrub); self.scrub = nil }
             }.accessibilityLabel("播放进度")
             Text(time(track.duration))
@@ -1528,11 +1755,12 @@ private struct PlayerControls: View {
             }.buttonStyle(TransportButtonStyle()).font(.system(size: 17))
     }
 
-    private var output: some View {
+    private func output(width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 outputIcon(library.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                Slider(value: Binding(get: { Double(library.volume) }, set: { library.volume = Float($0) }), in: 0...1)
+                PlaybackGlassSlider(value: Binding(get: { Double(library.volume) }, set: { library.volume = Float($0) }),
+                    range: 0...1, tint: playerGreen, label: "播放器音量")
                     .accessibilityLabel("播放器音量")
                 // Reserve a width just wide enough for "100%" so the slider
                 // doesn't shrink/grow as the digit count changes.
@@ -1545,39 +1773,94 @@ private struct PlayerControls: View {
             .frame(maxWidth: .infinity)
             .frame(height: 24)
             .frame(maxHeight: .infinity)
-            Menu {
-                ForEach(volume.outputDevices) { device in
-                    Button {
-                        volume.selectOutputDevice(device.id)
-                    } label: {
-                        HStack {
-                            Text(device.name)
-                            if device.id == volume.outputDeviceID { Image(systemName: "checkmark") }
-                        }
-                    }
-                }
+            Button {
+                showingOutputDevices.toggle()
             } label: {
                 HStack(spacing: 6) {
                     outputIcon("airplayaudio")
                     Text(volume.error ?? volume.deviceName)
-                        .font(.system(size: 12))
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        // Text must not interpolate its own bounds while the
+                        // sidebar/outer player layout is animating around it.
+                        .frame(width: max(0, width - 20 - 32 - 12), height: 24, alignment: .leading)
+                        .clipped()
+                        .transaction { $0.animation = nil }
                     Image(systemName: "chevron.down")
                         .font(.system(size: 10, weight: .semibold))
-                        .frame(width: 32, alignment: .trailing)
+                        .rotationEffect(.degrees(showingOutputDevices ? 180 : 0))
+                        .frame(width: 32, height: 24, alignment: .trailing)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: showingOutputDevices)
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 24)
+                // Move icon, name and disclosure as one rendered row rather
+                // than independently interpolating native text layers.
+                .drawingGroup()
+                .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .foregroundStyle(playerGreen)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 24)
             .frame(maxHeight: .infinity)
+            .popover(isPresented: $showingOutputDevices, arrowEdge: .top) {
+                if #available(macOS 13.3, *) {
+                    outputDevicesPanel.presentationBackground(.clear)
+                } else {
+                    outputDevicesPanel
+                }
+            }
+            .accessibilityLabel("选择播放设备：\(volume.error ?? volume.deviceName)")
             .help(volume.error ?? volume.deviceName)
         }.font(.system(size: 12)).foregroundStyle(.secondary)
+    }
+
+    private var outputDevicesPanel: some View {
+        let rowHeight: CGFloat = 44
+        let rowSpacing: CGFloat = 4
+        let rows = max(1, volume.outputDevices.count)
+        let listHeight = CGFloat(rows) * rowHeight + CGFloat(rows - 1) * rowSpacing
+        let rowShape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("播放设备").font(.headline).padding(.horizontal, 12).frame(height: 28, alignment: .leading)
+            if volume.outputDevices.isEmpty {
+                Text("暂无可用输出设备").foregroundStyle(.secondary).padding(8)
+            }
+            ScrollView {
+                VStack(spacing: rowSpacing) {
+                    ForEach(volume.outputDevices) { device in
+                        Button {
+                            volume.selectOutputDevice(device.id)
+                            if volume.error == nil { showingOutputDevices = false }
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "airplayaudio").frame(width: 20)
+                                Text(device.name).lineLimit(1).truncationMode(.tail)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Image(systemName: "checkmark")
+                                    .opacity(device.id == volume.outputDeviceID ? 1 : 0)
+                                    .frame(width: 16)
+                            }
+                            .padding(.horizontal, 12)
+                            .frame(height: rowHeight)
+                            .foregroundStyle(device.id == volume.outputDeviceID ? playerGreen : .primary)
+                            .background(device.id == volume.outputDeviceID ? playerGreen.opacity(0.12) : .clear,
+                                in: rowShape)
+                            .contentShape(rowShape)
+                        }
+                        .buttonStyle(PressScaleButtonStyle())
+                        .help(device.name)
+                        .accessibilityAddTraits(device.id == volume.outputDeviceID ? [.isSelected] : [])
+                    }
+                }
+            }
+            .frame(height: min(284, listHeight))
+            if let error = volume.error { Text(error).font(.caption).foregroundStyle(.secondary) }
+        }
+        .padding(12)
+        .frame(width: 280)
+        .modifier(PlayerPanelSurface())
     }
 
     private func outputIcon(_ symbol: String) -> some View {
@@ -1591,14 +1874,81 @@ private struct PlayerControls: View {
     private func time(_ value: Double) -> String { String(format: "%d:%02d", Int(max(0, value)) / 60, Int(max(0, value)) % 60) }
 }
 
+struct SongRowRenderKey: Equatable, Sendable {
+    let id: UUID
+    let revision: Int
+    let title: String
+    let artist: String
+    let album: String
+    let duration: TimeInterval
+    let artworkKey: String?
+    let artworkIdentity: ObjectIdentifier?
+    let columns: MusicListColumns?
+    let selected: Bool
+    let multiSelecting: Bool
+    let playing: Bool
+    let isPlaying: Bool
+    let collectionsRevision: Int
+    let destination: LibraryDestination
+}
+
+/// A selection change rebuilds only affected rows, not every cover/text subtree.
+private struct StableSongRow<Content: View>: View, Equatable {
+    let key: SongRowRenderKey
+    @ViewBuilder let content: () -> Content
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.key == b.key }
+    var body: some View { content() }
+}
+
+private struct SongRowTapHandler: ViewModifier {
+    let multiSelecting: Bool
+    let onPlay: () -> Void
+    let onSelect: () -> Void
+    @ViewBuilder func body(content: Content) -> some View {
+        if multiSelecting {
+            content.onTapGesture(perform: onSelect)
+        } else {
+            content.onTapGesture(count: 2, perform: onPlay)
+                .simultaneousGesture(TapGesture(count: 1).onEnded { onSelect() })
+        }
+    }
+}
+
+private struct BrowseArtworkKey: EnvironmentKey {
+    static let defaultValue: [String: CachedArtwork] = [:]
+}
+private extension EnvironmentValues {
+    var browseArtwork: [String: CachedArtwork] {
+        get { self[BrowseArtworkKey.self] }
+        set { self[BrowseArtworkKey.self] = newValue }
+    }
+}
+
+private final class SavedScrollPosition {
+    var offset: CGFloat = 0
+}
+private final class BrowseScrollPositions {
+    private var positions: [LibraryDestination: SavedScrollPosition] = [:]
+    func position(_ destination: LibraryDestination) -> SavedScrollPosition {
+        if let position = positions[destination] { return position }
+        let position = SavedScrollPosition()
+        positions[destination] = position
+        return position
+    }
+}
+
 private struct ListArtwork: View {
     let track: Track
     var size: CGFloat = 44
+    var highResolution = false
     @StateObject private var loader = ListArtworkLoader()
+    @Environment(\.browseArtwork) private var preparedArtwork
     var body: some View {
         Group {
-            if let image = loader.image ?? track.artwork ?? ThumbnailLoader.shared.cachedImage(track.artworkKey)?.displayImage() {
-                Image(nsImage: image).resizable().scaledToFit()
+            if let image = track.artwork ?? (highResolution ? track.artworkKey.flatMap { preparedArtwork[$0]?.displayImage() } : nil) ?? loader.currentImage(key: track.artworkKey, source: track.url, browse: highResolution) ??
+                (highResolution ? BrowseArtworkLoader.shared.cachedImage(track.artworkKey) : ThumbnailLoader.shared.cachedImage(track.artworkKey))?.displayImage() ??
+                (highResolution ? nil : ThumbnailLoader.shared.cachedImage(track.artworkKey)?.displayImage()) {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: highResolution ? .fill : .fit)
             } else {
                 Image(systemName: "music.note").foregroundStyle(playerGreen.opacity(0.6))
             }
@@ -1606,9 +1956,13 @@ private struct ListArtwork: View {
         .frame(width: size, height: size)
         .background(playerGreen.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .onAppear { loader.load(key: track.artworkKey, source: track.url) }
-        .onChange(of: track.artworkKey) { key in loader.load(key: key, source: track.url) }
-        .onChange(of: track.url) { source in loader.load(key: track.artworkKey, source: source) }
+        .onAppear {
+            if !highResolution || track.artworkKey.flatMap({ preparedArtwork[$0] }) == nil {
+                loader.load(key: track.artworkKey, source: track.url, browse: highResolution)
+            }
+        }
+        .onChange(of: track.artworkKey) { key in loader.load(key: key, source: track.url, browse: highResolution) }
+        .onChange(of: track.url) { source in loader.load(key: track.artworkKey, source: source, browse: highResolution) }
         .onDisappear { loader.cancel() }
     }
 }
@@ -1781,11 +2135,13 @@ private struct PlayerScrollView<Content: View>: View {
     var fadesEdges = false
     var contentTrailingInset: CGFloat = 24
     var thumbOffset: CGFloat = 0
+    var savedPosition: SavedScrollPosition? = nil
     @ViewBuilder var content: () -> Content
     // Retain without observing: only PlayerScrollThumb subscribes to publications.
     @State private var scrollState = PlayerScrollState()
     @State private var scrollReference = ScrollViewReference()
     @Namespace private var coordinateSpace
+    @State private var restoredPosition = false
 
     var body: some View {
         GeometryReader { viewport in
@@ -1793,6 +2149,16 @@ private struct PlayerScrollView<Content: View>: View {
                 content()
                     .padding(.trailing, contentTrailingInset)
                     .background(HiddenScrollerConfigurator(onMetrics: { offset, height in
+                        if let savedPosition {
+                            if !restoredPosition {
+                                let maximum = max(0, height - viewport.size.height)
+                                if maximum >= savedPosition.offset, let view = scrollReference.view {
+                                    restoredPosition = true
+                                    view.contentView.scroll(to: NSPoint(x: 0, y: savedPosition.offset))
+                                    view.reflectScrolledClipView(view.contentView)
+                                }
+                            } else { savedPosition.offset = max(0, offset) }
+                        }
                         let updated = ScrollMetrics(offset: offset, height: height)
                         if scrollState.metrics != updated { scrollState.metrics = updated }
                     }, onScrollView: { scrollReference.view = $0 }, onUserScroll: { scrollState.revealThumb() })
@@ -2064,6 +2430,61 @@ private struct HeaderButtonSurface: ViewModifier {
                 }
             }
             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .onHover { hovered = $0 }
+    }
+}
+
+private struct SelectionActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        SelectionActionButtonSurface(label: configuration.label, pressed: configuration.isPressed)
+    }
+}
+
+private struct SelectionActionButtonSurface<Label: View>: View {
+    let label: Label
+    let pressed: Bool
+    @State private var hovered = false
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        label
+            .foregroundStyle(playerGreen)
+            .background(playerGreen.opacity(pressed ? 0.23 : (hovered ? 0.17 : 0.10)), in: shape)
+            .overlay { shape.strokeBorder(playerGreen.opacity(hovered ? 0.42 : 0.27), lineWidth: 0.8) }
+            .contentShape(shape)
+            .opacity(enabled ? 1 : 0.4)
+            .scaleEffect(pressed && !reduceMotion ? 0.96 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: pressed)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hovered)
+            .onHover { hovered = enabled && $0 }
+    }
+}
+
+private struct SongActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        SongActionButtonSurface(label: configuration.label, pressed: configuration.isPressed)
+    }
+}
+
+private struct SongActionButtonSurface<Label: View>: View {
+    let label: Label
+    let pressed: Bool
+    @State private var hovered = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        label
+            .background(playerGreen.opacity(pressed ? 0.23 : (hovered ? 0.12 : 0)),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(playerGreen.opacity(hovered ? 0.2 : 0), lineWidth: 0.5)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .scaleEffect(reduceMotion ? 1 : (pressed ? 0.9 : (hovered ? 1.04 : 1)))
+            .animation(.easeOut(duration: reduceMotion ? 0 : 0.14), value: pressed)
+            .animation(.easeOut(duration: reduceMotion ? 0 : 0.16), value: hovered)
             .onHover { hovered = $0 }
     }
 }

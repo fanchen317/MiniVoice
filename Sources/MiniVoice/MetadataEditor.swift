@@ -13,6 +13,7 @@ struct MetadataEditor: View {
     @EnvironmentObject private var library: MusicLibrary
     @EnvironmentObject private var lyricsSync: LyricsSyncCoordinator
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     let track: Track
     var onClose: (() -> Void)?
     private let openOnlineSearch: Bool
@@ -24,6 +25,7 @@ struct MetadataEditor: View {
     @State private var translation: String
     @State private var artwork: NSImage?
     @State private var selectedPage = EditorPage.details
+    @State private var hoveredPage: EditorPage?
     @State private var showTimingTools = false
     @State private var timingIndex = 0
     @State private var timingShiftSeconds = 0.0
@@ -44,6 +46,7 @@ struct MetadataEditor: View {
     @State private var isSaving = false
     @State private var saveError: String?
     @State private var isArtworkDropTarget = false
+    @State private var isArtworkHovered = false
     @State private var showArtworkZoom = false
     @State private var showingOnlineArtwork = false
     @State private var lyricsDestination: LyricsDestination
@@ -80,11 +83,8 @@ struct MetadataEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Picker("编辑内容", selection: $selectedPage) {
-                ForEach(EditorPage.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented).labelsHidden().frame(width: 320)
-            .padding(.bottom, 14).disabled(isSaving)
+            navigation
+                .padding(.bottom, 14).disabled(isSaving)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -131,9 +131,8 @@ struct MetadataEditor: View {
             if let artwork {
                 VStack(spacing: 12) {
                     HStack {
-                        Text("封面预览").font(.headline)
+                        Text("预览").font(.headline)
                         Spacer()
-                        CopyArtworkButton(image: artwork, name: album.isEmpty ? title : album)
                         Button("关闭") { showArtworkZoom = false }
                             .keyboardShortcut(.cancelAction)
                     }
@@ -167,12 +166,52 @@ struct MetadataEditor: View {
         if let onClose { onClose() } else { dismiss() }
     }
 
+    private var navigation: some View {
+        HStack(spacing: 3) {
+            ForEach(EditorPage.allCases) { page in
+                let isSelected = selectedPage == page
+                Button {
+                    selectedPage = page
+                } label: {
+                    Text(page.rawValue)
+                        .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                        .foregroundStyle(isSelected ? Color.white :
+                            (colorScheme == .dark ? Color.white.opacity(0.72) : Color.black.opacity(0.68)))
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                        .background {
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(isSelected
+                                    ? Color(red: 0.10, green: colorScheme == .dark ? 0.40 : 0.52, blue: 0.39)
+                                    : (hoveredPage == page ? Color.primary.opacity(0.07) : .clear))
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .onHover { hoveredPage = $0 ? page : nil }
+            }
+        }
+        .padding(4)
+        .frame(width: 320)
+        .background {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.055 : 0.04))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.08))
+                }
+        }
+        .animation(.easeInOut(duration: 0.16), value: selectedPage)
+        .accessibilityLabel("编辑内容")
+    }
+
     private var header: some View {
         HStack(spacing: 14) {
             ArtworkPreview(image: artwork, size: 46)
             VStack(alignment: .leading, spacing: 5) {
-                Text("歌曲信息").font(.system(size: 19, weight: .bold))
                 Text(title.isEmpty ? track.url.deletingPathExtension().lastPathComponent : title)
+                    .font(.system(size: 19, weight: .bold)).lineLimit(1)
+                Text(artists.map(\.name).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }.joined(separator: " / "))
                     .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 16)
@@ -188,13 +227,11 @@ struct MetadataEditor: View {
             if isSaving {
                 ProgressView().controlSize(.small)
                 Text("正在保存更改…").font(.caption).foregroundStyle(.secondary)
-            } else {
-                Text("点击保存后应用更改").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             Button("取消") { closeEditor() }
                 .keyboardShortcut(.cancelAction).disabled(isSaving)
-            Button(isSaving ? "保存中…" : "保存更改") { save() }
+            Button(isSaving ? "保存中…" : "保存") { save() }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction).disabled(isSaving)
         }
@@ -234,24 +271,30 @@ struct MetadataEditor: View {
                     Divider().padding(.horizontal, 16)
                     inputRow("专辑名称", placeholder: "输入专辑名称", text: $album)
                     Divider().padding(.horizontal, 16)
-                    SettingsRow(title: "从文件名填充", detail: "识别「歌手 - 歌曲名」格式") {
-                        Button("解析文件名", action: applyFilenameParsing)
+                    SettingsRow(title: "源文件名智能识别") {
+                        Button("识别", action: applyFilenameParsing)
                     }
                 }.disabled(!track.canWriteTags)
             }
-            SettingsGroup(title: "专辑封面", footer: "支持在线查找高清封面或拖入图片；点击已有封面可查看大图。") {
+            SettingsGroup(title: "专辑封面") {
                 HStack(spacing: 16) {
-                    Button { showArtworkZoom = true } label: { ArtworkPreview(image: artwork, size: 80) }
+                    Button { showArtworkZoom = true } label: {
+                        ArtworkPreview(image: artwork, size: 80)
+                            .scaleEffect(isArtworkHovered ? 1.06 : 1)
+                            .animation(.easeOut(duration: 0.18), value: isArtworkHovered)
+                    }
                         .buttonStyle(.plain).disabled(artwork == nil)
+                        .onHover { isArtworkHovered = $0 && artwork != nil }
+                        .help(artwork == nil ? "尚未设置封面" : "点击预览封面")
                         .accessibilityLabel("查看封面大图")
                     VStack(alignment: .leading, spacing: 12) {
                         Text(artwork == nil ? "尚未设置封面" : "自定义歌曲封面")
                             .font(.system(size: 13, weight: .medium))
                         Button { showingOnlineArtwork = true } label: {
-                            Label("在线查找高清封面…", systemImage: "magnifyingglass")
+                            Label("在线查找", systemImage: "magnifyingglass")
                         }.disabled(!track.canWriteTags)
                         HStack(spacing: 10) {
-                            Button(artwork == nil ? "添加封面…" : "更换封面…") { choosingArtwork = true }
+                            Button(artwork == nil ? "添加" : "更换") { choosingArtwork = true }
                             Button("移除", role: .destructive) { artwork = nil; artworkChanged = true }
                                 .disabled(artwork == nil)
                         }.disabled(!track.canWriteTags)
@@ -278,9 +321,9 @@ struct MetadataEditor: View {
 
     private var lyricsPage: some View {
         VStack(alignment: .leading, spacing: 20) {
-            SettingsGroup(title: "获取时间轴") {
+            SettingsGroup(title: "查找与导入") {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("先在线查找并预览歌词；有时间轴的版本可直接跟随播放。没有合适版本时，可导入歌词、手动打点，或选择本地 AI。在线查询无需下载模型。")
+                    Text("在线查找并预览同步歌词，或导入本地文件。缺少时间轴时，可在下方手动标记或使用本地匹配。")
                         .font(.caption).foregroundStyle(.secondary)
                     HStack {
                         Button("在线查找歌词…") { openOnlineLyricsSearch() }
@@ -291,7 +334,7 @@ struct MetadataEditor: View {
             }
             SettingsGroup(title: "歌词内容") {
                 HStack {
-                    Label("支持逐字 LRC、YRC、逐行 LRC、SRT、TXT", systemImage: "doc.text")
+                    Label("支持 LRC、YRC、SRT、TXT", systemImage: "doc.text")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(16)
                 Divider().padding(.horizontal, 16)
@@ -339,7 +382,7 @@ struct MetadataEditor: View {
                 if lyricsAnalysis.lines(for: lyrics).contains(where: { $0.timestamp != nil }) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("整体校正时间轴").font(.system(size: 13, weight: .medium))
-                        Text("正数让歌词晚出现，负数让歌词早出现；只修改编辑框，保存更改后才写入歌曲。")
+                        Text("正数让歌词晚出现，负数让歌词早出现；只修改编辑框，点击保存后才写入歌曲。")
                             .font(.caption).foregroundStyle(.secondary)
                         HStack {
                             TextField("秒数", value: $timingShiftSeconds, format: .number.precision(.fractionLength(1)))
@@ -387,16 +430,16 @@ struct MetadataEditor: View {
 
     private var lyricsStatus: String {
         if lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return "保存时自动整理空行；已有时间标签保持不变。"
+            return "粘贴或导入歌词后，即可查看时间轴识别结果。"
         }
         if lyricsAnalysis.needsAlignment(for: lyrics) {
-            return "当前是纯文本歌词。建议先在线查找；没有结果时可手动打点，或使用可选的本地 AI。"
+            return "未检测到时间轴，可在线查找同步歌词或在下方匹配。"
         }
         let lines = lyricsAnalysis.lines(for: lyrics)
         let timed = lines.filter { $0.timestamp != nil }.count
         let words = lines.reduce(0) { $0 + $1.words.count }
-        return words > 0 ? "已识别 \(words) 个逐字时间片段、\(timed) 行歌词；缺少逐字时间的行自动使用逐行跟随。"
-            : "已识别 \(timed) 行时间标签，保存后可逐行跟随播放。"
+        return words > 0 ? "已识别 \(timed) 行歌词、\(words) 个逐字时间点；其余行按行同步。"
+            : "已识别 \(timed) 行同步歌词。"
     }
 
     private var filePage: some View {
@@ -547,7 +590,7 @@ struct MetadataEditor: View {
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
             HStack {
-                Text("确认后替换编辑框中的歌词，点击“保存更改”才写入歌曲。")
+                Text("确认后替换编辑框中的歌词，点击“保存”才写入歌曲。")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("使用这份歌词") {

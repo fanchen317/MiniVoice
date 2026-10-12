@@ -25,16 +25,32 @@ struct CachedTrack: Codable, Sendable {
     var stamp: FileStamp?
     var sidecarStamp: FileStamp?
 
-    @MainActor init(track: Track, root: URL) {
+    @MainActor init(track: Track, root: URL, includeArtwork: Bool = true) {
         path = String(track.url.path.dropFirst(root.path.count + 1))
         title = track.title; artist = track.artist; album = track.album; duration = track.duration
         lyrics = track.resourcesLoaded ? track.lyrics : nil
-        artwork = track.resourcesLoaded ? track.artwork?.tiffRepresentation : nil
+        artwork = track.resourcesLoaded && includeArtwork ? track.artwork?.tiffRepresentation : nil
         artworkKey = track.resourcesLoaded && track.artwork == nil ? nil : track.artworkKey
         lyricsKey = track.lyricsKey
         // Copying a lightweight index row must not certify stale metadata as fresh.
         stamp = track.resourcesLoaded ? FileStamp.read(track.url) : track.sourceStamp
         sidecarStamp = track.resourcesLoaded ? FileStamp.read(LyricsStorage.sidecarURL(for: track.url)) : track.lyricSourceStamp
+    }
+
+    /// Avoid full-cover TIFF encoding on the UI thread when selecting/scanning a song.
+    @MainActor static func snapshot(track: Track, root: URL) async throws -> CachedTrack {
+        let metadata = CachedTrack(track: track, root: root, includeArtwork: false)
+        guard track.resourcesLoaded, let image = track.artwork else { return metadata }
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { throw TagWriteError.artworkEncodingFailed }
+        let transferable = CachedArtwork(cg)
+        return try await Task.detached {
+            var result = metadata
+            guard let data = NSBitmapImageRep(cgImage: transferable.image).representation(using: .png, properties: [:]) else {
+                throw TagWriteError.artworkEncodingFailed
+            }
+            result.artwork = data
+            return result
+        }.value
     }
 
     @MainActor func track(root: URL) -> Track? {

@@ -129,16 +129,22 @@ final class ListArtworkLoader: ObservableObject {
     private var identity: String?
     private var generation = 0
 
-    func load(key: String?, source: URL) {
-        let next = (key ?? "") + source.path
+    func currentImage(key: String?, source: URL, browse: Bool = false) -> NSImage? {
+        let expected = (browse ? "browse:" : "list:") + (key ?? "") + source.path
+        return identity == expected ? image : nil
+    }
+
+    func load(key: String?, source: URL, browse: Bool = false) {
+        let next = (browse ? "browse:" : "list:") + (key ?? "") + source.path
         if identity == next, image != nil || request != nil { return }
         cancel()
         identity = next
-        image = ThumbnailLoader.shared.cachedImage(key)?.displayImage()
+        image = (browse ? BrowseArtworkLoader.shared.cachedImage(key) : ThumbnailLoader.shared.cachedImage(key))?.displayImage()
         guard let key, image == nil else { return }
         let token = generation
         request = Task { [weak self] in
-            let result = await ThumbnailLoader.shared.image(key, source: source)
+            let result = browse ? await BrowseArtworkLoader.shared.image(key, source: source)
+                : await ThumbnailLoader.shared.image(key, source: source)
             guard let self, !Task.isCancelled, self.generation == token else { return }
             self.image = result?.displayImage()
             self.request = nil
@@ -149,6 +155,52 @@ final class ListArtworkLoader: ObservableObject {
         generation += 1
         request?.cancel()
         request = nil
+    }
+}
+
+/// Large classification cards must never upscale the 96px song-list cache.
+actor BrowseArtworkLoader {
+    static let shared = BrowseArtworkLoader()
+    private nonisolated let memory = ThumbnailMemory()
+    private var pending: [String: Task<CachedArtwork?, Never>] = [:]
+    private var failures: [String: Date] = [:]
+    nonisolated func cachedImage(_ key: String?) -> CachedArtwork? { key.flatMap { memory.image($0) } }
+    func image(_ key: String, source: URL) async -> CachedArtwork? {
+        if let hit = cachedImage(key) { return hit }
+        if let failed = failures[key], Date().timeIntervalSince(failed) < 60 { return nil }
+        if let task = pending[key] { return await task.value }
+        let task = Task.detached(priority: .utility) { await BrowseArtworkWorker.shared.image(key, source: source) }
+        pending[key] = task
+        let result = await task.value
+        pending[key] = nil
+        if let result { memory.insert(result, key: key); failures[key] = nil }
+        else {
+            failures = failures.filter { Date().timeIntervalSince($0.value) < 60 }
+            failures[key] = Date()
+        }
+        return result
+    }
+}
+
+private actor BrowseArtworkWorker {
+    static let shared = BrowseArtworkWorker()
+    func image(_ key: String, source: URL) -> CachedArtwork? {
+        var data = ResourceCache.artworkData(key, detail: true)
+        if !ResourceCache.isValidArtwork(data) {
+            guard let original = try? MediaTools.run("ffmpeg", ["-v", "error", "-i", source.path, "-map", "0:v:0",
+                "-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "pipe:1"]),
+                  let newKey = try? ResourceCache.saveArtwork(original) else { return nil }
+            data = ResourceCache.artworkData(newKey, detail: true)
+            if let data { try? ResourceCache.atomicWrite(data, to: ResourceCache.url(key, kind: "Artwork/Detail")) }
+        }
+        guard let data, let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
+              let cg = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceThumbnailMaxPixelSize: 512,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else { return nil }
+        ResourceCache.touch(ResourceCache.url(key, kind: "Artwork/Detail"))
+        return CachedArtwork(cg)
     }
 }
 

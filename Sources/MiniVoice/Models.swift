@@ -247,8 +247,8 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                         } else if let entry = unchanged[String(url.path.dropFirst(root.path.count + 1))],
                                   let track = entry.track(root: root) { folderTracks.append(track) }
                         else if let track = await loadTrack(url), track.duration > 0 {
-                            let snapshot = CachedTrack(track: track, root: root)
                             do {
+                                let snapshot = try await CachedTrack.snapshot(track: track, root: root)
                                 let entry = try await Task.detached {
                                     var value = snapshot; try value.splitResources(); return value
                                 }.value
@@ -646,7 +646,10 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private func updateCachedTrack(_ track: Track) async {
         for root in folders where track.url.path.hasPrefix(root.path + "/") {
             guard !Task.isCancelled, tracksByID[track.id] != nil else { return }
-            let entry = CachedTrack(track: track, root: root)
+            let entry: CachedTrack
+            do { entry = try await CachedTrack.snapshot(track: track, root: root) }
+            catch { errorMessage = "封面缓存无法保存：\(error.localizedDescription)"; return }
+            guard !Task.isCancelled, tracksByID[track.id] != nil else { return }
             let recursive = recursiveScan
             let outcome = await Task.detached { () -> (CachedTrack?, String?) in
                 do {

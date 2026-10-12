@@ -81,7 +81,7 @@ final class LibraryCollections: ObservableObject {
     }
 }
 
-enum LibraryDestination: Hashable {
+enum LibraryDestination: Hashable, Sendable {
     case all, recent, favorites, artists, albums, playlist(UUID)
 }
 
@@ -90,4 +90,6 @@ struct WorkspaceListRequest: Equatable {
     let destination: LibraryDestination
     let group: String?
     let collectionsRevision: Int
+    var groupSortField = "name"
+    var groupSortAscending = true
 }

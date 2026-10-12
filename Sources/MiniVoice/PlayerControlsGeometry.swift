@@ -5,6 +5,7 @@ import Foundation
 struct PlayerControlsGeometry {
     static let singleRowMinimumWidth: CGFloat = 680
     static let twoRowHeight: CGFloat = 172
+    static let columnGap: CGFloat = 24
     let height: CGFloat
     let artworkSize: CGFloat
     let buttonSpacing: CGFloat
@@ -18,10 +19,10 @@ struct PlayerControlsGeometry {
         let inset: CGFloat = 12
         let innerWidth = width - inset * 2
         let singleRow = width >= Self.singleRowMinimumWidth
-        let buttonsWidth = min(300, innerWidth)
+        let buttonsWidth = min(280, innerWidth)
         let progressWidth = singleRow ? buttonsWidth : innerWidth
         let sideWidth = singleRow
-            ? min(240, (width - buttonsWidth) / 2 - inset * 2)
+            ? min(240, (width - buttonsWidth) / 2 - inset - Self.columnGap)
             : (innerWidth - 16) / 2
         let outputWidth = min(240, sideWidth)
         let songWidth = sideWidth
