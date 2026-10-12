@@ -35,7 +35,8 @@ actor SongListIndex {
             dates.removeAll(keepingCapacity: true)
             sortedCache.removeAll(keepingCapacity: true)
             revision = request.revision
-            searchText = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, "\($0.title) \($0.artist) \($0.album)") })
+            searchText = Dictionary(entries.map { ($0.id, "\($0.title) \($0.artist) \($0.album)") },
+                                    uniquingKeysWith: { _, latest in latest })
         }
         guard !Task.isCancelled else { return [] }
         if request.recent {

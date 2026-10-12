@@ -48,6 +48,11 @@ struct PlaybackQueue {
         if automatic && mode == .single { return nil }
         if automatic && mode == .repeatOne { return current }
         if mode == .shuffle {
+            // A snapshot can shrink when files are removed. History must shrink too.
+            let allowed = Set(ids)
+            cursor = history.prefix(max(0, cursor + 1)).filter { allowed.contains($0) }.count - 1
+            history.removeAll { !allowed.contains($0) }
+            if history.isEmpty { reset(current: current, ids: ids) }
             if direction < 0 {
                 guard cursor > 0 else { return current }
                 cursor -= 1; return history[cursor]
@@ -57,6 +62,10 @@ struct PlaybackQueue {
             if remaining.isEmpty { remaining = ids.filter { $0 != current }.shuffled() }
             let next = remaining.popLast() ?? current
             history.append(next); cursor = history.count - 1
+            if history.count > 256 {
+                history.removeFirst(history.count - 256)
+                cursor = history.count - 1
+            }
             return next
         }
         let next = index + (direction < 0 ? -1 : 1)

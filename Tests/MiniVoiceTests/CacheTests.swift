@@ -21,7 +21,7 @@ final class CacheTests: XCTestCase {
         let library = MusicLibrary(defaults: defaults, scanOnLaunch: false)
         library.addFolders([root]); try await wait(library)
         XCTAssertEqual(library.tracks.count, 1)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(PlaylistCache.filename).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: PlaylistCache.indexURL(root: root).path))
         let data = try PlaylistCache.read(root: root, recursive: true)
         XCTAssertEqual(data.tracks.first?.path, "one.wav")
         // If launch were scanning audio, removing it would remove the row. Cached launch must not scan.
@@ -32,7 +32,7 @@ final class CacheTests: XCTestCase {
         restored.rescan(); try await wait(restored)
         XCTAssertTrue(restored.tracks.isEmpty)
         XCTAssertTrue(try PlaylistCache.read(root: root, recursive: true).tracks.isEmpty)
-        try Data("invalid cache".utf8).write(to: root.appendingPathComponent(PlaylistCache.filename))
+        try Data("invalid cache".utf8).write(to: PlaylistCache.indexURL(root: root))
         let recovered = MusicLibrary(defaults: defaults)
         try await wait(recovered)
         XCTAssertTrue(recovered.tracks.isEmpty)

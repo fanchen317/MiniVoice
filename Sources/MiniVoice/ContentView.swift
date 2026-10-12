@@ -44,10 +44,17 @@ struct ContentView: View {
     @State private var selectedIDs = Set<UUID>()
     @State private var editingTrack: Track?
     @State private var songInfoRequest = UUID()
+    @State private var songInfoLoadRequest = UUID()
 
     private func openSongInfo(_ track: Track) {
-        editingTrack = track
-        songInfoRequest = UUID()
+        let request = UUID()
+        songInfoLoadRequest = request
+        Task {
+            let resolved = await library.resolveTrack(track.id, fullResolution: true)
+            guard songInfoLoadRequest == request, library.track(for: track.id) != nil else { return }
+            editingTrack = resolved ?? track
+            songInfoRequest = UUID()
+        }
     }
     @State private var deleteTargets: [Track] = []
     @State private var deleting = false
@@ -61,6 +68,7 @@ struct ContentView: View {
     @State private var listEntriesRevision: Int?
     @State private var listEntries: [SongListEntry] = []
     @State private var songGroups: [(name: String, tracks: [Track])] = []
+    @State private var artworkPreparationRequest: UUID?
 
     private var listRequest: SongListRequest {
         SongListRequest(revision: library.tracksRevision, recentPaths: recent ? library.recentPaths : [],
@@ -74,6 +82,15 @@ struct ContentView: View {
 
     private func updateSongs() async {
         let workspace = workspaceRequest
+        let preparation = UUID()
+        artworkPreparationRequest = preparation
+        defer {
+            if artworkPreparationRequest == preparation { artworkPreparationRequest = nil }
+        }
+        // Decode all 96px library thumbnails off-main before rows are published.
+        // Cached body lookups can then display covers on their very first frame.
+        await ThumbnailLoader.shared.prefetch(library.tracks.compactMap(\.artworkKey))
+        guard !Task.isCancelled, workspaceRequest == workspace else { return }
         if !workspace.list.query.isEmpty {
             try? await Task.sleep(for: .milliseconds(120))
             guard !Task.isCancelled else { return }
@@ -558,7 +575,7 @@ struct ContentView: View {
                         Image(systemName: selectedIDs.contains(track.id) ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(playerGreen)
                     }
-                    Artwork(image: track.artwork, size: 44)
+                    ListArtwork(track: track)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(track.title).lineLimit(1).truncationMode(.tail).help(track.title)
                         Text(track.artist).font(.caption).foregroundStyle(.secondary)
@@ -574,6 +591,12 @@ struct ContentView: View {
         .padding(7)
         .background((multiSelecting ? selectedIDs.contains(track.id) : library.selectedID == track.id) ? playerGreen.opacity(0.13) : .clear, in: RoundedRectangle(cornerRadius: 11))
         .contentShape(Rectangle())
+        .onAppear {
+            // Keep nearby rows warm even when a very large library exceeds the memory budget.
+            guard let index = songs.firstIndex(where: { $0.id == track.id }) else { return }
+            let keys = songs[max(0, index - 12)..<min(songs.count, index + 25)].compactMap(\.artworkKey)
+            Task(priority: .utility) { await ThumbnailLoader.shared.prefetch(keys) }
+        }
         .onTapGesture(count: 2) { if !multiSelecting { library.play(track.id, in: songs.map(\.id)) } }
         .onTapGesture {
             if multiSelecting {
@@ -857,9 +880,13 @@ private extension ContentView {
                     }
                     if songs.isEmpty {
                         VStack(spacing: 12) {
-                            Image(systemName: destination == .favorites ? "heart" : "music.note.list").font(.largeTitle)
-                            Text(emptyListMessage).font(.callout)
-                            if library.folders.isEmpty { OpenSettingsButton() }
+                            if artworkPreparationRequest != nil && !library.tracks.isEmpty {
+                                ProgressView("正在准备歌曲封面…")
+                            } else {
+                                Image(systemName: destination == .favorites ? "heart" : "music.note.list").font(.largeTitle)
+                                Text(emptyListMessage).font(.callout)
+                                if library.folders.isEmpty { OpenSettingsButton() }
+                            }
                         }.foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 40)
                     }
                 }
@@ -890,7 +917,7 @@ private extension ContentView {
                 .foregroundStyle(playerGreen)
                 .modifier(SongCellFrame(rect: columns.selection))
                 .opacity(multiSelecting ? 1 : 0).accessibilityHidden(!multiSelecting)
-            Artwork(image: track.artwork, size: 44)
+            ListArtwork(track: track)
                 .modifier(SongCellFrame(rect: columns.artwork))
                 .overlay(alignment: .bottomTrailing) {
                     if library.playingID == track.id {
@@ -954,7 +981,7 @@ private struct LibraryBrowseCard: View {
     @State private var hovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var image: NSImage? { tracks.first(where: { $0.artwork != nil })?.artwork }
+    private var coverTrack: Track? { tracks.first(where: { $0.artwork != nil || $0.artworkKey != nil }) }
     private var artists: String {
         let names = Set(tracks.map(\.artist).filter { !$0.isEmpty }).sorted()
         return names.isEmpty ? "未知歌手" : names.joined(separator: " / ")
@@ -962,8 +989,8 @@ private struct LibraryBrowseCard: View {
 
     private func cover(size: CGFloat) -> some View {
         ZStack {
-            if let image {
-                Artwork(image: image, size: size)
+            if let track = coverTrack {
+                ListArtwork(track: track, size: size)
             } else {
                 Color.clear.background(playerGreen.opacity(0.09))
                 Image(systemName: isArtist ? "person.fill" : "opticaldisc")
@@ -1557,6 +1584,28 @@ private struct PlayerControls: View {
             .accessibilityHidden(true)
     }
     private func time(_ value: Double) -> String { String(format: "%d:%02d", Int(max(0, value)) / 60, Int(max(0, value)) % 60) }
+}
+
+private struct ListArtwork: View {
+    let track: Track
+    var size: CGFloat = 44
+    @StateObject private var loader = ListArtworkLoader()
+    var body: some View {
+        Group {
+            if let image = loader.image ?? track.artwork ?? ThumbnailLoader.shared.cachedImage(track.artworkKey)?.displayImage() {
+                Image(nsImage: image).resizable().scaledToFit()
+            } else {
+                Image(systemName: "music.note").foregroundStyle(playerGreen.opacity(0.6))
+            }
+        }
+        .frame(width: size, height: size)
+        .background(playerGreen.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .onAppear { loader.load(key: track.artworkKey, source: track.url) }
+        .onChange(of: track.artworkKey) { key in loader.load(key: key, source: track.url) }
+        .onChange(of: track.url) { source in loader.load(key: track.artworkKey, source: source) }
+        .onDisappear { loader.cancel() }
+    }
 }
 
 private struct Artwork: View {

@@ -113,10 +113,8 @@ final class LyricsSyncCoordinator: ObservableObject {
 
     private func runNext(library: MusicLibrary) {
         guard task == nil, let job = jobs.first(where: { !$0.finished }) else { return }
-        let track = job.track
         let destination = job.destination
-        let source = track.lyrics
-        status = "正在为《\(track.title)》匹配歌词…"
+        status = "正在为《\(job.track.title)》匹配歌词…"
         update(job.id, "准备同步…")
         progress = alignment.$status.sink { [weak self] value in
             if !value.isEmpty { self?.update(job.id, value) }
@@ -130,6 +128,11 @@ final class LyricsSyncCoordinator: ObservableObject {
                 self.runNext(library: library)
             }
             do {
+                guard let track = job.track.resourcesLoaded ? job.track : await library.resolveTrack(job.track.id, fullResolution: true) else {
+                    self.update(job.id, "歌曲已移除，本次同步未执行", finished: true)
+                    return
+                }
+                let source = track.lyrics
                 var aligned = track
                 aligned.lyrics = try await self.alignment.align(
                     source: source,
@@ -138,7 +141,7 @@ final class LyricsSyncCoordinator: ObservableObject {
                     title: track.title
                 )
                 try Task.checkCancellation()
-                guard var current = library.track(forPath: track.url.path), current.lyrics == source else {
+                guard var current = await Self.currentTrack(matching: source, url: track.url, library: library) else {
                     self.update(job.id, "歌词已被修改或歌曲已移除，本次结果未覆盖新内容", finished: true)
                     return
                 }
@@ -157,6 +160,15 @@ final class LyricsSyncCoordinator: ObservableObject {
                 self.alert = LyricsSyncAlert(kind: .failure, title: "歌词同步失败", message: error.localizedDescription)
             }
         }
+    }
+
+    /// The list contains metadata only; compare against actual lyrics, not its empty placeholder.
+    static func currentTrack(matching lyrics: String, url: URL, library: MusicLibrary) async -> Track? {
+        guard let listed = library.track(forPath: url.path),
+              let current = await library.resolveTrack(listed.id, fullResolution: true),
+              library.track(forPath: url.path)?.id == current.id,
+              current.lyrics == lyrics else { return nil }
+        return current
     }
 
     private func update(_ id: UUID, _ detail: String, finished: Bool = false, failed: Bool = false) {

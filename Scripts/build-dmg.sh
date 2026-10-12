@@ -3,11 +3,26 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_PATH="$ROOT/.build/MiniVoice.app"
-if [[ "${1:-}" != "--skip-build" ]]; then
+SKIP_BUILD=false
+REUSE_LAYOUT=false
+LAYOUT_SOURCE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --skip-build) SKIP_BUILD=true ;;
+    --reuse-layout) REUSE_LAYOUT=true ;;
+    --layout-from)
+      if [[ $# -lt 2 || "$2" != /* || ! -f "$2" ]]; then
+        echo "error: --layout-from 需要现有 DMG 的绝对路径" >&2; exit 2
+      fi
+      REUSE_LAYOUT=true
+      LAYOUT_SOURCE="$2"
+      shift ;;
+    *) echo "用法：Scripts/build-dmg.sh [--skip-build] [--reuse-layout | --layout-from /absolute/previous.dmg]" >&2; exit 2 ;;
+  esac
+  shift
+done
+if [[ "$SKIP_BUILD" != true ]]; then
   "$ROOT/Scripts/build-app.sh" release
-elif [[ $# != 1 ]]; then
-  echo "用法：Scripts/build-dmg.sh [--skip-build]" >&2
-  exit 2
 fi
 codesign --verify --deep --strict "$APP_PATH"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
@@ -16,7 +31,11 @@ OUTPUT_DIR="$ROOT/.build/dist"
 OUTPUT="$OUTPUT_DIR/MiniVoice-${VERSION}-${ARCH}.dmg"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/minivoice-dmg.XXXXXX")"
 MOUNT_POINT="$WORK_DIR/volume"
+PREVIOUS_MOUNT="$WORK_DIR/previous"
 cleanup() {
+  if mount | grep -Fq " on $PREVIOUS_MOUNT ("; then
+    hdiutil detach "$PREVIOUS_MOUNT" >/dev/null || true
+  fi
   if mount | grep -Fq " on $MOUNT_POINT ("; then
     hdiutil detach "$MOUNT_POINT" >/dev/null || true
   fi
@@ -35,6 +54,18 @@ hdiutil create -quiet -srcfolder "$WORK_DIR/content" -volname "MiniVoice $VERSIO
 hdiutil attach -quiet -nobrowse -noautoopen -mountpoint "$MOUNT_POINT" "$WORK_DIR/installer.dmg"
 
 # Persist Finder layout in .DS_Store so opening the DMG shows both install icons.
+if [[ "$REUSE_LAYOUT" == true ]]; then
+  # Rebuild without UI automation, reusing a verified installation layout.
+  LAYOUT_SOURCE="${LAYOUT_SOURCE:-$OUTPUT}"
+  if [[ ! -f "$LAYOUT_SOURCE" ]]; then
+    echo "error: 无现有安装包可复用布局：$LAYOUT_SOURCE" >&2
+    exit 1
+  fi
+  mkdir -p "$PREVIOUS_MOUNT"
+  hdiutil attach -quiet -readonly -nobrowse -noautoopen -mountpoint "$PREVIOUS_MOUNT" "$LAYOUT_SOURCE"
+  cp "$PREVIOUS_MOUNT/.DS_Store" "$MOUNT_POINT/.DS_Store"
+  hdiutil detach -quiet "$PREVIOUS_MOUNT"
+else
 osascript - "$MOUNT_POINT" <<'APPLESCRIPT'
 on run argv
     set installFolder to POSIX file (item 1 of argv) as alias
@@ -58,6 +89,7 @@ on run argv
     end tell
 end run
 APPLESCRIPT
+fi
 
 if [[ ! -f "$MOUNT_POINT/.DS_Store" ]]; then
   echo "error: Finder 安装布局未保存，请检查 Finder 自动化权限" >&2

@@ -26,6 +26,11 @@ struct Track: Identifiable {
     var lyrics: String { didSet { if lyrics != oldValue { lyricCache = LyricCache() } } }
     var artwork: NSImage?
     var artworkWasEdited = false
+    var artworkKey: String?
+    var lyricsKey: String?
+    var resourcesLoaded = true
+    var sourceStamp: FileStamp?
+    var lyricSourceStamp: FileStamp?
     var duration: TimeInterval
 
     var canWriteTags: Bool { ["mp3", "flac", "m4a"].contains(url.pathExtension.lowercased()) }
@@ -173,9 +178,18 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
     private var player: AVAudioPlayer?
     private var timer: Timer?
+    @Published private var detailTracks: [UUID: Track] = [:]
+    private var detailTasks: [UUID: Task<Void, Never>] = [:]
+    private var detailRequests: [UUID: UUID] = [:]
 
-    var selectedTrack: Track? { selectedID.flatMap { tracksByID[$0] } }
-    var playingTrack: Track? { playingID.flatMap { tracksByID[$0] } }
+    private func invalidateDetails(_ id: UUID) {
+        detailRequests[id] = nil
+        detailTasks.removeValue(forKey: id)?.cancel()
+        detailTracks[id] = nil
+    }
+
+    var selectedTrack: Track? { selectedID.flatMap { detailTracks[$0] ?? tracksByID[$0] } }
+    var playingTrack: Track? { playingID.flatMap { detailTracks[$0] ?? tracksByID[$0] } }
     var selectedIndex: Int? { tracks.firstIndex { $0.id == selectedID } }
 
     func addFolders(_ urls: [URL]) {
@@ -207,9 +221,9 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
             var scannedByPath: [String: Track] = [:]
             for root in roots {
                 guard !Task.isCancelled else { return }
-                let cached = preferCache ? await Task.detached { try? PlaylistCache.read(root: root, recursive: recursive) }.value : nil
+                let cached = await Task.detached { try? PlaylistCache.read(root: root, recursive: recursive) }.value
                 var folderTracks: [Track] = []
-                if let cached {
+                if preferCache, let cached {
                     for (offset, entry) in cached.tracks.enumerated() {
                         guard !Task.isCancelled else { return }
                         if !hiddenTrackPaths.contains(root.appendingPathComponent(entry.path).path),
@@ -220,13 +234,27 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                     scanSummary = "正在载入已保存歌单…"
                 } else {
                     let result = await Task.detached { FolderScanner.scan([root], recursive: recursive) }.value
+                    let current = await Task.detached {
+                        (cached?.tracks ?? []).filter { $0.isCurrent(root: root) }
+                    }.value
+                    let unchanged = Dictionary(current.map { ($0.path, $0) }, uniquingKeysWith: { _, latest in latest })
                     issues += result.issues
                     for (offset, url) in result.urls.enumerated() where !hiddenTrackPaths.contains(url.path) {
                         guard !Task.isCancelled else { return }
                         scanSummary = "正在读取 \(offset + 1) / \(result.urls.count)"
                         if let track = scannedByPath[url.path] {
                             folderTracks.append(track)
-                        } else if let track = await loadTrack(url), track.duration > 0 { folderTracks.append(track) }
+                        } else if let entry = unchanged[String(url.path.dropFirst(root.path.count + 1))],
+                                  let track = entry.track(root: root) { folderTracks.append(track) }
+                        else if let track = await loadTrack(url), track.duration > 0 {
+                            let snapshot = CachedTrack(track: track, root: root)
+                            do {
+                                let entry = try await Task.detached {
+                                    var value = snapshot; try value.splitResources(); return value
+                                }.value
+                                if let light = entry.track(root: root) { folderTracks.append(light) }
+                            } catch { folderTracks.append(track); issues.append("资源缓存无法保存：\(url.lastPathComponent)") }
+                        }
                         else { issues.append("无法读取音频：\(url.lastPathComponent)") }
                     }
                     guard !Task.isCancelled else { return }
@@ -238,6 +266,9 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                             catch { return "歌单缓存无法保存：\(root.path)（\(error.localizedDescription)）" }
                         }.value
                         if let failure { issues.append(failure) }
+                        else if let saved = await Task.detached(operation: { try? PlaylistCache.read(root: root, recursive: recursive) }).value {
+                            folderTracks = saved.tracks.compactMap { $0.track(root: root) }
+                        }
                     }
                 }
                 for var track in folderTracks where seen.insert(track.url.path).inserted {
@@ -250,6 +281,8 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
             }
             guard !Task.isCancelled, generation == scanGeneration else { return }
             tracks = scanned
+            for id in Set(detailTracks.keys).union(detailTasks.keys) { invalidateDetails(id) }
+            if let id = playingID, tracksByID[id] == nil { stop() }
             if restoringSelection || !tracks.contains(where: { $0.id == selectedID }) {
                 stop()
                 let savedPath = defaults.string(forKey: "MiniVoice.lastTrack")
@@ -264,10 +297,18 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
             scanIssues = issues
             scanSummary = "歌单已载入：\(tracks.count) 首歌曲" + (issues.isEmpty ? "" : "，\(issues.count) 项无法读取")
             isImporting = false
+            if let id = selectedID { requestDetails(id) }
+            if let id = playingID, id != selectedID { requestDetails(id) }
+            if self.defaults === UserDefaults.standard {
+                Task.detached(priority: .utility) { ResourceCache.prune() }
+                if preferCache { validateCachedSources(generation: generation) }
+            }
         }
     }
 
     private func loadTrack(_ url: URL) async -> Track? {
+        let sourceStamp = FileStamp.read(url)
+        let lyricStamp = FileStamp.read(LyricsStorage.sidecarURL(for: url))
         let probe = await Task.detached { try? MediaTools.run("ffprobe", ["-v", "error", "-show_format", "-show_streams", "-of", "json", url.path]) }.value
         guard var track = await readTrack(url) else { return nil }
         var embeddedLyrics = ""
@@ -290,12 +331,127 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
         let sidecarLyrics = LyricsStorage.read(LyricsStorage.sidecarURL(for: url)) ?? ""
         track.lyrics = sidecarLyrics.isEmpty ? embeddedLyrics : sidecarLyrics
+        guard sourceStamp == FileStamp.read(url),
+              lyricStamp == FileStamp.read(LyricsStorage.sidecarURL(for: url)) else { return nil }
         return track
     }
 
     func select(_ id: Track.ID) {
         guard tracksByID[id] != nil else { return }
         selectedID = id
+        requestDetails(id)
+    }
+
+    private func requestDetails(_ id: UUID) {
+        let retained = Set([selectedID, playingID, id].compactMap { $0 })
+        for obsolete in Set(detailTasks.keys).union(detailTracks.keys) where !retained.contains(obsolete) {
+            invalidateDetails(obsolete)
+        }
+        let generation = scanGeneration
+        Task {
+            guard scanGeneration == generation, !isImporting else { return }
+            _ = await resolveTrack(id)
+        }
+    }
+
+    private func validateCachedSources(generation: Int) {
+        let roots = folders, recursive = recursiveScan
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard let self, self.scanGeneration == generation, !self.isImporting else { return }
+            for root in roots {
+                let changed = await Task.detached(priority: .utility) {
+                    (try? PlaylistCache.read(root: root, recursive: recursive))?.tracks.filter {
+                        FileStamp.read(root.appendingPathComponent($0.path)) != nil && !$0.isCurrent(root: root)
+                    } ?? []
+                }.value
+                for entry in changed {
+                    guard self.scanGeneration == generation, !self.isImporting else { return }
+                    let url = root.appendingPathComponent(entry.path)
+                    guard let existing = self.track(forPath: url.path), var updated = await self.loadTrack(url),
+                          self.scanGeneration == generation,
+                          let index = self.tracks.firstIndex(where: { $0.id == existing.id }) else { continue }
+                    updated.id = existing.id
+                    self.invalidateDetails(existing.id)
+                    self.tracks[index] = updated
+                    await self.updateCachedTrack(updated)
+                    if existing.id == self.selectedID || existing.id == self.playingID {
+                        self.requestDetails(existing.id)
+                    }
+                }
+            }
+            Task.detached(priority: .utility) { ResourceCache.prune() }
+        }
+    }
+
+    /// Full lyrics and artwork are hydrated only for selection/playback/editing.
+    func resolveTrack(_ id: UUID, fullResolution: Bool = false) async -> Track? {
+        if fullResolution, let base = tracksByID[id] {
+            let generation = scanGeneration
+            if var source = await loadTrack(base.url) {
+                guard !Task.isCancelled, scanGeneration == generation, tracksByID[id]?.url == base.url else { return nil }
+                source.id = id; source.artworkKey = base.artworkKey; source.lyricsKey = base.lyricsKey
+                return source
+            }
+        }
+        if let loaded = detailTracks[id] { return loaded }
+        guard let base = tracksByID[id] else { return nil }
+        if base.resourcesLoaded { return base }
+        if let pending = detailTasks[id] { await pending.value; return detailTracks[id] }
+        let requestID = UUID(), generation = scanGeneration
+        detailRequests[id] = requestID
+        let task = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if self.detailRequests[id] == requestID {
+                    self.detailRequests[id] = nil
+                    self.detailTasks[id] = nil
+                }
+            }
+            let artKey = base.artworkKey, lyricKey = base.lyricsKey
+            let sourceStamp = base.sourceStamp, lyricStamp = base.lyricSourceStamp, sourceURL = base.url
+            let cached = await Task.detached {
+                let current = sourceStamp != nil && sourceStamp == FileStamp.read(sourceURL)
+                    && lyricStamp == FileStamp.read(LyricsStorage.sidecarURL(for: sourceURL))
+                let bytes = ResourceCache.artworkData(artKey, detail: true)
+                return (current, ResourceCache.isValidArtwork(bytes) ? bytes : nil, ResourceCache.lyrics(lyricKey))
+            }.value
+            guard !Task.isCancelled, self.detailRequests[id] == requestID, self.scanGeneration == generation else { return }
+            var result: Track?
+            if cached.0 && (artKey == nil || cached.1 != nil) && (lyricKey == nil || cached.2 != nil) {
+                result = base
+                result?.artwork = cached.1.flatMap(NSImage.init(data:))
+                result?.lyrics = cached.2 ?? ""
+            } else {
+                result = await self.loadTrack(base.url)
+                guard !Task.isCancelled, self.detailRequests[id] == requestID, self.scanGeneration == generation else { return }
+                if var fresh = result {
+                    fresh.id = id
+                    await self.updateCachedTrack(fresh)
+                    let key = self.tracksByID[id]?.artworkKey
+                    let bounded = await Task.detached { ResourceCache.artworkData(key, detail: true) }.value
+                    if let bounded { fresh.artwork = NSImage(data: bounded) }
+                    result = fresh
+                }
+            }
+            if result == nil {
+                let values = await Task.detached { (ResourceCache.artworkData(artKey, detail: true), ResourceCache.lyrics(lyricKey)) }.value
+                result = base
+                result?.artwork = values.0.flatMap(NSImage.init(data:))
+                result?.lyrics = values.1 ?? ""
+            }
+            guard !Task.isCancelled, self.detailRequests[id] == requestID, self.scanGeneration == generation,
+                  var resolved = result, self.tracksByID[id] != nil else { return }
+            resolved.id = id; resolved.resourcesLoaded = true
+            resolved.artworkKey = self.tracksByID[id]?.artworkKey
+            resolved.lyricsKey = self.tracksByID[id]?.lyricsKey
+            // Retain only current selections; rapid browsing cannot retain all full covers.
+            self.detailTracks = self.detailTracks.filter { $0.key == self.selectedID || $0.key == self.playingID }
+            self.detailTracks[id] = resolved
+        }
+        detailTasks[id] = task
+        await task.value
+        return detailTracks[id]
     }
 
     func play(_ id: Track.ID, in visibleIDs: [Track.ID]? = nil) {
@@ -315,6 +471,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     private func activate(_ id: Track.ID) {
         stop(); selectedID = id; playingID = id
+        requestDetails(id)
         persistPlaybackPosition()
     }
 
@@ -323,6 +480,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     func play() {
         guard let track = playingTrack ?? selectedTrack else { return }
         playingID = track.id
+        requestDetails(track.id)
         do {
             if player?.url != track.url {
                 player?.stop()
@@ -338,6 +496,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                    let index = tracks.firstIndex(where: { $0.id == track.id }),
                    actual > tracks[index].duration + 0.5 {
                     tracks[index].duration = actual
+                    detailTracks[track.id]?.duration = actual
                 }
                 player?.currentTime = playbackTime
             }
@@ -386,7 +545,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func save(_ updated: Track, lyricsDestination: LyricsDestination = .tags) async throws {
-        guard let existing = tracks.first(where: { $0.id == updated.id }) else { return }
+        guard let existing = await resolveTrack(updated.id, fullResolution: true) else { return }
         guard updated.hasFileChanges(comparedTo: existing) else { return }
         let nonLyricsChanged = updated.title != existing.title || updated.artist != existing.artist || updated.album != existing.album || updated.artworkWasEdited
         let lyricsChanged = updated.lyrics != existing.lyrics
@@ -424,6 +583,8 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         if let index = tracks.firstIndex(where: { $0.id == updated.id }) {
             tracks[index] = updated; tracks[index].artworkWasEdited = false
         }
+        invalidateDetails(updated.id)
+        detailTracks[updated.id] = updated
         await updateCachedTrack(updated)
         if playingID == updated.id {
             let time = playbackTime
@@ -457,37 +618,58 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
             return
         }
         defaults.set(Array(hiddenTrackPaths), forKey: "MiniVoice.hiddenTrackPaths")
+        let removedSelected = selectedID.flatMap { tracksByID[$0]?.url.path }.map { removedPaths.contains($0) } ?? false
+        let removedPlaying = playingID.flatMap { tracksByID[$0]?.url.path }.map { removedPaths.contains($0) } ?? false
+        for track in targets where removedPaths.contains(track.url.path) { invalidateDetails(track.id) }
+        if removedPlaying { stop() }
         tracks.removeAll { removedPaths.contains($0.url.path) }
-        if let selectedID, ids.contains(selectedID) {
+        if removedSelected {
             self.selectedID = tracks.first?.id
+            if let selectedID = self.selectedID { requestDetails(selectedID) }
         }
-        if let playingID, ids.contains(playingID) { stop() }
         queue.reset(current: playingID ?? selectedID, ids: playbackIDs)
         removeCachedTracks(paths: removedPaths)
         if !failures.isEmpty { errorMessage = "部分歌曲无法移至废纸篓：\n\(failures.joined(separator: "\n"))" }
     }
 
     private func removeCachedTracks(paths: Set<String>) {
-        for root in folders {
-            guard var cache = try? PlaylistCache.read(root: root, recursive: recursiveScan) else { continue }
+        let roots = folders, recursive = recursiveScan
+        Task.detached(priority: .utility) { for root in roots {
+          ResourceCache.withDiskLock {
+            guard var cache = try? PlaylistCache.read(root: root, recursive: recursive) else { return }
             cache.tracks.removeAll { paths.contains(root.appendingPathComponent($0.path).path) }
             try? cache.write(root: root)
-        }
+          }
+        } }
     }
 
     private func updateCachedTrack(_ track: Track) async {
         for root in folders where track.url.path.hasPrefix(root.path + "/") {
+            guard !Task.isCancelled, tracksByID[track.id] != nil else { return }
             let entry = CachedTrack(track: track, root: root)
             let recursive = recursiveScan
-            let failure = await Task.detached { () -> String? in
+            let outcome = await Task.detached { () -> (CachedTrack?, String?) in
                 do {
-                    var cache = try PlaylistCache.read(root: root, recursive: recursive)
-                    if let index = cache.tracks.firstIndex(where: { $0.path == entry.path }) { cache.tracks[index] = entry }
-                    else { cache.tracks.append(entry) }
-                    try cache.write(root: root); return nil
-                } catch { return "歌曲已保存，但歌单缓存更新失败，请刷新：\(error.localizedDescription)" }
+                    return (try PlaylistCache.update(root: root, recursive: recursive, entry: entry), nil)
+                } catch { return (nil, "歌曲已保存，但歌单缓存更新失败，请刷新：\(error.localizedDescription)") }
             }.value
-            if let failure { errorMessage = failure }
+            guard !Task.isCancelled, tracksByID[track.id] != nil else { return }
+            if let failure = outcome.1 { errorMessage = failure }
+            else if let saved = outcome.0,
+                    let index = tracks.firstIndex(where: { $0.id == track.id }) {
+                if var light = saved.track(root: root) {
+                    light.id = track.id
+                    tracks[index] = light
+                }
+                detailTracks[track.id]?.artworkKey = saved.artworkKey
+                detailTracks[track.id]?.lyricsKey = saved.lyricsKey
+                if detailTracks[track.id] != nil {
+                    let key = saved.artworkKey
+                    let bytes = await Task.detached { ResourceCache.artworkData(key, detail: true) }.value
+                    guard !Task.isCancelled, tracksByID[track.id]?.artworkKey == key else { return }
+                    detailTracks[track.id]?.artwork = bytes.flatMap(NSImage.init(data:))
+                }
+            }
         }
     }
 
@@ -517,6 +699,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                actualEnd.isFinite, actualEnd > 0,
                abs(self.tracks[index].duration - actualEnd) > 0.5 {
                 self.tracks[index].duration = actualEnd
+                self.detailTracks[id]?.duration = actualEnd
             }
             self.playbackFinished(successfully: flag)
         }
@@ -563,7 +746,8 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let artItem = AVMetadataItem.metadataItems(from: metadata, filteredByIdentifier: .commonIdentifierArtwork).first
         let artData = try? await artItem?.load(.dataValue)
         let seconds = (try? await asset.load(.duration).seconds) ?? 0
-        return Track(url: url, title: title, artist: artist, album: album, lyrics: "", artwork: artData.flatMap(NSImage.init(data:)), duration: seconds.isFinite ? seconds : 0)
+        guard seconds.isFinite, seconds > 0 else { return nil }
+        return Track(url: url, title: title, artist: artist, album: album, lyrics: "", artwork: artData.flatMap(NSImage.init(data:)), duration: seconds)
     }
 }
 

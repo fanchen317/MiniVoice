@@ -40,8 +40,8 @@ final class DesktopLyricsController: ObservableObject {
         self.library = library
         cancellables.removeAll()
         library.clock.$time.sink { [weak self] _ in self?.scheduleRefresh() }.store(in: &cancellables)
-        library.$playingID.sink { [weak self] _ in self?.scheduleRefresh() }.store(in: &cancellables)
-        library.$tracks.sink { [weak self] _ in self?.scheduleRefresh() }.store(in: &cancellables)
+        // Includes async detail hydration and selection while playback is paused.
+        library.objectWillChange.sink { [weak self] _ in self?.scheduleRefresh() }.store(in: &cancellables)
         refreshText()
         updatePanelVisibility()
     }
