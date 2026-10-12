@@ -59,6 +59,7 @@ struct ContentView: View {
     @State private var playbackFlight: PlaybackFlight?
     @State private var recent = false
     @State private var query = ""
+    @State private var showingSort = false
     @State private var showingTasks = false
     @State private var unreadScan = false
     @State private var hideFinishedScan = false
@@ -579,10 +580,11 @@ struct ContentView: View {
             libraryToolbarMainRow(groups: groups)
             if multiSelecting && !recent && !groups {
                 simpleSelectionToolbar
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        // The panel owns the opening animation; toolbar controls keep their geometry.
-        .transaction { $0.animation = nil }
+        // Animate the operation row and the list space it occupies together.
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: multiSelecting)
     }
 
     private var selectAllButton: some View {
@@ -669,7 +671,13 @@ struct ContentView: View {
                 .disabled(library.isImporting)
             }
             if !recent {
-                Menu {
+                Button { showingSort.toggle() } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                        .modifier(LibraryToolbarSurface())
+                }
+                .frame(width: 28, height: 28)
+                .popover(isPresented: $showingSort, arrowEdge: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
                     if groups {
                         sortFieldButton(destination == .artists ? "歌手姓名" : "专辑名称", field: "name")
                         sortFieldButton("歌曲数量", field: "count")
@@ -687,18 +695,21 @@ struct ContentView: View {
                     Divider()
                     sortDirectionButton("正序", ascending: true)
                     sortDirectionButton("降序", ascending: false)
-                } label: {
-                    Image(systemName: "arrow.up.arrow.down")
+                    }
+                    .buttonStyle(SortOptionButtonStyle())
+                    .padding(8)
+                    .frame(width: 180)
+                    .onExitCommand { showingSort = false }
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .modifier(LibraryToolbarSurface())
-                .frame(width: 28, height: 28)
                 .help(groups ? "分类排序" : "歌曲排序").accessibilityLabel(groups ? "分类排序" : "歌曲排序")
                 .disabled(songs.isEmpty)
                 if !groups {
-                Button { multiSelecting.toggle(); selectedIDs.removeAll() } label: {
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
+                        multiSelecting.toggle()
+                        selectedIDs.removeAll()
+                    }
+                } label: {
                     LibraryToolbarIcon(symbol: multiSelecting ? "checkmark.circle.fill" : "checklist", showBorder: false)
                 }
                 .help(multiSelecting ? "退出多选" : "多选歌曲")
@@ -717,6 +728,23 @@ struct ContentView: View {
         .frame(height: libraryStyle ? 28 : 36)
     }
 
+    private func sortOptionLabel(_ title: String, selected: Bool) -> some View {
+        HStack(spacing: 12) {
+            Text(title).lineLimit(1)
+            Spacer(minLength: 0)
+            Image(systemName: "checkmark")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 16)
+                .opacity(selected ? 1 : 0)
+                .accessibilityHidden(true)
+        }
+        .font(.system(size: 13))
+        .padding(.horizontal, 10)
+        .frame(height: 32)
+        .contentShape(Rectangle())
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
+
     private func sortFieldButton(_ title: String, field: String) -> some View {
         Button {
             if browsingGroups {
@@ -725,13 +753,9 @@ struct ContentView: View {
                 sortField = field
                 sortOrder = field == "added" ? "modified" : field
             }
+            showingSort = false
         } label: {
-            HStack {
-                if (browsingGroups ? workspaceRequest.groupSortField : effectiveSortField) == field {
-                    Image(systemName: "checkmark")
-                }
-                Text(title)
-            }
+            sortOptionLabel(title, selected: (browsingGroups ? workspaceRequest.groupSortField : effectiveSortField) == field)
         }
     }
 
@@ -740,13 +764,9 @@ struct ContentView: View {
             if browsingGroups {
                 if destination == .artists { artistSortAscending = ascending } else { albumSortAscending = ascending }
             } else { sortAscending = ascending }
+            showingSort = false
         } label: {
-            HStack {
-                if (browsingGroups ? (destination == .artists ? artistSortAscending : albumSortAscending) : sortAscending) == ascending {
-                    Image(systemName: "checkmark")
-                }
-                Text(title)
-            }
+            sortOptionLabel(title, selected: (browsingGroups ? (destination == .artists ? artistSortAscending : albumSortAscending) : sortAscending) == ascending)
         }
     }
 
