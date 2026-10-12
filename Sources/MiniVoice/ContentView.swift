@@ -780,6 +780,8 @@ private extension ContentView {
             }
         }
         .frame(width: width, height: height)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22),
+                   value: width >= PlayerControlsGeometry.singleRowMinimumWidth)
     }
 
     func toggleAlbumPlayback() { setAlbumPlayback(!albumPlayback) }
@@ -1124,6 +1126,8 @@ private struct PlayerDetail: View {
                     .frame(height: controlsHeight)
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22),
+                       value: geometry.size.width >= PlayerControlsGeometry.singleRowMinimumWidth)
         }
     }
 
@@ -1425,7 +1429,8 @@ private struct PlayerControls: View {
                 VStack(spacing: 0) {
                     progress.frame(height: 22)
                     Spacer(minLength: 8)
-                    transport(spacing: layout.buttonSpacing).frame(height: 52)
+                    transport(spacing: layout.buttonSpacing)
+                        .frame(width: layout.buttons.width, height: 52)
                 }
                 .frame(height: layout.center.height)
                 output.frame(height: layout.output.height)

@@ -9,6 +9,11 @@ final class PlayerControlsGeometryTests: XCTestCase {
             let width = scenario.width
             let layout = PlayerControlsGeometry(width: width, expanded: scenario.expanded)
             let panel = CGRect(x: 0, y: 0, width: width, height: layout.height)
+            XCTAssertLessThanOrEqual(layout.height, PlayerControlsGeometry.twoRowHeight)
+            if width < PlayerControlsGeometry.singleRowMinimumWidth {
+                XCTAssertEqual(layout.height, PlayerControlsGeometry.twoRowHeight)
+                XCTAssertEqual(layout.artworkSize, 44)
+            }
             let frames = [layout.center, layout.song, layout.output]
             for frame in frames {
                 XCTAssertTrue(panel.contains(frame), "Control outside panel at width \(width): \(frame)")
@@ -19,33 +24,39 @@ final class PlayerControlsGeometryTests: XCTestCase {
                 }
             }
             XCTAssertEqual(layout.buttons.midX, width / 2, accuracy: 0.001)
-            if width >= 840 {
+            if width >= 680 {
                 XCTAssertEqual(layout.buttons.minX - layout.song.maxX,
                                layout.output.minX - layout.buttons.maxX, accuracy: 0.001)
             }
-            XCTAssertEqual(layout.progress.minX, layout.buttons.minX)
-            XCTAssertEqual(layout.progress.maxX, layout.buttons.maxX)
-            XCTAssertLessThanOrEqual(layout.progress.width, 300)
+            XCTAssertEqual(layout.progress.midX, layout.buttons.midX)
+            XCTAssertLessThanOrEqual(layout.buttons.width, 300)
+            XCTAssertLessThanOrEqual(layout.buttonSpacing, 26)
+            XCTAssertLessThanOrEqual(layout.output.width, 240)
+            if width >= 680 {
+                XCTAssertEqual(layout.progress.width, 300)
+            } else {
+                XCTAssertEqual(layout.progress.width, width - 24)
+                XCTAssertGreaterThanOrEqual(layout.output.minX - layout.song.maxX, 16)
+                XCTAssertEqual(layout.output.maxX, width - 12)
+            }
             XCTAssertGreaterThanOrEqual(layout.buttonSpacing, 15)
         }
     }
 
-    func testLayoutHasNoJumpAtResponsiveBoundaries() {
-        for width in [CGFloat(620), 720, 840] {
-            let before = PlayerControlsGeometry(width: width - 0.01)
-            let after = PlayerControlsGeometry(width: width + 0.01)
-            XCTAssertEqual(before.height, after.height, accuracy: 0.1)
-            for (a, b) in zip([before.progress, before.buttons, before.song, before.output],
-                              [after.progress, after.buttons, after.song, after.output]) {
-                XCTAssertEqual(a.minX, b.minX, accuracy: 0.1)
-                XCTAssertEqual(a.minY, b.minY, accuracy: 0.1)
-                XCTAssertEqual(a.width, b.width, accuracy: 0.1)
-            }
+    func testLayoutSwitchesDirectlyAtSingleRowBoundary() {
+        for expanded in [false, true] {
+            let before = PlayerControlsGeometry(width: 679.99, expanded: expanded)
+            let after = PlayerControlsGeometry(width: 680, expanded: expanded)
+            XCTAssertEqual(before.center.minY - before.song.maxY, 8, accuracy: 0.001)
+            XCTAssertEqual(before.center.width, 679.99 - 24, accuracy: 0.001)
+            XCTAssertEqual(after.center.minY, after.song.minY)
+            XCTAssertEqual(after.center.maxY, after.song.maxY)
+            XCTAssertEqual(after.center.width, 300)
         }
     }
 
     func testExpandedArtworkAndBalancedWideColumns() {
-        for width in [CGFloat(840), 1000, 1400] {
+        for width in [CGFloat(680), 840, 1000, 1400] {
             for expanded in [false, true] {
                 let layout = PlayerControlsGeometry(width: width, expanded: expanded)
                 let leftGap = layout.buttons.minX - layout.song.maxX
@@ -62,6 +73,18 @@ final class PlayerControlsGeometryTests: XCTestCase {
                 XCTAssertGreaterThanOrEqual(layout.buttons.minY - layout.progress.maxY, 8)
                 XCTAssertEqual(layout.artworkSize, expanded ? 96 : 82)
                 XCTAssertGreaterThanOrEqual(layout.song.height, layout.artworkSize)
+            }
+        }
+    }
+
+    func testNarrowLayoutPlacesSongAndOutputAboveTransport() {
+        for width in [CGFloat(280), 400, 540, 620] {
+            for expanded in [false, true] {
+                let layout = PlayerControlsGeometry(width: width, expanded: expanded)
+                XCTAssertEqual(layout.song.minY, 12)
+                XCTAssertEqual(layout.output.minY, 12)
+                XCTAssertEqual(layout.center.minY - layout.song.maxY, 8, accuracy: 0.001)
+                XCTAssertEqual(layout.center.minY - layout.output.maxY, 8, accuracy: 0.001)
             }
         }
     }

@@ -1,8 +1,10 @@
 import Foundation
 
-/// Keep the same controls mounted while the window resizes. Side content first
-/// narrows to make room, then moves up beside the progress/transport column.
+/// Keep controls mounted while switching directly between two full rows and
+/// three columns. Live resize must never leave partially collapsed rows.
 struct PlayerControlsGeometry {
+    static let singleRowMinimumWidth: CGFloat = 680
+    static let twoRowHeight: CGFloat = 172
     let height: CGFloat
     let artworkSize: CGFloat
     let buttonSpacing: CGFloat
@@ -15,29 +17,32 @@ struct PlayerControlsGeometry {
         let width = max(280, width)
         let inset: CGFloat = 12
         let innerWidth = width - inset * 2
+        let singleRow = width >= Self.singleRowMinimumWidth
         let buttonsWidth = min(300, innerWidth)
-        let sideWidth = max(0, (width - buttonsWidth) / 2 - inset * 2)
-        let sideProgress = Self.smoothStep((width - 620) / 100)
-        let rowProgress = Self.smoothStep((width - 720) / 120)
-        let narrowOutputWidth = min(180, max(110, width * 0.27))
-        let outputWidth = Self.mix(narrowOutputWidth, min(240, sideWidth), sideProgress)
-        let narrowSongWidth = min(280, innerWidth - narrowOutputWidth - 16)
-        let songLimit = Self.mix(narrowSongWidth, min(240, sideWidth), sideProgress)
-        let songWidth = songLimit
+        let progressWidth = singleRow ? buttonsWidth : innerWidth
+        let sideWidth = singleRow
+            ? min(240, (width - buttonsWidth) / 2 - inset * 2)
+            : (innerWidth - 16) / 2
+        let outputWidth = min(240, sideWidth)
+        let songWidth = sideWidth
 
-        artworkSize = 44 + (expanded ? 52 : 38) * Self.smoothStep((width - 280) / 260)
+        // Growing artwork while still in two rows also grew the entire footer.
+        // Keep that mode's dimensions fixed; enlarge artwork only in one row.
+        artworkSize = singleRow ? (expanded ? 96 : 82) : 44
         let sideHeight = max(58, artworkSize)
         let centerHeight = max(82, artworkSize)
-        let regionHeight = Self.mix(sideHeight, centerHeight, rowProgress)
-        height = Self.mix(centerHeight + sideHeight + 32, centerHeight + 24, rowProgress)
+        let regionHeight = singleRow ? centerHeight : sideHeight
+        height = singleRow ? centerHeight + 24 : Self.twoRowHeight
         // Four 36pt targets plus the 52pt primary button.
         buttonSpacing = (buttonsWidth - 36 * 4 - 52) / 4
         let centerX = (width - buttonsWidth) / 2
-        progress = CGRect(x: centerX, y: inset, width: buttonsWidth, height: 22)
-        buttons = CGRect(x: centerX, y: inset + centerHeight - 52,
+        // Both narrow rows span the available width until all three columns fit.
+        let centerY = singleRow ? inset : inset + sideHeight + 8
+        progress = CGRect(x: (width - progressWidth) / 2, y: centerY, width: progressWidth, height: 22)
+        buttons = CGRect(x: centerX, y: centerY + centerHeight - 52,
                          width: buttonsWidth, height: 52)
         // All three columns have the same top and bottom in the wide layout.
-        let sideY = Self.mix(height - inset - regionHeight, inset, rowProgress)
+        let sideY = inset
         song = CGRect(x: inset, y: sideY, width: songWidth, height: regionHeight)
         output = CGRect(x: width - inset - outputWidth, y: sideY,
                         width: outputWidth, height: regionHeight)
@@ -45,12 +50,4 @@ struct PlayerControlsGeometry {
 
     var center: CGRect { progress.union(buttons) }
 
-    private static func smoothStep(_ value: CGFloat) -> CGFloat {
-        let t = min(1, max(0, value))
-        return t * t * (3 - 2 * t)
-    }
-
-    private static func mix(_ from: CGFloat, _ to: CGFloat, _ progress: CGFloat) -> CGFloat {
-        from + (to - from) * progress
-    }
 }
