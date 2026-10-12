@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum StyleFragmentMotion {
-    static let duration: TimeInterval = 0.94
+    static let duration: TimeInterval = 0.68
 
     static func cells(size: CGSize) -> [CGRect] {
         guard size.width > 0, size.height > 0 else { return [] }
@@ -20,8 +20,8 @@ enum StyleFragmentMotion {
     static func progress(elapsed: TimeInterval, center: CGPoint, origin: CGPoint, size: CGSize) -> Double {
         let diagonal = max(1, hypot(size.width, size.height))
         let distance = hypot(center.x - origin.x, center.y - origin.y)
-        let delay = min(1, distance / diagonal) * 0.32
-        return min(1, max(0, (elapsed - delay) / 0.62))
+        let delay = min(1, distance / diagonal) * 0.20
+        return min(1, max(0, (elapsed - delay) / 0.48))
     }
 }
 
@@ -43,25 +43,43 @@ final class PlayerStyleTransition: ObservableObject {
     weak var rootView: NSView?
     weak var iconView: NSView?
     private var completion: Task<Void, Never>?
+    private var prepared: Snapshot?
+    private var pendingSwitch: (() -> Void)?
 
-    func capture() -> Bool {
+    func queueSwitch(_ action: @escaping () -> Void) {
+        // Two extra toggles cancel; retain at most one pending change.
+        pendingSwitch = pendingSwitch == nil ? action : nil
+    }
+
+    func prepareCapture() {
+        guard snapshot == nil, prepared == nil else { return }
+        _ = capture(prepareOnly: true)
+    }
+
+    func capture(prepareOnly: Bool = false) -> Bool {
+        if !prepareOnly, snapshot == nil, let cached = prepared,
+           rootView?.bounds.size == cached.size,
+           Date().timeIntervalSince(cached.started) < 3 {
+            prepared = nil
+            start(Snapshot(size: cached.size, origin: cached.origin, started: Date(), fragments: cached.fragments))
+            return true
+        }
+        prepared = nil
         guard snapshot == nil, let marker = rootView, let content = marker.window?.contentView else { return false }
         let rect = marker.convert(marker.bounds, to: content).intersection(content.bounds)
-        guard rect.width > 0, rect.height > 0,
-              let bitmap = content.bitmapImageRepForCachingDisplay(in: rect) else { return false }
+        guard rect.width > 0, rect.height > 0 else { return false }
+        // Capture directly into a bounded bitmap instead of allocating a Retina
+        // window image and then downsampling it after the click.
+        let resolution = min(1, 1000 / rect.width)
+        guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil,
+            pixelsWide: max(1, Int(rect.width * resolution)),
+            pixelsHigh: max(1, Int(rect.height * resolution)), bitsPerSample: 8,
+            samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return false }
+        bitmap.size = rect.size
         content.cacheDisplay(in: rect, to: bitmap)
         guard let original = bitmap.cgImage else { return false }
-        // One bounded texture per click; never capture live playback every frame.
-        let factor = min(1, 1600 / CGFloat(original.width))
-        let image: CGImage
-        if factor < 1,
-           let context = CGContext(data: nil, width: Int(CGFloat(original.width) * factor),
-               height: Int(CGFloat(original.height) * factor), bitsPerComponent: 8, bytesPerRow: 0,
-               space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
-            context.interpolationQuality = .medium
-            context.draw(original, in: CGRect(x: 0, y: 0, width: context.width, height: context.height))
-            image = context.makeImage() ?? original
-        } else { image = original }
+        let image = original
         let size = rect.size
         let iconRect = iconView.map { $0.convert($0.bounds, to: content) }
         let origin = iconRect.map {
@@ -76,38 +94,69 @@ final class PlayerStyleTransition: ObservableObject {
             return Fragment(rect: cell, image: piece)
         }
         guard !fragments.isEmpty else { return false }
-        snapshot = Snapshot(size: size, origin: origin, started: Date(), fragments: fragments)
+        let captured = Snapshot(size: size, origin: origin, started: Date(), fragments: fragments)
+        if prepareOnly { prepared = captured; return true }
+        start(captured)
+        return true
+    }
+
+    private func start(_ captured: Snapshot) {
+        snapshot = captured
         completion?.cancel()
         completion = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(StyleFragmentMotion.duration + 0.06))
+            try? await Task.sleep(for: .seconds(StyleFragmentMotion.duration))
             guard !Task.isCancelled else { return }
             self?.finish()
         }
-        return true
     }
 
     func finish() {
         completion?.cancel()
         completion = nil
         snapshot = nil
+        prepared = nil
+        let next = pendingSwitch
+        pendingSwitch = nil
+        if let next {
+            completion = Task {
+                // Remove the old overlay before taking the next snapshot.
+                try? await Task.sleep(for: .milliseconds(16))
+                guard !Task.isCancelled else { return }
+                next()
+            }
+        }
     }
 }
 
 struct StyleTransitionProbe: NSViewRepresentable {
     let transition: PlayerStyleTransition
     var icon = false
+    var hoverChanged: ((Bool) -> Void)? = nil
     func makeNSView(context: Context) -> NSView {
         let view = StyleTransitionMarker()
+        view.hoverChanged = hoverChanged
         if icon { transition.iconView = view } else { transition.rootView = view }
         return view
     }
     func updateNSView(_ view: NSView, context: Context) {
+        if let marker = view as? StyleTransitionMarker {
+            marker.hoverChanged = hoverChanged
+            marker.refreshHover()
+        }
         if icon { transition.iconView = view } else { transition.rootView = view }
     }
 }
 
 private final class StyleTransitionMarker: NSView {
+    var hoverChanged: ((Bool) -> Void)?
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); refreshHover() }
+    override func layout() { super.layout(); refreshHover() }
+    func refreshHover() {
+        guard let window, let hoverChanged else { return }
+        let hovered = bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+        DispatchQueue.main.async { hoverChanged(hovered) }
+    }
 }
 
 struct StyleFragmentSweep: View {
@@ -145,7 +194,7 @@ struct StyleFragmentSweep: View {
 
 struct PlayerStyleSwitchButton: View {
     let targetTitle: String
-    let transition: PlayerStyleTransition
+    @ObservedObject var transition: PlayerStyleTransition
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
@@ -167,10 +216,15 @@ struct PlayerStyleSwitchButton: View {
                 .shadow(color: .green.opacity(hovering ? 0.25 : 0), radius: 8, y: 3)
         }
         .buttonStyle(StyleSwitchPressStyle())
-        .background(StyleTransitionProbe(transition: transition, icon: true))
-        .onHover { hovering = $0 }
+        .background(StyleTransitionProbe(transition: transition, icon: true, hoverChanged: { inside in
+            if hovering != inside { hovering = inside }
+            if inside { transition.prepareCapture() }
+        }))
+        .onHover {
+            hovering = $0
+            if $0 { transition.prepareCapture() }
+        }
         .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.78), value: hovering)
-        .disabled(transition.snapshot != nil)
         .help("切换到\(targetTitle)")
         .accessibilityLabel("切换到\(targetTitle)")
     }

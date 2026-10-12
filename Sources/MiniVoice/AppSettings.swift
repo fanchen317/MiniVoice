@@ -95,6 +95,10 @@ struct WindowCloseObserver: NSViewRepresentable {
                 window.backgroundColor = .clear
                 window.titlebarAppearsTransparent = true
                 window.styleMask.insert(.fullSizeContentView)
+                window.styleMask.insert(.resizable)
+                // Geometry-driven content must not raise the minimum to its
+                // current size after the window has been enlarged.
+                window.contentMinSize = NSSize(width: 304, height: 600)
                 window.windowController?.shouldCascadeWindows = false
                 // Read before SwiftUI's initial layout can emit move/resize events.
                 var savedFrame = placement.load()
@@ -134,6 +138,26 @@ struct WindowCloseObserver: NSViewRepresentable {
             case .background: break
             case .pause: library.pause()
             case .quit: NSApp.terminate(nil)
+            }
+        }
+    }
+}
+
+/// The full-size SwiftUI content covers the native title bar. Give its blank
+/// strip AppKit mouse handling, leaving the traffic-light buttons uncovered.
+struct PlayerTitleBar: NSViewRepresentable {
+    func makeNSView(context: Context) -> TitleBarView { TitleBarView() }
+    func updateNSView(_ nsView: TitleBarView, context: Context) {}
+
+    final class TitleBarView: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
+
+        override func mouseDown(with event: NSEvent) {
+            guard let window else { return }
+            if event.clickCount == 2 {
+                window.zoom(nil)
+            } else {
+                window.performDrag(with: event)
             }
         }
     }

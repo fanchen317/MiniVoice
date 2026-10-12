@@ -45,7 +45,7 @@ Scripts/deploy.sh
 
 单独构建：`Scripts/build-app.sh [debug|release]`，产物在 `.build/MiniVoice.app`。
 
-当前版本为 **2.2**（构建号 7）。制作拖拽安装包：`Scripts/build-dmg.sh`，自动构建 release 并生成 `.build/dist/MiniVoice-2.2-arm64.dmg`（文件名按实际版本和架构生成）。如已构建，可使用 `Scripts/build-dmg.sh --skip-build`。打开 DMG 后，将 MiniVoice 拖入右侧 Applications 文件夹即可安装；首次保存安装布局需要 Finder 自动化，后续可用 `--reuse-layout` 无界面复用同版本布局，或用 `--layout-from /absolute/path/previous.dmg` 复用旧版本布局。安装包沿用当前 ad-hoc 签名，尚未进行开发者签名与公证；其他 Mac 的元数据编辑仍需安装 FFmpeg。
+当前版本为 **2.3.0**（构建号 8）。制作拖拽安装包：`Scripts/build-dmg.sh`，自动构建 release 并生成 `.build/dist/MiniVoice-2.3.0-arm64.dmg`（文件名按实际版本和架构生成）。如已构建，可使用 `Scripts/build-dmg.sh --skip-build`。打开 DMG 后，将 MiniVoice 拖入右侧 Applications 文件夹即可安装；首次保存安装布局需要 Finder 自动化，后续可用 `--reuse-layout` 无界面复用同版本布局，或用 `--layout-from /absolute/path/previous.dmg` 复用旧版本布局。安装包沿用当前 ad-hoc 签名，尚未进行开发者签名与公证；其他 Mac 的元数据编辑仍需安装 FFmpeg。
 
 ## 当前边界
 

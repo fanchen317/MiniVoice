@@ -26,16 +26,19 @@ struct ContentView: View {
     @StateObject private var collections = LibraryCollections()
     @State private var destination: LibraryDestination = .all
     @State private var browseGroup: String?
-    @Namespace private var browseExpansion
+    @State private var browseCardFrames: [String: CGRect] = [:]
+    @StateObject private var browseTransition = BrowseCardTransition()
+    @Namespace private var browseReflow
+    @Namespace private var browseCoordinateSpace
+    @Namespace private var simpleSidebarSelection
+    @Namespace private var librarySidebarSelection
     @State private var browseScrollPositions = BrowseScrollPositions()
-    @State private var browseArtwork: [String: CachedArtwork] = [:]
     @State private var browsePages: [LibraryDestination: BrowsePageSnapshot] = [:]
 
     private struct BrowsePageSnapshot {
         let request: WorkspaceListRequest
         let songs: [Track]
         let groups: [(name: String, tracks: [Track])]
-        let artwork: [String: CachedArtwork]
     }
 
     @discardableResult
@@ -43,7 +46,6 @@ struct ContentView: View {
         guard browsingGroups, let page = browsePages[destination], page.request == workspaceRequest else { return false }
         songs = page.songs
         songGroups = page.groups
-        browseArtwork = page.artwork
         return true
     }
     @State private var albumPlayback = false
@@ -54,6 +56,7 @@ struct ContentView: View {
     private var libraryStyle: Bool { interfaceStyle == PlayerInterfaceStyle.library.rawValue }
     @State private var sidebarVisible = true
     @StateObject private var styleTransition = PlayerStyleTransition()
+    @State private var playbackFlight: PlaybackFlight?
     @State private var recent = false
     @State private var query = ""
     @State private var showingTasks = false
@@ -93,11 +96,12 @@ struct ContentView: View {
     @State private var listEntriesRevision: Int?
     @State private var listEntries: [SongListEntry] = []
     @State private var songGroups: [(name: String, tracks: [Track])] = []
-    @State private var artworkPreparationRequest: UUID?
+    @State private var listPreparationRequest: UUID?
 
     private var listRequest: SongListRequest {
         SongListRequest(revision: library.tracksRevision, recentPaths: recent ? library.recentPaths : [],
-                        recent: recent, query: query, field: effectiveSortField, ascending: sortAscending)
+                        recent: recent, query: query, field: LibraryBrowseIndex.listSortField(destination: libraryStyle ? destination : .all,
+                            group: browseGroup, fallback: effectiveSortField), ascending: sortAscending)
     }
 
     private var effectiveSortField: String {
@@ -119,9 +123,9 @@ struct ContentView: View {
         if restoreBrowsePage() { return }
         let workspace = workspaceRequest
         let preparation = UUID()
-        artworkPreparationRequest = preparation
+        listPreparationRequest = preparation
         defer {
-            if artworkPreparationRequest == preparation { artworkPreparationRequest = nil }
+            if listPreparationRequest == preparation { listPreparationRequest = nil }
         }
         // Publish the selected list immediately; visible rows warm nearby covers
         // in the background rather than waiting for every library thumbnail.
@@ -171,21 +175,10 @@ struct ContentView: View {
             let field = workspace.groupSortField, ascending = workspace.groupSortAscending
             let groups = await Task.detached { LibraryBrowseIndex.groups(metadata, artist: artist, field: field, ascending: ascending) }.value
             guard !Task.isCancelled, workspaceRequest == workspace else { return }
-            var prepared: [String: CachedArtwork] = [:]
-            for group in groups {
-                guard !Task.isCancelled else { return }
-                if let track = group.ids.compactMap({ library.track(for: $0) }).first(where: { $0.artworkKey != nil || $0.artwork != nil }),
-                   let key = track.artworkKey {
-                    if let existing = browseArtwork[key] ?? browsePages.values.lazy.compactMap({ $0.artwork[key] }).first {
-                        prepared[key] = existing
-                    }
-                    else { prepared[key] = await BrowseArtworkLoader.shared.image(key, source: track.url) }
-                }
-            }
-            guard !Task.isCancelled, workspaceRequest == workspace else { return }
-            browseArtwork = prepared
+            // Publish metadata immediately. Lazy cards load their own covers;
+            // a missing cover must never hold the entire classification page open.
             songGroups = groups.map { (name: $0.name, tracks: $0.ids.compactMap { library.track(for: $0) }) }
-            browsePages[destination] = BrowsePageSnapshot(request: workspace, songs: songs, groups: songGroups, artwork: prepared)
+            browsePages[destination] = BrowsePageSnapshot(request: workspace, songs: songs, groups: songGroups)
         }
         selectedIDs.formIntersection(Set(songs.map(\.id)))
     }
@@ -264,16 +257,38 @@ struct ContentView: View {
         .frame(minWidth: 304, minHeight: 600)
         .tint(playerGreen)
         .background(StyleTransitionProbe(transition: styleTransition))
-        .allowsHitTesting(styleTransition.snapshot == nil)
         .overlay {
             if let snapshot = styleTransition.snapshot {
                 StyleFragmentSweep(snapshot: snapshot)
                     .id(snapshot.id)
                     .clipped()
-                    .onDisappear { styleTransition.finish() }
             }
         }
+        .overlayPreferenceValue(PlaybackArtworkAnchors.self) { anchors in
+            GeometryReader { geometry in
+                if let flight = playbackFlight,
+                   let source = anchors[flight.track.id.uuidString],
+                   let target = anchors["player"] {
+                    PlaybackArtworkFlight(track: flight.track, source: geometry[source], target: geometry[target])
+                        .id(flight.id)
+                }
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+        .task(id: playbackFlight?.id) {
+            guard playbackFlight != nil else { return }
+            do { try await Task.sleep(for: .milliseconds(650)) } catch { return }
+            playbackFlight = nil
+        }
         .background(PlayerInitialFocus())
+        .overlay(alignment: .top) {
+            PlayerTitleBar()
+                .frame(height: 28)
+                .padding(.leading, 78)
+                .ignoresSafeArea()
+                .accessibilityHidden(true)
+        }
         .task(id: workspaceRequest) { await updateSongs() }
         .onChange(of: interfaceStyle) { _ in
             recent = false; destination = .all; browseGroup = nil
@@ -437,7 +452,7 @@ struct ContentView: View {
                 navigationItem("最近播放", symbol: "clock", isRecent: true)
             }
             Divider().opacity(0.4)
-            libraryToolbar
+            libraryToolbar()
             ScrollViewReader { proxy in
               PlayerScrollView {
                 LazyVStack(spacing: 4) {
@@ -471,7 +486,9 @@ struct ContentView: View {
     }
 
     private func sidebarBrand(closeProgress: CGFloat) -> some View {
-            HStack(spacing: 0) {
+            let showsClose = closeProgress >= 0.5
+            let showsTasks = showingTasks || lyricsSync.activeCount > 0 || library.isImporting || lyricsSync.downloadingModel || lyricsSync.hasUnread || unreadScan
+            return HStack(spacing: 0) {
                 PlayerStyleSwitchButton(targetTitle: libraryStyle ? "简易样式" : "音乐库样式",
                                         transition: styleTransition, action: switchPlayerStyle)
                 VStack(alignment: .leading, spacing: 4) {
@@ -482,7 +499,7 @@ struct ContentView: View {
                 .fixedSize(horizontal: true, vertical: false)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 8)
-                if showingTasks || lyricsSync.activeCount > 0 || library.isImporting || lyricsSync.downloadingModel || lyricsSync.hasUnread || unreadScan {
+                if showsTasks {
                   Image(systemName: "exclamationmark.circle")
                     .font(.system(size: 19)).foregroundStyle(playerGreen)
                     .frame(width: 22, height: 24)
@@ -499,18 +516,24 @@ struct ContentView: View {
                         .frame(width: 24, height: 24)
                 }
                 .buttonStyle(.plain)
-                .frame(width: 32 * closeProgress, alignment: .trailing)
-                .opacity(closeProgress)
+                .frame(width: showsClose ? 32 : 0, alignment: .trailing)
+                .opacity(showsClose ? 1 : 0)
+                .scaleEffect(showsClose ? 1 : 0.8, anchor: .trailing)
                 .clipped()
-                .allowsHitTesting(closeProgress >= 1)
-                .accessibilityHidden(closeProgress < 1)
+                .allowsHitTesting(showsClose)
+                .accessibilityHidden(!showsClose)
                 .help("收起侧栏")
                 .accessibilityLabel("收起侧栏")
             }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: showsClose)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: showsTasks)
     }
 
     private func switchPlayerStyle() {
-        guard styleTransition.snapshot == nil else { return }
+        guard styleTransition.snapshot == nil else {
+            styleTransition.queueSwitch { switchPlayerStyle() }
+            return
+        }
         let next = libraryStyle ? PlayerInterfaceStyle.simple : .library
         if reduceMotion {
             withAnimation(.easeInOut(duration: 0.16)) { interfaceStyle = next.rawValue }
@@ -539,17 +562,27 @@ struct ContentView: View {
             .padding(12)
             .contentShape(Rectangle())
             .foregroundStyle(recent == isRecent ? playerGreen : Color.primary)
-            .background(recent == isRecent ? playerGreen.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 10))
-        }.buttonStyle(.plain)
+            .background {
+                if recent == isRecent {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(playerGreen.opacity(0.12))
+                        .matchedGeometryEffect(id: "selection", in: simpleSidebarSelection)
+                }
+            }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: recent)
+        }.buttonStyle(SidebarNavigationButtonStyle(reduceMotion: reduceMotion))
     }
 
-    private var libraryToolbar: some View {
-        VStack(spacing: 6) {
-            libraryToolbarMainRow
-            if !libraryStyle && multiSelecting && !recent {
+    private func libraryToolbar(groupPage: Bool? = nil) -> some View {
+        let groups = groupPage ?? browsingGroups
+        return VStack(spacing: 6) {
+            libraryToolbarMainRow(groups: groups)
+            if multiSelecting && !recent && !groups {
                 simpleSelectionToolbar
             }
         }
+        // The panel owns the opening animation; toolbar controls keep their geometry.
+        .transaction { $0.animation = nil }
     }
 
     private var selectAllButton: some View {
@@ -582,20 +615,26 @@ struct ContentView: View {
         }.buttonStyle(.plain).frame(height: 28)
     }
 
-    private var libraryToolbarMainRow: some View {
-        HStack(spacing: 4) {
+    private func libraryToolbarMainRow(groups: Bool) -> some View {
+        let detail = libraryStyle && !groups && browseGroup != nil
+        return HStack(spacing: 4) {
             if libraryStyle {
                 HStack(spacing: 8) {
-                    if browseGroup != nil {
+                    if detail {
                         Button(action: closeBrowseGroup) {
                             Label("返回", systemImage: "chevron.left")
-                                .font(.caption.weight(.semibold)).padding(.horizontal, 8).frame(height: 28)
+                                .font(.caption.weight(.semibold))
+                                .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                                .padding(.horizontal, 8).frame(height: 28)
                         }.buttonStyle(SelectionActionButtonStyle())
                             .help(destination == .artists ? "返回歌手卡片" : "返回专辑卡片")
                     }
-                    Text(destinationTitle).font(browseGroup == nil ? .caption.weight(.semibold) : .headline)
-                        .lineLimit(1).truncationMode(.tail).help(destinationTitle)
-                    Text(browsingGroups ? "\(songGroups.count) \(destination == .artists ? "位" : "张")" : "\(songs.count) 首")
+                    if !detail {
+                        Text(groups ? (destination == .artists ? "歌手" : "专辑") : destinationTitle)
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1).truncationMode(.tail)
+                    }
+                    Text(groups ? "\(songGroups.count) \(destination == .artists ? "位" : "张")" : "\(songs.count) 首")
                         .font(.caption.monospacedDigit()).lineLimit(1).truncationMode(.tail)
                 }.foregroundStyle(.secondary)
             } else {
@@ -622,7 +661,7 @@ struct ContentView: View {
             }
             .buttonStyle(.plain).disabled(library.playingID == nil)
             .help("定位正在播放的歌曲").accessibilityLabel("定位正在播放的歌曲")
-            if !recent {
+            if !recent && !detail {
                 Button { library.rescan() } label: {
                     LibraryToolbarIcon(symbol: "arrow.clockwise", showBorder: false)
                 }
@@ -631,7 +670,7 @@ struct ContentView: View {
             }
             if !recent {
                 Menu {
-                    if browsingGroups {
+                    if groups {
                         sortFieldButton(destination == .artists ? "歌手姓名" : "专辑名称", field: "name")
                         sortFieldButton("歌曲数量", field: "count")
                     } else {
@@ -655,32 +694,16 @@ struct ContentView: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .modifier(LibraryToolbarSurface())
-                .help(browsingGroups ? "分类排序" : "歌曲排序").accessibilityLabel(browsingGroups ? "分类排序" : "歌曲排序")
+                .frame(width: 28, height: 28)
+                .help(groups ? "分类排序" : "歌曲排序").accessibilityLabel(groups ? "分类排序" : "歌曲排序")
                 .disabled(songs.isEmpty)
-                if !browsingGroups {
+                if !groups {
                 Button { multiSelecting.toggle(); selectedIDs.removeAll() } label: {
                     LibraryToolbarIcon(symbol: multiSelecting ? "checkmark.circle.fill" : "checklist", showBorder: false)
                 }
                 .help(multiSelecting ? "退出多选" : "多选歌曲")
                 .accessibilityLabel(multiSelecting ? "退出多选" : "多选歌曲")
                 .disabled(songs.isEmpty && !multiSelecting)
-                if multiSelecting && libraryStyle {
-                    selectAllButton
-                    Text("\(selectedIDs.count)")
-                        .font(.caption.monospacedDigit().weight(.medium)).foregroundStyle(.secondary)
-                        .padding(.horizontal, 6).frame(minWidth: 24, minHeight: 24)
-                        .background(Color.primary.opacity(0.05), in: Capsule())
-                        .accessibilityLabel("已选 \(selectedIDs.count) 首")
-                        .fixedSize(horizontal: true, vertical: false)
-
-                }
-                if libraryStyle {
-                Button { requestDelete(Array(selectedIDs)) } label: {
-                    LibraryToolbarIcon(symbol: "trash")
-                }
-                .disabled(!multiSelecting || selectedIDs.isEmpty)
-                .help("删除所选歌曲").accessibilityLabel("删除所选歌曲")
-                }
                 }
             } else {
                 Menu { Button("清空最近播放记录") { library.clearRecentPlayback() } }
@@ -750,6 +773,7 @@ struct ContentView: View {
                             .foregroundStyle(playerGreen)
                     }
                     ListArtwork(track: track)
+                .anchorPreference(key: PlaybackArtworkAnchors.self, value: .bounds) { [track.id.uuidString: $0] }
                     VStack(alignment: .leading, spacing: 4) {
                         Text(track.title).lineLimit(1).truncationMode(.tail).help(track.title)
                         Text(track.artist).font(.caption).foregroundStyle(.secondary)
@@ -771,7 +795,10 @@ struct ContentView: View {
             let keys = songs[max(0, index - 12)..<min(songs.count, index + 25)].compactMap(\.artworkKey)
             Task(priority: .utility) { await ThumbnailLoader.shared.prefetch(keys) }
         }
-        .modifier(SongRowTapHandler(multiSelecting: multiSelecting, onPlay: { library.play(track.id, in: songs.map(\.id)) }, onSelect: {
+        .modifier(SongRowTapHandler(multiSelecting: multiSelecting, onPlay: {
+            if !reduceMotion { playbackFlight = PlaybackFlight(track: track) }
+            library.play(track.id, in: songs.map(\.id))
+        }, onSelect: {
             if multiSelecting {
                 if selectedIDs.contains(track.id) { selectedIDs.remove(track.id) } else { selectedIDs.insert(track.id) }
             } else { library.select(track.id) }
@@ -823,6 +850,7 @@ private extension ContentView {
     var browsingGroups: Bool { libraryStyle && (destination == .artists || destination == .albums) && browseGroup == nil }
 
     func navigate(_ target: LibraryDestination) {
+        browseTransition.reset()
         if destination != target { songGroups = [] }
         destination = target; recent = target == .recent
         browseGroup = nil; albumPlayback = false
@@ -874,15 +902,15 @@ private extension ContentView {
             sidebarBrand(closeProgress: closeProgress)
             PlayerScrollView(contentTrailingInset: 0, thumbOffset: 8) {
                 VStack(alignment: .leading, spacing: 6) {
-                    workspaceNavigation("音乐库", symbol: "music.note", target: .all)
-                    workspaceNavigation("最近播放", symbol: "clock", target: .recent)
-                    workspaceNavigation("收藏", symbol: "heart", target: .favorites)
-                    workspaceNavigation("歌手", symbol: "mic", target: .artists)
-                    workspaceNavigation("专辑", symbol: "opticaldisc", target: .albums)
+                    workspaceNavigation("音乐库", symbol: "music.note", target: .all, dismissSidebar: closeProgress > 0)
+                    workspaceNavigation("最近播放", symbol: "clock", target: .recent, dismissSidebar: closeProgress > 0)
+                    workspaceNavigation("收藏", symbol: "heart", target: .favorites, dismissSidebar: closeProgress > 0)
+                    workspaceNavigation("歌手", symbol: "mic", target: .artists, dismissSidebar: closeProgress > 0)
+                    workspaceNavigation("专辑", symbol: "opticaldisc", target: .albums, dismissSidebar: closeProgress > 0)
                     Text("我的歌单").font(.callout).foregroundStyle(.secondary)
                         .padding(.horizontal, 12).padding(.top, 22).padding(.bottom, 8)
                     ForEach(collections.playlists) { playlist in
-                        workspaceNavigation(playlist.name, symbol: "list.bullet", target: .playlist(playlist.id))
+                        workspaceNavigation(playlist.name, symbol: "list.bullet", target: .playlist(playlist.id), dismissSidebar: closeProgress > 0)
                             .contextMenu {
                                 Button("重命名歌单") {
                                     renamingPlaylist = playlist.id; playlistName = playlist.name
@@ -912,8 +940,15 @@ private extension ContentView {
         }
     }
 
-    func workspaceNavigation(_ title: String, symbol: String, target: LibraryDestination) -> some View {
-        Button { navigate(target) } label: {
+    func workspaceNavigation(_ title: String, symbol: String, target: LibraryDestination, dismissSidebar: Bool) -> some View {
+        Button {
+            navigate(target)
+            if dismissSidebar && sidebarVisible {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.36)) {
+                    sidebarVisible = false
+                }
+            }
+        } label: {
             HStack(spacing: 12) {
                 Image(systemName: symbol).font(.system(size: 17)).frame(width: 22)
                 Text(title).lineLimit(1)
@@ -921,10 +956,16 @@ private extension ContentView {
             }
             .padding(12).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .foregroundStyle(destination == target ? playerGreen : Color.primary)
-            .background(destination == target ? playerGreen.opacity(0.12) : .clear,
-                        in: RoundedRectangle(cornerRadius: 12))
+            .background {
+                if destination == target {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(playerGreen.opacity(0.12))
+                        .matchedGeometryEffect(id: "selection", in: librarySidebarSelection)
+                }
+            }
             .contentShape(Rectangle())
-        }.buttonStyle(.plain).help(title)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: destination)
+        }.buttonStyle(SidebarNavigationButtonStyle(reduceMotion: reduceMotion)).help(title)
             .accessibilityAddTraits(destination == target ? [.isSelected] : [])
     }
 
@@ -1005,76 +1046,102 @@ private extension ContentView {
         }
     }
 
-    private func browseAnimationID(_ name: String) -> String {
-        "\(destination):\(name)"
-    }
-
     private func openBrowseGroup(_ name: String, tracks: [Track]) {
-        withAnimation(reduceMotion ? nil : .spring(response: 0.46, dampingFraction: 0.90)) {
-            songs = tracks
-            selectedIDs.removeAll()
-            browseGroup = name
+        browseTransition.open(origin: browseCardFrames[name] ?? .zero, reduceMotion: reduceMotion) {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                songs = tracks
+                selectedIDs.removeAll()
+                multiSelecting = false
+                browseGroup = name
+            }
         }
     }
 
     private func closeBrowseGroup() {
-        withAnimation(reduceMotion ? nil : .spring(response: 0.46, dampingFraction: 0.90)) {
-            browseGroup = nil
-            selectedIDs.removeAll()
-            multiSelecting = false
-            restoreBrowsePage()
+        guard let group = browseGroup else { return }
+        browseTransition.close(origin: browseCardFrames[group], reduceMotion: reduceMotion) {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                browseGroup = nil
+                selectedIDs.removeAll()
+                multiSelecting = false
+                restoreBrowsePage()
+            }
         }
     }
 
     @ViewBuilder func workspaceSongs(width: CGFloat) -> some View {
-        if let group = browseGroup {
-            workspaceSongsContent(width: width)
-                .matchedGeometryEffect(id: browseAnimationID(group), in: browseExpansion, properties: .frame)
-                .transition(.opacity)
+        if destination == .artists || destination == .albums {
+            GeometryReader { geometry in
+                ZStack(alignment: .topLeading) {
+                    // Keep the grid and its scroll view alive underneath the detail.
+                    workspaceSongsContent(width: width, showsGroups: true)
+                        .transaction { $0.animation = nil }
+                        .opacity(1 - browseTransition.progress)
+                        .allowsHitTesting(browseGroup == nil && !browseTransition.isAnimating)
+                        .accessibilityHidden(browseGroup != nil)
+                    if browseGroup != nil {
+                        workspaceSongsContent(width: width, showsGroups: false)
+                            .transaction { $0.animation = nil }
+                            .modifier(BrowseCardReturnModifier(origin: browseTransition.origin,
+                                panelSize: geometry.size, progress: browseTransition.progress,
+                                reduceMotion: reduceMotion))
+                            .transition(.identity)
+                            .allowsHitTesting(!browseTransition.isAnimating)
+                            .zIndex(1)
+                    }
+                }
+                .coordinateSpace(name: browseCoordinateSpace)
+                .onPreferenceChange(BrowseCardFramePreference.self) { browseCardFrames = $0 }
+                .clipped()
+                .onChange(of: destination) { _ in browseTransition.reset() }
+                .onDisappear { browseTransition.reset() }
+            }
         } else {
             workspaceSongsContent(width: width)
-                .transition(.opacity)
         }
     }
 
-    private func workspaceSongsContent(width: CGFloat) -> some View {
+    private func workspaceSongsContent(width: CGFloat, showsGroups: Bool = false) -> some View {
         let columns = MusicListColumns(width: width, multiSelecting: multiSelecting)
         return VStack(alignment: .leading, spacing: 4) {
-            libraryToolbar
+            libraryToolbar(groupPage: showsGroups)
             Divider().opacity(0.4)
             ScrollViewReader { proxy in
                 PlayerScrollView(contentTrailingInset: 16, thumbOffset: 8,
-                                 savedPosition: browsingGroups ? browseScrollPositions.position(destination) : nil) {
-                    if browsingGroups {
+                                 savedPosition: showsGroups ? browseScrollPositions.position(destination) : nil) {
+                    if showsGroups {
                         let groups = songGroups
                         let availableWidth = max(1, width - 56)
-                        if width < 480 {
-                            LazyVStack(spacing: 4) {
-                                ForEach(groups, id: \.name) { group in
-                                    LibraryBrowseCard(name: group.name, tracks: group.tracks,
-                                                      isArtist: destination == .artists, width: availableWidth,
-                                                      compact: true) {
-                                        openBrowseGroup(group.name, tracks: group.tracks)
-                                    }
-                                    .matchedGeometryEffect(id: browseAnimationID(group.name), in: browseExpansion, properties: .frame)
+                        let columnCount = BrowseCardGridMetrics.columnCount(availableWidth: availableWidth)
+                        let cardWidth = BrowseCardGridMetrics.cardWidth(availableWidth: availableWidth)
+                        // One grid preserves card identity through every column change.
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0),
+                                      spacing: 16, alignment: .top), count: columnCount),
+                                  alignment: .leading, spacing: columnCount == 1 ? 4 : 16) {
+                            ForEach(groups, id: \.name) { group in
+                                LibraryBrowseCard(name: group.name, tracks: group.tracks,
+                                                  isArtist: destination == .artists, width: cardWidth,
+                                                  compact: columnCount == 1) {
+                                    openBrowseGroup(group.name, tracks: group.tracks)
                                 }
-                            }.padding(8)
-                        } else {
-                            // Reserve 160pt artwork + 16pt card padding. Column changes
-                            // redistribute whitespace without rescaling every cover.
-                            let columnCount = max(2, Int((availableWidth + 16) / 192))
-                            let cardWidth = (availableWidth - CGFloat(columnCount - 1) * 16) / CGFloat(columnCount)
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 16, alignment: .top), count: columnCount),
-                                      alignment: .leading, spacing: 16) {
-                                ForEach(groups, id: \.name) { group in
-                                    LibraryBrowseCard(name: group.name, tracks: group.tracks,
-                                                      isArtist: destination == .artists, width: cardWidth) {
-                                        openBrowseGroup(group.name, tracks: group.tracks)
+                                .matchedGeometryEffect(id: "\(destination):\(group.name)",
+                                                       in: browseReflow, properties: .position)
+                                .background {
+                                    GeometryReader { card in
+                                        Color.clear.preference(key: BrowseCardFramePreference.self,
+                                            value: [group.name: card.frame(in: .named(browseCoordinateSpace))])
                                     }
-                                    .matchedGeometryEffect(id: browseAnimationID(group.name), in: browseExpansion, properties: .frame)
                                 }
-                            }.padding(8)
+                            }
                         }
+                        .padding(8)
+                        .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.92),
+                                   value: columnCount)
+
 
                     } else {
                         LazyVStack(spacing: 4) {
@@ -1083,10 +1150,10 @@ private extension ContentView {
                         // Fixed row geometry keeps the lazy document extent stable while dragging.
                         .frame(height: CGFloat(songs.count) * 58 + CGFloat(max(0, songs.count - 1)) * 4, alignment: .top)
                     }
-                    if songs.isEmpty || (browsingGroups && songGroups.isEmpty) {
+                    if songs.isEmpty || (showsGroups && songGroups.isEmpty) {
                         VStack(spacing: 12) {
-                            if artworkPreparationRequest != nil && !library.tracks.isEmpty {
-                                ProgressView("正在准备歌曲封面…")
+                            if listPreparationRequest != nil && !library.tracks.isEmpty {
+                                ProgressView("正在加载音乐列表…")
                             } else {
                                 Image(systemName: destination == .favorites ? "heart" : "music.note.list").font(.largeTitle)
                                 Text(emptyListMessage).font(.callout)
@@ -1096,19 +1163,18 @@ private extension ContentView {
                     }
                 }
                 .onChange(of: locateRequest) { _ in
-                    if let target = locateTarget, songs.contains(where: { $0.id == target }) {
+                    if !showsGroups, let target = locateTarget, songs.contains(where: { $0.id == target }) {
                         withAnimation { proxy.scrollTo(target, anchor: .center) }
                     }
                 }
                 .onChange(of: songs.map(\.id)) { ids in
-                    if let target = locateTarget, ids.contains(target) {
+                    if !showsGroups, let target = locateTarget, ids.contains(target) {
                         withAnimation { proxy.scrollTo(target, anchor: .center) }
                         locateTarget = nil
                     }
                 }
             }
-            .id(LibraryListLocation(destination: destination, group: browseGroup))
-            .environment(\.browseArtwork, browseArtwork)
+            .id(LibraryListLocation(destination: destination, group: showsGroups ? nil : browseGroup))
             if case .playlist(let id) = destination, multiSelecting, !selectedIDs.isEmpty {
                 Button("从歌单移除所选歌曲") {
                     for track in songs where selectedIDs.contains(track.id) { collections.remove(track.url.path, from: id) }
@@ -1119,12 +1185,15 @@ private extension ContentView {
     }
 
     func workspaceSongCells(_ track: Track, columns: MusicListColumns) -> some View {
-        ZStack(alignment: .topLeading) {
+        let metadataColor = Color.primary.opacity(colorScheme == .dark ? 0.74 : 0.70)
+        let metadataFont = Font.system(size: 12, weight: .regular)
+        return ZStack(alignment: .topLeading) {
             Image(systemName: selectedIDs.contains(track.id) ? "checkmark.circle.fill" : "circle")
                 .foregroundStyle(playerGreen)
                 .modifier(SongCellFrame(rect: columns.selection))
                 .opacity(multiSelecting ? 1 : 0).accessibilityHidden(!multiSelecting)
             ListArtwork(track: track)
+                .anchorPreference(key: PlaybackArtworkAnchors.self, value: .bounds) { [track.id.uuidString: $0] }
                 .modifier(SongCellFrame(rect: columns.artwork))
                 .overlay(alignment: .bottomTrailing) {
                     if library.playingID == track.id {
@@ -1135,27 +1204,28 @@ private extension ContentView {
                 }
             Text(track.title).lineLimit(1).truncationMode(.tail).help(track.title)
                 .modifier(SongCellFrame(rect: columns.title))
-            Text(track.artist).font(.callout).foregroundStyle(.secondary)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: columns.isCompact)
+            // Keep one view alive across the breakpoint so its frame moves,
+            // instead of crossfading two copies of the artist's name.
+            Text(track.artist).font(columns.isCompact ? .system(size: 11, weight: .regular) : metadataFont)
+                .foregroundStyle(metadataColor)
                 .lineLimit(1).truncationMode(.tail).help(track.artist)
-                .modifier(SongCellFrame(rect: columns.artist))
-                .opacity(columns.horizontalProgress)
-                .accessibilityHidden(columns.horizontalProgress < 0.5)
-            Text(track.artist).font(.caption).foregroundStyle(.secondary)
-                .lineLimit(1).truncationMode(.tail).help(track.artist)
-                .modifier(SongCellFrame(rect: columns.compactArtist))
-                .opacity(1 - columns.horizontalProgress)
-                .accessibilityHidden(columns.horizontalProgress >= 0.5)
-            Text(track.album).font(.caption).foregroundStyle(.secondary)
+                .modifier(SongCellFrame(rect: columns.isCompact ? columns.compactArtist : columns.artist))
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: columns.isCompact)
+            Text(track.album).font(metadataFont).foregroundStyle(metadataColor)
                 .lineLimit(1).truncationMode(.tail).help(track.album)
                 .modifier(SongCellFrame(rect: columns.album))
                 .opacity(columns.albumOpacity).accessibilityHidden(!columns.showsAlbum)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: columns.showsAlbum)
             Text(String(format: "%d:%02d", Int(max(0, track.duration)) / 60, Int(max(0, track.duration)) % 60))
-                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                .font(metadataFont.monospacedDigit()).foregroundStyle(metadataColor)
                 .modifier(SongCellFrame(rect: columns.duration, alignment: .trailing))
                 .opacity(columns.durationOpacity).accessibilityHidden(!columns.showsDuration)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: columns.showsDuration)
         }
-        // Geometry and opacity track the drag itself. An ancestor's player-control
-        // transition must not make list columns lag behind the window edge.
+        // Animate column visibility changes; ordinary resizing tracks the drag.
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: columns.showsAlbum)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: columns.showsDuration)
         .transaction { $0.animation = nil }
         .frame(width: columns.width, height: 44, alignment: .topLeading)
         .overlay(alignment: .trailing) {
@@ -1249,7 +1319,7 @@ private struct LibraryBrowseCard: View {
                     }.frame(height: 54)
                 } else {
                     VStack(alignment: isArtist ? .center : .leading, spacing: 6) {
-                        cover(size: isArtist ? 140 : 160)
+                        cover(size: min(width - 16, isArtist ? 104 : 120))
                             .frame(maxWidth: .infinity).padding(.bottom, 4)
                         Text(name).font(.system(size: 13, weight: .semibold))
                             .lineLimit(2).truncationMode(.tail).help(name)
@@ -1673,6 +1743,7 @@ private struct PlayerControls: View {
             if let onToggleAlbum {
                 Button(action: onToggleAlbum) {
                     Artwork(image: track.artwork, size: artworkSize)
+                        .anchorPreference(key: PlaybackArtworkAnchors.self, value: .bounds) { ["player": $0] }
                         .overlay {
                             Image(systemName: albumExpanded ? "chevron.down" : "chevron.up")
                                 .font(.system(size: 14, weight: .semibold))
@@ -1693,6 +1764,7 @@ private struct PlayerControls: View {
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: albumExpanded)
             } else {
                 Artwork(image: track.artwork, size: artworkSize)
+                        .anchorPreference(key: PlaybackArtworkAnchors.self, value: .bounds) { ["player": $0] }
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(track.title).font(.subheadline.weight(.semibold))
@@ -1914,19 +1986,10 @@ private struct SongRowTapHandler: ViewModifier {
     }
 }
 
-private struct BrowseArtworkKey: EnvironmentKey {
-    static let defaultValue: [String: CachedArtwork] = [:]
-}
-private extension EnvironmentValues {
-    var browseArtwork: [String: CachedArtwork] {
-        get { self[BrowseArtworkKey.self] }
-        set { self[BrowseArtworkKey.self] = newValue }
-    }
-}
-
 private final class SavedScrollPosition {
     var offset: CGFloat = 0
 }
+
 private final class BrowseScrollPositions {
     private var positions: [LibraryDestination: SavedScrollPosition] = [:]
     func position(_ destination: LibraryDestination) -> SavedScrollPosition {
@@ -1942,10 +2005,9 @@ private struct ListArtwork: View {
     var size: CGFloat = 44
     var highResolution = false
     @StateObject private var loader = ListArtworkLoader()
-    @Environment(\.browseArtwork) private var preparedArtwork
     var body: some View {
         Group {
-            if let image = track.artwork ?? (highResolution ? track.artworkKey.flatMap { preparedArtwork[$0]?.displayImage() } : nil) ?? loader.currentImage(key: track.artworkKey, source: track.url, browse: highResolution) ??
+            if let image = track.artwork ?? loader.currentImage(key: track.artworkKey, source: track.url, browse: highResolution) ??
                 (highResolution ? BrowseArtworkLoader.shared.cachedImage(track.artworkKey) : ThumbnailLoader.shared.cachedImage(track.artworkKey))?.displayImage() ??
                 (highResolution ? nil : ThumbnailLoader.shared.cachedImage(track.artworkKey)?.displayImage()) {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: highResolution ? .fill : .fit)
@@ -1957,9 +2019,7 @@ private struct ListArtwork: View {
         .background(playerGreen.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .onAppear {
-            if !highResolution || track.artworkKey.flatMap({ preparedArtwork[$0] }) == nil {
-                loader.load(key: track.artworkKey, source: track.url, browse: highResolution)
-            }
+            loader.load(key: track.artworkKey, source: track.url, browse: highResolution)
         }
         .onChange(of: track.artworkKey) { key in loader.load(key: key, source: track.url, browse: highResolution) }
         .onChange(of: track.url) { source in loader.load(key: track.artworkKey, source: source, browse: highResolution) }
@@ -2456,7 +2516,7 @@ private struct SelectionActionButtonSurface<Label: View>: View {
             .contentShape(shape)
             .opacity(enabled ? 1 : 0.4)
             .scaleEffect(pressed && !reduceMotion ? 0.96 : 1)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: pressed)
+            .animation(reduceMotion ? nil : (pressed ? .easeOut(duration: 0.10) : .spring(response: 0.30, dampingFraction: 0.80)), value: pressed)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hovered)
             .onHover { hovered = enabled && $0 }
     }
@@ -2483,7 +2543,7 @@ private struct SongActionButtonSurface<Label: View>: View {
             }
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .scaleEffect(reduceMotion ? 1 : (pressed ? 0.9 : (hovered ? 1.04 : 1)))
-            .animation(.easeOut(duration: reduceMotion ? 0 : 0.14), value: pressed)
+            .animation(reduceMotion ? nil : (pressed ? .easeOut(duration: 0.10) : .spring(response: 0.30, dampingFraction: 0.80)), value: pressed)
             .animation(.easeOut(duration: reduceMotion ? 0 : 0.16), value: hovered)
             .onHover { hovered = $0 }
     }
@@ -2495,7 +2555,7 @@ private struct PressScaleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.88 : 1)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: configuration.isPressed)
+            .animation(reduceMotion ? nil : (configuration.isPressed ? .easeOut(duration: 0.10) : .spring(response: 0.30, dampingFraction: 0.80)), value: configuration.isPressed)
     }
 }
 
@@ -2522,7 +2582,7 @@ private struct TransportButtonStyle: ButtonStyle {
             .offset(y: configuration.isPressed && !reduceMotion ? 2 : 0)
             .animation(reduceMotion ? nil : (configuration.isPressed
                 ? .easeOut(duration: 0.08)
-                : .spring(response: 0.28, dampingFraction: 0.72)), value: configuration.isPressed)
+                : .spring(response: 0.30, dampingFraction: 0.80)), value: configuration.isPressed)
     }
 }
 
@@ -2540,5 +2600,70 @@ private struct SidebarToggleStyle: ButtonStyle {
             .foregroundStyle(.primary)
             .background(Color(nsColor: .controlBackgroundColor).opacity(configuration.isPressed ? 0.48 : 0.74), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: .black.opacity(0.05), radius: 8, y: 3)
+    }
+}
+
+private struct BrowseCardFramePreference: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+/// Both directions use the same captured card rectangle in the panel's space.
+private struct BrowseCardReturnModifier: AnimatableModifier {
+    let origin: CGRect
+    let panelSize: CGSize
+    nonisolated var progress: CGFloat
+    let reduceMotion: Bool
+    nonisolated var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let remaining = reduceMotion || origin.isEmpty ? 0 : 1 - progress
+        return content
+            .scaleEffect(x: 1 - remaining * (1 - origin.width / max(1, panelSize.width)),
+                         y: 1 - remaining * (1 - origin.height / max(1, panelSize.height)),
+                         anchor: .topLeading)
+            .offset(x: remaining * origin.minX, y: remaining * origin.minY)
+            .opacity(progress)
+    }
+}
+
+private struct PlaybackFlight {
+    let id = UUID()
+    let track: Track
+}
+
+private struct PlaybackArtworkAnchors: PreferenceKey {
+    static let defaultValue: [String: Anchor<CGRect>] = [:]
+    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+private struct PlaybackArtworkFlight: View {
+    let track: Track
+    let source: CGRect
+    let target: CGRect
+    @State private var arrived = false
+    @State private var landed = false
+
+    var body: some View {
+        let rect = arrived ? target : source
+        ListArtwork(track: track, size: source.width)
+            .frame(width: rect.width, height: rect.height)
+            .scaleEffect(x: rect.width / max(1, source.width), y: rect.height / max(1, source.height))
+            .position(x: rect.midX, y: rect.midY)
+            .opacity(landed ? 0 : 1)
+            .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+            .task {
+                do { try await Task.sleep(for: .milliseconds(20)) } catch { return }
+                withAnimation(.easeInOut(duration: 0.45)) { arrived = true }
+                do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
+                withAnimation(.easeOut(duration: 0.12)) { landed = true }
+            }
     }
 }

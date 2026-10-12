@@ -2,6 +2,23 @@ import XCTest
 @testable import MiniVoice
 
 final class PlayerStyleTransitionTests: XCTestCase {
+    @MainActor
+    func testRepeatedSwitchesKeepOnlyTheFinalToggle() async throws {
+        let transition = PlayerStyleTransition()
+        var switches = 0
+        transition.queueSwitch { switches += 1 }
+        transition.queueSwitch { switches += 1 }
+        transition.finish()
+        try await Task.sleep(for: .milliseconds(60))
+        XCTAssertEqual(switches, 0)
+        transition.queueSwitch { switches += 1 }
+        transition.queueSwitch { switches += 1 }
+        transition.queueSwitch { switches += 1 }
+        transition.finish()
+        try await Task.sleep(for: .milliseconds(60))
+        XCTAssertEqual(switches, 1)
+    }
+
     func testFragmentsCoverTheWindowAndStayBounded() {
         for size in [CGSize(width: 304, height: 600), CGSize(width: 1280, height: 800), CGSize(width: 3840, height: 2160)] {
             let cells = StyleFragmentMotion.cells(size: size)

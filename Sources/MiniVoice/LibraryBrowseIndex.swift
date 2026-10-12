@@ -12,6 +12,17 @@ struct LibraryBrowseGroup: Sendable, Equatable {
 }
 
 enum LibraryBrowseIndex {
+    /// Classification ordering depends only on metadata. Song date sorting is
+    /// applied when entering a group, where the user's track preference matters.
+    static func listSortField(destination: LibraryDestination, group: String?, fallback: String) -> String {
+        guard group == nil else { return fallback }
+        switch destination {
+        case .artists: return "artist"
+        case .albums: return "album"
+        default: return fallback
+        }
+    }
+
     static func name(_ value: String, artist: Bool) -> String {
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? (artist ? "未知歌手" : "未知专辑") : value

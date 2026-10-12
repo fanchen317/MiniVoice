@@ -2,9 +2,19 @@ import XCTest
 @testable import MiniVoice
 
 final class MusicListColumnsTests: XCTestCase {
-    func testCrossingFormerBreakpointsDoesNotJumpText() {
+    func testDurationHasBreathingRoomBeforeFavorite() {
         for multi in [false, true] {
-            for threshold: CGFloat in [440, 480, 520, 580, 620, 660, 700, 740, 780, 820] {
+            for width in stride(from: CGFloat(740), through: 1800, by: 5) {
+                let columns = MusicListColumns(width: width, multiSelecting: multi)
+                XCTAssertEqual(columns.favorite.minX - columns.duration.maxX, 18, accuracy: 0.001)
+                XCTAssertLessThanOrEqual(columns.album.maxX, columns.duration.minX - 8 + 0.001)
+            }
+        }
+    }
+
+    func testResizingWithinLayoutsDoesNotJumpText() {
+        for multi in [false, true] {
+            for threshold: CGFloat in [440, 520, 580, 620, 700, 780, 820] {
                 let before = MusicListColumns(width: threshold - 0.001, multiSelecting: multi)
                 let after = MusicListColumns(width: threshold + 0.001, multiSelecting: multi)
                 for (lhs, rhs) in [(before.title, after.title), (before.artist, after.artist),
@@ -14,6 +24,18 @@ final class MusicListColumnsTests: XCTestCase {
                     XCTAssertLessThan(abs(lhs.width - rhs.width), 0.1)
                 }
                 XCTAssertLessThan(abs(before.albumOpacity - after.albumOpacity), 0.001)
+            }
+        }
+    }
+
+    func testAlbumAndDurationWaitForFullSpace() {
+        for multi in [false, true] {
+            for width: CGFloat in [580, 620, 659.99, 660, 700, 739.99, 740, 1000] {
+                let columns = MusicListColumns(width: width, multiSelecting: multi)
+                XCTAssertEqual(columns.showsAlbum, width >= 660)
+                XCTAssertEqual(columns.albumOpacity, width >= 660 ? 1 : 0)
+                XCTAssertEqual(columns.showsDuration, width >= 740)
+                XCTAssertEqual(columns.durationOpacity, width >= 740 ? 1 : 0)
             }
         }
     }

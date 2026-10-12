@@ -25,9 +25,11 @@ struct MusicListColumns: Equatable, Sendable {
             let t = min(1, max(0, (panelWidth - lower) / (upper - lower)))
             return t * t * (3 - 2 * t)
         }
-        horizontalProgress = progress(440, 520)
-        albumOpacity = progress(580, 660)
-        durationOpacity = progress(660, 740)
+        // Switch the title/artist arrangement as a unit. A width-driven
+        // crossfade otherwise leaves two faint artist labels visible at rest.
+        horizontalProgress = panelWidth < 480 ? 0 : 1
+        albumOpacity = panelWidth >= 660 ? 1 : 0
+        durationOpacity = panelWidth >= 740 ? 1 : 0
         editSpaceProgress = progress(740, 820)
         isCompact = panelWidth < 480
         showsAlbum = albumOpacity > 0
@@ -39,9 +41,9 @@ struct MusicListColumns: Equatable, Sendable {
         selection = CGRect(x: 0, y: 11, width: 22, height: 22)
         artwork = CGRect(x: selectionWidth, y: 0, width: 44, height: 44)
         favorite = CGRect(x: width - 28 - 38 * editSpaceProgress, y: 8, width: 28, height: 28)
-        duration = CGRect(x: favorite.minX - 48, y: 12, width: 40, height: 20)
+        duration = CGRect(x: favorite.minX - 58, y: 12, width: 40, height: 20)
         let textStart = artwork.maxX + 8
-        let textEnd = favorite.minX - 8 - 48 * durationOpacity
+        let textEnd = favorite.minX - 8 - 58 * durationOpacity
         let fullBudget = max(0, textEnd - textStart)
         let gaps = 8 * horizontalProgress + 8 * albumOpacity
         let budget = max(0, fullBudget - gaps)
@@ -49,8 +51,7 @@ struct MusicListColumns: Equatable, Sendable {
         let artistWidth = budget * (0.40 - 0.10 * albumOpacity) * horizontalProgress
         let titleWidth = max(0, budget - artistWidth - albumWidth)
         title = CGRect(x: textStart, y: 3 + 9 * horizontalProgress, width: titleWidth, height: 20)
-        // The two artist labels crossfade in place, rather than moving diagonally
-        // through the title. Their horizontal anchors remain tied to the columns.
+        // Both arrangements use fixed anchors and only one is visible.
         artist = CGRect(x: title.maxX + 8 * horizontalProgress, y: 12, width: artistWidth, height: 20)
         compactArtist = CGRect(x: textStart, y: 25, width: fullBudget, height: 16)
         album = CGRect(x: artist.maxX + 8 * albumOpacity, y: 12, width: albumWidth, height: 20)

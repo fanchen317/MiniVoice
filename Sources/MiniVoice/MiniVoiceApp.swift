@@ -46,7 +46,7 @@ struct MiniVoiceApp: App {
                 }
         }
         .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentMinSize)
+        .windowResizability(.automatic)
         .defaultSize(width: 1280, height: 800)
         .commands {
             CommandMenu("播放") {

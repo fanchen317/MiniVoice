@@ -27,6 +27,23 @@ final class LibraryBrowseTests: XCTestCase {
         XCTAssertEqual(descending, entries.map(\.id))
     }
 
+    func testClassificationIgnoresFileDateSortButDetailsKeepIt() async {
+        let entries = [entry("a", artist: "A", album: "One"), entry("b", artist: "B", album: "Two")]
+        let index = SongListIndex { _, _ in
+            XCTFail("Classification pages must not read source file dates")
+            return .distantPast
+        }
+        for destination in [LibraryDestination.artists, .albums] {
+            for fallback in ["added", "sourceAdded", "title"] {
+                let field = LibraryBrowseIndex.listSortField(destination: destination, group: nil, fallback: fallback)
+                let ids = await index.orderedIDs(entries, request: SongListRequest(revision: 1, field: field))
+                XCTAssertEqual(Set(ids), Set(entries.map(\.id)))
+                XCTAssertEqual(LibraryBrowseIndex.listSortField(destination: destination, group: "Group", fallback: fallback), fallback)
+                XCTAssertEqual(LibraryBrowseIndex.listSortField(destination: .all, group: nil, fallback: fallback), fallback)
+            }
+        }
+    }
+
     private func entry(_ title: String, artist: String, album: String) -> SongListEntry {
         SongListEntry(id: UUID(), url: URL(fileURLWithPath: "/\(title).mp3"), title: title, artist: artist, album: album)
     }
@@ -75,6 +92,25 @@ final class LibraryBrowseTests: XCTestCase {
             try? FileManager.default.removeItem(at: ResourceCache.url(key, kind: "Artwork/List"))
             try? FileManager.default.removeItem(at: ResourceCache.url(key, kind: "Artwork/Detail"))
         }
+        let repairStarted = expectation(description: "Missing cover starts repair")
+        let cachedLoaded = expectation(description: "Cached cover bypasses slow repair")
+        let gate = BrowseRepairGate()
+        let worker = BrowseArtworkWorker { _, _ in
+            repairStarted.fulfill()
+            await gate.wait()
+            return nil
+        }
+        let missing = Task { await worker.image(UUID().uuidString, source: track.url) }
+        await fulfillment(of: [repairStarted], timeout: 2)
+        let cached = Task {
+            let result = await worker.image(key, source: track.url)
+            if result != nil { cachedLoaded.fulfill() }
+            return result
+        }
+        await fulfillment(of: [cachedLoaded], timeout: 2)
+        await gate.release()
+        _ = await missing.value
+        _ = await cached.value
         let largeResult = await BrowseArtworkLoader.shared.image(key, source: track.url)
         let smallResult = await ThumbnailLoader.shared.image(key, source: track.url)
         let large = try XCTUnwrap(largeResult)
@@ -87,5 +123,19 @@ final class LibraryBrowseTests: XCTestCase {
         XCTAssertNotNil(row.currentImage(key: key, source: track.url, browse: true))
         XCTAssertNil(row.currentImage(key: "replacement", source: track.url, browse: true))
         XCTAssertNil(row.currentImage(key: nil, source: track.url, browse: true))
+    }
+}
+
+private actor BrowseRepairGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var released = false
+    func wait() async {
+        if released { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+    func release() {
+        released = true
+        continuation?.resume()
+        continuation = nil
     }
 }

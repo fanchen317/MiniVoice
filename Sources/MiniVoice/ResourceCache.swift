@@ -182,16 +182,19 @@ actor BrowseArtworkLoader {
     }
 }
 
-private actor BrowseArtworkWorker {
+/// Cache reads can proceed while a missing cover is extracted on the repair worker.
+actor BrowseArtworkWorker {
     static let shared = BrowseArtworkWorker()
-    func image(_ key: String, source: URL) -> CachedArtwork? {
+    private let repair: @Sendable (String, URL) async -> Data?
+    init(repair: @escaping @Sendable (String, URL) async -> Data? = { key, source in
+        await BrowseArtworkRepair.shared.data(key, source: source)
+    }) {
+        self.repair = repair
+    }
+    func image(_ key: String, source: URL) async -> CachedArtwork? {
         var data = ResourceCache.artworkData(key, detail: true)
         if !ResourceCache.isValidArtwork(data) {
-            guard let original = try? MediaTools.run("ffmpeg", ["-v", "error", "-i", source.path, "-map", "0:v:0",
-                "-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "pipe:1"]),
-                  let newKey = try? ResourceCache.saveArtwork(original) else { return nil }
-            data = ResourceCache.artworkData(newKey, detail: true)
-            if let data { try? ResourceCache.atomicWrite(data, to: ResourceCache.url(key, kind: "Artwork/Detail")) }
+            data = await repair(key, source)
         }
         guard let data, let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
               let cg = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, [
@@ -201,6 +204,19 @@ private actor BrowseArtworkWorker {
                 kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else { return nil }
         ResourceCache.touch(ResourceCache.url(key, kind: "Artwork/Detail"))
         return CachedArtwork(cg)
+    }
+}
+
+/// Bound source extraction independently from cached classification artwork.
+private actor BrowseArtworkRepair {
+    static let shared = BrowseArtworkRepair()
+    func data(_ key: String, source: URL) async -> Data? {
+        guard let original = try? MediaTools.run("ffmpeg", ["-nostdin", "-v", "error", "-i", source.path,
+            "-map", "0:v:0", "-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "pipe:1"]),
+              let newKey = try? ResourceCache.saveArtwork(original),
+              let data = ResourceCache.artworkData(newKey, detail: true) else { return nil }
+        try? ResourceCache.atomicWrite(data, to: ResourceCache.url(key, kind: "Artwork/Detail"))
+        return data
     }
 }
 
