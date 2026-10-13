@@ -50,6 +50,8 @@ struct ContentView: View {
     }
     @State private var albumPlayback = false
     @State private var showingPlaylistEditor = false
+    @State private var playlistAddTracks: [Track] = []
+    @State private var showingPlaylistPicker = false
     @State private var playlistName = ""
     @State private var renamingPlaylist: UUID?
     private var libraryStyle: Bool { interfaceStyle == PlayerInterfaceStyle.library.rawValue }
@@ -69,15 +71,24 @@ struct ContentView: View {
     @State private var editingTrack: Track?
     @State private var songInfoRequest = UUID()
     @State private var songInfoLoadRequest = UUID()
+    @State private var songInfoIsLoading = false
 
     private func openSongInfo(_ track: Track) {
+        if editingTrack?.id == track.id {
+            songInfoRequest = UUID()
+            return
+        }
         let request = UUID()
         songInfoLoadRequest = request
+        editingTrack = track
+        songInfoIsLoading = true
+        songInfoRequest = UUID()
         Task {
             let resolved = await library.resolveTrack(track.id, fullResolution: true)
-            guard songInfoLoadRequest == request, library.track(for: track.id) != nil else { return }
+            guard songInfoLoadRequest == request, editingTrack?.id == track.id,
+                  library.track(for: track.id) != nil else { return }
             editingTrack = resolved ?? track
-            songInfoRequest = UUID()
+            songInfoIsLoading = false
         }
     }
     @State private var deleteTargets: [Track] = []
@@ -294,6 +305,10 @@ struct ContentView: View {
             recent = false; destination = .all; browseGroup = nil
             albumPlayback = false; selectedIDs.removeAll(); multiSelecting = false
         }
+        .sheet(isPresented: $showingPlaylistPicker) {
+            PlaylistAddPicker(collections: collections, paths: playlistAddTracks.map { $0.url.path },
+                              detail: playlistAddTracks.count == 1 ? (playlistAddTracks.first?.title ?? "") : "已选 \(playlistAddTracks.count) 首歌曲")
+        }
         .sheet(isPresented: $showingPlaylistEditor) {
             VStack(alignment: .leading, spacing: 18) {
                 Text(renamingPlaylist == nil ? "新建歌单" : "重命名歌单").font(.title3.bold())
@@ -314,7 +329,8 @@ struct ContentView: View {
             AppDelegate.reopenMainWindow = { openWindow(id: "main") }
             statusBar.start(library: library, openMainWindow: { openWindow(id: "main") })
         }
-        .background(SongInfoWindowPresenter(track: $editingTrack, request: songInfoRequest, library: library, lyricsSync: lyricsSync))
+        .background(SongInfoWindowPresenter(track: $editingTrack, request: songInfoRequest,
+                                            isLoading: songInfoIsLoading, library: library, lyricsSync: lyricsSync))
         .sheet(isPresented: $deleting) {
             VStack(alignment: .leading, spacing: 18) {
                 Text("删除 \(deleteTargets.count) 首歌曲？").font(.title3.bold())
@@ -601,6 +617,19 @@ struct ContentView: View {
         .help(allSelected ? "取消选择当前列表的所有歌曲" : "选择当前列表的所有歌曲")
     }
 
+    private var selectionFavoriteButton: some View {
+        let paths = songs.filter { selectedIDs.contains($0.id) }.map { $0.url.path }
+        let allFavorite = !paths.isEmpty && paths.allSatisfy { collections.isFavorite($0) }
+        return Button {
+            collections.setFavorites(paths, favorite: !allFavorite)
+        } label: {
+            LibraryToolbarIcon(symbol: allFavorite ? "heart.fill" : "heart")
+        }
+        .disabled(paths.isEmpty)
+        .help(allFavorite ? "取消收藏所选歌曲" : "收藏所选歌曲")
+        .accessibilityLabel(allFavorite ? "取消收藏所选歌曲" : "收藏所选歌曲")
+    }
+
     private var simpleSelectionToolbar: some View {
         HStack(spacing: 8) {
             Text("已选 \(selectedIDs.count) 首")
@@ -608,6 +637,7 @@ struct ContentView: View {
                 .lineLimit(1).fixedSize(horizontal: true, vertical: false)
             Spacer(minLength: 0)
             selectAllButton
+            selectionFavoriteButton
             Button { requestDelete(Array(selectedIDs)) } label: {
                 LibraryToolbarIcon(symbol: "trash")
             }
@@ -827,11 +857,10 @@ struct ContentView: View {
             Button("编辑歌曲信息与歌词") { openSongInfo(track) }
             if libraryStyle {
                 Button(collections.isFavorite(track.url.path) ? "取消收藏" : "收藏歌曲") { collections.toggleFavorite(track.url.path) }
-                Menu("加入歌单") {
-                    ForEach(collections.playlists) { playlist in
-                        Button(playlist.name) { collections.add([track.url.path], to: playlist.id) }
-                    }
-                    if collections.playlists.isEmpty { Text("请先在侧栏新建歌单") }
+                Button("加入歌单…") {
+                    playlistAddTracks = multiSelecting && selectedIDs.contains(track.id)
+                        ? songs.filter { selectedIDs.contains($0.id) } : [track]
+                    showingPlaylistPicker = true
                 }
                 if case .playlist(let id) = destination {
                     Button("从此歌单移除") { collections.remove(track.url.path, from: id) }
@@ -2021,7 +2050,7 @@ private struct ListArtwork: View {
     @EnvironmentObject private var library: MusicLibrary
     var body: some View {
         Group {
-            if let image = track.artwork ?? (highResolution ? PreparedBrowseArtwork.shared.image(track.artworkKey) : nil) ?? loader.currentImage(key: track.artworkKey, source: track.url, browse: highResolution) ??
+            if let image = track.artwork ?? PreparedBrowseArtwork.shared.image(track.artworkKey) ?? loader.currentImage(key: track.artworkKey, source: track.url, browse: highResolution) ??
                 (highResolution ? BrowseArtworkLoader.shared.cachedImage(track.artworkKey) : ThumbnailLoader.shared.cachedImage(track.artworkKey))?.displayImage() ??
                 (highResolution ? nil : ThumbnailLoader.shared.cachedImage(track.artworkKey)?.displayImage()) {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: highResolution ? .fill : .fit)
@@ -2036,7 +2065,7 @@ private struct ListArtwork: View {
             loader.load(key: track.artworkKey, source: track.url, browse: highResolution)
         }
         .onChange(of: library.browseArtworkRevision) { _ in
-            if highResolution { loader.load(key: track.artworkKey, source: track.url, browse: true) }
+            loader.load(key: track.artworkKey, source: track.url, browse: highResolution)
         }
         .onChange(of: track.artworkKey) { key in loader.load(key: key, source: track.url, browse: highResolution) }
         .onChange(of: track.url) { source in loader.load(key: track.artworkKey, source: source, browse: highResolution) }

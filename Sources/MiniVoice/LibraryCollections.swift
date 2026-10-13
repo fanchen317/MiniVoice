@@ -39,6 +39,15 @@ final class LibraryCollections: ObservableObject {
         save()
     }
 
+    func setFavorites(_ paths: [String], favorite: Bool) {
+        let paths = Set(paths)
+        guard !paths.isEmpty else { return }
+        let updated = favorite ? snapshot.favorites.union(paths) : snapshot.favorites.subtracting(paths)
+        guard updated != snapshot.favorites else { return }
+        snapshot.favorites = updated
+        save()
+    }
+
     @discardableResult
     func createPlaylist(name: String) -> UUID? {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -61,11 +70,15 @@ final class LibraryCollections: ObservableObject {
         save()
     }
 
-    func add(_ paths: [String], to id: UUID) {
-        guard let index = snapshot.playlists.firstIndex(where: { $0.id == id }) else { return }
+    @discardableResult
+    func add(_ paths: [String], to id: UUID) -> Int {
+        guard let index = snapshot.playlists.firstIndex(where: { $0.id == id }) else { return 0 }
         var seen = Set(snapshot.playlists[index].paths)
-        snapshot.playlists[index].paths.append(contentsOf: paths.filter { seen.insert($0).inserted })
+        let additions = paths.filter { seen.insert($0).inserted }
+        guard !additions.isEmpty else { return 0 }
+        snapshot.playlists[index].paths.append(contentsOf: additions)
         save()
+        return additions.count
     }
 
     func remove(_ path: String, from id: UUID) {

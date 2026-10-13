@@ -174,8 +174,9 @@ final class ListArtworkLoader: ObservableObject {
         if identity == next, image != nil || request != nil { return }
         cancel()
         identity = next
-        image = browse ? (PreparedBrowseArtwork.shared.image(key) ?? BrowseArtworkLoader.shared.cachedImage(key)?.displayImage())
-            : ThumbnailLoader.shared.cachedImage(key)?.displayImage()
+        image = PreparedBrowseArtwork.shared.image(key)
+            ?? (browse ? BrowseArtworkLoader.shared.cachedImage(key)?.displayImage()
+                : ThumbnailLoader.shared.cachedImage(key)?.displayImage())
         guard let key, image == nil else { return }
         let token = generation
         request = Task { [weak self] in

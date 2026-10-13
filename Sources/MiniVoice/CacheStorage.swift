@@ -13,6 +13,7 @@ enum CacheStorage {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("MiniVoice/LibraryIndex", isDirectory: true)
         try mergeDirectory(from: support, to: indexes, backup: root.appendingPathComponent("MigrationBackup/LibraryIndex"))
+        try PlaylistCache.consolidateLegacyIndexes()
         let caches = root.deletingLastPathComponent()
         for identity in AppIdentity.legacyBundleIdentifiers {
             try mergeDirectory(from: caches.appendingPathComponent("\(identity)/Resources-v2"), to: resources,

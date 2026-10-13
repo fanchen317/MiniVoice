@@ -109,7 +109,8 @@ final class SplitCacheTests: XCTestCase {
         XCTAssertFalse(track.resourcesLoaded); XCTAssertEqual(track.lyrics, "")
         XCTAssertEqual(track.id, entry.track(root: root)?.id)
         let json = try JSONSerialization.jsonObject(with: Data(contentsOf: indexURL)) as! [String: Any]
-        let entries = json["tracks"] as! [[String: Any]]
+        let folders = json["folders"] as! [String: [String: Any]]
+        let entries = folders[ResourceCache.key(root.path)]!["tracks"] as! [[String: Any]]
         XCTAssertNil(entries[0]["lyrics"]); XCTAssertNil(entries[0]["artwork"])
     }
 

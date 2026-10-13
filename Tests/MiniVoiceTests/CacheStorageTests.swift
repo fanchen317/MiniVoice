@@ -9,6 +9,22 @@ final class CacheStorageTests: XCTestCase {
         XCTAssertTrue(PlaylistCache.indexURL(root: URL(fileURLWithPath: "/music")).path.hasPrefix(CacheStorage.root.path + "/"))
     }
 
+    @MainActor func testMultipleMusicFoldersShareOneIndexAndEditsPreserveOtherFolder() throws {
+        let first = FileManager.default.temporaryDirectory.appendingPathComponent("SingleIndexA-\(UUID())")
+        let second = FileManager.default.temporaryDirectory.appendingPathComponent("SingleIndexB-\(UUID())")
+        let file = PlaylistCache.indexURL(root: first)
+        defer { try? FileManager.default.removeItem(at: file) }
+        XCTAssertEqual(file, PlaylistCache.indexURL(root: second))
+        let a = CachedTrack(track: Track(url: first.appendingPathComponent("a.mp3"), title: "A", artist: "Artist", album: "Album", lyrics: "", artwork: nil, duration: 3), root: first)
+        let b = CachedTrack(track: Track(url: second.appendingPathComponent("b.mp3"), title: "B", artist: "Artist", album: "Album", lyrics: "", artwork: nil, duration: 4), root: second)
+        try PlaylistCache(recursive: true, tracks: [a]).write(root: first)
+        try PlaylistCache(recursive: false, tracks: [b]).write(root: second)
+        var edited = a; edited.title = "Edited"; edited.artist = "New Artist"; edited.album = "New Album"
+        try PlaylistCache(recursive: true, tracks: [edited]).write(root: first)
+        XCTAssertEqual(try PlaylistCache.read(root: first, recursive: true).tracks.first?.title, "Edited")
+        XCTAssertEqual(try PlaylistCache.read(root: second, recursive: false).tracks.first?.title, "B")
+    }
+
     func testMigrationPreservesCurrentEntriesAndMovesLegacyConflictsToBackup() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("CacheMigration-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }

@@ -30,6 +30,44 @@ final class LibraryCollectionsTests: XCTestCase {
     }
 
     @MainActor
+    func testBatchFavoritesPreserveExistingSelectionsAndPersistOnce() throws {
+        let name = "MiniVoiceBatchFavorites-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = LibraryCollections(defaults: defaults)
+        store.toggleFavorite("existing")
+        let revision = store.revision
+        store.setFavorites(["existing", "new", "new"], favorite: true)
+        XCTAssertEqual(store.revision, revision + 1)
+        let restored = LibraryCollections(defaults: defaults)
+        XCTAssertTrue(restored.isFavorite("existing"))
+        XCTAssertTrue(restored.isFavorite("new"))
+        restored.setFavorites(["new"], favorite: false)
+        let final = LibraryCollections(defaults: defaults)
+        XCTAssertTrue(final.isFavorite("existing"))
+        XCTAssertFalse(final.isFavorite("new"))
+        let unchanged = final.revision
+        final.setFavorites([], favorite: true)
+        XCTAssertEqual(final.revision, unchanged)
+    }
+
+    @MainActor
+    func testAddToChosenPlaylistPersistsAndAvoidsDuplicateEntries() throws {
+        let name = "PlaylistAdd-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = LibraryCollections(defaults: defaults)
+        let first = try XCTUnwrap(store.createPlaylist(name: "First"))
+        let second = try XCTUnwrap(store.createPlaylist(name: "Second"))
+        XCTAssertEqual(store.add(["song", "song", "another"], to: second), 2)
+        XCTAssertEqual(store.add(["song"], to: second), 0)
+        XCTAssertEqual(store.add(["song"], to: UUID()), 0)
+        let restored = LibraryCollections(defaults: defaults)
+        XCTAssertEqual(restored.playlists.first(where: { $0.id == first })?.paths, [])
+        XCTAssertEqual(restored.playlists.first(where: { $0.id == second })?.paths, ["song", "another"])
+    }
+
+    @MainActor
     func testBlankNamesAndUnknownPlaylistCannotAlterCollections() throws {
         let name = "MiniVoiceCollections-\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))

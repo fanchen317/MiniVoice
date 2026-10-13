@@ -84,10 +84,16 @@ struct PlaylistCache: Codable, Sendable {
 
     static func read(root: URL, recursive: Bool) throws -> PlaylistCache {
         try ResourceCache.withDiskLock {
-            let url = indexURL(root: root)
-            if FileManager.default.fileExists(atPath: url.path) {
-                let cache = try JSONDecoder().decode(Self.self, from: Data(contentsOf: url))
+            let store = try loadIndex()
+            if let cache = store.folders[ResourceCache.key(root.path)] {
                 guard cache.version == 2, cache.recursive == recursive else { throw CocoaError(.fileReadCorruptFile) }
+                return cache.validated(root: root)
+            }
+            let oldIndex = CacheStorage.indexes.appendingPathComponent("\(ResourceCache.key(root.path)).json")
+            if FileManager.default.fileExists(atPath: oldIndex.path) {
+                let cache = try JSONDecoder().decode(Self.self, from: Data(contentsOf: oldIndex))
+                guard cache.version == 2, cache.recursive == recursive else { throw CocoaError(.fileReadCorruptFile) }
+                try cache.writeUnlocked(root: root)
                 return cache.validated(root: root)
             }
             var legacy = try JSONDecoder().decode(Self.self, from: Data(contentsOf: root.appendingPathComponent(filename)))
@@ -108,8 +114,42 @@ struct PlaylistCache: Codable, Sendable {
     func write(root: URL) throws {
         try ResourceCache.withDiskLock { try writeUnlocked(root: root) }
     }
+    private struct LibraryIndex: Codable {
+        var version = 1
+        var folders: [String: PlaylistCache] = [:]
+    }
+    private static var indexDirectory: URL {
+        // Test/helper corruption and cleanup must never touch the installed app's index.
+        Bundle.main.bundleIdentifier == AppIdentity.bundleIdentifier ? CacheStorage.indexes
+            : CacheStorage.indexes.appendingPathComponent("TestRuns/\(ProcessInfo.processInfo.processIdentifier)")
+    }
     static func indexURL(root: URL) -> URL {
-        CacheStorage.indexes.appendingPathComponent("\(ResourceCache.key(root.path)).json")
+        indexDirectory.appendingPathComponent("library.json")
+    }
+    private static func loadIndex() throws -> LibraryIndex {
+        let url = indexDirectory.appendingPathComponent("library.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return LibraryIndex() }
+        let store = try JSONDecoder().decode(LibraryIndex.self, from: Data(contentsOf: url))
+        guard store.version == 1 else { throw CocoaError(.fileReadCorruptFile) }
+        return store
+    }
+    static func consolidateLegacyIndexes() throws {
+        try ResourceCache.withDiskLock {
+            var store = try loadIndex()
+            let manager = FileManager.default
+            let files = (try? manager.contentsOfDirectory(at: CacheStorage.indexes, includingPropertiesForKeys: nil)) ?? []
+            var migrated: [URL] = []
+            for file in files where file.pathExtension == "json" {
+                let key = file.deletingPathExtension().lastPathComponent
+                guard key.count == 64, key.allSatisfy({ $0.isHexDigit }) else { continue }
+                guard let cache = try? JSONDecoder().decode(Self.self, from: Data(contentsOf: file)), cache.version == 2 else { continue }
+                if store.folders[key].map({ $0.updatedAt < cache.updatedAt }) ?? true { store.folders[key] = cache }
+                migrated.append(file)
+            }
+            guard !migrated.isEmpty else { return }
+            try ResourceCache.atomicWrite(JSONEncoder().encode(store), to: indexDirectory.appendingPathComponent("library.json"))
+            for file in migrated { try manager.removeItem(at: file) }
+        }
     }
     private func validated(root: URL) -> Self {
         var result = self
@@ -125,7 +165,18 @@ struct PlaylistCache: Codable, Sendable {
         var cache = self
         cache.version = 2
         for i in cache.tracks.indices { try cache.tracks[i].splitResources() }
-        try ResourceCache.atomicWrite(JSONEncoder().encode(cache), to: Self.indexURL(root: root))
+        let store: LibraryIndex
+        do { store = try Self.loadIndex() }
+        catch {
+            // Keep a corrupt snapshot recoverable while a full scan rebuilds it.
+            if let data = try? Data(contentsOf: Self.indexURL(root: root)) {
+                try ResourceCache.atomicWrite(data, to: Self.indexDirectory.appendingPathComponent("Recovery/\(UUID()).json"))
+            }
+            store = LibraryIndex()
+        }
+        var updated = store
+        updated.folders[ResourceCache.key(root.path)] = cache
+        try ResourceCache.atomicWrite(JSONEncoder().encode(updated), to: Self.indexURL(root: root))
     }
     @discardableResult
     static func update(root: URL, recursive: Bool, entry: CachedTrack) throws -> CachedTrack? {

@@ -82,5 +82,16 @@ final class PreparedBrowseArtworkTests: XCTestCase {
         let loader = ListArtworkLoader()
         loader.load(key: key, source: root.appendingPathComponent("song.mp3"), browse: true)
         XCTAssertEqual(loader.image?.size.width, 512, "First presentation must not wait for lazy loading")
+        loader.cancel()
+        loader.load(key: key, source: root.appendingPathComponent("song.mp3"), browse: false)
+        XCTAssertEqual(loader.image?.size.width, 512, "Song rows must also have artwork on their first frame")
+        let id = try XCTUnwrap(library.tracks.first?.id)
+        library.select(id)
+        XCTAssertEqual(library.selectedTrack?.artwork?.size.width, 512)
+        XCTAssertFalse(try XCTUnwrap(library.track(for: id)).resourcesLoaded,
+                       "Displaying prepared artwork must not mark full source resources as loaded")
+        library.play(id)
+        XCTAssertEqual(library.playingTrack?.artwork?.size.width, 512,
+                       "Playback artwork must be visible before async source details resolve")
     }
 }

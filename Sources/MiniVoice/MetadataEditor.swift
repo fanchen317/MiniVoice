@@ -754,6 +754,7 @@ private enum EditorPage: String, CaseIterable, Identifiable {
 struct SongInfoWindowPresenter: NSViewRepresentable {
     @Binding var track: Track?
     let request: UUID
+    let isLoading: Bool
     let library: MusicLibrary
     let lyricsSync: LyricsSyncCoordinator
     @Environment(\.colorScheme) private var colorScheme
@@ -767,12 +768,17 @@ struct SongInfoWindowPresenter: NSViewRepresentable {
             coordinator.window?.close()
             coordinator.window = nil
             coordinator.trackID = nil
+            coordinator.isLoading = nil
             return
         }
         coordinator.window?.appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
         // A repeated explicit request must raise the existing editor without
         // recreating it (and losing edits). Ordinary playback updates must not.
         guard coordinator.trackID != track.id else {
+            if coordinator.isLoading != isLoading {
+                coordinator.window?.contentView = contentView(for: track)
+                coordinator.isLoading = isLoading
+            }
             if coordinator.lastRequest != request, let window = coordinator.window {
                 coordinator.lastRequest = request
                 if window.isMiniaturized { window.deminiaturize(nil) }
@@ -791,16 +797,41 @@ struct SongInfoWindowPresenter: NSViewRepresentable {
         window.isReleasedWhenClosed = false
         window.isMovable = true
         window.appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
-        window.contentView = NSHostingView(rootView:
-            MetadataEditor(track: track, onClose: { self.track = nil })
-                .environmentObject(library)
-                .environmentObject(lyricsSync))
+        window.contentView = contentView(for: track)
         coordinator.window = window
         coordinator.trackID = track.id
+        coordinator.isLoading = isLoading
         coordinator.lastRequest = request
         window.center()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+    }
+
+    private func contentView(for track: Track) -> NSView {
+        if isLoading {
+            return NSHostingView(rootView:
+                VStack {
+                    Spacer()
+                    VStack(spacing: 12) {
+                        ProgressView().controlSize(.large)
+                        Text("正在读取歌曲信息…")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button("取消") { self.track = nil }
+                            .keyboardShortcut(.cancelAction)
+                    }
+                }
+                .padding(20)
+                .frame(width: songInfoWindowSize.width, height: songInfoWindowSize.height)
+                .background(Color(nsColor: .windowBackgroundColor)))
+        }
+        return NSHostingView(rootView:
+            MetadataEditor(track: track, onClose: { self.track = nil })
+                .environmentObject(library)
+                .environmentObject(lyricsSync))
     }
 
     static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
@@ -812,6 +843,7 @@ struct SongInfoWindowPresenter: NSViewRepresentable {
         var window: NSWindow?
         var trackID: UUID?
         var lastRequest: UUID?
+        var isLoading: Bool?
     }
 }
 

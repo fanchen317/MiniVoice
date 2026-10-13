@@ -193,8 +193,16 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         detailTracks[id] = nil
     }
 
-    var selectedTrack: Track? { selectedID.flatMap { detailTracks[$0] ?? tracksByID[$0] } }
-    var playingTrack: Track? { playingID.flatMap { detailTracks[$0] ?? tracksByID[$0] } }
+    var selectedTrack: Track? { selectedID.flatMap(displayTrack) }
+    var playingTrack: Track? { playingID.flatMap(displayTrack) }
+
+    private func displayTrack(_ id: Track.ID) -> Track? {
+        guard var track = detailTracks[id] ?? tracksByID[id] else { return nil }
+        // Artwork is ready before source tags/lyrics finish resolving. Only the
+        // display copy receives it; full-resolution editing still reads the source.
+        if track.artwork == nil { track.artwork = PreparedBrowseArtwork.shared.image(track.artworkKey) }
+        return track
+    }
     var selectedIndex: Int? { tracks.firstIndex { $0.id == selectedID } }
 
     func addFolders(_ urls: [URL]) {
