@@ -66,6 +66,10 @@ struct ContentView: View {
     @State private var hideFinishedScan = false
     @State private var locateRequest = UUID()
     @State private var locateTarget: UUID?
+    @State private var locateGroupTarget: LibraryListLocation?
+    @State private var locatedGroup: LibraryListLocation?
+    @State private var locateNotice: String?
+    @State private var locateNoticeID = UUID()
     @State private var multiSelecting = false
     @State private var selectedIDs = Set<UUID>()
     @State private var editingTrack: Track?
@@ -190,6 +194,7 @@ struct ContentView: View {
             // a missing cover must never hold the entire classification page open.
             songGroups = groups.map { (name: $0.name, tracks: $0.ids.compactMap { library.track(for: $0) }) }
             browsePages[destination] = BrowsePageSnapshot(request: workspace, songs: songs, groups: songGroups)
+            if locateGroupTarget?.destination == destination { locateRequest = UUID() }
         }
         selectedIDs.formIntersection(Set(songs.map(\.id)))
     }
@@ -677,6 +682,17 @@ struct ContentView: View {
             Spacer(minLength: 0)
             Button {
                 guard let id = library.playingID else { return }
+                if groups, let track = library.track(for: id) {
+                    locateTarget = nil
+                    locateGroupTarget = LibraryListLocation(destination: destination,
+                        group: destination == .artists ? artistName(track) : albumName(track))
+                    locatedGroup = nil
+                    locateNotice = nil
+                    query = ""
+                    locateRequest = UUID()
+                    return
+                }
+                locateGroupTarget = nil
                 locateTarget = id
                 library.selectedID = id
                 if !songs.contains(where: { $0.id == id }) {
@@ -691,7 +707,8 @@ struct ContentView: View {
                 }.modifier(LibraryToolbarSurface(showBorder: false))
             }
             .buttonStyle(.plain).disabled(library.playingID == nil)
-            .help("定位正在播放的歌曲").accessibilityLabel("定位正在播放的歌曲")
+            .help(groups ? "定位正在播放歌曲的\(destination == .artists ? "歌手" : "专辑")" : "定位正在播放的歌曲")
+            .accessibilityLabel(groups ? "定位正在播放歌曲的\(destination == .artists ? "歌手" : "专辑")" : "定位正在播放的歌曲")
             if !recent && !detail {
                 Button { library.rescan() } label: {
                     LibraryToolbarIcon(symbol: "arrow.clockwise", showBorder: false)
@@ -1153,6 +1170,19 @@ private extension ContentView {
         }
     }
 
+    private func locateBrowseCard(using proxy: ScrollViewProxy) {
+        guard browsePages[destination]?.request == workspaceRequest,
+              let target = locateGroupTarget, target.destination == destination,
+              let name = target.group, songGroups.contains(where: { $0.name == name }) else { return }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) {
+            proxy.scrollTo(name, anchor: .center)
+        }
+        locatedGroup = target
+        locateGroupTarget = nil
+        locateNotice = "已定位到正在播放歌曲的\(destination == .artists ? "歌手" : "专辑")：\(name)"
+        locateNoticeID = UUID()
+    }
+
     private func workspaceSongsContent(width: CGFloat, showsGroups: Bool = false) -> some View {
         let columns = MusicListColumns(width: width, multiSelecting: multiSelecting)
         return VStack(alignment: .leading, spacing: 4) {
@@ -1175,6 +1205,14 @@ private extension ContentView {
                                                   isArtist: destination == .artists, width: cardWidth,
                                                   compact: columnCount == 1) {
                                     openBrowseGroup(group.name, tracks: group.tracks)
+                                }
+                                .id(group.name)
+                                .overlay {
+                                    if locatedGroup == LibraryListLocation(destination: destination, group: group.name) {
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(playerGreen, lineWidth: 2)
+                                            .allowsHitTesting(false)
+                                    }
                                 }
                                 .matchedGeometryEffect(id: "\(destination):\(group.name)",
                                                        in: browseReflow, properties: .position)
@@ -1211,9 +1249,13 @@ private extension ContentView {
                     }
                 }
                 .onChange(of: locateRequest) { _ in
+                    if showsGroups { locateBrowseCard(using: proxy) }
                     if !showsGroups, let target = locateTarget, songs.contains(where: { $0.id == target }) {
                         withAnimation { proxy.scrollTo(target, anchor: .center) }
                     }
+                }
+                .onChange(of: songGroups.map(\.name)) { _ in
+                    if showsGroups { locateBrowseCard(using: proxy) }
                 }
                 .onChange(of: songs.map(\.id)) { ids in
                     if !showsGroups, let target = locateTarget, ids.contains(target) {
@@ -1223,6 +1265,27 @@ private extension ContentView {
                 }
             }
             .id(LibraryListLocation(destination: destination, group: showsGroups ? nil : browseGroup))
+            .overlay(alignment: .top) {
+                if showsGroups, let notice = locateNotice {
+                    Label(notice, systemImage: "scope")
+                        .font(.callout).lineLimit(2)
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(playerGreen.opacity(0.4)))
+                        .padding(12).allowsHitTesting(false)
+                        .task(id: locateNoticeID) {
+                            try? await Task.sleep(for: .seconds(3))
+                            guard !Task.isCancelled else { return }
+                            locateNotice = nil
+                            locatedGroup = nil
+                        }
+                }
+            }
+            .onChange(of: destination) { _ in
+                locateGroupTarget = nil
+                locatedGroup = nil
+                locateNotice = nil
+            }
             if case .playlist(let id) = destination, multiSelecting, !selectedIDs.isEmpty {
                 Button("从歌单移除所选歌曲") {
                     for track in songs where selectedIDs.contains(track.id) { collections.remove(track.url.path, from: id) }
