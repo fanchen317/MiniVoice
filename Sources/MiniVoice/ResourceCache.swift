@@ -5,7 +5,7 @@ import Combine
 
 enum ResourceCache {
     static let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("MiniVoice")
-    static let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("com.xcosmos.MiniVoice/Resources-v2")
+    static let directory = CacheStorage.resources
     private static let lock = NSRecursiveLock()
     static func withDiskLock<T>(_ work: () throws -> T) rethrows -> T {
         lock.lock(); defer { lock.unlock() }; return try work()
@@ -69,7 +69,10 @@ enum ResourceCache {
         withDiskLock {
             guard let e = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]) else { return }
             let files = e.compactMap { $0 as? URL }.compactMap { u -> (URL, Int, Date)? in
-                guard let v = try? u.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]), v.isRegularFile == true else { return nil }
+                // Classification images belong to the current library, rather than
+                // the disposable detail cache. Scans remove obsolete classification keys.
+                guard !u.path.hasPrefix(directory.appendingPathComponent("Artwork/Browse").path + "/"),
+                      let v = try? u.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]), v.isRegularFile == true else { return nil }
                 return (u, v.fileSize ?? 0, v.contentModificationDate ?? .distantPast)
             }
             var total = files.reduce(0) { $0 + $1.1 }
@@ -77,6 +80,38 @@ enum ResourceCache {
                 if (try? FileManager.default.removeItem(at: f.0)) != nil { total -= f.1 }
             }
         }
+    }
+}
+
+/// Compressed, already prepared covers stay resident; decoded presentations are bounded.
+/// UI reads never touch disk or start source extraction.
+@MainActor
+final class PreparedBrowseArtwork {
+    static let shared = PreparedBrowseArtwork()
+    private var bytes: [String: Data] = [:]
+    @MainActor private let presentations = NSCache<NSString, NSImage>()
+
+    func contains(_ key: String?) -> Bool {
+        guard let key else { return false }
+        return bytes[key] != nil
+    }
+    @MainActor func replace(_ prepared: [String: Data]) {
+        bytes = prepared
+        presentations.removeAllObjects()
+    }
+    @MainActor func merge(_ prepared: [String: Data]) {
+        bytes.merge(prepared, uniquingKeysWith: { _, latest in latest })
+        for key in prepared.keys { presentations.removeObject(forKey: key as NSString) }
+    }
+    @MainActor func image(_ key: String?) -> NSImage? {
+        guard let key else { return nil }
+        if let hit = presentations.object(forKey: key as NSString) { return hit }
+        let data = bytes[key]
+        guard let data, let image = NSImage(data: data) else { return nil }
+        presentations.totalCostLimit = 64 * 1024 * 1024
+        presentations.setObject(image, forKey: key as NSString,
+                                cost: Int(image.size.width * image.size.height * 4))
+        return image
     }
 }
 
@@ -139,7 +174,8 @@ final class ListArtworkLoader: ObservableObject {
         if identity == next, image != nil || request != nil { return }
         cancel()
         identity = next
-        image = (browse ? BrowseArtworkLoader.shared.cachedImage(key) : ThumbnailLoader.shared.cachedImage(key))?.displayImage()
+        image = browse ? (PreparedBrowseArtwork.shared.image(key) ?? BrowseArtworkLoader.shared.cachedImage(key)?.displayImage())
+            : ThumbnailLoader.shared.cachedImage(key)?.displayImage()
         guard let key, image == nil else { return }
         let token = generation
         request = Task { [weak self] in
@@ -165,6 +201,21 @@ actor BrowseArtworkLoader {
     private var pending: [String: Task<CachedArtwork?, Never>] = [:]
     private var failures: [String: Date] = [:]
     nonisolated func cachedImage(_ key: String?) -> CachedArtwork? { key.flatMap { memory.image($0) } }
+    func prepare(_ entries: [(key: String, source: URL)],
+                 progress: @Sendable (Int, Int) async -> Void = { _, _ in }) async -> [String: Data] {
+        var seen = Set<String>()
+        let unique = entries.filter { seen.insert($0.key).inserted }
+        var prepared: [String: Data] = [:]
+        for (index, entry) in unique.enumerated() {
+            guard !Task.isCancelled else { return prepared }
+            if let data = await BrowseArtworkWorker.shared.preparedData(entry.key, source: entry.source) {
+                prepared[entry.key] = data
+            }
+            if index % 16 == 0 || index == unique.count - 1 { await progress(index + 1, unique.count) }
+        }
+        return prepared
+    }
+
     func image(_ key: String, source: URL) async -> CachedArtwork? {
         if let hit = cachedImage(key) { return hit }
         if let failed = failures[key], Date().timeIntervalSince(failed) < 60 { return nil }
@@ -191,6 +242,28 @@ actor BrowseArtworkWorker {
     }) {
         self.repair = repair
     }
+    func preparedData(_ key: String, source: URL) async -> Data? {
+        let file = ResourceCache.url(key, kind: "Artwork/Browse")
+        if let saved = try? Data(contentsOf: file), ResourceCache.isValidArtwork(saved) { return saved }
+        guard let result = await image(key, source: source) else { return nil }
+        let bitmap = NSBitmapImageRep(cgImage: result.image)
+        let opaque = [.none, .noneSkipFirst, .noneSkipLast].contains(result.image.alphaInfo)
+        guard let encoded = bitmap.representation(using: opaque ? .jpeg : .png,
+                properties: opaque ? [.compressionFactor: 0.95] : [:]),
+              (try? ResourceCache.atomicWrite(encoded, to: file)) != nil else { return nil }
+        return encoded
+    }
+
+    func discardObsoletePreparedFiles(retaining keys: Set<String>) {
+        ResourceCache.withDiskLock {
+            let folder = ResourceCache.directory.appendingPathComponent("Artwork/Browse")
+            for file in (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+                where !keys.contains(file.lastPathComponent) {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+    }
+
     func image(_ key: String, source: URL) async -> CachedArtwork? {
         var data = ResourceCache.artworkData(key, detail: true)
         if !ResourceCache.isValidArtwork(data) {

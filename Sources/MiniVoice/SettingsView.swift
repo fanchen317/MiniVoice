@@ -140,7 +140,7 @@ private struct GeneralSettingsPage: View {
 
     var body: some View {
         SettingsGroup(title: "外观") {
-            SettingsRow(title: "播放器样式") {
+            SettingsRow(title: "播放器样式", detail: "点击页面左上角的 App 图标，可快速切换播放器样式。") {
                 Picker("播放器样式", selection: $interfaceStyle) {
                     ForEach(PlayerInterfaceStyle.allCases) { Text($0.title).tag($0.rawValue) }
                 }.labelsHidden().pickerStyle(.segmented).frame(width: 280)
@@ -211,6 +211,14 @@ private struct LibrarySettingsPage: View {
             SettingsRow(title: library.isImporting ? "正在更新音乐库" : "音乐库状态", detail: library.scanSummary) {
                 if library.isImporting { ProgressView().controlSize(.small) }
                 Button("重新扫描") { library.rescan() }.disabled(library.isImporting || library.folders.isEmpty)
+            }
+        }
+        SettingsGroup(title: "缓存", footer: "歌单索引、歌词、封面及封面导出统一保存在此文件夹下。") {
+            SettingsRow(title: "本地缓存文件夹", detail: CacheStorage.root.path) {
+                Button("打开文件夹") {
+                    try? FileManager.default.createDirectory(at: CacheStorage.root, withIntermediateDirectories: true)
+                    NSWorkspace.shared.open(CacheStorage.root)
+                }
             }
         }
         if !library.scanIssues.isEmpty {

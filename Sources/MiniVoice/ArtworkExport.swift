@@ -33,8 +33,7 @@ struct ArtworkExport {
 
     func fileURL(name: String) throws -> URL {
         let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("MiniVoice-Artwork", isDirectory: true)
+        let directory = CacheStorage.artworkExports
             .appendingPathComponent(digest, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let cleaned = name.components(separatedBy: CharacterSet(charactersIn: "/\\:\n\r\t").union(.controlCharacters))

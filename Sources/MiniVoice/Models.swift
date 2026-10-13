@@ -107,6 +107,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private var tracksByID: [UUID: Track] = [:]
     private var tracksByPath: [String: Track] = [:]
     private(set) var tracksRevision = 0
+    @Published private(set) var browseArtworkRevision = 0
     @Published var selectedID: Track.ID?
     /// The audio currently loaded in AVAudioPlayer. This deliberately differs from
     /// selectedID while the user browses other songs during playback.
@@ -174,6 +175,10 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         volume = min(1, max(0, defaults.object(forKey: "MiniVoice.appVolume") as? Float ?? 1))
         super.init()
         recentPaths = defaults.stringArray(forKey: "MiniVoice.recentPlayback") ?? []
+        if Bundle.main.bundleIdentifier == AppIdentity.bundleIdentifier, defaults === UserDefaults.standard {
+            do { try CacheStorage.migrateLegacyCaches() }
+            catch { errorMessage = "旧缓存迁移未完成：\(error.localizedDescription)" }
+        }
         if scanOnLaunch { rescan(preferCache: true) }
     }
     private var player: AVAudioPlayer?
@@ -294,6 +299,26 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 }
             }
             queue.reset(current: playingID ?? selectedID, ids: playbackIDs)
+            // Prepare every referenced classification cover before declaring the scan complete.
+            // Existing libraries hydrate the same persistent cache during startup.
+            let artworkEntries = scanned.compactMap { track in
+                track.artworkKey.map { (key: $0, source: track.url) }
+            }
+            let prepared = await BrowseArtworkLoader.shared.prepare(artworkEntries) { [weak self] done, total in
+                await MainActor.run {
+                    guard let self, self.scanGeneration == generation else { return }
+                    self.scanSummary = "正在准备高清封面：\(done) / \(total)"
+                }
+            }
+            guard !Task.isCancelled, generation == scanGeneration else { return }
+            PreparedBrowseArtwork.shared.replace(prepared)
+            browseArtworkRevision += 1
+            let missingCovers = Set(artworkEntries.map(\.key)).subtracting(prepared.keys).count
+            if missingCovers > 0 { issues.append("\(missingCovers) 张高清封面无法准备，请检查对应歌曲文件是否可读取。") }
+            if defaults === UserDefaults.standard {
+                await BrowseArtworkWorker.shared.discardObsoletePreparedFiles(retaining: Set(artworkEntries.map(\.key)))
+                guard !Task.isCancelled, generation == scanGeneration else { return }
+            }
             scanIssues = issues
             scanSummary = "歌单已载入：\(tracks.count) 首歌曲" + (issues.isEmpty ? "" : "，\(issues.count) 项无法读取")
             isImporting = false
@@ -660,6 +685,12 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
             if let failure = outcome.1 { errorMessage = failure }
             else if let saved = outcome.0,
                     let index = tracks.firstIndex(where: { $0.id == track.id }) {
+                if let key = saved.artworkKey {
+                    let prepared = await BrowseArtworkLoader.shared.prepare([(key: key, source: track.url)])
+                    guard !Task.isCancelled, tracksByID[track.id] != nil else { return }
+                    PreparedBrowseArtwork.shared.merge(prepared)
+                    browseArtworkRevision += 1
+                }
                 if var light = saved.track(root: root) {
                     light.id = track.id
                     tracks[index] = light

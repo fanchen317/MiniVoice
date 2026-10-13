@@ -109,7 +109,7 @@ struct PlaylistCache: Codable, Sendable {
         try ResourceCache.withDiskLock { try writeUnlocked(root: root) }
     }
     static func indexURL(root: URL) -> URL {
-        ResourceCache.support.appendingPathComponent("LibraryIndex/\(ResourceCache.key(root.path)).json")
+        CacheStorage.indexes.appendingPathComponent("\(ResourceCache.key(root.path)).json")
     }
     private func validated(root: URL) -> Self {
         var result = self

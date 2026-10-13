@@ -52,7 +52,6 @@ struct ContentView: View {
     @State private var showingPlaylistEditor = false
     @State private var playlistName = ""
     @State private var renamingPlaylist: UUID?
-    @AppStorage("MiniVoice.followLyrics") private var followLyrics = true
     private var libraryStyle: Bool { interfaceStyle == PlayerInterfaceStyle.library.rawValue }
     @State private var sidebarVisible = true
     @StateObject private var styleTransition = PlayerStyleTransition()
@@ -1002,7 +1001,7 @@ private extension ContentView {
                     .allowsHitTesting(!albumPlayback)
                     .accessibilityHidden(albumPlayback)
                 if albumPlayback, let track {
-                    WorkspaceLyricsPanel(track: track, follow: $followLyrics, onEdit: { openSongInfo(track) })
+                    WorkspaceLyricsPanel(track: track, onEdit: { openSongInfo(track) })
                         .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 }
             }
@@ -1297,7 +1296,10 @@ private struct LibraryBrowseCard: View {
     @State private var hovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var coverTrack: Track? { tracks.first(where: { $0.artwork != nil || $0.artworkKey != nil }) }
+    private var coverTrack: Track? {
+        tracks.first(where: { PreparedBrowseArtwork.shared.contains($0.artworkKey) })
+            ?? tracks.first(where: { $0.artwork != nil || $0.artworkKey != nil })
+    }
     private var artists: String {
         let names = Set(tracks.map(\.artist).filter { !$0.isEmpty }).sorted()
         return names.isEmpty ? "未知歌手" : names.joined(separator: " / ")
@@ -1378,7 +1380,6 @@ private struct SongCellFrame: ViewModifier {
 
 private struct WorkspaceLyricsPanel: View {
     let track: Track
-    @Binding var follow: Bool
     let onEdit: () -> Void
 
     var body: some View {
@@ -1387,8 +1388,6 @@ private struct WorkspaceLyricsPanel: View {
                 Text("歌词").font(.headline)
                 Spacer()
                 TranslationDisplayToggle(lines: track.lyricLines)
-                Toggle("自动跟随", isOn: $follow).toggleStyle(.switch).controlSize(.small)
-                    .fixedSize().disabled(!track.lyricLines.contains { $0.timestamp != nil })
             }.padding(12)
             if track.lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 VStack(spacing: 14) {
@@ -1397,7 +1396,7 @@ private struct WorkspaceLyricsPanel: View {
                     Button("添加歌词", action: onEdit).buttonStyle(GlassButtonStyle())
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                SyncedLyrics(track: track, follow: follow)
+                SyncedLyrics(track: track)
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity).modifier(PlayerPanelSurface())
     }
@@ -1413,7 +1412,6 @@ private struct PlayerDetail: View {
     let onEditPlayback: () -> Void
     let onToggleSidebar: () -> Void
     @State private var expandedLyrics = false
-    @AppStorage("MiniVoice.followLyrics") private var followLyrics = true
 
     var body: some View {
         GeometryReader { geometry in
@@ -1489,8 +1487,6 @@ private struct PlayerDetail: View {
                 Text("歌词").font(.headline)
                 Spacer()
                 TranslationDisplayToggle(lines: playbackTrack.lyricLines)
-                Toggle("自动跟随", isOn: $followLyrics).toggleStyle(.switch).controlSize(.small)
-                    .fixedSize().disabled(!playbackTrack.lyricLines.contains { $0.timestamp != nil })
                 Button {
                     withAnimation(reduceMotion ? nil : .spring(response: 0.46, dampingFraction: 0.90)) {
                         expandedLyrics.toggle()
@@ -1536,7 +1532,7 @@ private struct PlayerDetail: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 16).padding(.bottom, 14)
             } else {
-                SyncedLyrics(track: playbackTrack, follow: followLyrics)
+                SyncedLyrics(track: playbackTrack)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1589,7 +1585,6 @@ private struct PlayerLyricRow: View, Equatable {
 private struct SyncedLyrics: View {
     @AppStorage("MiniVoice.showLyricsTranslation") private var showTranslation = true
     let track: Track
-    let follow: Bool
 
     var body: some View {
         if track.lyricSnapshot.kind == .plain {
@@ -1603,7 +1598,7 @@ private struct SyncedLyrics: View {
                     .textSelection(.enabled)
             }
         } else {
-            TimedLyrics(track: track, follow: follow)
+            TimedLyrics(track: track)
         }
     }
 }
@@ -1612,7 +1607,6 @@ private struct TimedLyrics: View {
     @AppStorage("MiniVoice.showLyricsTranslation") private var showTranslation = true
     @EnvironmentObject private var library: MusicLibrary
     let track: Track
-    let follow: Bool
     @EnvironmentObject private var clock: PlaybackClock
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1621,7 +1615,6 @@ private struct TimedLyrics: View {
     private struct ScrollTarget: Equatable {
         let trackID: UUID
         let active: Int?
-        let follow: Bool
         let size: CGSize
         let lyrics: String
         let showTranslation: Bool
@@ -1658,12 +1651,12 @@ private struct TimedLyrics: View {
                     .padding(.top, geometry.size.height / 2)
                     .padding(.bottom, 8)
                 }
-                .task(id: ScrollTarget(trackID: track.id, active: active, follow: follow,
+                .task(id: ScrollTarget(trackID: track.id, active: active,
                                        size: geometry.size, lyrics: track.lyrics, showTranslation: showTranslation)) {
                     // Wait for new text/viewport geometry before resolving the line's scroll frame.
                     await Task.yield()
-                    guard !Task.isCancelled, follow else { return }
-                    let target = ScrollTarget(trackID: track.id, active: active, follow: follow,
+                    guard !Task.isCancelled else { return }
+                    let target = ScrollTarget(trackID: track.id, active: active,
                                               size: geometry.size, lyrics: track.lyrics, showTranslation: showTranslation)
                     let animate = !reduceMotion && previousScrollTarget?.trackID == target.trackID
                         && previousScrollTarget?.size == target.size
@@ -2025,9 +2018,10 @@ private struct ListArtwork: View {
     var size: CGFloat = 44
     var highResolution = false
     @StateObject private var loader = ListArtworkLoader()
+    @EnvironmentObject private var library: MusicLibrary
     var body: some View {
         Group {
-            if let image = track.artwork ?? loader.currentImage(key: track.artworkKey, source: track.url, browse: highResolution) ??
+            if let image = track.artwork ?? (highResolution ? PreparedBrowseArtwork.shared.image(track.artworkKey) : nil) ?? loader.currentImage(key: track.artworkKey, source: track.url, browse: highResolution) ??
                 (highResolution ? BrowseArtworkLoader.shared.cachedImage(track.artworkKey) : ThumbnailLoader.shared.cachedImage(track.artworkKey))?.displayImage() ??
                 (highResolution ? nil : ThumbnailLoader.shared.cachedImage(track.artworkKey)?.displayImage()) {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: highResolution ? .fill : .fit)
@@ -2040,6 +2034,9 @@ private struct ListArtwork: View {
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .onAppear {
             loader.load(key: track.artworkKey, source: track.url, browse: highResolution)
+        }
+        .onChange(of: library.browseArtworkRevision) { _ in
+            if highResolution { loader.load(key: track.artworkKey, source: track.url, browse: true) }
         }
         .onChange(of: track.artworkKey) { key in loader.load(key: key, source: track.url, browse: highResolution) }
         .onChange(of: track.url) { source in loader.load(key: track.artworkKey, source: source, browse: highResolution) }
