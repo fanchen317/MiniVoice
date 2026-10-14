@@ -2,10 +2,23 @@ import Foundation
 import Combine
 
 enum PlayerInterfaceStyle: String, CaseIterable, Identifiable {
-    case simple, library
+    case simple, library, wall
     static let preferenceKey = "MiniVoice.interfaceStyle"
     var id: Self { self }
-    var title: String { self == .simple ? "简易样式" : "音乐库样式" }
+    var title: String {
+        switch self {
+        case .simple: "简易样式"
+        case .library: "音乐库样式"
+        case .wall: "音乐墙样式"
+        }
+    }
+    var next: Self {
+        switch self {
+        case .simple: .library
+        case .library: .wall
+        case .wall: .simple
+        }
+    }
 }
 
 struct UserPlaylist: Codable, Identifiable, Equatable {

@@ -54,7 +54,9 @@ struct ContentView: View {
     @State private var showingPlaylistPicker = false
     @State private var playlistName = ""
     @State private var renamingPlaylist: UUID?
-    private var libraryStyle: Bool { interfaceStyle == PlayerInterfaceStyle.library.rawValue }
+    private var wallStyle: Bool { interfaceStyle == PlayerInterfaceStyle.wall.rawValue }
+    private var libraryStyle: Bool { interfaceStyle != PlayerInterfaceStyle.simple.rawValue }
+    @State private var wallSidebarOverlays = false
     @State private var sidebarVisible = true
     @StateObject private var styleTransition = PlayerStyleTransition()
     @State private var playbackFlight: PlaybackFlight?
@@ -213,7 +215,9 @@ struct ContentView: View {
 
     var body: some View {
         GeometryReader { geometry in
-          if libraryStyle {
+          if wallStyle {
+            musicWallWorkspace(size: geometry.size)
+          } else if libraryStyle {
             libraryWorkspace(size: geometry.size)
           } else {
             let sidebarWidth = min(288, max(250, geometry.size.width * 0.25))
@@ -299,11 +303,18 @@ struct ContentView: View {
         }
         .background(PlayerInitialFocus())
         .overlay(alignment: .top) {
-            PlayerTitleBar()
-                .frame(height: 28)
-                .padding(.leading, 78)
-                .ignoresSafeArea()
-                .accessibilityHidden(true)
+            ZStack(alignment: .top) {
+                if wallStyle {
+                    LinearGradient(colors: [.black.opacity(0.72), .black.opacity(0.28), .clear],
+                                   startPoint: .top, endPoint: .bottom)
+                        .frame(height: 64).allowsHitTesting(false)
+                }
+                PlayerTitleBar()
+                    .frame(height: 28)
+                    .padding(.leading, 78)
+                    .accessibilityHidden(true)
+            }
+            .ignoresSafeArea()
         }
         .task(id: workspaceRequest) { await updateSongs() }
         .onChange(of: interfaceStyle) { _ in
@@ -510,7 +521,7 @@ struct ContentView: View {
             let showsClose = closeProgress >= 0.5
             let showsTasks = showingTasks || lyricsSync.activeCount > 0 || library.isImporting || lyricsSync.downloadingModel || lyricsSync.hasUnread || unreadScan
             return HStack(spacing: 0) {
-                PlayerStyleSwitchButton(targetTitle: libraryStyle ? "简易样式" : "音乐库样式",
+                PlayerStyleSwitchButton(targetTitle: (PlayerInterfaceStyle(rawValue: interfaceStyle) ?? .simple).next.title,
                                         transition: styleTransition, action: switchPlayerStyle)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("MiniVoice").font(.title3.weight(.bold)).lineLimit(1)
@@ -531,7 +542,7 @@ struct ContentView: View {
                         backgroundTasks.onExitCommand { showingTasks = false }
                     }
                 }
-                Button(action: toggleSidebar) {
+                Button(action: { if wallStyle { sidebarVisible = false } else { toggleSidebar() } }) {
                     Image(systemName: "xmark")
                         .font(.system(size: 13, weight: .semibold))
                         .frame(width: 24, height: 24)
@@ -555,7 +566,7 @@ struct ContentView: View {
             styleTransition.queueSwitch { switchPlayerStyle() }
             return
         }
-        let next = libraryStyle ? PlayerInterfaceStyle.simple : .library
+        let next = (PlayerInterfaceStyle(rawValue: interfaceStyle) ?? .simple).next
         if reduceMotion {
             withAnimation(.easeInOut(duration: 0.16)) { interfaceStyle = next.rawValue }
         } else if styleTransition.capture() {
@@ -929,6 +940,60 @@ private extension ContentView {
         showingPlaylistEditor = false
     }
 
+    var wallNavigationTitle: String {
+        if let browseGroup { return browseGroup }
+        switch destination {
+        case .all: return "音乐库"
+        case .recent: return "最近播放"
+        case .favorites: return "收藏"
+        case .artists: return "歌手"
+        case .albums: return "专辑"
+        case .playlist(let id): return collections.playlists.first(where: { $0.id == id })?.name ?? "歌单"
+        }
+    }
+
+    func musicWallWorkspace(size: CGSize) -> some View {
+        let sidebarWidth = min(260, max(230, size.width * 0.25))
+        let overlays = size.width < sidebarWidth + 640 + 48
+        let inset = sidebarVisible && !overlays ? sidebarWidth + 24 : 0
+        return ZStack(alignment: .topLeading) {
+            MusicWallView(tracks: songs.isEmpty && query.isEmpty && destination == .all ? library.tracks : songs, groups: browsingGroups ? songGroups : [],
+                          isGrouping: browsingGroups, canGoBack: browseGroup != nil, sidebarInset: inset,
+                          sidebarBlocksWall: sidebarVisible && overlays, title: wallNavigationTitle,
+                          query: $query, emptyMessage: emptyListMessage, isPreparing: listPreparationRequest != nil || library.isImporting,
+                          onToggleSidebar: {
+                              withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.88)) {
+                                  sidebarVisible.toggle()
+                              }
+                          }, onOpenGroup: { name in browseGroup = name },
+                          onBack: { browseGroup = nil }, onEdit: openSongInfo,
+                          isFavorite: { collections.isFavorite($0.url.path) },
+                          onFavorite: { collections.toggleFavorite($0.url.path) },
+                          onAddToPlaylist: { track in playlistAddTracks = [track]; showingPlaylistPicker = true })
+            if sidebarVisible {
+                if overlays {
+                    Color.black.opacity(0.18)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { sidebarVisible = false }
+                        }
+                }
+                workspaceSidebar(closeProgress: overlays ? 1 : 0)
+                    .frame(width: sidebarWidth, height: max(0, size.height - 46))
+                    .modifier(MusicWallGlass(radius: panelCornerRadius))
+                    .environment(\.colorScheme, .dark)
+                    .shadow(color: .black.opacity(0.4), radius: 24, y: 12)
+                    .padding(.leading, 12).padding(.top, 34)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .onAppear { wallSidebarOverlays = overlays }
+        .onChange(of: overlays) { wallSidebarOverlays = $0 }
+        .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.88), value: inset)
+        .onExitCommand { sidebarVisible = false }
+    }
+
     func libraryWorkspace(size: CGSize) -> some View {
         let sidebarWidth: CGFloat = min(288, max(250, size.width * 0.25))
         let availableWidth = size.width - 24
@@ -1008,6 +1073,7 @@ private extension ContentView {
     func workspaceNavigation(_ title: String, symbol: String, target: LibraryDestination, dismissSidebar: Bool) -> some View {
         Button {
             navigate(target)
+            if wallStyle && wallSidebarOverlays { sidebarVisible = false }
             if dismissSidebar && sidebarVisible {
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.36)) {
                     sidebarVisible = false
