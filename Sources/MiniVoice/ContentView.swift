@@ -484,9 +484,11 @@ struct ContentView: View {
                 navigationItem("最近播放", symbol: "clock", isRecent: true)
             }
             Divider().opacity(0.4)
-            libraryToolbar()
+            VStack(spacing: 0) {
+            libraryToolbar().padding(.bottom, 4)
+            Divider().opacity(0.4)
             ScrollViewReader { proxy in
-              PlayerScrollView {
+              PlayerScrollView(fadesEdges: true, fadeEdgeLength: 32, fadeOnlyOverflow: true) {
                 LazyVStack(spacing: 4) {
                     ForEach(songs) { track in
                         songRow(track).id(track.id)
@@ -497,6 +499,7 @@ struct ContentView: View {
                     }
                 }
               }
+              .id(recent)
               .onChange(of: locateRequest) { _ in
                   if let target = locateTarget, songs.contains(where: { $0.id == target }) {
                       withAnimation { proxy.scrollTo(target, anchor: .center) }
@@ -509,11 +512,12 @@ struct ContentView: View {
                   }
               }
             }
+            }
         }
         // 12pt inner padding keeps the sidebar's first row visually flush with the
         // header buttons on the right - both share the same Y so the eye reads them
         // as a single horizontal band across the top of the window.
-        .padding(12)
+        .padding(.horizontal, 12).padding(.top, 12)
         .frame(maxHeight: .infinity)
     }
 
@@ -927,7 +931,12 @@ private extension ContentView {
 
     func navigate(_ target: LibraryDestination) {
         browseTransition.reset()
-        if destination != target { songGroups = [] }
+        if destination != target {
+            songGroups = []
+            // Fresh tabs start with a complete first row. Returning from a group
+            // uses closeBrowseGroup and keeps its original card scroll position.
+            browseScrollPositions.position(target).offset = 0
+        }
         destination = target; recent = target == .recent
         browseGroup = nil; albumPlayback = false
         restoreBrowsePage()
@@ -1102,32 +1111,41 @@ private extension ContentView {
 
     func workspaceDetail(width: CGFloat, height: CGFloat) -> some View {
         let track = library.playingTrack ?? library.selectedTrack
-        let controlsHeight = track == nil ? 0 : PlayerControlsGeometry(width: width, expanded: albumPlayback).height
-        return VStack(spacing: 12) {
-            workspaceHeader(width: width, track: track).frame(height: 38).zIndex(1)
-            ZStack {
-                // Keep the list and its native scroll view mounted while lyrics are shown.
+        let controlsHeight = track == nil ? 0 : PlayerControlsGeometry(width: width, expanded: false).height
+        return ZStack {
+            // Keep the complete list page mounted so closing the player can
+            // animate back to its existing geometry and scroll position.
+            VStack(spacing: 12) {
+                workspaceHeader(width: width, track: track, expanded: false)
+                    .frame(height: 38).zIndex(1)
                 workspaceSongs(width: width)
-                    .opacity(albumPlayback ? 0 : 1)
-                    .scaleEffect(albumPlayback && !reduceMotion ? 0.98 : 1)
-                    .allowsHitTesting(!albumPlayback)
-                    .accessibilityHidden(albumPlayback)
-                if albumPlayback, let track {
-                    WorkspaceLyricsPanel(track: track, onEdit: { openSongInfo(track) })
-                        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if let track {
+                    PlayerControls(track: track, onToggleAlbum: toggleAlbumPlayback)
+                        .frame(height: controlsHeight)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Clip the entire panel transition, including its shadow, to the
-            // same contour. A rectangular clip cuts the shadow into four corners.
-            .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
-            if let track {
-                PlayerControls(track: track, albumExpanded: albumPlayback, onToggleAlbum: toggleAlbumPlayback)
-                    .frame(height: controlsHeight)
+            .opacity(albumPlayback ? 0 : 1)
+            .scaleEffect(albumPlayback && !reduceMotion ? 0.98 : 1)
+            .allowsHitTesting(!albumPlayback)
+            .accessibilityHidden(albumPlayback)
+            if albumPlayback, let track {
+                VStack(spacing: 0) {
+                    workspaceHeader(width: width - 24, track: track, expanded: true)
+                        .frame(height: 38).padding(12).zIndex(1)
+                    ExpandedPlaybackPanel(track: track, onEdit: { openSongInfo(track) }, onClose: toggleAlbumPlayback,
+                        favorite: collections.isFavorite(track.url.path), onFavorite: { collections.toggleFavorite(track.url.path) })
+                }
+                .modifier(PlayerPanelSurface())
+                .transition(reduceMotion ? .opacity : .offset(y: 24)
+                    .combined(with: .scale(scale: 0.97, anchor: .bottom))
+                    .combined(with: .opacity))
+                .zIndex(2)
             }
         }
         .frame(width: width, height: height)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22),
+        .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
+        .animation(reduceMotion || albumPlayback ? nil : .easeInOut(duration: 0.22),
                    value: width >= PlayerControlsGeometry.singleRowMinimumWidth)
     }
 
@@ -1140,7 +1158,7 @@ private extension ContentView {
         }
     }
 
-    func workspaceHeader(width: CGFloat, track: Track?) -> some View {
+    func workspaceHeader(width: CGFloat, track: Track?, expanded: Bool) -> some View {
         HStack(spacing: 10) {
             Button(action: toggleSidebar) {
                 Image(systemName: "sidebar.left").font(.system(size: 22, weight: .medium))
@@ -1148,7 +1166,7 @@ private extension ContentView {
             }.buttonStyle(PressScaleButtonStyle()).modifier(HeaderButtonSurface())
                 .help("显示或隐藏侧栏").accessibilityLabel("显示或隐藏侧栏")
             Spacer(minLength: 0)
-            if albumPlayback, let track {
+            if expanded, let track {
                 Button { openSongInfo(track) } label: {
                     Image(systemName: "info.circle").font(.system(size: 22, weight: .medium))
                         .frame(width: 38, height: 38)
@@ -1251,11 +1269,12 @@ private extension ContentView {
 
     private func workspaceSongsContent(width: CGFloat, showsGroups: Bool = false) -> some View {
         let columns = MusicListColumns(width: width, multiSelecting: multiSelecting)
-        return VStack(alignment: .leading, spacing: 4) {
-            libraryToolbar(groupPage: showsGroups)
+        return VStack(alignment: .leading, spacing: 0) {
+            libraryToolbar(groupPage: showsGroups).padding(.bottom, 4)
             Divider().opacity(0.4)
             ScrollViewReader { proxy in
-                PlayerScrollView(contentTrailingInset: 16, thumbOffset: 8,
+                PlayerScrollView(fadesEdges: true, fadeEdgeLength: 32, fadeOnlyOverflow: true,
+                                 contentTrailingInset: 16, thumbOffset: 8,
                                  savedPosition: showsGroups ? browseScrollPositions.position(destination) : nil) {
                     if showsGroups {
                         let groups = songGroups
@@ -1290,7 +1309,7 @@ private extension ContentView {
                                 }
                             }
                         }
-                        .padding(8)
+                        .padding(.horizontal, 8).padding(.top, 8)
                         .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.92),
                                    value: columnCount)
 
@@ -1357,8 +1376,9 @@ private extension ContentView {
                     for track in songs where selectedIDs.contains(track.id) { collections.remove(track.url.path, from: id) }
                     selectedIDs.removeAll()
                 }.buttonStyle(.plain).foregroundStyle(playerGreen)
+                    .padding(.vertical, 8)
             }
-        }.padding(.horizontal, 12).padding(.vertical, 8).modifier(PlayerPanelSurface())
+        }.padding(.horizontal, 12).padding(.top, 8).modifier(PlayerPanelSurface())
     }
 
     func workspaceSongCells(_ track: Track, columns: MusicListColumns) -> some View {
@@ -1536,14 +1556,64 @@ private struct SongCellFrame: ViewModifier {
     }
 }
 
+private struct ExpandedPlaybackPanel: View {
+    let track: Track
+    let onEdit: () -> Void
+    let onClose: () -> Void
+    let favorite: Bool
+    let onFavorite: () -> Void
+    var body: some View {
+        GeometryReader { geometry in
+            let wide = geometry.size.width >= 680 && geometry.size.height >= 420 && geometry.size.width / max(1, geometry.size.height) >= 1.05
+            ExpandedPlaybackLayout(wide: wide) {
+                WorkspaceLyricsPanel(track: track, onEdit: onEdit, embedded: true)
+                    .frame(maxWidth: wide ? 760 : .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                PlayerControls(track: track, albumExpanded: true, onToggleAlbum: onClose, embedded: true, immersive: wide,
+                               favorite: favorite, onFavorite: onFavorite)
+            }
+        }
+    }
+}
+
+private struct ExpandedPlaybackLayout: Layout {
+    let wide: Bool
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        proposal.replacingUnspecifiedDimensions()
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 2 else { return }
+        if wide {
+            let left = min(480, bounds.width * 0.43)
+            subviews[0].place(at: CGPoint(x: bounds.minX + left, y: bounds.minY), anchor: .topLeading,
+                              proposal: ProposedViewSize(width: bounds.width - left, height: bounds.height))
+            subviews[1].place(at: bounds.origin, anchor: .topLeading,
+                              proposal: ProposedViewSize(width: left, height: bounds.height))
+        } else {
+            let controls = min(bounds.height * 0.48, PlayerControlsGeometry(width: bounds.width, expanded: true).height)
+            subviews[0].place(at: bounds.origin, anchor: .topLeading,
+                              proposal: ProposedViewSize(width: bounds.width, height: bounds.height - controls))
+            subviews[1].place(at: CGPoint(x: bounds.minX, y: bounds.maxY - controls), anchor: .topLeading,
+                              proposal: ProposedViewSize(width: bounds.width, height: controls))
+        }
+    }
+}
+
+private struct OptionalPlayerSurface: ViewModifier {
+    let embedded: Bool
+    func body(content: Content) -> some View {
+        if embedded { content } else { content.modifier(PlayerPanelSurface()) }
+    }
+}
+
 private struct WorkspaceLyricsPanel: View {
     let track: Track
     let onEdit: () -> Void
+    var embedded = false
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("歌词").font(.headline)
                 Spacer()
                 TranslationDisplayToggle(lines: track.lyricLines)
             }.padding(12)
@@ -1554,9 +1624,9 @@ private struct WorkspaceLyricsPanel: View {
                     Button("添加歌词", action: onEdit).buttonStyle(GlassButtonStyle())
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                SyncedLyrics(track: track)
+                SyncedLyrics(track: track, expanded: embedded)
             }
-        }.frame(maxWidth: .infinity, maxHeight: .infinity).modifier(PlayerPanelSurface())
+        }.frame(maxWidth: .infinity, maxHeight: .infinity).modifier(OptionalPlayerSurface(embedded: embedded))
     }
 }
 
@@ -1743,6 +1813,7 @@ private struct PlayerLyricRow: View, Equatable {
 private struct SyncedLyrics: View {
     @AppStorage("MiniVoice.showLyricsTranslation") private var showTranslation = true
     let track: Track
+    var expanded = false
 
     var body: some View {
         if track.lyricSnapshot.kind == .plain {
@@ -1756,7 +1827,7 @@ private struct SyncedLyrics: View {
                     .textSelection(.enabled)
             }
         } else {
-            TimedLyrics(track: track)
+            TimedLyrics(track: track, expanded: expanded)
         }
     }
 }
@@ -1765,6 +1836,7 @@ private struct TimedLyrics: View {
     @AppStorage("MiniVoice.showLyricsTranslation") private var showTranslation = true
     @EnvironmentObject private var library: MusicLibrary
     let track: Track
+    var expanded = false
     @EnvironmentObject private var clock: PlaybackClock
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1786,9 +1858,9 @@ private struct TimedLyrics: View {
         let lines = track.lyricLines
         return GeometryReader { geometry in
             let bilingual = showTranslation && track.lyricSnapshot.hasTranslation
-            let baseHeight = min(92.0, max(28.0, (geometry.size.height - 36) / 5))
+            let baseHeight = min(expanded ? 72.0 : 92.0, max(28.0, (geometry.size.height - 36) / (expanded ? 6 : 5)))
             let rowHeight = bilingual ? max(62.0, baseHeight * 1.45) : baseHeight
-            let fontSize = min(34.0, max(19.0, baseHeight * 0.56))
+            let fontSize = expanded ? min(38.0, max(22.0, geometry.size.width * 0.058)) : min(34.0, max(19.0, baseHeight * 0.56))
             ScrollViewReader { proxy in
                 PlayerScrollView(fadesEdges: true) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -1812,7 +1884,9 @@ private struct TimedLyrics: View {
                 .task(id: ScrollTarget(trackID: track.id, active: active,
                                        size: geometry.size, lyrics: track.lyrics, showTranslation: showTranslation)) {
                     // Wait for new text/viewport geometry before resolving the line's scroll frame.
-                    await Task.yield()
+                    if expanded && previousScrollTarget?.size != geometry.size {
+                        try? await Task.sleep(for: .milliseconds(100))
+                    } else { await Task.yield() }
                     guard !Task.isCancelled else { return }
                     let target = ScrollTarget(trackID: track.id, active: active,
                                               size: geometry.size, lyrics: track.lyrics, showTranslation: showTranslation)
@@ -1883,11 +1957,46 @@ private struct PlayerControls: View {
     let track: Track
     var albumExpanded = false
     var onToggleAlbum: (() -> Void)? = nil
+    var embedded = false
+    var immersive = false
+    var favorite = false
+    var onFavorite: (() -> Void)? = nil
     @State private var hoveringArtwork = false
     @State private var scrub: Double?
     @State private var showingOutputDevices = false
     var body: some View {
         GeometryReader { geometry in
+            if immersive {
+                let coverSize = max(128, min(340, geometry.size.width - 48, geometry.size.height - 280))
+                VStack(spacing: 10) {
+                    Spacer(minLength: 0)
+                    Artwork(image: track.artwork, size: coverSize, showsBorder: true)
+                        .shadow(color: .black.opacity(0.14), radius: 16, y: 8)
+                        .frame(maxWidth: .infinity)
+                    Spacer(minLength: 0)
+                    HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(track.title).font(.title3.weight(.semibold)).lineLimit(1).help(track.title)
+                        Text(track.artist).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                        Text(track.album).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    if let onFavorite {
+                        Button(action: onFavorite) {
+                            Image(systemName: favorite ? "heart.fill" : "heart")
+                                .font(.system(size: 20, weight: .medium))
+                                .foregroundStyle(favorite ? playerGreen : .secondary)
+                                .frame(width: 34, height: 34)
+                        }.buttonStyle(SongActionButtonStyle())
+                            .help(favorite ? "取消收藏" : "收藏歌曲")
+                            .accessibilityLabel(favorite ? "取消收藏" : "收藏歌曲")
+                    }
+                    }
+                    progress.frame(height: 22)
+                    transport(spacing: max(12, min(24, (geometry.size.width - 240) / 4))).frame(height: 52)
+                    output(width: geometry.size.width - 48).frame(height: 56)
+                    Spacer(minLength: 0)
+                }.padding(.horizontal, 24).padding(.vertical, 12).frame(width: geometry.size.width, height: geometry.size.height)
+            } else {
             let layout = PlayerControlsGeometry(width: geometry.size.width, expanded: albumExpanded)
             AdaptivePlayerControlsLayout(expanded: albumExpanded) {
                 trackInfo(artworkSize: layout.artworkSize)
@@ -1903,9 +2012,10 @@ private struct PlayerControls: View {
                     .frame(width: layout.output.width, height: layout.output.height)
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .modifier(PlayerPanelSurface())
+        .modifier(OptionalPlayerSurface(embedded: embedded))
         .onChange(of: track.id) { _ in scrub = nil }
     }
 
@@ -2339,9 +2449,15 @@ private final class ScrollViewReference {
 private final class PlayerScrollState: ObservableObject {
     @Published var metrics = ScrollMetrics()
     @Published var isThumbVisible = false
+    @Published var hasUserScrolled = false
     var isDragging = false
     private var lastInteraction = ProcessInfo.processInfo.systemUptime
     private var hideTask: Task<Void, Never>?
+
+    func userScrolled() {
+        if !hasUserScrolled { hasUserScrolled = true }
+        revealThumb()
+    }
 
     func revealThumb() {
         lastInteraction = ProcessInfo.processInfo.systemUptime
@@ -2362,12 +2478,14 @@ private final class PlayerScrollState: ObservableObject {
     }
 
     func cancelHide() { hideTask?.cancel(); hideTask = nil }
-    func reset() { cancelHide(); isDragging = false; isThumbVisible = false }
+    func reset() { cancelHide(); isDragging = false; isThumbVisible = false; hasUserScrolled = false }
 }
 
 /// One thumb geometry and interaction model for both songs and lyrics.
 private struct PlayerScrollView<Content: View>: View {
     var fadesEdges = false
+    var fadeEdgeLength: CGFloat? = nil
+    var fadeOnlyOverflow = false
     var contentTrailingInset: CGFloat = 24
     var thumbOffset: CGFloat = 0
     var savedPosition: SavedScrollPosition? = nil
@@ -2396,16 +2514,15 @@ private struct PlayerScrollView<Content: View>: View {
                         }
                         let updated = ScrollMetrics(offset: offset, height: height)
                         if scrollState.metrics != updated { scrollState.metrics = updated }
-                    }, onScrollView: { scrollReference.view = $0 }, onUserScroll: { scrollState.revealThumb() })
+                    }, onScrollView: { scrollReference.view = $0 }, onUserScroll: { scrollState.userScrolled() })
                         .frame(width: 0, height: 0).allowsHitTesting(false))
             }
             .scrollIndicators(.hidden)
             .coordinateSpace(name: coordinateSpace)
             .mask {
                 if fadesEdges {
-                    LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.1),
-                                           .init(color: .black, location: 0.9), .init(color: .clear, location: 1)],
-                                   startPoint: .top, endPoint: .bottom)
+                    ScrollEdgeFade(state: scrollState, height: viewport.size.height,
+                                   edgeLength: fadeEdgeLength, onlyOverflow: fadeOnlyOverflow)
                 } else { Rectangle() }
             }
             .overlay(alignment: .trailing) {
@@ -2414,6 +2531,26 @@ private struct PlayerScrollView<Content: View>: View {
             }
             .onDisappear { scrollState.reset(); scrollReference.view = nil }
         }
+    }
+}
+
+/// Only the mask observes scroll metrics, keeping list rows out of scroll-driven updates.
+private struct ScrollEdgeFade: View {
+    @ObservedObject var state: PlayerScrollState
+    let height: CGFloat
+    let edgeLength: CGFloat?
+    let onlyOverflow: Bool
+
+    var body: some View {
+        let inset = edgeLength.map { min(0.15, max(0, $0 / max(1, height))) } ?? 0.1
+        let fadeTop = !onlyOverflow || (state.hasUserScrolled && state.metrics.offset > 1)
+        let fadeBottom = !onlyOverflow || (state.hasUserScrolled && state.metrics.height - state.metrics.offset > height + 1)
+        LinearGradient(stops: [
+            .init(color: fadeTop ? .clear : .black, location: 0),
+            .init(color: .black, location: inset),
+            .init(color: .black, location: 1 - inset),
+            .init(color: fadeBottom ? .clear : .black, location: 1)
+        ], startPoint: .top, endPoint: .bottom)
     }
 }
 
@@ -2457,6 +2594,7 @@ private struct PlayerScrollThumb: View {
                             }
                             isDragging = true
                             state.isDragging = true
+                            state.userScrolled()
                             state.revealThumb()
                             guard let scroll = scrollReference.view else { return }
                             let fraction = min(1, max(0, (value.location.y - (grabOffset ?? thumbHeight / 2)) / max(1, travel)))
