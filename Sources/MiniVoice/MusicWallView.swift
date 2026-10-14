@@ -33,6 +33,7 @@ struct MusicWallView: View {
     @StateObject private var cameraMotion = MusicWallCameraMotion()
     @State private var drag = CGSize.zero
     @State private var scene: MusicWallScene?
+    @State private var mountedInstances: [MusicWallInstance] = []
     @State private var lastTapped: MusicWallInstance?
     @State private var reflowOriginFrames: [String: CGRect] = [:]
     @State private var reflowPreviousFocus: CGRect?
@@ -58,8 +59,10 @@ struct MusicWallView: View {
             let zoom = cameraMotion.scale
             let sourceViewport = CGSize(width: geometry.size.width / zoom, height: geometry.size.height / zoom)
             let sourceOffset = CGSize(width: offset.width / zoom, height: offset.height / zoom)
-            let instances = MusicWallCamera.visibleInstances(tiles: readyScene.tiles, world: readyScene.world,
-                viewport: sourceViewport, offset: sourceOffset, focusedID: focusedInstance?.id)
+            let mountKey = WallMountKey(x: Int(floor(sourceOffset.width / 192)), y: Int(floor(sourceOffset.height / 192)),
+                viewport: sourceViewport, count: readyScene.count, focus: focusedInstance?.id)
+            let instances = mountedInstances.isEmpty ? MusicWallCamera.visibleInstances(tiles: readyScene.tiles, world: readyScene.world,
+                viewport: sourceViewport, offset: sourceOffset, focusedID: focusedInstance?.id) : mountedInstances
             ZStack(alignment: .topLeading) {
                 Color(red: 0.09, green: 0.08, blue: 0.08)
                 ZStack(alignment: .topLeading) {
@@ -68,14 +71,16 @@ struct MusicWallView: View {
                                                          size: expansionSize(viewport: geometry.size))
                         let displayed = renderedFrame(instance, viewport: geometry.size)
                         stagedPoster(instance, displayed: displayed, target: rect, viewport: geometry.size)
-                            .scaleEffect(zoom)
-                            .position(x: displayed.midX * zoom + offset.width, y: displayed.midY * zoom + offset.height)
+                            .position(x: displayed.midX, y: displayed.midY)
                             .accessibilityHidden(sidebarBlocksWall || !displayed
                                 .applying(CGAffineTransform(scaleX: zoom, y: zoom))
                                 .offsetBy(dx: offset.width, dy: offset.height)
                                 .intersects(CGRect(x: sidebarInset, y: 80, width: max(0, geometry.size.width - sidebarInset), height: max(0, geometry.size.height - 80))))
                     }
                 }
+                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+                .scaleEffect(zoom, anchor: .topLeading)
+                .offset(offset)
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
                 .mask {
                     VStack(spacing: 0) {
@@ -170,6 +175,10 @@ struct MusicWallView: View {
                 }
             }
             .clipped().environment(\.colorScheme, .dark)
+            .onChange(of: mountKey) { _ in
+                mountedInstances = MusicWallCamera.visibleInstances(tiles: readyScene.tiles, world: readyScene.world,
+                    viewport: sourceViewport, offset: sourceOffset, focusedID: focusedInstance?.id)
+            }
             .onAppear { rebuild(viewport: geometry.size); if chrome.toolsAboveDock { toolsRaised = true } }
             .onChange(of: chrome.toolsAboveDock) { above in if above { toolsRaised = true } }
             .onChange(of: geometry.size) { size in rebuild(viewport: size) }
@@ -252,6 +261,7 @@ struct MusicWallView: View {
                                 number: index + 1, size: size, showsArtwork: false)
                     .equatable()
                     .opacity(expanded ? 0 : 1)
+                    .allowsHitTesting(!expanded)
                 if expanded, !isGrouping, library.playingID == track.id {
                     MusicWallPlayer(track: track.id == library.playingID ? (library.playingTrack ?? track) : (focusedTrack ?? track),
                                     onPlay: { play(track) }, onExpand: { immersive = true }, showsArtwork: false)
@@ -399,13 +409,13 @@ struct MusicWallView: View {
         let tools = CGRect(x: viewport.width - 112, y: viewport.height - (toolsRaised || chrome.toolsAboveDock ? 104 : 20) - 44, width: 96, height: 44)
         if dock.insetBy(dx: -4, dy: -4).contains(point) || tools.insetBy(dx: -4, dy: -4).contains(point) { return false }
         if let instance = focusedInstance {
-            let size = expansionSize(viewport: viewport)
-            let side = size.width * cameraMotion.scale
-            let height = size.height * cameraMotion.scale
-            let center = CGPoint(x: instance.frame.midX * cameraMotion.scale + camera.width,
-                                 y: instance.frame.midY * cameraMotion.scale + camera.height)
-            let controls = CGRect(x: center.x - side / 2, y: center.y + height / 2 - 100 * cameraMotion.scale,
-                                  width: side, height: 100 * cameraMotion.scale)
+            // Use the displayed bounds, including in-flight reflow and drag.
+            // Leave the entire lower control region to native SwiftUI controls.
+            let rect = renderedFrame(instance, viewport: viewport)
+                .applying(CGAffineTransform(scaleX: cameraMotion.scale, y: cameraMotion.scale))
+                .offsetBy(dx: camera.width + drag.width, dy: camera.height + drag.height)
+            let controls = CGRect(x: rect.minX, y: rect.maxY - 160 * cameraMotion.scale,
+                                  width: rect.width, height: 160 * cameraMotion.scale)
             if controls.contains(point) { return false }
         }
         return true
@@ -430,3 +440,11 @@ struct MusicWallView: View {
     }
 }
 
+
+private struct WallMountKey: Equatable {
+    let x: Int
+    let y: Int
+    let viewport: CGSize
+    let count: Int
+    let focus: String?
+}
