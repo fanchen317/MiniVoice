@@ -1781,6 +1781,8 @@ private struct PlayerLyricRow: View, Equatable {
     let showTranslation: Bool
     let baseColor: Color
     let reduceMotion: Bool
+    let isPlaying: Bool
+    let sampledAt: Date?
     private var isActive: Bool { emphasis == 0 }
     private var beforeFirstLine: Bool { emphasis == -1 }
     private var distance: Int { emphasis }
@@ -1788,7 +1790,7 @@ private struct PlayerLyricRow: View, Equatable {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
           TimedLyricText(line: line, time: time, active: isActive,
-                       baseColor: baseColor)
+                       baseColor: baseColor, isPlaying: isPlaying, sampledAt: sampledAt)
             .font(.system(size: fontSize, weight: .bold))
             .lineLimit(2)
             .minimumScaleFactor(0.6)
@@ -1865,11 +1867,15 @@ private struct TimedLyrics: View {
                 PlayerScrollView(fadesEdges: true) {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                            PlayerLyricRow(line: line, emphasis: active.map { min(2, abs(index - $0)) } ?? -1,
-                                           time: active == index && !line.words.isEmpty ? clock.time : 0,
+                            PlayerLyricRow(line: active == index ? LyricsDisplayTiming.line(line,
+                                           nextStart: lines.dropFirst(index + 1).lazy.compactMap(\.timestamp).first(where: { $0 > (line.timestamp ?? 0) }),
+                                           trackDuration: track.duration) : line,
+                                           emphasis: active.map { min(2, abs(index - $0)) } ?? -1,
+                                           time: active == index ? clock.time : 0,
                                            fontSize: fontSize, rowHeight: rowHeight, bilingual: bilingual,
                                            showTranslation: showTranslation, baseColor: colorScheme == .dark ? .white : Color(red: 0.23, green: 0.27, blue: 0.31),
-                                           reduceMotion: reduceMotion)
+                                           reduceMotion: reduceMotion, isPlaying: active == index && library.isPlaying,
+                                           sampledAt: active == index ? clock.sampledAt : nil)
                                 .equatable()
                                 .contentShape(Rectangle()).id(index)
                                 .onTapGesture { if let time = line.timestamp { library.seek(to: time) } }

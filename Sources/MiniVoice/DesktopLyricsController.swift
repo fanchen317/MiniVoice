@@ -21,6 +21,8 @@ final class DesktopLyricsController: ObservableObject {
     @Published private(set) var lineIdentity = ""
     @Published private(set) var timedLine: LyricLine?
     @Published private(set) var wordTime: Double = 0
+    @Published private(set) var wordSampledAt: Date? = nil
+    @Published private(set) var isPlaying = false
     @Published private(set) var translationLine: String?
 
     private weak var library: MusicLibrary?
@@ -76,7 +78,7 @@ final class DesktopLyricsController: ObservableObject {
                 identity = "\(track.id)-\(active)"
                 primary = lines[active].text
                 translation = lines[active].translation
-                if !lines[active].words.isEmpty { timed = lines[active] }
+                timed = LyricsDisplayTiming.line(lines[active], nextStart: end, trackDuration: track.duration)
                 secondary = lines.dropFirst(active + 1).first(where: { !$0.text.isEmpty })?.text
                     ?? "\(track.title) - \(track.artist)"
             } else {
@@ -91,7 +93,14 @@ final class DesktopLyricsController: ObservableObject {
         if lineIdentity != identity { lineIdentity = identity }
         if timedLine != timed { timedLine = timed }
         if translationLine != translation { translationLine = translation }
-        if timed != nil, let time = library?.playbackTime, wordTime != time { wordTime = time }
+        if timed != nil, let library {
+            if wordTime != library.playbackTime {
+                wordSampledAt = library.clock.sampledAt
+                wordTime = library.playbackTime
+            }
+        }
+        let playing = timed != nil && library?.isPlaying == true
+        if isPlaying != playing { isPlaying = playing }
     }
 
     private func updatePanelVisibility() {
@@ -270,7 +279,8 @@ private struct DesktopLyricsOverlay: View {
         ZStack {
             VStack(spacing: 5) {
                 DesktopLyricMarquee(text: controller.primaryLine, size: 27, weight: .semibold, progress: controller.lineProgress,
-                                    line: controller.timedLine, time: controller.wordTime)
+                                    line: controller.timedLine, time: controller.wordTime,
+                                    isPlaying: controller.isPlaying, sampledAt: controller.wordSampledAt)
                     .foregroundStyle(TimedLyricText.activeColor)
                 DesktopLyricMarquee(text: secondaryText.replacingOccurrences(of: "\n", with: " / "), size: 18, weight: .medium, progress: controller.lineProgress)
                     .foregroundStyle(.secondary)
@@ -297,6 +307,8 @@ private struct DesktopLyricMarquee: View {
     let progress: Double?
     var line: LyricLine? = nil
     var time: Double = 0
+    var isPlaying = false
+    var sampledAt: Date? = nil
     @State private var textWidth: CGFloat = 0
     @State private var startedAt = Date()
 
@@ -304,7 +316,8 @@ private struct DesktopLyricMarquee: View {
         GeometryReader { geometry in
             let overflow = max(0, textWidth - geometry.size.width)
             TimelineView(.animation(minimumInterval: 1.0 / 30, paused: overflow <= 0 || progress != nil)) { context in
-                TimedLyricText(line: line ?? LyricLine(timestamp: nil, text: text), time: time, active: line != nil, baseColor: .primary)
+                TimedLyricText(line: line ?? LyricLine(timestamp: nil, text: text), time: time, active: line != nil,
+                               baseColor: .primary, isPlaying: isPlaying, sampledAt: sampledAt)
                     .font(.system(size: size, weight: weight, design: .rounded))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)

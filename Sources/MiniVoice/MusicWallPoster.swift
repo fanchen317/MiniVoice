@@ -4,18 +4,21 @@ import AppKit
 // MusicWallPoster.swift: cached artwork and cover captions shared by the wall and player.
 struct MusicWallCover: View, @MainActor Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.track.id == rhs.track.id && lhs.track.artworkKey == rhs.track.artworkKey
+        lhs.prefersThumbnail == rhs.prefersThumbnail
+            && lhs.track.id == rhs.track.id && lhs.track.artworkKey == rhs.track.artworkKey
             && lhs.track.artwork.map(ObjectIdentifier.init) == rhs.track.artwork.map(ObjectIdentifier.init)
     }
     let track: Track
+    var prefersThumbnail = true
     @StateObject private var loader = ListArtworkLoader()
     @EnvironmentObject private var library: MusicLibrary
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 LinearGradient(colors: [Color(red: 0.22, green: 0.3, blue: 0.29), .black], startPoint: .topLeading, endPoint: .bottomTrailing)
-                if let image = track.artwork ?? PreparedBrowseArtwork.shared.image(track.artworkKey)
-                    ?? loader.currentImage(key: track.artworkKey, source: track.url, browse: true) {
+                if let image = (prefersThumbnail ? nil : track.artwork)
+                    ?? PreparedBrowseArtwork.shared.image(track.artworkKey)
+                    ?? loader.currentImage(key: track.artworkKey, source: track.url, browse: true) ?? track.artwork {
                     Image(nsImage: image).resizable().scaledToFill()
                         .frame(width: geometry.size.width, height: geometry.size.height).clipped()
                 } else {

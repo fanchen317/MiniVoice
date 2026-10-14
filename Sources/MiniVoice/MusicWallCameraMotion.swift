@@ -8,12 +8,35 @@ final class MusicWallCameraMotion: ObservableObject {
     @Published private(set) var reflowProgress: CGFloat = 1
     private var reflowTask: Task<Void, Never>?
     private var travelTask: Task<Void, Never>?
-    func stop() { travelTask?.cancel(); travelTask = nil }
+    private var panTask: Task<Void, Never>?
+    private var pendingPan = CGSize.zero
+    func stop() {
+        travelTask?.cancel(); travelTask = nil
+        panTask?.cancel(); panTask = nil
+        flushPan()
+    }
+
+    private func flushPan() {
+        guard pendingPan != .zero else { return }
+        let delta = pendingPan
+        pendingPan = .zero
+        offset = CGSize(width: offset.width + delta.width, height: offset.height + delta.height)
+    }
     func jump(to value: CGSize) { stop(); offset = value }
 
     func pan(by delta: CGSize) {
-        stop()
-        offset = CGSize(width: offset.width + delta.width, height: offset.height + delta.height)
+        guard delta != .zero else { return }
+        travelTask?.cancel(); travelTask = nil
+        pendingPan.width += delta.width
+        pendingPan.height += delta.height
+        // Coalesce high-frequency wheel events without losing native momentum deltas.
+        guard panTask == nil else { return }
+        panTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(8)) } catch { return }
+            guard let self else { return }
+            self.panTask = nil
+            self.flushPan()
+        }
     }
 
     /// Exponential drag release, integrated by elapsed time rather than frame count.

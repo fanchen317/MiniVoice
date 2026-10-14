@@ -16,7 +16,7 @@ struct MusicWallPlayer: View, @MainActor Equatable {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
-                if showsArtwork { MusicWallCover(track: track).equatable() }
+                if showsArtwork { MusicWallCover(track: track, prefersThumbnail: false).equatable() }
                 LinearGradient(stops: [.init(color: .black.opacity(0.86), location: 0),
                                        .init(color: .black.opacity(0.58), location: 0.55),
                                        .init(color: .black.opacity(0.2), location: 1)], startPoint: .leading, endPoint: .trailing)
@@ -24,9 +24,12 @@ struct MusicWallPlayer: View, @MainActor Equatable {
                                        .init(color: .black.opacity(0.12), location: 0.6),
                                        .init(color: .black.opacity(0.88), location: 1)], startPoint: .top, endPoint: .bottom)
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(track.id == library.playingID ? (library.isPlaying ? "正在播放" : "已暂停") : "预览")
+                    Label(track.id == library.playingID ? (library.isPlaying ? "正在播放" : "已暂停") : "预览",
+                          systemImage: library.isPlaying ? "waveform" : "pause.fill")
                         .font(.system(size: 11, weight: .bold)).tracking(2).foregroundStyle(.mint)
-                        .padding(7).background(.black.opacity(0.55))
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(.mint.opacity(0.18), in: Capsule())
+                        .overlay { Capsule().strokeBorder(.mint.opacity(0.6), lineWidth: 1) }
                     Text(track.title).font(.system(size: min(28, geometry.size.width * 0.05), weight: .bold)).lineLimit(2)
                     Text(track.artist).font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.7))
                 }.padding(22).padding(.top, geometry.size.width < 420 ? 64 : 0)
@@ -38,7 +41,7 @@ struct MusicWallPlayer: View, @MainActor Equatable {
                     .padding(22).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             }
             .foregroundStyle(.white).clipped()
-            .overlay { Rectangle().strokeBorder(Color.mint.opacity(0.85), lineWidth: 1.5).allowsHitTesting(false) }
+            .overlay { Rectangle().strokeBorder(Color.mint.opacity(0.85), lineWidth: 3).allowsHitTesting(false) }
         }
     }
 }
@@ -69,7 +72,12 @@ private struct MusicWallLyrics: View {
                             let line = snapshot.lines[index]
                             Button { if let time = line.timestamp, library.playingID == track.id { library.seek(to: time) } } label: {
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Text(highlighted(line, active: relative == 0))
+                                    TimedLyricText(line: relative == 0 ? LyricsDisplayTiming.line(line,
+                                                   nextStart: snapshot.lines.dropFirst(index + 1).lazy.compactMap(\.timestamp).first(where: { $0 > (line.timestamp ?? 0) }),
+                                                   trackDuration: track.duration) : line,
+                                                   time: time, active: relative == 0 && track.id == library.playingID && snapshot.activeIndex(at: time) != nil,
+                                                   baseColor: .white, pendingWordOpacity: 0.35, highlightColor: .white,
+                                                   isPlaying: track.id == library.playingID && library.isPlaying, sampledAt: clock.sampledAt)
                                         .font(.system(size: relative == 0 ? fontSize : fontSize * 0.73, weight: .bold))
                                         .shadow(color: .black.opacity(0.75), radius: 5, y: 2)
                                         .lineLimit(2).minimumScaleFactor(0.7).multilineTextAlignment(.leading)
@@ -89,16 +97,6 @@ private struct MusicWallLyrics: View {
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: active)
             }
         }
-    }
-    private func highlighted(_ line: LyricLine, active: Bool) -> AttributedString {
-        guard active, !line.words.isEmpty else { return AttributedString(line.text.isEmpty ? "•••" : line.text) }
-        var result = AttributedString()
-        for word in line.words {
-            var text = AttributedString(word.text)
-            text.foregroundColor = track.id == library.playingID && clock.time >= word.start ? .white : .white.opacity(0.35)
-            result.append(text)
-        }
-        return result
     }
 }
 
@@ -120,8 +118,12 @@ private struct MusicWallTransport: View {
                             Label(mode.title, systemImage: library.playbackMode == mode ? "checkmark" : mode.symbolName)
                         }
                     }
-                } label: { Image(systemName: library.playbackMode.symbolName).frame(width: 28, height: 28) }
-                    .menuStyle(.borderlessButton).fixedSize().help("播放模式")
+                } label: {
+                    Image(systemName: library.playbackMode.symbolName).frame(width: 32, height: 32)
+                        .padding(3).background(.mint.opacity(0.16), in: RoundedRectangle(cornerRadius: 10))
+                }
+                    .menuStyle(.borderlessButton).fixedSize().help("播放模式：" + library.playbackMode.title)
+                    .animation(.easeInOut(duration: 0.18), value: library.playbackMode)
                 control("forward.end", "下一曲") { library.skip(1) }
                 Spacer(minLength: 0)
                 Text("\(time(scrub ?? (library.playingID == track.id ? clock.time : 0))) / \(time(track.duration))")
@@ -137,11 +139,35 @@ private struct MusicWallTransport: View {
         .onChange(of: track.id) { _ in scrub = nil }
     }
     private func control(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: symbol).font(.system(size: 16)).frame(width: 24, height: 28) }
-            .buttonStyle(.plain).help(label).accessibilityLabel(label)
+        Button(action: action) { Image(systemName: symbol).font(.system(size: 16)).frame(width: 32, height: 32) }
+            .buttonStyle(MusicWallControlStyle()).help(label).accessibilityLabel(label)
     }
     private func time(_ value: Double) -> String {
         let seconds = Int(max(0, value.isFinite ? value : 0))
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+/// A visible hit area and immediate press feedback for the poster transport.
+struct MusicWallControlStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func makeBody(configuration: Configuration) -> some View {
+        Feedback(configuration: configuration, reduceMotion: reduceMotion)
+    }
+    private struct Feedback: View {
+        let configuration: ButtonStyleConfiguration
+        let reduceMotion: Bool
+        @State private var hovered = false
+        var body: some View {
+            configuration.label.padding(3)
+                .background(.white.opacity(configuration.isPressed ? 0.25 : hovered ? 0.13 : 0.04),
+                            in: RoundedRectangle(cornerRadius: 10))
+                .foregroundStyle(configuration.isPressed ? Color.mint : Color.white)
+                .scaleEffect(reduceMotion ? 1 : configuration.isPressed ? 0.88 : hovered ? 1.06 : 1)
+                .contentShape(Rectangle())
+                .onHover { hovered = $0 }
+                .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hovered)
+        }
     }
 }

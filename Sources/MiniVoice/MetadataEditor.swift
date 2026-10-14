@@ -537,7 +537,7 @@ struct MetadataEditor: View {
             }
             Toggle("简体预览并应用", isOn: $preferSimplifiedOnlineLyrics)
                 .toggleStyle(.checkbox)
-            Text("查询网易云、QQ 音乐、酷狗音乐、LRCLIB、LrcAPI；优先展示逐字歌词，外文歌另查 lyrics.ovh。简体选项仅作用于本次预览和应用，不会自动修改已保存歌词；统一繁体及“妳”等用字，保留粤语用词与日文歌词。")
+            Text("查询 QQ 音乐、网易云、酷狗、AMLL TTML、LRCLIB 等来源，优先匹配原生逐字歌词。简体选项仅用于本次预览和应用，保留粤语用词与日文歌词。")
                 .font(.caption).foregroundStyle(.secondary)
             if let onlineError { Text(onlineError).foregroundStyle(.secondary) }
             if let candidate = onlineResults.first(where: { $0.id == selectedOnlineID }),

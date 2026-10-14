@@ -92,7 +92,8 @@ struct LyricsPlaybackSnapshot: Sendable {
 
 @MainActor
 final class PlaybackClock: ObservableObject {
-    @Published var time: TimeInterval = 0
+    private(set) var sampledAt = Date()
+    @Published var time: TimeInterval = 0 { willSet { sampledAt = Date() } }
 }
 
 @MainActor

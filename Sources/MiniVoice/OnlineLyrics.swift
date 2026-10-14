@@ -58,9 +58,10 @@ struct OnlineLyricsResult: Decodable, Identifiable, Sendable {
 
     func score(title: String, artist: String, duration expectedDuration: Double) -> Int {
         var result = 0
-        if ChineseLyricsScript.simplified(trackName).compare(ChineseLyricsScript.simplified(title), options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame { result += 100 }
-        if ChineseLyricsScript.simplified(artistName).compare(ChineseLyricsScript.simplified(artist), options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame { result += 60 }
-        if let duration {
+        if LyricsSearchText.key(trackName) == LyricsSearchText.key(title) { result += 100 }
+        if !artist.isEmpty && LyricsSearchText.key(artistName) == LyricsSearchText.key(artist) { result += 60 }
+        if LyricsSearchText.isLive(trackName) != LyricsSearchText.isLive(title) { result -= 100 }
+        if let duration, duration.isFinite, duration > 0, expectedDuration.isFinite, expectedDuration > 0 {
             let difference = abs(duration - expectedDuration)
             if difference <= 3 { result += 40 }
             else if difference <= 10 { result += 10 }
@@ -75,8 +76,9 @@ struct OnlineLyricsResult: Decodable, Identifiable, Sendable {
 
 enum OnlineLyricsSearch {
     static func search(title: String, artist: String, duration: Double) async throws -> [OnlineLyricsResult] {
-        let cleanedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanedArtist = artist.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedArtist = artist.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedArtist = ["未知歌手", "unknown artist"].contains(trimmedArtist.lowercased()) ? "" : trimmedArtist
+        let cleanedTitle = LyricsSearchText.title(title, artist: cleanedArtist)
         guard !cleanedTitle.isEmpty else { return [] }
         var queries = [[URLQueryItem(name: "q", value: cleanedTitle)]]
         let traditionalTitle = ChineseLyricsScript.traditional(cleanedTitle)
@@ -98,8 +100,9 @@ enum OnlineLyricsSearch {
             }
             group.addTask { try? await fetchLrcAPI(title: cleanedTitle, artist: cleanedArtist) }
             group.addTask { try? await NetEaseLyrics.search(title: cleanedTitle, artist: cleanedArtist, duration: duration) }
-            group.addTask { try? await AdditionalLyricsSources.qq(title: cleanedTitle, artist: cleanedArtist) }
+            group.addTask { try? await AdditionalLyricsSources.qq(title: cleanedTitle, artist: cleanedArtist, duration: duration) }
             group.addTask { try? await AdditionalLyricsSources.kugou(title: cleanedTitle, artist: cleanedArtist, duration: duration) }
+            group.addTask { try? await AMLLLyrics.search(title: cleanedTitle, artist: cleanedArtist) }
             if canUseOVH { group.addTask { try? await fetchLyricsOVH(title: cleanedTitle, artist: cleanedArtist) } }
             var successful: [[OnlineLyricsResult]] = []
             for await response in group {
@@ -174,6 +177,24 @@ enum OnlineLyricsSearch {
         return [OnlineLyricsResult(id: "lyricsovh:\(artist):\(title)", source: "lyrics.ovh", trackName: title,
                                    artistName: artist, albumName: nil, duration: nil,
                                    syncedLyrics: nil, plainLyrics: payload.lyrics)]
+    }
+}
+
+enum LyricsSearchText {
+    static func key(_ text: String) -> String {
+        ChineseLyricsScript.simplified(text).folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+            .components(separatedBy: CharacterSet.alphanumerics.inverted).joined()
+    }
+
+    static func title(_ title: String, artist: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !artist.isEmpty, let separator = trimmed.range(of: " - "),
+              key(String(trimmed[..<separator.lowerBound])) == key(artist) else { return trimmed }
+        return String(trimmed[separator.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func isLive(_ text: String) -> Bool {
+        text.range(of: #"(?i)\blive\b|现场|現場|演唱会|演唱會"#, options: .regularExpression) != nil
     }
 }
 

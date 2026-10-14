@@ -2,6 +2,17 @@ import XCTest
 @testable import MiniVoice
 
 final class MusicWallLayoutTests: XCTestCase {
+    func testFocusedPosterCentersInAvailableViewportAtEveryZoom() {
+        let frame = CGRect(x: 820, y: -120, width: 320, height: 260)
+        let viewport = CGSize(width: 1100, height: 740)
+        for inset: CGFloat in [0, 274] {
+            for scale: CGFloat in [0.5, 0.8, 1, 1.2] {
+                let offset = MusicWallCamera.centeredOffset(frame: frame, viewport: viewport, leadingInset: inset, scale: scale)
+                XCTAssertEqual(frame.midX * scale + offset.width, (viewport.width + inset) / 2, accuracy: 0.001)
+                XCTAssertEqual(frame.midY * scale + offset.height, viewport.height / 2, accuracy: 0.001)
+            }
+        }
+    }
     func testEverySongHasOneBoundedNonOverlappingPoster() {
         for width: CGFloat in [304, 800, 1280, 2560] {
             for active in [nil, 0, 19, 99] as [Int?] {
@@ -185,6 +196,7 @@ final class MusicWallCameraMotionTests: XCTestCase {
         XCTAssertGreaterThan(second.width, first.width)
         XCTAssertLessThan(second.width - first.width, first.width)
         motion.pan(by: CGSize(width: 10, height: 20))
+        try await Task.sleep(for: .milliseconds(30))
         let stopped = motion.offset
         try await Task.sleep(for: .milliseconds(80))
         XCTAssertEqual(motion.offset, stopped)

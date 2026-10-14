@@ -165,38 +165,84 @@ enum LyricsTiming {
     private struct FileWord: Decodable { let text: String; let start_ms: Double?; let end_ms: Double? }
 }
 
-/// A single Text retains native wrapping and font scaling. Only valid timed
-/// segments in the active line are colored; unaligned lines retain line highlighting.
+/// Presentation-only estimates. Never use these copies for storage, export,
+/// search ranking, or timing-kind detection: the source remains line-synced.
+enum LyricsDisplayTiming {
+    static func line(_ line: LyricLine, nextStart: Double?, trackDuration: Double?) -> LyricLine {
+        guard line.words.isEmpty, let start = line.timestamp, start.isFinite, start >= 0,
+              !line.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return line }
+        let characters = Array(line.text)
+        // Do not stretch a short phrase across a long instrumental gap.
+        let fallbackEnd = start + min(10, max(2, Double(characters.count) * 0.28))
+        let bounds = [line.endTime, nextStart, trackDuration].compactMap { $0 }
+            .filter { $0.isFinite && $0 > start }
+        let nearestEnd = bounds.min()
+        let end = nearestEnd.flatMap { $0 - start <= 12 ? $0 : nil } ?? fallbackEnd
+        let step = (end - start) / Double(characters.count)
+        var display = line
+        display.words = characters.enumerated().map { index, character in
+            LyricWord(text: String(character), start: start + Double(index) * step,
+                      end: start + Double(index + 1) * step)
+        }
+        return display
+    }
+}
+
+/// A single Text retains native wrapping and font scaling. Callers may pass a
+/// presentation-only estimate without changing source metadata.
 struct TimedLyricText: View {
     let line: LyricLine
     let time: Double
     let active: Bool
     let baseColor: Color
-    var pendingWordOpacity: Double = 0.72
+    var pendingWordOpacity: Double = 0.38
+    var highlightColor: Color = Self.activeColor
+    var isPlaying = false
+    var sampledAt: Date? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let activeColor = Color(red: 0.06, green: 0.66, blue: 0.46)
 
     var body: some View {
-        Text(attributedText)
+        if active, !line.words.isEmpty {
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !isPlaying || reduceMotion)) { context in
+                let displayTime = LyricsSweep.displayTime(time, sampledAt: sampledAt, now: context.date, playing: isPlaying)
+                if #available(macOS 15.0, *) {
+                    sweepText.foregroundStyle(highlightColor)
+                        .textRenderer(LyricsSweepRenderer(time: displayTime, pendingOpacity: pendingWordOpacity,
+                                                          reduceMotion: reduceMotion))
+                } else {
+                    Text(attributedText(at: displayTime))
+                }
+            }
+            .accessibilityLabel(line.text)
+        } else {
+            Text(attributedText(at: time))
+        }
     }
 
-    private var attributedText: AttributedString {
+    @available(macOS 15.0, *)
+    private var sweepText: Text {
+        line.words.enumerated().reduce(Text("")) { result, element in
+            let (index, word) = element
+            let end = word.end ?? (index + 1 < line.words.count ? line.words[index + 1].start : line.endTime ?? word.start + 0.5)
+            return result + Text(verbatim: word.text).customAttribute(LyricSweepAttribute(index: index, start: word.start, end: end))
+        }
+    }
+
+    private func attributedText(at displayTime: Double) -> AttributedString {
         guard active else { return AttributedString(line.text.isEmpty ? "•••" : line.text) }
         guard !line.words.isEmpty else {
             var text = AttributedString(line.text.isEmpty ? "•••" : line.text)
-            text.foregroundColor = Self.activeColor
+            text.foregroundColor = highlightColor
             return text
         }
         var result = AttributedString()
         for word in line.words {
             var segment = AttributedString(word.text)
-            // Keep the whole current line in the same palette as line-synced
-            // lyrics. Real word starts gently bring each segment to full strength.
-            let duration = min(0.18, max(0.06, (word.end.map { $0 - word.start } ?? 0.72) * 0.25))
-            let progress = reduceMotion ? (time >= word.start ? 1.0 : 0.0) : min(1, max(0, (time - word.start) / duration))
+            let progress = reduceMotion ? 1 : LyricsSweep.progress(time: displayTime, start: word.start, end: word.end ?? word.start + 0.5)
             let opacity = pendingWordOpacity + (1 - pendingWordOpacity) * progress
-            segment.foregroundColor = Self.activeColor.opacity(opacity)
+            segment.foregroundColor = highlightColor.opacity(opacity)
             result.append(segment)
         }
         return result
@@ -221,7 +267,7 @@ struct OnlineLyricsPreview: View {
                     Text(String(format: "%02d:%05.2f", Int(time / 60), time.truncatingRemainder(dividingBy: 60)))
                         .font(.caption.monospacedDigit()).frame(width: 70)
                 }
-                Text("拖动时间轴查看高亮；应用后随歌曲播放跟随。")
+                Text(kind == .line ? "逐行歌词使用估算逐字扫描，仅用于显示，不改变原始时间标签。" : "拖动时间轴查看高亮；应用后随歌曲播放跟随。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             ScrollViewReader { proxy in
@@ -237,8 +283,10 @@ struct OnlineLyricsPreview: View {
                                                 .foregroundStyle(Color.primary.opacity(0.75))
                                                 .frame(width: 82, alignment: .leading)
                                         }
-                                        TimedLyricText(line: line, time: time, active: active == index,
-                                                       baseColor: .primary, pendingWordOpacity: 0.85)
+                                        TimedLyricText(line: active == index ? LyricsDisplayTiming.line(line,
+                                                       nextStart: lines.dropFirst(index + 1).lazy.compactMap(\.timestamp).first(where: { $0 > (line.timestamp ?? 0) }),
+                                                       trackDuration: nil) : line, time: time, active: active == index,
+                                                       baseColor: .primary)
                                             .font(.system(size: 14, weight: .medium))
                                             .foregroundStyle(active == index ? Color.accentColor : Color.primary)
                                             .frame(maxWidth: .infinity, alignment: .leading)

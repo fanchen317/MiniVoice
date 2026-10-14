@@ -13,7 +13,7 @@ struct MusicWallInstance: Identifiable {
 enum MusicWallCamera {
     static func centeredOffset(frame: CGRect, viewport: CGSize, leadingInset: CGFloat = 0, scale: CGFloat = 1) -> CGSize {
         CGSize(width: (viewport.width + leadingInset) / 2 - frame.midX * scale,
-               height: max(0, viewport.height - 100) / 2 - frame.midY * scale + 24)
+               height: viewport.height / 2 - frame.midY * scale)
     }
 
     /// Repeat complete wall units at the edges; dragging never exposes a blank canvas.

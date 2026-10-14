@@ -18,14 +18,14 @@ enum NetEaseLyrics {
         let query = [title, artist].filter { !$0.isEmpty }.joined(separator: " ")
         let data = try await fetch(path: "/api/search/get/web", query: [
             URLQueryItem(name: "s", value: query), URLQueryItem(name: "type", value: "1"),
-            URLQueryItem(name: "offset", value: "0"), URLQueryItem(name: "limit", value: "5")
+            URLQueryItem(name: "offset", value: "0"), URLQueryItem(name: "limit", value: "12")
         ])
         let songs = try parseSearch(data).sorted {
             result(song: $0, lyrics: "").score(title: title, artist: artist, duration: duration)
                 > result(song: $1, lyrics: "").score(title: title, artist: artist, duration: duration)
         }
         return await withTaskGroup(of: OnlineLyricsResult?.self) { group in
-            for song in songs.prefix(3) {
+            for song in songs.prefix(6) {
                 group.addTask {
                     do {
                         let data = try await fetch(path: "/api/song/lyric/v1", query: [
