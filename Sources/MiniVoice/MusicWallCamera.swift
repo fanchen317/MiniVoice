@@ -38,61 +38,80 @@ enum MusicWallCamera {
 
 /// Native trackpad deltas preserve horizontal/vertical movement and macOS momentum.
 struct MusicWallScrollInput: NSViewRepresentable {
+    let onPointer: (CGPoint?) -> Void
     let onScroll: (CGSize, CGPoint) -> Bool
     let onMagnify: (CGFloat, CGPoint) -> Bool
     let onDown: (CGPoint, Int) -> Bool
     let onDrag: (CGSize) -> Void
-    let onUp: (CGPoint, Int, Bool) -> Void
+    let onUp: (CGPoint, Int, Bool, CGSize) -> Void
     func makeNSView(context: Context) -> ScrollInputView {
         let view = ScrollInputView(); configure(view); return view
     }
     func updateNSView(_ view: ScrollInputView, context: Context) { configure(view) }
     private func configure(_ view: ScrollInputView) {
-        view.onScroll = onScroll; view.onMagnify = onMagnify; view.onDown = onDown; view.onDrag = onDrag; view.onUp = onUp
+        view.onPointer = onPointer; view.onScroll = onScroll; view.onMagnify = onMagnify; view.onDown = onDown; view.onDrag = onDrag; view.onUp = onUp
     }
     static func dismantleNSView(_ view: ScrollInputView, coordinator: ()) { view.stop() }
 
     final class ScrollInputView: NSView {
+        var onPointer: ((CGPoint?) -> Void)?
         var onScroll: ((CGSize, CGPoint) -> Bool)?
         var onMagnify: ((CGFloat, CGPoint) -> Bool)?
         var onDown: ((CGPoint, Int) -> Bool)?
         var onDrag: ((CGSize) -> Void)?
-        var onUp: ((CGPoint, Int, Bool) -> Void)?
+        var onUp: ((CGPoint, Int, Bool, CGSize) -> Void)?
         private var monitor: Any?
         private var downPoint: CGPoint?
         private var hasDragged = false
+        private var previousPoint = CGPoint.zero
+        private var previousTime: TimeInterval = 0
+        private var velocity = CGSize.zero
+        private var scrollCaptured = false
         override var isFlipped: Bool { true }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow(); stop()
-            guard window != nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .magnify, .leftMouseDown, .leftMouseDragged, .leftMouseUp]) { [weak self] event in
+            guard let window else { return }; window.acceptsMouseMovedEvents = true
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .scrollWheel, .magnify, .leftMouseDown, .leftMouseDragged, .leftMouseUp]) { [weak self] event in
                 guard let self, let window = self.window, event.window === window else { return event }
                 let point = self.convert(event.locationInWindow, from: nil)
                 switch event.type {
+                case .mouseMoved:
+                    self.onPointer?(self.bounds.contains(point) ? point : nil)
+                    return event
                 case .scrollWheel:
-                    guard self.bounds.contains(point) else { return event }
+                    guard self.bounds.contains(point) || self.scrollCaptured else { return event }
                     let multiplier: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 16
                     let consumed = self.onScroll?(CGSize(width: event.scrollingDeltaX * multiplier,
                         height: event.scrollingDeltaY * multiplier), point) ?? false
-                    return consumed ? nil : event
+                    if event.phase == .began { self.scrollCaptured = consumed }
+                    if event.momentumPhase == .ended || event.phase == .cancelled { self.scrollCaptured = false }
+                    return consumed || self.scrollCaptured ? nil : event
                 case .magnify:
                     guard self.bounds.contains(point) else { return event }
                     return self.onMagnify?(event.magnification, point) == true ? nil : event
                 case .leftMouseDown:
-                    guard self.bounds.contains(point), self.onDown?(point, event.clickCount) == true else { return event }
+                    guard !MusicWallInputExclusion.contains(event), self.bounds.contains(point), self.onDown?(point, event.clickCount) == true else { return event }
                     self.downPoint = point; self.hasDragged = false
+                    self.previousPoint = point; self.previousTime = event.timestamp; self.velocity = .zero
                     return nil
                 case .leftMouseDragged:
                     guard let start = self.downPoint else { return event }
                     let delta = CGSize(width: point.x - start.x, height: point.y - start.y)
                     if hypot(delta.width, delta.height) > 6 { self.hasDragged = true }
+                    let elapsed = event.timestamp - self.previousTime
+                    if elapsed > 0.001 {
+                        let vx = (point.x - self.previousPoint.x) / elapsed
+                        let vy = (point.y - self.previousPoint.y) / elapsed
+                        self.velocity = CGSize(width: max(-4000, min(4000, vx)), height: max(-4000, min(4000, vy)))
+                    }
+                    self.previousPoint = point; self.previousTime = event.timestamp
                     if self.hasDragged { self.onDrag?(delta) }
                     return nil
                 case .leftMouseUp:
                     guard self.downPoint != nil else { return event }
                     self.downPoint = nil
-                    self.onUp?(point, event.clickCount, self.hasDragged)
+                    self.onUp?(point, event.clickCount, self.hasDragged, event.timestamp - self.previousTime < 0.1 ? self.velocity : .zero)
                     self.hasDragged = false
                     return nil
                 default: return event
@@ -115,5 +134,23 @@ struct MusicWallGlass: ViewModifier {
                 .overlay { shape.strokeBorder(.white.opacity(0.24), lineWidth: 0.7).allowsHitTesting(false) }
                 .shadow(color: .black.opacity(0.25), radius: 12, y: 5)
         }
+    }
+}
+
+/// Marks real control bounds so the wall's local event monitor cannot swallow them.
+struct MusicWallInputExclusion: NSViewRepresentable {
+    private static let regions = NSHashTable<NSView>.weakObjects()
+    func makeNSView(context: Context) -> Region {
+        let view = Region(); Self.regions.add(view); return view
+    }
+    func updateNSView(_ nsView: Region, context: Context) {}
+    static func contains(_ event: NSEvent) -> Bool {
+        regions.allObjects.contains { view in
+            view.window === event.window && !view.isHiddenOrHasHiddenAncestor
+                && view.bounds.contains(view.convert(event.locationInWindow, from: nil))
+        }
+    }
+    final class Region: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }

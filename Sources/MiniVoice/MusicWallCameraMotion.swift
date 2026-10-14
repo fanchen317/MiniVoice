@@ -11,6 +11,32 @@ final class MusicWallCameraMotion: ObservableObject {
     func stop() { travelTask?.cancel(); travelTask = nil }
     func jump(to value: CGSize) { stop(); offset = value }
 
+    func pan(by delta: CGSize) {
+        stop()
+        offset = CGSize(width: offset.width + delta.width, height: offset.height + delta.height)
+    }
+
+    /// Exponential drag release, integrated by elapsed time rather than frame count.
+    func coast(velocity: CGSize) {
+        stop()
+        guard hypot(velocity.width, velocity.height) > 40 else { return }
+        let start = offset
+        travelTask = Task { [weak self] in
+            let began = Date.timeIntervalSinceReferenceDate
+            let resistance = 5.5
+            while !Task.isCancelled {
+                guard let self else { return }
+                let elapsed = Date.timeIntervalSinceReferenceDate - began
+                let decay = exp(-resistance * elapsed)
+                let distance = (1 - decay) / resistance
+                self.offset = CGSize(width: start.width + velocity.width * distance,
+                                     height: start.height + velocity.height * distance)
+                if decay < 0.008 { self.travelTask = nil; return }
+                do { try await Task.sleep(for: .milliseconds(8)) } catch { return }
+            }
+        }
+    }
+
     func beginReflow(animated: Bool) {
         reflowTask?.cancel()
         guard animated else { reflowProgress = 1; return }

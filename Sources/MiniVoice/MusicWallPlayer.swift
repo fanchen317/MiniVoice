@@ -133,6 +133,7 @@ private struct MusicWallTransport: View {
                 if !editing, let scrub { library.seek(to: scrub); self.scrub = nil }
             }).tint(.white).controlSize(.mini).help("播放进度").disabled(library.playingID != track.id)
         }
+        .background(MusicWallInputExclusion())
         .onChange(of: track.id) { _ in scrub = nil }
     }
     private func control(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {

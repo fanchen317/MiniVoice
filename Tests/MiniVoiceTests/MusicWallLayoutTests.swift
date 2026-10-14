@@ -173,6 +173,26 @@ final class MusicWallSceneTests: XCTestCase {
 
 @MainActor
 final class MusicWallCameraMotionTests: XCTestCase {
+    func testDragReleaseDecaysAndNewPanCancelsMomentum() async throws {
+        let motion = MusicWallCameraMotion()
+        motion.coast(velocity: CGSize(width: 1000, height: -500))
+        try await Task.sleep(for: .milliseconds(80))
+        let first = motion.offset
+        XCTAssertGreaterThan(first.width, 0)
+        XCTAssertLessThan(first.height, 0)
+        try await Task.sleep(for: .milliseconds(80))
+        let second = motion.offset
+        XCTAssertGreaterThan(second.width, first.width)
+        XCTAssertLessThan(second.width - first.width, first.width)
+        motion.pan(by: CGSize(width: 10, height: 20))
+        let stopped = motion.offset
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertEqual(motion.offset, stopped)
+    }
+    func testToolsReturnBesideDockWhenSpaceIsAvailable() {
+        XCTAssertTrue(MusicWallChromeMetrics(width: 600, leadingInset: 0).toolsAboveDock)
+        XCTAssertFalse(MusicWallChromeMetrics(width: 1400, leadingInset: 260).toolsAboveDock)
+    }
     func testZoomKeepsPointUnderPointerAndDoesNotRebuildGeometry() {
         let motion = MusicWallCameraMotion()
         motion.jump(to: CGSize(width: -500, height: -800))

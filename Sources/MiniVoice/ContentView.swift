@@ -305,7 +305,7 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             ZStack(alignment: .top) {
                 if wallStyle {
-                    LinearGradient(colors: [.black.opacity(0.72), .black.opacity(0.28), .clear],
+                    LinearGradient(colors: [.black.opacity(0.32), .black.opacity(0.10), .clear],
                                    startPoint: .top, endPoint: .bottom)
                         .frame(height: 64).allowsHitTesting(false)
                 }

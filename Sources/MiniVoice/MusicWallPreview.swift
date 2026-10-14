@@ -17,7 +17,7 @@ struct MusicWallPreview: View {
                     Spacer()
                     Button(action: onExpand) { Image(systemName: "arrow.up.left.and.arrow.down.right").frame(width: 28, height: 30) }
                         .buttonStyle(.plain).help("展开播放器")
-                }.padding(.top, 12)
+                }.padding(.top, 12).background(MusicWallInputExclusion())
             }.padding(22)
         }.foregroundStyle(.white)
     }

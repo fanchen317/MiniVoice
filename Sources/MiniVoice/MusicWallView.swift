@@ -27,7 +27,7 @@ struct MusicWallView: View {
     @State private var focusedTrack: Track?
     @State private var immersive = false
     @State private var expandedPosterSide: CGFloat = 480
-    @AppStorage("MiniVoice.wallToolsAboveDock") private var toolsRaised = false
+    @State private var toolsRaised = false
     @State private var hoveredID: String?
     @State private var pressingID: String?
     @StateObject private var cameraMotion = MusicWallCameraMotion()
@@ -82,20 +82,17 @@ struct MusicWallView: View {
                 .scaleEffect(zoom, anchor: .topLeading)
                 .offset(offset)
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
-                .mask {
-                    VStack(spacing: 0) {
-                        LinearGradient(stops: [.init(color: .clear, location: 0),
-                                               .init(color: .clear, location: 0.45),
-                                               .init(color: .white, location: 1)], startPoint: .top, endPoint: .bottom)
-                            .frame(height: 64)
-                        Rectangle().fill(.white)
-                    }
-                }
                 .contentShape(Rectangle())
                 .background {
-                    MusicWallScrollInput(onScroll: { delta, point in
-                        guard allowsPan(from: point, viewport: geometry.size) else { return false }
-                        camera.width += delta.width; camera.height += delta.height
+                    MusicWallScrollInput(onPointer: { point in
+                        guard let point, allowsPan(from: point, viewport: geometry.size, controls: false) else {
+                            if hoveredID != nil { hoveredID = nil }; return
+                        }
+                        let next = hitInstance(at: point, instances: instances, viewport: geometry.size, offset: offset)?.id
+                        if hoveredID != next { hoveredID = next }
+                    }, onScroll: { delta, point in
+                        guard allowsPan(from: point, viewport: geometry.size, controls: false) else { return false }
+                        cameraMotion.pan(by: delta)
                         return true
                     }, onMagnify: { amount, point in
                         guard allowsPan(from: point, viewport: geometry.size) else { return false }
@@ -106,14 +103,15 @@ struct MusicWallView: View {
                         cameraMotion.stop()
                         let hit = clicks > 1 ? lastTapped : hitInstance(at: point, instances: instances, viewport: geometry.size, offset: offset)
                         pressingID = hit?.id
-                        return hit != nil
+                        return true
                     }, onDrag: { delta in
                         pressingID = nil; drag = delta
-                    }, onUp: { point, clicks, dragged in
+                    }, onUp: { point, clicks, dragged, velocity in
                         pressingID = nil
                         if dragged {
                             camera = CGSize(width: camera.width + drag.width, height: camera.height + drag.height)
                             drag = .zero
+                            if !reduceMotion { cameraMotion.coast(velocity: velocity) }
                             return
                         }
                         let hit = clicks > 1 ? lastTapped : hitInstance(at: point, instances: instances, viewport: geometry.size, offset: offset)
@@ -179,8 +177,8 @@ struct MusicWallView: View {
                 mountedInstances = MusicWallCamera.visibleInstances(tiles: readyScene.tiles, world: readyScene.world,
                     viewport: sourceViewport, offset: sourceOffset, focusedID: focusedInstance?.id)
             }
-            .onAppear { rebuild(viewport: geometry.size); if chrome.toolsAboveDock { toolsRaised = true } }
-            .onChange(of: chrome.toolsAboveDock) { above in if above { toolsRaised = true } }
+            .onAppear { rebuild(viewport: geometry.size); toolsRaised = chrome.toolsAboveDock }
+            .onChange(of: chrome.toolsAboveDock) { above in toolsRaised = above }
             .onChange(of: geometry.size) { size in rebuild(viewport: size) }
             .onChange(of: sidebarInset) { _ in
                 if let current = focusedInstance, let track = focusedTrack { focus(current, track: track, viewport: geometry.size) }
@@ -279,7 +277,7 @@ struct MusicWallView: View {
             }
             .brightness(hoveredID == instance.id && !expanded ? 0.12 : 0)
             .shadow(color: .black.opacity(hoveredID == instance.id ? 0.4 : 0), radius: hoveredID == instance.id ? 8 : 0, y: 4)
-            .onHover { hoveredID = $0 ? instance.id : (hoveredID == instance.id ? nil : hoveredID) }
+            
             .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.78), value: hoveredID == instance.id)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: pressingID == instance.id)
             .contentShape(Rectangle())
@@ -396,7 +394,8 @@ struct MusicWallView: View {
         }
         if let nearest { focus(nearest, track: track, viewport: viewport) }
     }
-    private func allowsPan(from point: CGPoint, viewport: CGSize) -> Bool {
+    private func allowsPan(from point: CGPoint, viewport: CGSize, controls: Bool = true) -> Bool {
+        guard !immersive else { return false }
         guard !sidebarBlocksWall, point.x >= sidebarInset, point.y > 28 else { return false }
         if point.y < 80 {
             let leftControls = sidebarInset + (canGoBack ? 128 : 64)
@@ -408,7 +407,7 @@ struct MusicWallView: View {
                           y: viewport.height - 82, width: chrome.dockWidth, height: 64)
         let tools = CGRect(x: viewport.width - 112, y: viewport.height - (toolsRaised || chrome.toolsAboveDock ? 104 : 20) - 44, width: 96, height: 44)
         if dock.insetBy(dx: -4, dy: -4).contains(point) || tools.insetBy(dx: -4, dy: -4).contains(point) { return false }
-        if let instance = focusedInstance {
+        if controls, let instance = focusedInstance {
             // Use the displayed bounds, including in-flight reflow and drag.
             // Leave the entire lower control region to native SwiftUI controls.
             let rect = renderedFrame(instance, viewport: viewport)
