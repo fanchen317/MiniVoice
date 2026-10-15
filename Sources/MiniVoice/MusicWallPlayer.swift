@@ -31,8 +31,10 @@ struct MusicWallPlayer: View, @MainActor Equatable {
                     VStack(alignment: .leading, spacing: sizing.spacing) {
                         HStack(spacing: 7) {
                             MusicWallPlaybackWaveform(active: track.id == library.playingID && library.isPlaying)
+                                .frame(width: 16, height: 16)
                             Text(track.id == library.playingID ? (library.isPreparingPlayback ? "正在加载" : library.isPlaying ? "正在播放" : "已暂停") : "预览")
                         }
+                            .fixedSize(horizontal: true, vertical: true)
                             .font(.system(size: sizing.status, weight: .bold)).tracking(1.5).foregroundStyle(.mint)
                             .padding(.horizontal, sizing.spacing).padding(.vertical, sizing.spacing * 0.65)
                             .background(.mint.opacity(0.18), in: Capsule())
