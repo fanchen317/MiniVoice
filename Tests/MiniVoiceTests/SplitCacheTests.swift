@@ -105,9 +105,18 @@ final class SplitCacheTests: XCTestCase {
         let key = try XCTUnwrap(entry.lyricsKey)
         defer { try? FileManager.default.removeItem(at: ResourceCache.url(key, kind: "Lyrics")) }
         XCTAssertTrue(ResourceCache.lyrics(key)?.hasPrefix("[00:01]测试") == true)
-        let track = try XCTUnwrap(entry.track(root: root))
+        var track = try XCTUnwrap(entry.track(root: root))
         XCTAssertFalse(track.resourcesLoaded); XCTAssertEqual(track.lyrics, "")
+        XCTAssertTrue(track.lyricsAreLoading)
+        XCTAssertTrue(track.lyricSnapshot.lines.isEmpty, "Unresolved lyrics must not manufacture a missing-lyrics line")
         XCTAssertEqual(track.id, entry.track(root: root)?.id)
+        track.lyrics = try XCTUnwrap(ResourceCache.lyrics(key))
+        track.resourcesLoaded = true
+        XCTAssertFalse(track.lyricsAreLoading)
+        XCTAssertTrue(track.lyricSnapshot.lines.first?.text.hasPrefix("测试") == true)
+        track.lyrics = ""
+        XCTAssertFalse(track.lyricsAreLoading)
+        XCTAssertEqual(track.lyricSnapshot.lines.first?.text, "尚未添加歌词")
         let json = try JSONSerialization.jsonObject(with: Data(contentsOf: indexURL)) as! [String: Any]
         let folders = json["folders"] as! [String: [String: Any]]
         let entries = folders[ResourceCache.key(root.path)]!["tracks"] as! [[String: Any]]

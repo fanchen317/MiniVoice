@@ -92,19 +92,8 @@ struct MusicWallLayout {
             }
             while firstBand < occupied.count && occupied[firstBand].allSatisfy({ $0 }) { firstBand += 1 }
         }
-        // Fill incomplete cells before repeating the wall: the terminal block must not
-        // carry a large empty strip into the next world copy. Extra slots reuse covers.
-        var slot = count
-        for band in occupied.indices {
-            for y in 0..<3 { for x in 0..<columns where !occupied[band][y * columns + x] {
-                let sourceIndex = (slot - count) % count
-                output[band].append(MusicWallTile(index: sourceIndex, frame: CGRect(
-                    x: CGFloat(x) * unit, y: CGFloat(y) * unit,
-                    width: unit - gap, height: unit - gap), slot: slot))
-                occupied[band][y * columns + x] = true
-                slot += 1
-            } }
-        }
+        // Keep unused terminal cells empty: filling them with earlier songs creates
+        // nearby duplicates and makes a song's location unpredictable.
         bands = output.enumerated().map { MusicWallBand(id: $0.offset, tiles: $0.element) }
     }
 }

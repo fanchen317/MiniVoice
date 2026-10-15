@@ -9,7 +9,7 @@ struct MusicWallDock: View {
     let onLocate: () -> Void
     @State private var scrub: Double?
     @State private var showingQueue = false
-    private var isPlaying: Bool { library.isPlaying && library.playingID == track?.id }
+    private var isPlaying: Bool { (library.isPlaying || library.isPreparingPlayback) && library.playingID == track?.id }
     private var currentTime: Double { library.playingID == track?.id ? clock.time : 0 }
 
     var body: some View {
@@ -22,17 +22,17 @@ struct MusicWallDock: View {
                         .foregroundStyle(.black.opacity(0.9))
                         .frame(width: compact ? 40 : 46, height: compact ? 40 : 46)
                         .background(.white.opacity(0.94), in: Circle())
-                }.buttonStyle(.plain).disabled(track == nil).help("播放 / 暂停").accessibilityLabel("播放 / 暂停")
+                }.buttonStyle(MusicWallFloatingButtonStyle()).disabled(track == nil).help("播放 / 暂停").accessibilityLabel("播放 / 暂停")
                 VStack(spacing: 4) {
                     HStack(spacing: 10) {
                         Button { library.skip(-1) } label: { Image(systemName: "chevron.left").frame(width: 22, height: 20) }
-                            .buttonStyle(.plain).help("上一曲").disabled(library.playingTrack == nil)
+                            .buttonStyle(MusicWallControlStyle()).help("上一曲").disabled(library.playingTrack == nil)
                         Button(action: onLocate) {
                             Text(track?.title ?? "选择一首音乐").font(.system(size: 13, weight: .semibold))
                                 .lineLimit(1).frame(maxWidth: .infinity)
-                        }.buttonStyle(.plain).help("定位歌曲")
+                        }.buttonStyle(MusicWallControlStyle()).help("定位歌曲")
                         Button { library.skip(1) } label: { Image(systemName: "chevron.right").frame(width: 22, height: 20) }
-                            .buttonStyle(.plain).help("下一曲").disabled(library.playingTrack == nil)
+                            .buttonStyle(MusicWallControlStyle()).help("下一曲").disabled(library.playingTrack == nil)
                     }
                     HStack(spacing: 8) {
                         if !compact { Text(time(scrub ?? currentTime)).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
@@ -46,37 +46,42 @@ struct MusicWallDock: View {
                         if !compact { Text(time(track?.duration ?? 0)).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
                     }.frame(height: 18)
                 }
-                Menu {
-                    ForEach(PlaybackMode.allCases) { mode in
-                        Button { library.playbackMode = mode } label: {
-                            Label(mode.title, systemImage: library.playbackMode == mode ? "checkmark" : mode.symbolName)
-                        }
-                    }
-                } label: { Image(systemName: library.playbackMode.symbolName).font(.system(size: 20)).frame(width: 28) }
-                    .menuStyle(.borderlessButton).fixedSize().help("播放模式")
+                MusicWallModeMenu()
                 if !compact {
                     Button { showingQueue.toggle() } label: { Image(systemName: "list.bullet").font(.system(size: 20)).frame(width: 25) }
-                        .buttonStyle(.plain).help("播放队列")
+                        .buttonStyle(MusicWallControlStyle()).help("播放队列")
                         .popover(isPresented: $showingQueue) {
-                            ScrollView {
-                                LazyVStack(alignment: .leading, spacing: 4) {
-                                    ForEach(library.playbackIDs, id: \.self) { id in
-                                        if let song = library.track(for: id) {
-                                            Button { library.play(id); showingQueue = false } label: {
-                                                HStack {
-                                                    Image(systemName: id == library.playingID ? "speaker.wave.2.fill" : "music.note")
-                                                        .frame(width: 20).foregroundStyle(id == library.playingID ? .mint : .secondary)
-                                                    VStack(alignment: .leading) {
-                                                        Text(song.title).lineLimit(1)
-                                                        Text(song.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                                    }
-                                                    Spacer()
-                                                }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                                            }.buttonStyle(.plain)
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack {
+                                    Text("播放队列").font(.headline)
+                                    Spacer()
+                                    Text("\(library.playbackIDs.count) 首").font(.caption).foregroundStyle(.secondary)
+                                }.padding(.horizontal, 16).padding(.top, 14)
+                                Divider()
+                                ScrollView {
+                                    LazyVStack(alignment: .leading, spacing: 4) {
+                                        ForEach(library.playbackIDs, id: \.self) { id in
+                                            if let song = library.track(for: id) {
+                                                Button { library.play(id); showingQueue = false } label: {
+                                                    HStack {
+                                                        Image(systemName: id == library.playingID ? "speaker.wave.2.fill" : "music.note")
+                                                            .frame(width: 20).foregroundStyle(id == library.playingID ? .mint : .secondary)
+                                                        VStack(alignment: .leading) {
+                                                            Text(song.title).lineLimit(1)
+                                                            Text(song.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                                        }
+                                                        Spacer()
+                                                    }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                                                        .background(id == library.playingID ? Color.mint.opacity(0.14) : .clear,
+                                                                    in: RoundedRectangle(cornerRadius: 10))
+                                                }.buttonStyle(.plain)
+                                            }
                                         }
-                                    }
-                                }.padding(10)
+                                    }.padding(10)
+                                }
                             }.frame(width: 300, height: 360)
+                                .background(Color(red: 0.12, green: 0.14, blue: 0.14))
+                                .environment(\.colorScheme, .dark).foregroundStyle(.white)
                         }
                 }
             }

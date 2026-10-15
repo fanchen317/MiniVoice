@@ -84,7 +84,7 @@ final class MusicWallCameraTests: XCTestCase {
         }
     }
 
-    func testEveryRepeatingBlockHasNoUnfilledCells() {
+    func testUnusedCellsNeverDuplicateEarlierSongs() {
         for count in [1, 2, 37, 1040] {
             let layout = MusicWallLayout(count: count, activeIndex: nil, width: 2400)
             let columns = 12
@@ -92,10 +92,11 @@ final class MusicWallCameraTests: XCTestCase {
             for band in layout.bands {
                 for y in 0..<3 { for x in 0..<columns {
                     let center = CGPoint(x: (CGFloat(x) + 0.5) * unit, y: (CGFloat(y) + 0.5) * unit)
-                    XCTAssertEqual(band.tiles.filter { $0.frame.contains(center) }.count, 1)
+                    XCTAssertLessThanOrEqual(band.tiles.filter { $0.frame.contains(center) }.count, 1)
                 } }
                 XCTAssertEqual(Set(band.tiles.map(\.id)).count, band.tiles.count)
             }
+            XCTAssertEqual(layout.bands.flatMap(\.tiles).count, count)
         }
     }
 
@@ -112,6 +113,25 @@ final class MusicWallCameraTests: XCTestCase {
 }
 
 final class MusicWallReflowTests: XCTestCase {
+    func testMosaicReflowKeepsNeighbourGuttersFixedDuringFocus() {
+        let gap: CGFloat = 5
+        let left = CGRect(x: 0, y: 0, width: 195, height: 195)
+        let right = CGRect(x: 200, y: 0, width: 195, height: 195)
+        let below = CGRect(x: 0, y: 200, width: 195, height: 195)
+        let focus = left
+        let size = CGSize(width: 520, height: 520)
+        for progress: CGFloat in [0, 0.25, 0.5, 0.75, 1] {
+            let focused = MusicWallReflow.interpolate(left,
+                MusicWallReflow.mosaicFrame(left, focus: focus, size: size), progress: progress)
+            let neighbour = MusicWallReflow.interpolate(right,
+                MusicWallReflow.mosaicFrame(right, focus: focus, size: size), progress: progress)
+            let lower = MusicWallReflow.interpolate(below,
+                MusicWallReflow.mosaicFrame(below, focus: focus, size: size), progress: progress)
+            XCTAssertEqual(neighbour.minX - focused.maxX, gap, accuracy: 0.001)
+            XCTAssertEqual(lower.minY - focused.maxY, gap, accuracy: 0.001)
+        }
+    }
+
     func testSelectedSlotExpandsInPlaceAndNeighboursRemainSeparate() {
         let layout = MusicWallLayout(count: 37, activeIndex: nil, width: 2400)
         let tiles = layout.bands[0].tiles
@@ -161,6 +181,27 @@ final class MusicWallSequenceTests: XCTestCase {
 }
 
 final class MusicWallSceneTests: XCTestCase {
+    func testFieldIsFullyCoveredWithoutDuplicateSongsIncludingFinalRow() {
+        for count in [1, 2, 37, 100, 1037, 1040] {
+            let scene = MusicWallScene(count: count, viewport: CGSize(width: 1280, height: 800), density: 1)
+            XCTAssertEqual(scene.tiles.count, count)
+            XCTAssertEqual(Set(scene.tiles.map(\.index)).count, count)
+            // Restore each slot's trailing gutter; these rectangles must partition
+            // the whole repeat cell, not merely its occupied first rows.
+            let slots = scene.tiles.map { CGRect(x: $0.frame.minX, y: $0.frame.minY,
+                width: $0.frame.width + 5, height: $0.frame.height + 5) }
+            let area = slots.reduce(CGFloat.zero) { $0 + $1.width * $1.height }
+            XCTAssertEqual(area, scene.world.width * scene.world.height, accuracy: 0.001)
+            for (i, slot) in slots.enumerated() {
+                XCTAssertGreaterThan(slot.width, 5)
+                XCTAssertGreaterThan(slot.height, 5)
+                for other in slots.dropFirst(i + 1) {
+                    let overlap = slot.intersection(other)
+                    XCTAssertTrue(overlap.isNull || overlap.width * overlap.height < 0.001)
+                }
+            }
+        }
+    }
     func testFirstSceneIsReadyWithoutWaitingForViewAppearance() {
         let scene = MusicWallScene(count: 1040, viewport: CGSize(width: 1032, height: 628), density: 1)
         let visible = MusicWallCamera.visibleInstances(tiles: scene.tiles, world: scene.world,
@@ -174,8 +215,8 @@ final class MusicWallSceneTests: XCTestCase {
             for inset: CGFloat in [0, 284] where inset < width - 240 {
                 let chrome = MusicWallChromeMetrics(width: width, leadingInset: inset)
                 let dockRight = (width + inset + chrome.dockWidth) / 2
-                let toolsLeft = width - 112
-                if !chrome.toolsAboveDock { XCTAssertGreaterThanOrEqual(toolsLeft, dockRight) }
+                let toolsLeft = width - 16 - 38
+                if !chrome.toolsAboveDock { XCTAssertGreaterThanOrEqual(toolsLeft - 12, dockRight) }
                 else { XCTAssertGreaterThan(chrome.toolsBottom, 82) }
             }
         }
@@ -202,7 +243,7 @@ final class MusicWallCameraMotionTests: XCTestCase {
         XCTAssertEqual(motion.offset, stopped)
     }
     func testToolsReturnBesideDockWhenSpaceIsAvailable() {
-        XCTAssertTrue(MusicWallChromeMetrics(width: 600, leadingInset: 0).toolsAboveDock)
+        XCTAssertFalse(MusicWallChromeMetrics(width: 600, leadingInset: 0).toolsAboveDock)
         XCTAssertFalse(MusicWallChromeMetrics(width: 1400, leadingInset: 260).toolsAboveDock)
     }
     func testZoomKeepsPointUnderPointerAndDoesNotRebuildGeometry() {
@@ -236,12 +277,29 @@ final class MusicWallStabilityTests: XCTestCase {
         XCTAssertEqual(small.tiles.map(\.frame), full.tiles.map(\.frame))
         XCTAssertEqual(small.world, full.world)
     }
-    func testActualHorizontalStrideVisitsEntireLibrary() {
+    func testWholeLibraryHasStableUniqueSeatsAcrossBothAxes() {
         let scene = MusicWallScene(count: 1040, viewport: CGSize(width: 1280, height: 800), density: 1)
-        let ids = (0..<1040).compactMap {
-            MusicWallSequence.index(base: 0, horizontalCopy: $0, stride: scene.horizontalStride, count: 1040)
+        XCTAssertEqual(scene.tiles.count, 1040)
+        XCTAssertEqual(Set(scene.tiles.map(\.index)).count, 1040)
+        XCTAssertEqual(scene.horizontalStride, 0)
+        XCTAssertGreaterThan(scene.world.width, 5000)
+        XCTAssertGreaterThan(scene.world.height, 3000)
+        for tile in scene.tiles {
+            XCTAssertEqual(MusicWallSequence.index(base: tile.index, horizontalCopy: 1,
+                stride: scene.horizontalStride, count: 1040), tile.index)
         }
-        XCTAssertEqual(Set(ids).count, 1040)
+    }
+    func testSpatialQueryMatchesExhaustiveQueryAcrossSeamsAndNegativeCoordinates() {
+        let scene = MusicWallScene(count: 1040, viewport: CGSize(width: 1280, height: 800), density: 1)
+        let viewport = CGSize(width: 1280, height: 800)
+        for offset in [CGSize.zero, CGSize(width: 2000, height: 1100),
+                       CGSize(width: -scene.world.width + 500, height: -scene.world.height + 400)] {
+            let expected = MusicWallCamera.visibleInstances(tiles: scene.tiles, world: scene.world,
+                viewport: viewport, offset: offset, focusedID: nil)
+            let actual = scene.visibleInstances(viewport: viewport, offset: offset, focusedID: nil)
+            XCTAssertEqual(Set(actual.map(\.id)), Set(expected.map(\.id)))
+            XCTAssertLessThan(actual.count, 250)
+        }
     }
     func testIntermediateReflowFramesDoNotOverlap() {
         let layout = MusicWallLayout(count: 37, activeIndex: nil, width: 1920)
@@ -264,5 +322,94 @@ final class MusicWallStabilityTests: XCTestCase {
         XCTAssertEqual(motion.scale, 0.8)
         motion.zoom(to: 3, anchor: .zero, animated: false)
         XCTAssertEqual(motion.scale, 1.2)
+    }
+}
+
+final class MusicWallInputRoutingTests: XCTestCase {
+    func testResizeCornersAndEdgesStayWithWindow() {
+        let size = CGSize(width: 304, height: 628)
+        for point in [CGPoint(x: 2, y: 2), CGPoint(x: 302, y: 2), CGPoint(x: 15, y: 15),
+                      CGPoint(x: 289, y: 15), CGPoint(x: 2, y: 300), CGPoint(x: 152, y: 3)] {
+            XCTAssertTrue(MusicWallInputRouting.isResizeRegion(point, size: size))
+        }
+        for point in [CGPoint(x: 30, y: 30), CGPoint(x: 152, y: 100), CGPoint(x: 280, y: 40)] {
+            XCTAssertFalse(MusicWallInputRouting.isResizeRegion(point, size: size))
+        }
+    }
+}
+
+final class MusicWallLyricsLayoutTests: XCTestCase {
+    func testNarrowCardKeepsNeighbouringLyrics() {
+        let layout = MusicWallLyricsLayout(size: CGSize(width: 212, height: 90))
+        XCTAssertFalse(layout.singleLine)
+        XCTAssertEqual(layout.rowHeight, 30, accuracy: 0.01)
+    }
+    func testTallPlayerDoesNotStretchSpacingAcrossEntireHeight() {
+        let layout = MusicWallLyricsLayout(size: CGSize(width: 1000, height: 1100))
+        XCTAssertFalse(layout.singleLine)
+        XCTAssertGreaterThanOrEqual(1100 / layout.rowHeight, 5)
+        XCTAssertLessThan(layout.rowHeight, 200)
+    }
+    func testOnlyVeryShortRegionUsesOneLine() {
+        XCTAssertTrue(MusicWallLyricsLayout(size: CGSize(width: 212, height: 45)).singleLine)
+    }
+    func testGrowingFullscreenShowsMoreLyricsInsteadOfKeepingThreeRows() {
+        let short = MusicWallLyricsLayout(size: CGSize(width: 900, height: 350))
+        let tall = MusicWallLyricsLayout(size: CGSize(width: 900, height: 850))
+        XCTAssertGreaterThan(850 / tall.rowHeight, 350 / short.rowHeight)
+        XCTAssertGreaterThanOrEqual(850 / tall.rowHeight, 5)
+        XCTAssertGreaterThanOrEqual(tall.visibleRadius, 5)
+    }
+}
+
+final class MusicWallSingleToolLayoutTests: XCTestCase {
+    func testSettingsMovesOnlyWhenSingleButtonNoLongerFits() {
+        XCTAssertTrue(MusicWallChromeMetrics(width: 590, leadingInset: 0).toolsAboveDock)
+        XCTAssertFalse(MusicWallChromeMetrics(width: 592, leadingInset: 0).toolsAboveDock)
+        XCTAssertFalse(MusicWallChromeMetrics(width: 600, leadingInset: 0).toolsAboveDock)
+    }
+    func testSettingsMaintainsTwelvePointGapAboveDockAndCentersBesideIt() {
+        XCTAssertEqual(MusicWallChromeMetrics(width: 400, leadingInset: 0).toolsBottom, 94)
+        XCTAssertEqual(MusicWallChromeMetrics(width: 800, leadingInset: 0).toolsBottom, 31)
+    }
+}
+
+final class MusicWallToolsResizeStabilityTests: XCTestCase {
+    func testNarrowingAcrossOverlayBreakpointOnlyRaisesSettingsOnce() {
+        var raised = false
+        var switches = 0
+        for value in stride(from: 1300, through: 304, by: -2) {
+            let width = CGFloat(value)
+            let sidebar = min(260, max(230, width * 0.25))
+            let overlays = width < sidebar + 640 + 48
+            let metrics = MusicWallChromeMetrics(width: width, leadingInset: overlays ? 0 : sidebar + 24,
+                                                 toolsLeadingInset: sidebar + 24)
+            if metrics.toolsAboveDock != raised {
+                switches += 1
+                XCTAssertTrue(metrics.toolsAboveDock, "Narrowing must not lower settings after raising it")
+            }
+            raised = metrics.toolsAboveDock
+        }
+        XCTAssertEqual(switches, 1)
+    }
+}
+
+final class MusicWallImmersiveFocusTests: XCTestCase {
+    func testChangingSongCentersNewPosterAfterRestoringSidebar() {
+        let viewport = CGSize(width: 1200, height: 800)
+        let frame = CGRect(x: 2800, y: 3600, width: 260, height: 320)
+        for inset: CGFloat in [0, 284] {
+            let offset = MusicWallCamera.restoredPlayerOffset(original: CGSize(width: -100, height: -200),
+                sourceID: "old", targetID: "new", targetFrame: frame,
+                viewport: viewport, leadingInset: inset, scale: 0.8)
+            XCTAssertEqual(frame.midX * 0.8 + offset.width, (viewport.width + inset) / 2, accuracy: 0.001)
+            XCTAssertEqual(frame.midY * 0.8 + offset.height, viewport.height / 2, accuracy: 0.001)
+        }
+    }
+    func testSameSongPreservesOriginalCameraPosition() {
+        let original = CGSize(width: -123, height: -456)
+        XCTAssertEqual(MusicWallCamera.restoredPlayerOffset(original: original, sourceID: "same", targetID: "same",
+            targetFrame: CGRect(x: 100, y: 200, width: 260, height: 320),
+            viewport: CGSize(width: 1200, height: 800), leadingInset: 284, scale: 1), original)
     }
 }

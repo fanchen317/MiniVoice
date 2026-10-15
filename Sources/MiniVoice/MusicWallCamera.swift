@@ -1,6 +1,19 @@
 import AppKit
 import SwiftUI
 
+enum MusicWallClickTarget {
+    static func isContinuation(clicks: Int, point: CGPoint, previous: CGPoint?) -> Bool {
+        guard clicks > 1, let previous else { return false }
+        return hypot(point.x - previous.x, point.y - previous.y) <= 6
+    }
+}
+
+/// Hit-test measurements must stay current without invalidating the whole wall
+/// whenever its focused player's translated controls move.
+final class MusicWallControlRegionStore {
+    var regions: [CGRect] = []
+}
+
 // MusicWallCamera.swift: stable world coordinates, repeated edges and viewport-only mounting.
 struct MusicWallInstance: Identifiable {
     let tile: MusicWallTile
@@ -11,6 +24,12 @@ struct MusicWallInstance: Identifiable {
 }
 
 enum MusicWallCamera {
+    static func restoredPlayerOffset(original: CGSize, sourceID: String?, targetID: String?, targetFrame: CGRect?,
+                                     viewport: CGSize, leadingInset: CGFloat, scale: CGFloat) -> CGSize {
+        guard sourceID != targetID, let targetFrame else { return original }
+        return centeredOffset(frame: targetFrame, viewport: viewport, leadingInset: leadingInset, scale: scale)
+    }
+
     static func centeredOffset(frame: CGRect, viewport: CGSize, leadingInset: CGFloat = 0, scale: CGFloat = 1) -> CGSize {
         CGSize(width: (viewport.width + leadingInset) / 2 - frame.midX * scale,
                height: viewport.height / 2 - frame.midY * scale)
@@ -39,7 +58,7 @@ enum MusicWallCamera {
 /// Native trackpad deltas preserve horizontal/vertical movement and macOS momentum.
 struct MusicWallScrollInput: NSViewRepresentable {
     let onPointer: (CGPoint?) -> Void
-    let onScroll: (CGSize, CGPoint) -> Bool
+    let onScroll: (CGSize, CGPoint, Bool) -> Bool
     let onMagnify: (CGFloat, CGPoint) -> Bool
     let onDown: (CGPoint, Int) -> Bool
     let onDrag: (CGSize) -> Void
@@ -55,7 +74,7 @@ struct MusicWallScrollInput: NSViewRepresentable {
 
     final class ScrollInputView: NSView {
         var onPointer: ((CGPoint?) -> Void)?
-        var onScroll: ((CGSize, CGPoint) -> Bool)?
+        var onScroll: ((CGSize, CGPoint, Bool) -> Bool)?
         var onMagnify: ((CGFloat, CGPoint) -> Bool)?
         var onDown: ((CGPoint, Int) -> Bool)?
         var onDrag: ((CGSize) -> Void)?
@@ -80,20 +99,25 @@ struct MusicWallScrollInput: NSViewRepresentable {
                     self.onPointer?(self.bounds.contains(point) ? point : nil)
                     return event
                 case .scrollWheel:
-                    guard !MusicWallInputExclusion.contains(event) else { return event }
                     guard self.bounds.contains(point) || self.scrollCaptured else { return event }
                     let multiplier: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 16
-                    let consumed = self.onScroll?(CGSize(width: event.scrollingDeltaX * multiplier,
-                        height: event.scrollingDeltaY * multiplier), point) ?? false
+                    let sideways = event.modifierFlags.contains(.shift) && event.scrollingDeltaX == 0
+                    let consumed = self.onScroll?(CGSize(width: (sideways ? event.scrollingDeltaY : event.scrollingDeltaX) * multiplier,
+                        height: sideways ? 0 : event.scrollingDeltaY * multiplier), point, event.hasPreciseScrollingDeltas) ?? false
                     if event.phase == .began { self.scrollCaptured = consumed }
                     if event.momentumPhase == .ended || event.phase == .cancelled { self.scrollCaptured = false }
                     return consumed || self.scrollCaptured ? nil : event
                 case .magnify:
-                    guard !MusicWallInputExclusion.contains(event) else { return event }
                     guard self.bounds.contains(point) else { return event }
                     return self.onMagnify?(event.magnification, point) == true ? nil : event
                 case .leftMouseDown:
-                    guard !MusicWallInputExclusion.contains(event), self.bounds.contains(point), self.onDown?(point, event.clickCount) == true else { return event }
+                    // The monitor runs before AppKit's window resize handling. Never
+                    // consume a resize-edge down; its entire drag belongs to AppKit.
+                    if window.styleMask.contains(.resizable), !window.styleMask.contains(.fullScreen),
+                       MusicWallInputRouting.isResizeRegion(event.locationInWindow, size: window.frame.size) {
+                        return event
+                    }
+                    guard self.bounds.contains(point), self.onDown?(point, event.clickCount) == true else { return event }
                     self.downPoint = point; self.hasDragged = false
                     self.previousPoint = point; self.previousTime = event.timestamp; self.velocity = .zero
                     return nil
@@ -139,20 +163,58 @@ struct MusicWallGlass: ViewModifier {
     }
 }
 
-/// Marks real control bounds so the wall's local event monitor cannot swallow them.
-struct MusicWallInputExclusion: NSViewRepresentable {
-    private static let regions = NSHashTable<NSView>.weakObjects()
-    func makeNSView(context: Context) -> Region {
-        let view = Region(); Self.regions.add(view); return view
+/// Measure the rendered SwiftUI bounds, including scale and reflow, in the
+/// same coordinate space as the wall input surface. No native-view registry.
+struct MusicWallInputExclusion: View {
+    var body: some View {
+        GeometryReader { geometry in
+            Color.clear.preference(key: MusicWallControlRegions.self,
+                value: [geometry.frame(in: .named("musicWallViewport"))])
+        }.allowsHitTesting(false)
     }
-    func updateNSView(_ nsView: Region, context: Context) {}
-    static func contains(_ event: NSEvent) -> Bool {
-        regions.allObjects.contains { view in
-            view.window === event.window && !view.isHiddenOrHasHiddenAncestor
-                && view.bounds.contains(view.convert(event.locationInWindow, from: nil))
+}
+
+struct MusicWallControlRegions: PreferenceKey {
+    static let defaultValue: [CGRect] = []
+    static func reduce(value: inout [CGRect], nextValue: () -> [CGRect]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+/// Window coordinates have their origin at the bottom left.
+enum MusicWallInputRouting {
+    static func isResizeRegion(_ point: CGPoint, size: CGSize) -> Bool {
+        guard size.width > 0, size.height > 0 else { return false }
+        let edge: CGFloat = 8
+        let corner: CGFloat = 20
+        let nearSide = point.x <= edge || point.x >= size.width - edge
+        let nearHorizontalEdge = point.y <= edge || point.y >= size.height - edge
+        let bottomCorner = point.y <= corner && (point.x <= corner || point.x >= size.width - corner)
+        return nearSide || nearHorizontalEdge || bottomCorner
+    }
+}
+
+struct MusicWallFloatingButtonStyle: ButtonStyle {
+    var isActive = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func makeBody(configuration: Configuration) -> some View {
+        Feedback(configuration: configuration, active: isActive, reduceMotion: reduceMotion)
+    }
+    private struct Feedback: View {
+        let configuration: ButtonStyleConfiguration
+        let active: Bool
+        let reduceMotion: Bool
+        @Environment(\.isEnabled) private var enabled
+        @State private var hovered = false
+        var body: some View {
+            configuration.label
+                .foregroundStyle(active ? Color.mint : Color.white)
+                .brightness(hovered && enabled ? 0.1 : 0)
+                .scaleEffect(reduceMotion || !enabled ? 1 : configuration.isPressed ? 0.91 : hovered ? 1.05 : 1)
+                .opacity(enabled ? 1 : 0.4)
+                .onHover { hovered = $0 }
+                .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.8), value: configuration.isPressed)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: hovered)
         }
-    }
-    final class Region: NSView {
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }

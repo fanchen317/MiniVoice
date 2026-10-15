@@ -22,7 +22,7 @@ struct MusicWallCover: View, @MainActor Equatable {
                     Image(nsImage: image).resizable().scaledToFill()
                         .frame(width: geometry.size.width, height: geometry.size.height).clipped()
                 } else {
-                    Image(systemName: "music.note").font(.system(size: min(geometry.size.width, geometry.size.height) * 0.25))
+                    Image(systemName: "music.note").font(.system(size: min(128, max(18, min(geometry.size.width, geometry.size.height) * 0.25))))
                         .foregroundStyle(.white.opacity(0.15))
                 }
             }
@@ -54,8 +54,8 @@ struct MusicWallPoster: View, @MainActor Equatable {
             LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 5) {
                 Text(title).font(.system(size: min(30, max(18, size.width * 0.105)), weight: .bold)).lineLimit(2)
-                Text(subtitle).font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
-            }.padding(14).padding(.bottom, 3)
+                Text(subtitle).font(.system(size: min(13, max(10, size.width * 0.045)), weight: .medium)).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
+            }.padding(min(14, max(8, size.width * 0.06))).padding(.bottom, 3)
         }
         .overlay(alignment: .topLeading) {
             Text(String(format: "%03d", number)).font(.system(size: 10, weight: .bold, design: .monospaced))

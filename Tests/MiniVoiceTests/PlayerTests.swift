@@ -3,6 +3,60 @@ import XCTest
 
 final class PlayerTests: XCTestCase {
     @MainActor
+    private func waitForAudio(_ library: MusicLibrary) async throws {
+        for _ in 0..<500 {
+            if !library.isPreparingPlayback { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("Audio preparation timed out")
+    }
+    @MainActor
+    func testPendingPlaybackCanBeReplacedPausedAndStopped() async throws {
+        let name = "MiniVoicePendingAudio-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { defaults.removePersistentDomain(forName: name); try? FileManager.default.removeItem(at: root) }
+        for file in ["a.wav", "b.wav"] {
+            _ = try MediaTools.run("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "10", root.appendingPathComponent(file).path])
+        }
+        let library = MusicLibrary(defaults: defaults, scanOnLaunch: false)
+        library.volume = 0
+        library.addFolders([root])
+        defer { library.stop() }
+        for _ in 0..<1000 {
+            if !library.isImporting { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let ids = library.tracks.map(\.id)
+        XCTAssertEqual(ids.count, 2)
+        guard ids.count == 2 else { return }
+        library.play(ids[0], in: ids)
+        XCTAssertTrue(library.isPreparingPlayback)
+        XCTAssertFalse(library.isPlaying)
+        library.skip(1)
+        try await waitForAudio(library)
+        XCTAssertTrue(library.isPlaying)
+        XCTAssertEqual(library.playingID, ids[1])
+        XCTAssertEqual(library.recentPaths, [try XCTUnwrap(library.track(for: ids[1])).url.path])
+
+        library.play(ids[0])
+        library.togglePlayback() // Cancel while the audio is still opening.
+        XCTAssertFalse(library.isPreparingPlayback)
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(library.isPlaying)
+        XCTAssertEqual(library.playingID, ids[0])
+
+        library.play()
+        library.stop()
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(library.isPlaying)
+        XCTAssertNil(library.playingID)
+        XCTAssertFalse(library.isPreparingPlayback)
+        XCTAssertNil(library.errorMessage)
+    }
+
+    @MainActor
     func testAppVolumePersistsIndependently() throws {
         let name = "MiniVoiceVolume-\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
@@ -174,7 +228,7 @@ final class PlayerTests: XCTestCase {
         XCTAssertEqual(library.tracks.count, 2)
         library.playbackMode = .list; library.play()
         for _ in 0..<500 {
-            if !library.isPlaying { break }
+            if !library.isPreparingPlayback && !library.isPlaying && library.selectedID == library.tracks.last?.id { break }
             try await Task.sleep(nanoseconds: 10_000_000)
         }
         XCTAssertNil(library.errorMessage)
@@ -211,6 +265,7 @@ final class PlayerTests: XCTestCase {
         XCTAssertEqual(library.selectedID, first)
         XCTAssertEqual(library.playbackTime, 0)
         library.play()
+        try await waitForAudio(library)
         XCTAssertTrue(library.isPlaying)
         let firstPath = try XCTUnwrap(library.selectedTrack?.url.path)
         let other = try XCTUnwrap(library.tracks.first { $0.id != first }?.id)
@@ -231,6 +286,7 @@ final class PlayerTests: XCTestCase {
         library.play(other)
         XCTAssertEqual(library.playbackTime, 0)
         library.play(first)
+        try await waitForAudio(library)
         XCTAssertEqual(library.recentPaths.first, firstPath)
         library.pause()
         library.play()
@@ -238,12 +294,14 @@ final class PlayerTests: XCTestCase {
         let restored = MusicLibrary(defaults: defaults, scanOnLaunch: false)
         XCTAssertEqual(restored.recentPaths, library.recentPaths)
         library.skip(1)
+        try await waitForAudio(library)
         XCTAssertNotEqual(library.selectedID, first)
         XCTAssertTrue(library.isPlaying)
         library.playbackMode = .single
         library.playbackFinished(successfully: true)
         XCTAssertFalse(library.isPlaying)
         library.play()
+        try await waitForAudio(library)
         XCTAssertTrue(library.isPlaying)
         XCTAssertEqual(library.playbackTime, 0)
         library.pause()

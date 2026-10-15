@@ -36,8 +36,11 @@ struct Track: Identifiable {
     var canWriteTags: Bool { ["mp3", "flac", "m4a"].contains(url.pathExtension.lowercased()) }
 
     private var lyricCache = LyricCache()
+    var lyricsAreLoading: Bool { !resourcesLoaded && lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var lyricLines: [LyricLine] { lyricSnapshot.lines }
-    var lyricSnapshot: LyricsPlaybackSnapshot { lyricCache.snapshot(for: lyrics) }
+    var lyricSnapshot: LyricsPlaybackSnapshot {
+        lyricsAreLoading ? LyricsPlaybackSnapshot(lines: []) : lyricCache.snapshot(for: lyrics)
+    }
 
     init(id: UUID = UUID(), url: URL, title: String, artist: String, album: String,
          lyrics: String, artwork: NSImage?, artworkWasEdited: Bool = false, duration: TimeInterval) {
@@ -114,6 +117,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     /// selectedID while the user browses other songs during playback.
     @Published private(set) var playingID: Track.ID?
     @Published var isPlaying = false
+    @Published private(set) var isPreparingPlayback = false
     let clock = PlaybackClock()
     var playbackTime: TimeInterval {
         get { clock.time }
@@ -183,6 +187,9 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         if scanOnLaunch { rescan(preferCache: true) }
     }
     private var player: AVAudioPlayer?
+    private var audioLoadTask: Task<Void, Never>?
+    private var audioLoadID: UUID?
+    private var audioLoadGeneration = 0
     private var timer: Timer?
     @Published private var detailTracks: [UUID: Track] = [:]
     private var detailTasks: [UUID: Task<Void, Never>] = [:]
@@ -509,48 +516,75 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         persistPlaybackPosition()
     }
 
-    func togglePlayback() { isPlaying ? pause() : play() }
+    func togglePlayback() { (isPlaying || audioLoadID != nil) ? pause() : play() }
 
     func play() {
         guard let track = playingTrack ?? selectedTrack else { return }
         playingID = track.id
         requestDetails(track.id)
-        do {
-            if player?.url != track.url {
-                player?.stop()
-                player = try AVAudioPlayer(contentsOf: track.url)
-                player?.delegate = self
-                player?.prepareToPlay()
-                // AVAudioPlayer's duration is the source of truth for the playable
-                // length - file metadata (AVURLAsset / ffprobe) can be off by a few
-                // seconds on live recordings.  Only ever lengthen the recorded
-                // duration; a smaller value here means metadata still wins, and the
-                // real end will be locked in when audioPlayerDidFinishPlaying fires.
-                if let actual = player?.duration, actual.isFinite, actual > 0,
-                   let index = tracks.firstIndex(where: { $0.id == track.id }),
-                   actual > tracks[index].duration + 0.5 {
-                    tracks[index].duration = actual
-                    detailTracks[track.id]?.duration = actual
+        if player?.url != track.url {
+            guard audioLoadID != track.id else { return }
+            cancelAudioPreparation()
+            player?.stop(); player = nil
+            isPlaying = false; timer?.invalidate()
+            audioLoadID = track.id
+            isPreparingPlayback = true
+            let generation = audioLoadGeneration
+            audioLoadTask = Task { [weak self] in
+                guard !Task.isCancelled else { return }
+                do {
+                    let prepared = try await PreparedAudioPlayer.load(track.url)
+                    guard let self, !Task.isCancelled, self.audioLoadGeneration == generation,
+                          self.playingID == track.id else { return }
+                    self.audioLoadID = nil; self.audioLoadTask = nil
+                    self.isPreparingPlayback = false
+                    self.player = prepared.player
+                    self.player?.delegate = self
+                    // The decoder's duration can exceed source metadata on live recordings.
+                    if let actual = self.player?.duration, actual.isFinite, actual > 0,
+                       let index = self.tracks.firstIndex(where: { $0.id == track.id }),
+                       actual > self.tracks[index].duration + 0.5 {
+                        self.tracks[index].duration = actual
+                        self.detailTracks[track.id]?.duration = actual
+                    }
+                    self.player?.currentTime = self.playbackTime
+                    self.startPreparedPlayback(track)
+                } catch {
+                    guard let self, !Task.isCancelled, self.audioLoadGeneration == generation else { return }
+                    self.audioLoadID = nil; self.audioLoadTask = nil
+                    self.isPreparingPlayback = false
+                    self.errorMessage = "无法播放这首文件：\(error.localizedDescription)"
                 }
-                player?.currentTime = playbackTime
             }
-            if playbackTime >= track.duration { playbackTime = 0; player?.currentTime = 0 }
-            player?.volume = volume
-            isPlaying = player?.play() == true
-            if isPlaying {
-                playingID = track.id
-                recentPaths.removeAll { $0 == track.url.path }
-                recentPaths.insert(track.url.path, at: 0)
-                recentPaths = Array(recentPaths.prefix(200))
-                defaults.set(recentPaths, forKey: "MiniVoice.recentPlayback")
-                persistPlaybackPosition()
-                beginTimer()
-            }
-            else { errorMessage = "无法开始播放这首歌曲。" }
-        } catch { pause(); errorMessage = "无法播放这首文件：\(error.localizedDescription)" }
+            return
+        }
+        startPreparedPlayback(track)
+    }
+
+    private func cancelAudioPreparation() {
+        audioLoadGeneration += 1
+        audioLoadTask?.cancel(); audioLoadTask = nil; audioLoadID = nil
+        isPreparingPlayback = false
+    }
+
+    private func startPreparedPlayback(_ track: Track) {
+        if playbackTime >= track.duration { playbackTime = 0; player?.currentTime = 0 }
+        player?.volume = volume
+        isPlaying = player?.play() == true
+        if isPlaying {
+            playingID = track.id
+            recentPaths.removeAll { $0 == track.url.path }
+            recentPaths.insert(track.url.path, at: 0)
+            recentPaths = Array(recentPaths.prefix(200))
+            defaults.set(recentPaths, forKey: "MiniVoice.recentPlayback")
+            persistPlaybackPosition()
+            beginTimer()
+        }
+        else { errorMessage = "无法开始播放这首歌曲。" }
     }
 
     func pause() {
+        cancelAudioPreparation()
         player?.pause()
         if let player { playbackTime = player.currentTime }
         persistPlaybackPosition()
@@ -562,7 +596,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         defaults.set(track.url.path, forKey: "MiniVoice.lastTrack")
         defaults.set(max(0, playbackTime), forKey: "MiniVoice.lastPlaybackTime")
     }
-    func stop() { if player != nil || playingID != nil { persistPlaybackPosition() }; player?.stop(); player = nil; playingID = nil; isPlaying = false; playbackTime = 0; timer?.invalidate() }
+    func stop() { cancelAudioPreparation(); if player != nil || playingID != nil { persistPlaybackPosition() }; player?.stop(); player = nil; playingID = nil; isPlaying = false; playbackTime = 0; timer?.invalidate() }
     func seek(to time: TimeInterval) {
         let clamped = max(0, min(time, playingTrack?.duration ?? selectedTrack?.duration ?? 0))
         player?.currentTime = clamped; playbackTime = clamped
@@ -573,7 +607,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         if delta < 0 && playbackTime > 3 { seek(to: 0); return }
         let current = playingID ?? selectedID
         guard let next = queue.destination(current: current, ids: playbackIDs, mode: playbackMode, direction: delta) else { return }
-        let resume = isPlaying
+        let resume = isPlaying || audioLoadID != nil
         activate(next)
         if resume { play() }
     }

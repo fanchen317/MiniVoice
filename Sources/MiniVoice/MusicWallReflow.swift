@@ -2,6 +2,19 @@ import Foundation
 
 // MusicWallReflow.swift: monotone space expansion preserves the mosaic's shared edges.
 enum MusicWallReflow {
+    /// Transform the complete tessellation cells, not their inset artwork bounds.
+    /// Subtract the gutter afterwards so expansion never magnifies empty strips.
+    static func mosaicFrame(_ frame: CGRect, focus: CGRect?, size: CGSize, gap: CGFloat = 5) -> CGRect {
+        guard let focus else { return frame }
+        let cell = CGRect(origin: frame.origin,
+                          size: CGSize(width: frame.width + gap, height: frame.height + gap))
+        let focusCell = CGRect(origin: focus.origin,
+                               size: CGSize(width: focus.width + gap, height: focus.height + gap))
+        let mapped = self.frame(cell, focus: focusCell,
+                                size: CGSize(width: size.width + gap, height: size.height + gap))
+        return CGRect(origin: mapped.origin,
+                      size: CGSize(width: mapped.width - gap, height: mapped.height - gap))
+    }
     /// Expand the selected slot in the wall itself. Neighbours share the same mapping,
     /// so no poster covers another and collapsing restores the original coordinates.
     static func frame(_ frame: CGRect, focus: CGRect?, size: CGSize) -> CGRect {

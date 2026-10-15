@@ -302,6 +302,7 @@ struct ContentView: View {
             playbackFlight = nil
         }
         .background(PlayerInitialFocus())
+        .background(MusicWallWindowBackground(isActive: wallStyle))
         .overlay(alignment: .top) {
             ZStack(alignment: .top) {
                 if wallStyle {
@@ -738,25 +739,7 @@ struct ContentView: View {
                 }
                 .frame(width: 28, height: 28)
                 .popover(isPresented: $showingSort, arrowEdge: .top) {
-                    VStack(alignment: .leading, spacing: 2) {
-                    if groups {
-                        sortFieldButton(destination == .artists ? "歌手姓名" : "专辑名称", field: "name")
-                        sortFieldButton("歌曲数量", field: "count")
-                    } else {
-                        sortFieldButton("歌曲名称", field: "title")
-                        if !libraryStyle || destination != .artists || browseGroup == nil {
-                            sortFieldButton("歌手姓名", field: "artist")
-                        }
-                        if !libraryStyle || destination != .albums || browseGroup == nil {
-                            sortFieldButton("专辑名称", field: "album")
-                        }
-                        sortFieldButton("添加时间", field: "sourceAdded")
-                        sortFieldButton("更新时间", field: "added")
-                    }
-                    Divider()
-                    sortDirectionButton("正序", ascending: true)
-                    sortDirectionButton("降序", ascending: false)
-                    }
+                    sortOptions
                     .buttonStyle(SortOptionButtonStyle())
                     .padding(8)
                     .frame(width: 180)
@@ -804,6 +787,28 @@ struct ContentView: View {
         .frame(height: 32)
         .contentShape(Rectangle())
         .accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
+
+    private var sortOptions: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if browsingGroups {
+                sortFieldButton(destination == .artists ? "歌手姓名" : "专辑名称", field: "name")
+                sortFieldButton("歌曲数量", field: "count")
+            } else {
+                sortFieldButton("歌曲名称", field: "title")
+                if !libraryStyle || destination != .artists || browseGroup == nil {
+                    sortFieldButton("歌手姓名", field: "artist")
+                }
+                if !libraryStyle || destination != .albums || browseGroup == nil {
+                    sortFieldButton("专辑名称", field: "album")
+                }
+                sortFieldButton("添加时间", field: "sourceAdded")
+                sortFieldButton("更新时间", field: "added")
+            }
+            Divider()
+            sortDirectionButton("正序", ascending: true)
+            sortDirectionButton("降序", ascending: false)
+        }
     }
 
     private func sortFieldButton(_ title: String, field: String) -> some View {
@@ -967,8 +972,9 @@ private extension ContentView {
         let inset = sidebarVisible && !overlays ? sidebarWidth + 24 : 0
         return ZStack(alignment: .topLeading) {
             MusicWallView(tracks: songs.isEmpty && query.isEmpty && destination == .all ? library.tracks : songs, groups: browsingGroups ? songGroups : [],
-                          isGrouping: browsingGroups, canGoBack: browseGroup != nil, sidebarInset: inset,
+                          isGrouping: browsingGroups, canGoBack: browseGroup != nil, sidebarVisible: $sidebarVisible, toolsLeadingInset: sidebarVisible ? sidebarWidth + 24 : 0, sidebarInset: inset,
                           sidebarBlocksWall: sidebarVisible && overlays, title: wallNavigationTitle,
+                          sortingControls: AnyView(sortOptions.buttonStyle(SortOptionButtonStyle())),
                           query: $query, emptyMessage: emptyListMessage, isPreparing: listPreparationRequest != nil || library.isImporting,
                           onToggleSidebar: {
                               withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.88)) {
@@ -999,8 +1005,6 @@ private extension ContentView {
         .frame(width: size.width, height: size.height)
         .onAppear { wallSidebarOverlays = overlays }
         .onChange(of: overlays) { wallSidebarOverlays = $0 }
-        .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.88), value: inset)
-        .onExitCommand { sidebarVisible = false }
     }
 
     func libraryWorkspace(size: CGSize) -> some View {
