@@ -10,9 +10,7 @@ struct MusicWallView: View {
     let isGrouping: Bool
     let canGoBack: Bool
     let sidebarInset: CGFloat
-    // The layout inset includes a 12pt gap beyond the sidebar's right edge.
-    // Camera focus uses the actual edge so the entire remaining window is centered.
-    private var focusLeadingInset: CGFloat { max(0, sidebarInset - 12) }
+    private var focusLeadingInset: CGFloat { sidebarInset }
     let sidebarBlocksWall: Bool
     let title: String
     @Binding var query: String
@@ -73,22 +71,20 @@ struct MusicWallView: View {
                         let rect = MusicWallReflow.frame(instance.frame, focus: focusedInstance?.frame,
                                                          size: expansionSize(viewport: geometry.size))
                         let displayed = renderedFrame(instance, viewport: geometry.size)
+                            .applying(CGAffineTransform(scaleX: zoom, y: zoom))
+                            .offsetBy(dx: offset.width, dy: offset.height)
                         stagedPoster(instance, displayed: displayed, target: rect, viewport: geometry.size)
                             .position(x: displayed.midX, y: displayed.midY)
+                            .zIndex(focusedInstance?.id == instance.id ? 2 : hoveredID == instance.id ? 1 : 0)
                             .accessibilityHidden(sidebarBlocksWall || !displayed
-                                .applying(CGAffineTransform(scaleX: zoom, y: zoom))
-                                .offsetBy(dx: offset.width, dy: offset.height)
                                 .intersects(CGRect(x: sidebarInset, y: 80, width: max(0, geometry.size.width - sidebarInset), height: max(0, geometry.size.height - 80))))
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
-                .scaleEffect(zoom, anchor: .topLeading)
-                .offset(offset)
-                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
                 .contentShape(Rectangle())
                 .background {
                     MusicWallScrollInput(onPointer: { point in
-                        guard let point, allowsPan(from: point, viewport: geometry.size, controls: false) else {
+                        guard let point, allowsPan(from: point, viewport: geometry.size) else {
                             if hoveredID != nil { hoveredID = nil }; return
                         }
                         let next = hitInstance(at: point, instances: instances, viewport: geometry.size, offset: offset)?.id
@@ -147,7 +143,8 @@ struct MusicWallView: View {
                             }
                         }
                         .frame(width: rect.width, height: rect.height)
-                        .background(MusicWallInputExclusion())
+                        .contentShape(Rectangle())
+                        .contextMenu { posterMenu(instance, track: track, index: index, viewport: geometry.size) }
                         .position(x: rect.midX, y: rect.midY)
                         .allowsHitTesting(!sidebarBlocksWall && !immersive)
                     }
@@ -173,7 +170,7 @@ struct MusicWallView: View {
                                     Button { self.zoom(to: zoom / 1.2, viewport: geometry.size) } label: { Image(systemName: "minus.magnifyingglass") }
                                     Slider(value: Binding(get: { cameraMotion.scale }, set: {
                                         cameraMotion.zoom(to: $0, anchor: zoomAnchor(viewport: geometry.size), animated: false)
-                                    }), in: 0.5...1.2)
+                                    }), in: 0.8...1.2)
                                     Button { self.zoom(to: zoom * 1.2, viewport: geometry.size) } label: { Image(systemName: "plus.magnifyingglass") }
                                 }
                                 Button("\(Int((zoom * 100).rounded()))% · 恢复原始比例") { self.zoom(to: 1, viewport: geometry.size) }
@@ -211,8 +208,14 @@ struct MusicWallView: View {
             .onAppear { rebuild(viewport: geometry.size); toolsRaised = chrome.toolsAboveDock }
             .onChange(of: chrome.toolsAboveDock) { above in toolsRaised = above }
             .onChange(of: geometry.size) { size in rebuild(viewport: size) }
-            .onChange(of: sidebarInset) { _ in
-                if let current = focusedInstance, let track = focusedTrack { focus(current, track: track, viewport: geometry.size) }
+            .onChange(of: sidebarInset) { newInset in
+                guard let current = focusedInstance else { return }
+                // Use the value delivered by onChange. Re-entering focus through
+                // the captured view can use the previous sidebar layout on its first toggle.
+                let target = MusicWallCamera.centeredOffset(frame: current.frame, viewport: geometry.size,
+                    leadingInset: newInset, scale: cameraMotion.scale)
+                if reduceMotion { camera = target }
+                else { cameraMotion.travel(to: target, duration: 0.32) }
             }
             .onChange(of: posters.map(\.id)) { _ in rebuild(viewport: geometry.size) }
             .onChange(of: library.playingID) { _ in
@@ -270,8 +273,19 @@ struct MusicWallView: View {
                     .frame(width: displayed.width, height: displayed.height).clipped()
                 canvasPoster(instance, frame: target, viewport: viewport)
                     .scaleEffect(x: displayed.width / target.width, y: displayed.height / target.height)
+                    .frame(width: displayed.width, height: displayed.height)
             }
             .frame(width: displayed.width, height: displayed.height).clipped()
+            // Stroke the final visible bounds after artwork clipping. A stroke inside
+            // the scaled chrome is cropped whenever its layout bounds differ in reflow.
+            .overlay {
+                Rectangle().strokeBorder(library.playingID == posters[index].id ? Color.mint.opacity(0.85)
+                    : .white.opacity(hoveredID == instance.id ? 0.95 : 0),
+                    lineWidth: library.playingID == posters[index].id ? 3 : 1.5)
+                    .allowsHitTesting(false)
+            }
+            .contentShape(Rectangle())
+            .contextMenu { posterMenu(instance, track: posters[index], index: index, viewport: viewport) }
             .brightness(!isGrouping && library.playingID != nil && library.playingID != posters[index].id ? -0.12 : 0)
             .shadow(color: library.playingID == posters[index].id ? .mint.opacity(0.5) : .clear, radius: 14)
             .scaleEffect(reduceMotion ? 1 : pressingID == instance.id ? 0.96 : hoveredID == instance.id && focusedInstance?.id != instance.id ? 1.025 : 1)
@@ -296,12 +310,8 @@ struct MusicWallView: View {
 
             }
             .frame(width: size.width, height: size.height).clipped()
-            .overlay {
-                Rectangle().strokeBorder(library.playingID == track.id ? Color.mint.opacity(0.85) : .white.opacity(expanded ? 0.8 : hoveredID == instance.id ? 0.95 : 0), lineWidth: library.playingID == track.id ? 3 : 1.5)
-                    .allowsHitTesting(false)
-            }
+
             .brightness(hoveredID == instance.id && !expanded ? 0.12 : 0)
-            .shadow(color: .black.opacity(hoveredID == instance.id ? 0.4 : 0), radius: hoveredID == instance.id ? 8 : 0, y: 4)
             
             .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.78), value: hoveredID == instance.id)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: pressingID == instance.id)
@@ -310,17 +320,20 @@ struct MusicWallView: View {
             .accessibilityLabel("聚焦 \(track.title)，双击播放")
             .accessibilityAction(named: "聚焦") { focus(instance, track: track, viewport: viewport) }
             .accessibilityAction(named: "播放") { focus(instance, track: track, viewport: viewport); startPlayback(track) }
-            .contextMenu {
-                if isGrouping { Button("打开") { onOpenGroup(groups[index].name) } }
-                else {
-                    Button("聚焦") { focus(instance, track: track, viewport: viewport) }
-                    Button("播放") { focus(instance, track: track, viewport: viewport); startPlayback(track) }
-                    Button(isFavorite(track) ? "取消收藏" : "收藏") { onFavorite(track) }
-                    Button("添加到歌单") { onAddToPlaylist(track) }
-                    Button("歌曲信息") { onEdit(track) }
-                }
-            }
+
             .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: expanded)
+        }
+    }
+
+    @ViewBuilder private func posterMenu(_ instance: MusicWallInstance, track: Track, index: Int, viewport: CGSize) -> some View {
+        if isGrouping {
+            Button("打开") { onOpenGroup(groups[index].name) }
+        } else {
+            Button("聚焦") { focus(instance, track: track, viewport: viewport) }
+            Button("播放") { focus(instance, track: track, viewport: viewport); startPlayback(track) }
+            Button(isFavorite(track) ? "取消收藏" : "收藏") { onFavorite(track) }
+            Button("添加到歌单") { onAddToPlaylist(track) }
+            Button("歌曲信息") { onEdit(track) }
         }
     }
 
@@ -419,7 +432,7 @@ struct MusicWallView: View {
         }
         if let nearest { focus(nearest, track: track, viewport: viewport) }
     }
-    private func allowsPan(from point: CGPoint, viewport: CGSize, controls: Bool = true) -> Bool {
+    private func allowsPan(from point: CGPoint, viewport: CGSize) -> Bool {
         guard !immersive else { return false }
         guard !sidebarBlocksWall, point.x >= sidebarInset, point.y > 28 else { return false }
         if point.y < 80 {
@@ -432,14 +445,6 @@ struct MusicWallView: View {
                           y: viewport.height - 82, width: chrome.dockWidth, height: 64)
         let tools = CGRect(x: viewport.width - 112, y: viewport.height - (toolsRaised || chrome.toolsAboveDock ? 104 : 20) - 44, width: 96, height: 44)
         if dock.insetBy(dx: -4, dy: -4).contains(point) || tools.insetBy(dx: -4, dy: -4).contains(point) { return false }
-        if controls, let instance = focusedInstance {
-            // Use the displayed bounds, including in-flight reflow and drag.
-            // Leave the expanded card to native controls, including lyric seeking.
-            let rect = renderedFrame(instance, viewport: viewport)
-                .applying(CGAffineTransform(scaleX: cameraMotion.scale, y: cameraMotion.scale))
-                .offsetBy(dx: camera.width + drag.width, dy: camera.height + drag.height)
-            if rect.contains(point) { return false }
-        }
         return true
     }
     private func startPlayback(_ track: Track) {

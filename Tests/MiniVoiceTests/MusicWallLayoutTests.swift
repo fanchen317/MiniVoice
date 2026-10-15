@@ -65,7 +65,7 @@ final class MusicWallCameraTests: XCTestCase {
         for inset: CGFloat in [0, 312] {
             let offset = MusicWallCamera.centeredOffset(frame: frame, viewport: viewport, leadingInset: inset)
             XCTAssertEqual(frame.midX + offset.width, (viewport.width + inset) / 2, accuracy: 0.001)
-            XCTAssertEqual(frame.midY + offset.height, 374, accuracy: 0.001)
+            XCTAssertEqual(frame.midY + offset.height, viewport.height / 2, accuracy: 0.001)
         }
     }
 
@@ -261,7 +261,7 @@ final class MusicWallStabilityTests: XCTestCase {
     @MainActor func testEveryZoomInputIsClampedToUserRange() {
         let motion = MusicWallCameraMotion()
         motion.zoom(to: 0.1, anchor: .zero, animated: false)
-        XCTAssertEqual(motion.scale, 0.5)
+        XCTAssertEqual(motion.scale, 0.8)
         motion.zoom(to: 3, anchor: .zero, animated: false)
         XCTAssertEqual(motion.scale, 1.2)
     }

@@ -80,6 +80,7 @@ struct MusicWallScrollInput: NSViewRepresentable {
                     self.onPointer?(self.bounds.contains(point) ? point : nil)
                     return event
                 case .scrollWheel:
+                    guard !MusicWallInputExclusion.contains(event) else { return event }
                     guard self.bounds.contains(point) || self.scrollCaptured else { return event }
                     let multiplier: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 16
                     let consumed = self.onScroll?(CGSize(width: event.scrollingDeltaX * multiplier,
@@ -88,6 +89,7 @@ struct MusicWallScrollInput: NSViewRepresentable {
                     if event.momentumPhase == .ended || event.phase == .cancelled { self.scrollCaptured = false }
                     return consumed || self.scrollCaptured ? nil : event
                 case .magnify:
+                    guard !MusicWallInputExclusion.contains(event) else { return event }
                     guard self.bounds.contains(point) else { return event }
                     return self.onMagnify?(event.magnification, point) == true ? nil : event
                 case .leftMouseDown:

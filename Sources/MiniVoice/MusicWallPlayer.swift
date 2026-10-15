@@ -23,22 +23,27 @@ struct MusicWallPlayer: View, @MainActor Equatable {
                 LinearGradient(stops: [.init(color: .clear, location: 0),
                                        .init(color: .black.opacity(0.12), location: 0.6),
                                        .init(color: .black.opacity(0.88), location: 1)], startPoint: .top, endPoint: .bottom)
-                VStack(alignment: .leading, spacing: 12) {
-                    Label(track.id == library.playingID ? (library.isPlaying ? "正在播放" : "已暂停") : "预览",
-                          systemImage: library.isPlaying ? "waveform" : "pause.fill")
-                        .font(.system(size: 11, weight: .bold)).tracking(2).foregroundStyle(.mint)
-                        .padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(.mint.opacity(0.18), in: Capsule())
-                        .overlay { Capsule().strokeBorder(.mint.opacity(0.6), lineWidth: 1) }
-                    Text(track.title).font(.system(size: min(28, geometry.size.width * 0.05), weight: .bold)).lineLimit(2)
-                    Text(track.artist).font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.7))
-                }.padding(22).padding(.top, geometry.size.width < 420 ? 64 : 0)
-                MusicWallLyrics(track: track)
-                    .padding(.horizontal, 28)
-                    .frame(width: geometry.size.width, height: max(100, geometry.size.height * 0.53))
-                    .position(x: geometry.size.width / 2, y: geometry.size.height * 0.52)
-                MusicWallTransport(track: track, onPlay: onPlay, onExpand: onExpand)
-                    .padding(22).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label(track.id == library.playingID ? (library.isPlaying ? "正在播放" : "已暂停") : "预览",
+                              systemImage: library.isPlaying ? "waveform" : "pause.fill")
+                            .font(.system(size: 11, weight: .bold)).tracking(2).foregroundStyle(.mint)
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(.mint.opacity(0.18), in: Capsule())
+                            .overlay { Capsule().strokeBorder(.mint.opacity(0.6), lineWidth: 1) }
+                        Text(track.title).font(.system(size: min(28, geometry.size.width * 0.05), weight: .bold)).lineLimit(2)
+                        Text(track.artist).font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+                    }.fixedSize(horizontal: false, vertical: true)
+                    MusicWallLyrics(track: track)
+                        .padding(.horizontal, 6)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .layoutPriority(-1)
+                        .clipped()
+                    MusicWallTransport(track: track, onPlay: onPlay, onExpand: onExpand)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(22)
+                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
             }
             .foregroundStyle(.white).clipped()
             .overlay { Rectangle().strokeBorder(Color.mint.opacity(0.85), lineWidth: 3).allowsHitTesting(false) }

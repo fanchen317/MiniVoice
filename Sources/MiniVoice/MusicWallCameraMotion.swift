@@ -78,7 +78,7 @@ final class MusicWallCameraMotion: ObservableObject {
 
     /// Preserve the world point under the pointer throughout a zoom, including every animation frame.
     func zoom(to requested: CGFloat, anchor: CGPoint, animated: Bool) {
-        let target = min(1.2, max(0.5, requested))
+        let target = min(1.2, max(0.8, requested))
         guard abs(target - scale) > 0.0001 else { return }
         stop()
         let startScale = scale
