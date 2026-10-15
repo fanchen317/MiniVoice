@@ -62,7 +62,7 @@ private struct MusicWallLyrics: View {
             let snapshot = track.lyricSnapshot
             let time = track.id == library.playingID ? clock.time : 0
             let active = snapshot.activeIndex(at: time) ?? 0
-            let fontSize = min(58, max(24, geometry.size.width * 0.065))
+            let fontSize = min(58, max(18, min(geometry.size.width * 0.065, geometry.size.height / 8.4)))
             if snapshot.lines.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(track.title).font(.system(size: fontSize, weight: .bold))
@@ -70,10 +70,11 @@ private struct MusicWallLyrics: View {
                 }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             } else {
                 let rowHeight = geometry.size.height / 3
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(-1...1, id: \.self) { relative in
-                        let index = active + relative
-                        if snapshot.lines.indices.contains(index) {
+                // Keep each lyric's identity as it moves through the center. Reusing
+                // three relative slots replaced text instantly instead of moving rows.
+                ZStack(alignment: .leading) {
+                    ForEach(max(0, active - 2)...min(snapshot.lines.count - 1, active + 2), id: \.self) { index in
+                            let relative = index - active
                             let line = snapshot.lines[index]
                             Button { if let time = line.timestamp, library.playingID == track.id { library.seek(to: time) } } label: {
                                 VStack(alignment: .leading, spacing: 6) {
@@ -83,10 +84,10 @@ private struct MusicWallLyrics: View {
                                                    time: time, active: relative == 0 && track.id == library.playingID && snapshot.activeIndex(at: time) != nil,
                                                    baseColor: .white, pendingWordOpacity: 0.35, highlightColor: .white,
                                                    isPlaying: track.id == library.playingID && library.isPlaying, sampledAt: clock.sampledAt)
-                                        .font(.system(size: relative == 0 ? fontSize : fontSize * 0.73, weight: .bold))
+                                        .font(.system(size: fontSize, weight: .bold))
                                         .shadow(color: .black.opacity(0.75), radius: 5, y: 2)
-                                        .lineLimit(2).minimumScaleFactor(0.7).multilineTextAlignment(.leading)
-                                    if let translation = line.translation, relative == 0 {
+                                        .lineLimit(2).lineSpacing(4).multilineTextAlignment(.leading)
+                                    if let translation = line.translation {
                                         Text(translation).font(.system(size: fontSize * 0.42)).foregroundStyle(.white.opacity(0.82)).lineLimit(1)
                                     }
                                 }
@@ -95,11 +96,14 @@ private struct MusicWallLyrics: View {
                                 .opacity(relative == 0 ? 1 : 0.58)
                                 .blur(radius: relative == 0 ? 0 : 0.3)
                                 .frame(height: rowHeight)
-                        } else { Color.clear.frame(height: rowHeight) }
+                                .scaleEffect(relative == 0 ? 1 : 0.94, anchor: .leading)
+                                .offset(y: CGFloat(relative) * rowHeight)
+                                .transition(.opacity)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: active)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .clipped()
+                .animation(reduceMotion ? nil : .spring(response: 0.48, dampingFraction: 0.9), value: active)
             }
         }
     }
