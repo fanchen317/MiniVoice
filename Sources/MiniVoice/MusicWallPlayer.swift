@@ -21,7 +21,10 @@ struct MusicWallPlayer: View, @MainActor Equatable {
         GeometryReader { geometry in
             let sizing = MusicWallCardSizing(size: geometry.size)
             ZStack(alignment: .topLeading) {
-                if showsArtwork { MusicWallCover(track: track, prefersThumbnail: false).equatable() }
+                if showsArtwork {
+                    MusicWallCover(track: track, prefersThumbnail: false).equatable()
+                        .ignoresSafeArea(edges: isExpanded ? .all : [])
+                }
                 LinearGradient(stops: [.init(color: .black.opacity(0.86), location: 0),
                                        .init(color: .black.opacity(0.58), location: 0.55),
                                        .init(color: .black.opacity(0.2), location: 1)], startPoint: .leading, endPoint: .trailing)
@@ -56,7 +59,9 @@ struct MusicWallPlayer: View, @MainActor Equatable {
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
             }
             .foregroundStyle(.white).clipped()
-            .overlay { Rectangle().strokeBorder(Color.mint.opacity(0.85), lineWidth: 3).allowsHitTesting(false) }
+            .overlay {
+                if !isExpanded { Rectangle().strokeBorder(Color.mint.opacity(0.85), lineWidth: 3).allowsHitTesting(false) }
+            }
         }
     }
 }
@@ -114,6 +119,7 @@ private struct MusicWallLyrics: View {
                                 }
                                 .frame(maxWidth: .infinity, maxHeight: max(0, rowHeight - 6), alignment: .leading)
                             }.buttonStyle(.plain)
+                                .background(MusicWallInputExclusion(allowsWallDrag: true))
                                 .opacity(relative == 0 ? 1 : 0.58)
                                 .blur(radius: relative == 0 ? 0 : 0.3)
                                 .frame(height: rowHeight)
@@ -217,7 +223,7 @@ struct MusicWallControlStyle: ButtonStyle {
                 .scaleEffect(reduceMotion || !enabled ? 1 : configuration.isPressed ? 0.88 : hovered ? 1.06 : 1)
                 .opacity(enabled ? 1 : 0.4)
                 .contentShape(Rectangle())
-                .background(MusicWallInputExclusion())
+                .background(MusicWallInputExclusion(allowsWallDrag: true))
                 .onHover { hovered = $0 }
                 .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hovered)
@@ -236,7 +242,7 @@ struct MusicWallModeMenu: View {
                 .font(.system(size: max(13, side * 0.5))).foregroundStyle(.white).frame(width: side, height: side)
         }
         .buttonStyle(MusicWallControlStyle())
-        .background(MusicWallInputExclusion())
+        .background(MusicWallInputExclusion(allowsWallDrag: true))
         .popover(isPresented: $showingModes, arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("播放模式").font(.headline).padding(.horizontal, 8).padding(.bottom, 5)

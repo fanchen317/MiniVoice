@@ -35,6 +35,7 @@ struct MusicWallView: View {
     @State private var sidebarBeforeImmersive: Bool?
     @State private var expansionTransitioning = false
     @State private var expansionTask: Task<Void, Never>?
+    @State private var chromeVisible = true
     @State private var cameraBeforeImmersive: CGSize?
     @State private var immersiveSourceID: String?
     @State private var expandedPosterSide: CGFloat = 480
@@ -121,28 +122,29 @@ struct MusicWallView: View {
                         let next = hitInstance(at: point, instances: instances, viewport: geometry.size, offset: liveOffset)?.id
                         if hoveredID != next { hoveredID = next }
                     }, onScroll: { delta, point, precise in
-                        guard allowsPan(from: point, viewport: geometry.size) else { return false }
+                        guard allowsPan(from: point, viewport: geometry.size, includingButtons: true) else { return false }
                         if precise { cameraMotion.pan(by: delta) }
                         else { cameraMotion.wheel(by: delta) }
                         return true
                     }, onMagnify: { amount, point in
-                        guard allowsPan(from: point, viewport: geometry.size) else { return false }
+                        guard allowsPan(from: point, viewport: geometry.size, includingButtons: true) else { return false }
                         cameraMotion.zoom(to: cameraMotion.scale * (1 + amount), anchor: point, animated: false)
                         return true
                     }, onDown: { point, clicks in
                         let repeated = MusicWallClickTarget.isContinuation(clicks: clicks, point: point, previous: lastTapPoint)
                             ? lastTapped : nil
                         guard !immersive, !sidebarBlocksWall, point.x >= sidebarInset,
-                              repeated != nil || allowsPan(from: point, viewport: geometry.size) else { return false }
+                              repeated != nil || allowsPan(from: point, viewport: geometry.size, includingButtons: true) else { return .none }
+                        let buttonDown = repeated == nil && controlRegionStore.draggableRegions.contains { $0.contains(point) }
                         if repeated == nil { cameraMotion.freezeForInteraction() }
                         let liveOffset = CGSize(width: camera.width + drag.width, height: camera.height + drag.height)
                         let hit = repeated ?? hitInstance(at: point, instances: instances, viewport: geometry.size, offset: liveOffset)
                         pressedInstance = hit
                         pressedPoint = point
-                        pressingID = hit?.id
-                        return true
+                        pressingID = buttonDown ? nil : hit?.id
+                        return buttonDown ? .button : .wall
                     }, onDrag: { delta in
-                        if pressingID != nil { cameraMotion.freezeForInteraction() }
+                        if drag == .zero { cameraMotion.freezeForInteraction() }
                         pressingID = nil; drag = delta
                     }, onUp: { point, clicks, dragged, velocity in
                         pressingID = nil
@@ -220,6 +222,7 @@ struct MusicWallView: View {
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 header.padding(.leading, max(12, sidebarInset)).padding(.trailing, 12).padding(.top, 34)
+                    .allowsHitTesting(chromeVisible)
                 HStack(spacing: 8) {
                     wallButton("slider.horizontal.3", "音乐墙设置", isActive: showingTools) { showingTools.toggle() }
                         .popover(isPresented: $showingTools, arrowEdge: .bottom) {
@@ -268,6 +271,10 @@ struct MusicWallView: View {
                 .padding(.trailing, 16).padding(.bottom, chrome.toolsBottom)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.86), value: chrome.toolsAboveDock)
+                .offset(y: chromeVisible ? 0 : 120)
+                .opacity(chromeVisible ? 1 : 0)
+                .allowsHitTesting(chromeVisible)
+                .animation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.88), value: chromeVisible)
                 MusicWallDock(track: library.playingTrack ?? focusedTrack,
                               onPlay: { playFromDock() }, onLocate: {
                     if let track = library.playingTrack ?? focusedTrack { focusTrack(track, viewport: geometry.size) }
@@ -275,6 +282,10 @@ struct MusicWallView: View {
                     .frame(width: chrome.dockWidth)
                     .padding(.bottom, 18).padding(.leading, sidebarInset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .offset(y: chromeVisible ? 0 : 110)
+                    .opacity(chromeVisible ? 1 : 0)
+                    .allowsHitTesting(chromeVisible)
+                    .animation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.88), value: chromeVisible)
 
             }
             .coordinateSpace(name: "musicWallViewport")
@@ -282,6 +293,11 @@ struct MusicWallView: View {
                 let visible = regions.filter { !$0.isEmpty && !$0.isNull && $0.intersects(CGRect(origin: .zero, size: geometry.size)) }
                 controlRegionStore.regions = visible
             }
+            .onPreferenceChange(MusicWallDraggableControlRegions.self) { regions in
+                controlRegionStore.draggableRegions = regions.filter { !$0.isEmpty && !$0.isNull }
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .ignoresSafeArea()
             .clipped().environment(\.colorScheme, .dark)
             .onChange(of: mountKey) { _ in
                 let next = readyScene.visibleInstances(
@@ -340,6 +356,7 @@ struct MusicWallView: View {
         guard immersive != expanded else { return }
         expansionTask?.cancel()
         expansionTransitioning = true
+        if expanded { chromeVisible = false }
         cameraMotion.stop()
         withAnimation(reduceMotion ? nil : .spring(response: 0.48, dampingFraction: 0.9)) {
             if expanded {
@@ -365,19 +382,26 @@ struct MusicWallView: View {
         expansionTask = Task { @MainActor in
             do { try await Task.sleep(for: .milliseconds(reduceMotion ? 1 : 600)) } catch { return }
             expansionTransitioning = false
+            if !immersive { chromeVisible = true }
         }
     }
 
     private var header: some View {
         HStack(spacing: 10) {
+          HStack(spacing: 10) {
             wallButton("sidebar.left", "打开侧边栏", isActive: sidebarVisible, action: onToggleSidebar)
             if title != "音乐库" {
                 Text(title).font(.headline).lineLimit(1).padding(.horizontal, 14).padding(.vertical, 10)
                     .modifier(MusicWallGlass())
             }
             if canGoBack { wallButton("chevron.left", "返回", action: onBack) }
+          }
+          .offset(x: chromeVisible ? 0 : -90).opacity(chromeVisible ? 1 : 0)
+          .animation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.88), value: chromeVisible)
             Spacer(minLength: 0)
             MusicWallSearchField(query: $query)
+                .offset(x: chromeVisible ? 0 : 90).opacity(chromeVisible ? 1 : 0)
+                .animation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.88), value: chromeVisible)
         }
     }
 
@@ -568,9 +592,10 @@ struct MusicWallView: View {
         }
         if let nearest { focus(nearest, track: track, viewport: viewport) }
     }
-    private func allowsPan(from point: CGPoint, viewport: CGSize) -> Bool {
+    private func allowsPan(from point: CGPoint, viewport: CGSize, includingButtons: Bool = false) -> Bool {
         guard !immersive else { return false }
         guard !controlRegionStore.regions.contains(where: { $0.contains(point) }) else { return false }
+        guard includingButtons || !controlRegionStore.draggableRegions.contains(where: { $0.contains(point) }) else { return false }
         guard !sidebarBlocksWall, point.x >= sidebarInset, point.y > 28 else { return false }
         let chrome = MusicWallChromeMetrics(width: viewport.width, leadingInset: sidebarInset)
         let dock = CGRect(x: (viewport.width + sidebarInset - chrome.dockWidth) / 2,

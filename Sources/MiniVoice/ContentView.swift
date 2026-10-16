@@ -547,7 +547,7 @@ struct ContentView: View {
                         backgroundTasks.onExitCommand { showingTasks = false }
                     }
                 }
-                Button(action: { if wallStyle { sidebarVisible = false } else { toggleSidebar() } }) {
+                Button(action: toggleSidebar) {
                     Image(systemName: "xmark")
                         .font(.system(size: 13, weight: .semibold))
                         .frame(width: 24, height: 24)

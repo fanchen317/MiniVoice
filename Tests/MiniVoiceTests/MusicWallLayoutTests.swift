@@ -363,6 +363,15 @@ final class MusicWallLyricsLayoutTests: XCTestCase {
 }
 
 final class MusicWallSingleToolLayoutTests: XCTestCase {
+    func testOverlaySidebarDoesNotReservePhantomSpaceBesideSettings() {
+        for width: CGFloat in [612, 800, 936] {
+            let metrics = MusicWallChromeMetrics(width: width, leadingInset: 0, toolsLeadingInset: 284)
+            XCTAssertFalse(metrics.toolsAboveDock)
+            let dockRight = (width + metrics.dockWidth) / 2
+            XCTAssertGreaterThanOrEqual(width - 16 - 38 - dockRight, 12)
+        }
+        XCTAssertTrue(MusicWallChromeMetrics(width: 580, leadingInset: 0, toolsLeadingInset: 284).toolsAboveDock)
+    }
     func testSettingsMovesOnlyWhenSingleButtonNoLongerFits() {
         XCTAssertTrue(MusicWallChromeMetrics(width: 590, leadingInset: 0).toolsAboveDock)
         XCTAssertFalse(MusicWallChromeMetrics(width: 592, leadingInset: 0).toolsAboveDock)

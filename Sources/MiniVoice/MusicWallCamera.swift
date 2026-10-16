@@ -12,7 +12,10 @@ enum MusicWallClickTarget {
 /// whenever its focused player's translated controls move.
 final class MusicWallControlRegionStore {
     var regions: [CGRect] = []
+    var draggableRegions: [CGRect] = []
 }
+
+enum MusicWallPointerCapture { case none, wall, button }
 
 // MusicWallCamera.swift: stable world coordinates, repeated edges and viewport-only mounting.
 struct MusicWallInstance: Identifiable {
@@ -60,7 +63,7 @@ struct MusicWallScrollInput: NSViewRepresentable {
     let onPointer: (CGPoint?) -> Void
     let onScroll: (CGSize, CGPoint, Bool) -> Bool
     let onMagnify: (CGFloat, CGPoint) -> Bool
-    let onDown: (CGPoint, Int) -> Bool
+    let onDown: (CGPoint, Int) -> MusicWallPointerCapture
     let onDrag: (CGSize) -> Void
     let onUp: (CGPoint, Int, Bool, CGSize) -> Void
     func makeNSView(context: Context) -> ScrollInputView {
@@ -76,7 +79,7 @@ struct MusicWallScrollInput: NSViewRepresentable {
         var onPointer: ((CGPoint?) -> Void)?
         var onScroll: ((CGSize, CGPoint, Bool) -> Bool)?
         var onMagnify: ((CGFloat, CGPoint) -> Bool)?
-        var onDown: ((CGPoint, Int) -> Bool)?
+        var onDown: ((CGPoint, Int) -> MusicWallPointerCapture)?
         var onDrag: ((CGSize) -> Void)?
         var onUp: ((CGPoint, Int, Bool, CGSize) -> Void)?
         private var monitor: Any?
@@ -86,13 +89,19 @@ struct MusicWallScrollInput: NSViewRepresentable {
         private var previousTime: TimeInterval = 0
         private var velocity = CGSize.zero
         private var scrollCaptured = false
+        private var buttonDown = false
         override var isFlipped: Bool { true }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow(); stop()
             guard let window else { return }; window.acceptsMouseMovedEvents = true
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .scrollWheel, .magnify, .leftMouseDown, .leftMouseDragged, .leftMouseUp]) { [weak self] event in
-                guard let self, let window = self.window, event.window === window else { return event }
+                guard let self else { return event }
+                return self.route(event)
+            }
+        }
+        func route(_ event: NSEvent) -> NSEvent? {
+                guard let window = self.window, event.window === window else { return event }
                 let point = self.convert(event.locationInWindow, from: nil)
                 switch event.type {
                 case .mouseMoved:
@@ -117,10 +126,13 @@ struct MusicWallScrollInput: NSViewRepresentable {
                        MusicWallInputRouting.isResizeRegion(event.locationInWindow, size: window.frame.size) {
                         return event
                     }
-                    guard self.bounds.contains(point), self.onDown?(point, event.clickCount) == true else { return event }
+                    guard self.bounds.contains(point) else { return event }
+                    let capture = self.onDown?(point, event.clickCount) ?? .none
+                    guard capture != .none else { return event }
+                    self.buttonDown = capture == .button
                     self.downPoint = point; self.hasDragged = false
                     self.previousPoint = point; self.previousTime = event.timestamp; self.velocity = .zero
-                    return nil
+                    return self.buttonDown ? event : nil
                 case .leftMouseDragged:
                     guard let start = self.downPoint else { return event }
                     let delta = CGSize(width: point.x - start.x, height: point.y - start.y)
@@ -133,16 +145,30 @@ struct MusicWallScrollInput: NSViewRepresentable {
                     }
                     self.previousPoint = point; self.previousTime = event.timestamp
                     if self.hasDragged { self.onDrag?(delta) }
-                    return nil
+                    return self.buttonDown ? event : nil
                 case .leftMouseUp:
                     guard self.downPoint != nil else { return event }
                     self.downPoint = nil
-                    self.onUp?(point, event.clickCount, self.hasDragged, event.timestamp - self.previousTime < 0.1 ? self.velocity : .zero)
+                    let buttonDown = self.buttonDown, dragged = self.hasDragged
+                    self.buttonDown = false
+                    if !buttonDown || dragged {
+                        self.onUp?(point, event.clickCount, dragged, event.timestamp - self.previousTime < 0.1 ? self.velocity : .zero)
+                    }
                     self.hasDragged = false
+                    if buttonDown {
+                        // Release a dragged button outside its hit area so it resets
+                        // its pressed state without also invoking its tap action.
+                        if dragged {
+                            return NSEvent.mouseEvent(with: .leftMouseUp, location: NSPoint(x: -10000, y: -10000),
+                                modifierFlags: event.modifierFlags, timestamp: event.timestamp,
+                                windowNumber: event.windowNumber, context: nil, eventNumber: event.eventNumber,
+                                clickCount: event.clickCount, pressure: 0)
+                        }
+                        return event
+                    }
                     return nil
                 default: return event
                 }
-            }
         }
         func stop() { if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil; downPoint = nil }
     }
@@ -166,12 +192,20 @@ struct MusicWallGlass: ViewModifier {
 /// Measure the rendered SwiftUI bounds, including scale and reflow, in the
 /// same coordinate space as the wall input surface. No native-view registry.
 struct MusicWallInputExclusion: View {
+    var allowsWallDrag = false
     var body: some View {
         GeometryReader { geometry in
-            Color.clear.preference(key: MusicWallControlRegions.self,
-                value: [geometry.frame(in: .named("musicWallViewport"))])
+            let region = geometry.frame(in: .named("musicWallViewport"))
+            Color.clear
+                .preference(key: MusicWallControlRegions.self, value: allowsWallDrag ? [] : [region])
+                .preference(key: MusicWallDraggableControlRegions.self, value: allowsWallDrag ? [region] : [])
         }.allowsHitTesting(false)
     }
+}
+
+struct MusicWallDraggableControlRegions: PreferenceKey {
+    static let defaultValue: [CGRect] = []
+    static func reduce(value: inout [CGRect], nextValue: () -> [CGRect]) { value.append(contentsOf: nextValue()) }
 }
 
 struct MusicWallControlRegions: PreferenceKey {

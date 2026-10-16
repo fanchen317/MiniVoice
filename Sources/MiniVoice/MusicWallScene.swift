@@ -90,9 +90,7 @@ struct MusicWallChromeMetrics {
         let buttonWidth: CGFloat = 38
         let trailingInset: CGFloat = 16
         let gap: CGFloat = 12
-        let toolsAvailable = max(240, width - (toolsLeadingInset ?? leadingInset))
-        let toolsDockWidth = min(460, max(240, toolsAvailable - 40))
-        let sideSpace = min((available - dockWidth) / 2, (toolsAvailable - toolsDockWidth) / 2)
+        let sideSpace = (available - dockWidth) / 2
         toolsAboveDock = sideSpace < buttonWidth + trailingInset + gap
         // The dock is 64pt tall, 18pt above the bottom. Keep the button centered
         // beside it, or leave one consistent gap above its top edge.
