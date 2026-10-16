@@ -23,7 +23,7 @@ final class LyricsSweepTests: XCTestCase {
     func testLineUsesNextTimestampForNormalPhraseInterval() {
         let source = LyricLine(timestamp: 10, text: "让你收下 我最美的年华")
         let display = LyricsDisplayTiming.line(source, nextStart: 17, trackDuration: 200)
-        XCTAssertEqual(display.words.last?.end, 17)
+        XCTAssertEqual(display.words.last!.end!, 16.7, accuracy: 0.000001)
         XCTAssertTrue(source.words.isEmpty)
         XCTAssertEqual(LyricTimingKind.detect([source]), .line)
     }

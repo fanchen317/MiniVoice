@@ -177,7 +177,13 @@ enum LyricsDisplayTiming {
         let bounds = [line.endTime, nextStart, trackDuration].compactMap { $0 }
             .filter { $0.isFinite && $0 > start }
         let nearestEnd = bounds.min()
-        let end = nearestEnd.flatMap { $0 - start <= 12 ? $0 : nil } ?? fallbackEnd
+        var end = nearestEnd.flatMap { $0 - start <= 12 ? $0 : nil } ?? fallbackEnd
+        // Let the fully highlighted line rest before the next line takes over.
+        // Short phrases reserve proportionally less time; existing pauses stay intact.
+        if let nextStart, nextStart.isFinite, nextStart > start {
+            let pause = min(0.3, (nextStart - start) * 0.12)
+            end = min(end, nextStart - pause)
+        }
         let step = (end - start) / Double(characters.count)
         var display = line
         display.words = characters.enumerated().map { index, character in

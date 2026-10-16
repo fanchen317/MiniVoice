@@ -34,6 +34,7 @@ struct MusicWallContent: Equatable {
               lhs.hasSameLayout(as: rhs), lhs.tracks.count == rhs.tracks.count else { return false }
         return zip(lhs.tracks, rhs.tracks).allSatisfy(sameTrack)
             && zip(lhs.posters, rhs.posters).allSatisfy(sameTrack)
+            && zip(lhs.groups, rhs.groups).allSatisfy { $0.tracks.map(\.id) == $1.tracks.map(\.id) }
     }
 
     private static func sameTrack(_ pair: (Track, Track)) -> Bool {

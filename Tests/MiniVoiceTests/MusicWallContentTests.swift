@@ -43,6 +43,16 @@ final class MusicWallContentTests: XCTestCase {
         }
     }
 
+    func testGroupMembershipRefreshesCountWithoutRebuildingLayout() {
+        let first = song("First"), second = song("Second")
+        let previous = MusicWallContent(tracks: [], groups: [(name: "Album", tracks: [first])],
+            isGrouping: true, query: "", isReady: true)
+        let updated = MusicWallContent(tracks: [], groups: [(name: "Album", tracks: [first, second])],
+            isGrouping: true, query: "", isReady: true)
+        XCTAssertNotEqual(previous, updated)
+        XCTAssertEqual(updated.update(from: previous), .metadata)
+    }
+
     private func song(_ title: String) -> Track {
         Track(url: URL(fileURLWithPath: "/tmp/\(title).mp3"), title: title, artist: "Artist", album: "Album",
               lyrics: "", artwork: nil, duration: 120)

@@ -59,8 +59,6 @@ struct MusicWallView: View {
     @State private var contentReady = false
     @State private var lastPlaybackPath: String?
     @State private var viewportLayout: MusicWallViewportLayout?
-    @State private var sceneRevision = 0
-    @State private var mountedInstances: [MusicWallInstance] = []
     @State private var lastTapped: MusicWallInstance?
     @State private var lastTapPoint: CGPoint?
     @State private var pressedPoint: CGPoint?
@@ -93,19 +91,13 @@ struct MusicWallView: View {
             let zoom = cameraMotion.scale
             let sourceViewport = CGSize(width: geometry.size.width / zoom, height: geometry.size.height / zoom)
             let sourceOffset = CGSize(width: offset.width / zoom, height: offset.height / zoom)
-            let mountKey = WallMountKey(x: Int(floor(sourceOffset.width / 192)), y: Int(floor(sourceOffset.height / 192)),
-                viewport: sourceViewport, count: readyScene.count, focus: focusedInstance?.id,
-                settledRevision: cameraMotion.settledRevision)
-            let instances = mountedInstances.isEmpty ? readyScene.visibleInstances(
-                viewport: sourceViewport, offset: sourceOffset, focusedID: focusedInstance?.id) : mountedInstances
+            // Derive visibility from this render's scene and camera together. A deferred
+            // onChange cache can overwrite a rebuilt scene with the previous query's
+            // instances, leaving every mounted poster outside the viewport.
+            let instances = readyScene.visibleInstances(
+                viewport: sourceViewport, offset: sourceOffset, focusedID: focusedInstance?.id)
             ZStack(alignment: .topLeading) {
                 Color(red: 0.09, green: 0.08, blue: 0.08)
-                WallPosterLayer(key: WallPosterLayerKey(ids: instances.map(\.id), songOrder: posters.map(\.id), focus: focusedInstance?.id,
-                    hovered: hoveredID, pressed: pressingID, playing: library.playingID,
-                    revision: library.tracksRevision, sceneRevision: sceneRevision,
-                    settledRevision: cameraMotion.settledRevision, viewport: geometry.size, scale: zoom,
-                    expansion: expansionSize(viewport: geometry.size),
-                    blocked: sidebarBlocksWall, reducedMotion: reduceMotion, grouping: isGrouping)) {
                   MusicWallViewportContent(translation: cameraMotion.translation, reflow: cameraMotion.reflow) { liveOffset, progress in
                    ZStack(alignment: .topLeading) {
                     ForEach(instances) { instance in
@@ -122,8 +114,6 @@ struct MusicWallView: View {
                   }
                   .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
                   }
-                }
-                .equatable()
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
                 .contentShape(Rectangle())
                 .background {
@@ -324,13 +314,6 @@ struct MusicWallView: View {
             .frame(width: geometry.size.width, height: geometry.size.height)
             .ignoresSafeArea()
             .clipped().environment(\.colorScheme, .dark)
-            .onChange(of: mountKey) { _ in
-                let next = readyScene.visibleInstances(
-                    viewport: sourceViewport, offset: sourceOffset, focusedID: focusedInstance?.id)
-                if mountedInstances.map(\.id) != next.map(\.id) {
-                    mountedInstances = next
-                }
-            }
             .onAppear {
                 viewportLayout = MusicWallViewportLayout(size: geometry.size, leadingInset: sidebarInset)
                 lastPlaybackPath = library.playingTrack?.url.path
@@ -594,8 +577,6 @@ struct MusicWallView: View {
         hoveredID = nil
         drag = .zero
         scene = MusicWallScene(count: posters.count, viewport: viewport, density: 1)
-        sceneRevision += 1
-        mountedInstances = []
         if pendingLocateID != nil {
             locatePendingTrack(viewport: viewport)
             if focusedTrack != nil { return }
@@ -657,7 +638,7 @@ struct MusicWallView: View {
             // Include every currently drawn card, even when culling has not caught
             // up with the last camera frame, plus the incoming focus instance.
             var previous = Dictionary(uniqueKeysWithValues: mounted.map { ($0.id, renderedFrame($0, viewport: viewport)) })
-            for visible in mountedInstances + [instance] {
+            for visible in [instance] {
                 previous[visible.id] = renderedFrame(visible, viewport: viewport)
             }
             reflowOriginFrames = previous
@@ -675,16 +656,6 @@ struct MusicWallView: View {
         }
         focusedInstance = instance; focusedTrack = track
         let target = MusicWallCamera.centeredOffset(frame: instance.frame, viewport: viewport, leadingInset: focusLeadingInset, scale: cameraMotion.scale)
-        // Make destination neighbours available before the camera gets there.
-        if let scene {
-            let scale = cameraMotion.scale
-            let destination = scene.visibleInstances(
-                viewport: CGSize(width: viewport.width / scale, height: viewport.height / scale),
-                offset: CGSize(width: target.width / scale, height: target.height / scale), focusedID: instance.id)
-            var reserved = Dictionary(uniqueKeysWithValues: mountedInstances.map { ($0.id, $0) })
-            for card in destination { reserved[card.id] = card }
-            mountedInstances = reserved.values.sorted { $0.id < $1.id }
-        }
         if animated && !reduceMotion { cameraMotion.travel(to: target, duration: 0.48) }
         else {
             var transaction = Transaction()
@@ -843,38 +814,3 @@ private struct MusicWallSearchField: View {
 }
 
 
-// Only the viewport projection observes camera frames. The parent wall and its
-// cached cover/caption inputs still update only at culling or content boundaries.
-private struct WallPosterLayer<Content: View>: View, @MainActor Equatable {
-    let key: WallPosterLayerKey
-    @ViewBuilder let content: () -> Content
-    static func == (lhs: Self, rhs: Self) -> Bool { lhs.key == rhs.key }
-    var body: some View { content() }
-}
-
-private struct WallPosterLayerKey: Equatable {
-    let ids: [String]
-    let songOrder: [UUID]
-    let focus: String?
-    let hovered: String?
-    let pressed: String?
-    let playing: UUID?
-    let revision: Int
-    let sceneRevision: Int
-    let settledRevision: Int
-    let viewport: CGSize
-    let scale: CGFloat
-    let expansion: CGSize
-    let blocked: Bool
-    let reducedMotion: Bool
-    let grouping: Bool
-}
-
-private struct WallMountKey: Equatable {
-    let x: Int
-    let y: Int
-    let viewport: CGSize
-    let count: Int
-    let focus: String?
-    let settledRevision: Int
-}
