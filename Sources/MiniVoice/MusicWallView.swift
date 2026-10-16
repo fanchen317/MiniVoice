@@ -187,10 +187,11 @@ struct MusicWallView: View {
                         Group {
                             if immersive || expansionTransitioning || library.playingID == track.id {
                                 MusicWallPlayer(track: library.playingID == track.id ? (library.playingTrack ?? track) : (focusedTrack ?? track),
-                                    onPlay: { play(track) }, onExpand: { setImmersive(!immersive, viewport: geometry.size) }, showsArtwork: immersive || expansionTransitioning, isExpanded: immersive)
+                                    onPlay: { play(track) }, onExpand: { setImmersive(!immersive, viewport: geometry.size) },
+                                    isFavorite: isFavorite(track), onFavorite: { onFavorite(track) },
+                                    showsArtwork: immersive || expansionTransitioning, isExpanded: immersive)
                             } else {
-                                MusicWallPreview(track: focusedTrack ?? track,
-                                    onPlay: { startPlayback(track) }, onExpand: { setImmersive(true, viewport: geometry.size) })
+                                MusicWallPreview(track: focusedTrack ?? track, onPlay: { startPlayback(track) })
                             }
                         }
                         // Keep one mounted player for both directions. Removing the full

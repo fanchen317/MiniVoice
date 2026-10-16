@@ -12,12 +12,12 @@ final class KineticLyricsTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set("kinetic", forKey: "MiniVoice.musicWallLyricsStyle")
-        let track = Track(url: URL(fileURLWithPath: "/tmp/kinetic-preview.mp3"), title: "7千3百多天", artist: "林俊杰", album: "", lyrics: "[00:00.00]乐行者是我 压力不闪躲\n[00:06.00]亲爱的我话 不多", artwork: nil, duration: 223)
+        let track = Track(url: URL(fileURLWithPath: "/tmp/kinetic-preview.mp3"), title: "7千3百多天", artist: "林俊杰", album: "", lyrics: "[00:00.00]乐行者是我 压力不闪躲\n[00:06.00]亲爱的我话 不多\n[00:12.00]继续向前走", artwork: nil, duration: 223)
         let library = MusicLibrary(defaults: defaults, scanOnLaunch: false)
         library.play(track.id)
         library.playbackTime = 3.3
         for expanded in [true, false] {
-            let content = MusicWallPlayer(track: track, onPlay: {}, onExpand: {}, isExpanded: expanded)
+            let content = MusicWallPlayer(track: track, onPlay: {}, onExpand: {}, isFavorite: false, onFavorite: {}, isExpanded: expanded)
                 .environmentObject(library).environmentObject(library.clock).defaultAppStorage(defaults)
                 .frame(width: expanded ? 570 : 280, height: expanded ? 740 : 370)
                 .background(Color(white: 0.12))

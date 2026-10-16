@@ -4,7 +4,7 @@ import AppKit
 // MusicWallPlayer.swift: readable clock-driven lyrics and controls inside the expanded poster.
 struct MusicWallPlayer: View, @MainActor Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.isExpanded == rhs.isExpanded && lhs.track.id == rhs.track.id && lhs.track.title == rhs.track.title && lhs.track.artist == rhs.track.artist
+        lhs.isExpanded == rhs.isExpanded && lhs.isFavorite == rhs.isFavorite && lhs.track.id == rhs.track.id && lhs.track.title == rhs.track.title && lhs.track.artist == rhs.track.artist
             && lhs.track.lyrics == rhs.track.lyrics && lhs.track.duration == rhs.track.duration
             && lhs.track.artworkKey == rhs.track.artworkKey && lhs.showsArtwork == rhs.showsArtwork
             && lhs.track.resourcesLoaded == rhs.track.resourcesLoaded
@@ -15,6 +15,8 @@ struct MusicWallPlayer: View, @MainActor Equatable {
     let track: Track
     let onPlay: () -> Void
     let onExpand: () -> Void
+    let isFavorite: Bool
+    let onFavorite: () -> Void
     var showsArtwork = true
     var isExpanded = false
     var body: some View {
@@ -51,7 +53,7 @@ struct MusicWallPlayer: View, @MainActor Equatable {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .layoutPriority(-1)
                         .clipped()
-                    MusicWallTransport(track: track, onPlay: onPlay, onExpand: onExpand, isExpanded: isExpanded, lyricsStyle: $lyricsStyle, availableWidth: geometry.size.width - sizing.padding * 2)
+                    MusicWallTransport(track: track, onPlay: onPlay, onExpand: onExpand, isFavorite: isFavorite, onFavorite: onFavorite, isExpanded: isExpanded, lyricsStyle: $lyricsStyle, availableWidth: geometry.size.width - sizing.padding * 2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(sizing.padding)
@@ -147,6 +149,8 @@ private struct MusicWallTransport: View {
     let track: Track
     let onPlay: () -> Void
     let onExpand: () -> Void
+    let isFavorite: Bool
+    let onFavorite: () -> Void
     let isExpanded: Bool
     @Binding var lyricsStyle: MusicWallLyricsStyle
     let availableWidth: CGFloat
@@ -165,19 +169,20 @@ private struct MusicWallTransport: View {
                     timeLabel
                 }
             }
-            Slider(value: Binding(get: { scrub ?? min(max(0, library.playingID == track.id ? clock.time : 0), max(1, track.duration)) }, set: { scrub = $0 }),
-                   in: 0...max(1, track.duration), onEditingChanged: { editing in
+            MusicWallProgressSlider(value: Binding(get: { scrub ?? min(max(0, library.playingID == track.id ? clock.time : 0), max(1, track.duration)) }, set: { scrub = $0 }),
+                   range: 0...max(1, track.duration), onEditingChanged: { editing in
                 if !editing, let scrub { library.seek(to: scrub); self.scrub = nil }
-            }).tint(.white).controlSize(.mini).frame(height: 18).background(MusicWallInputExclusion()).help("播放进度").disabled(library.playingID != track.id)
+            }).frame(height: 18).background(MusicWallInputExclusion()).help("播放进度").disabled(library.playingID != track.id)
         }
         .onChange(of: track.id) { _ in scrub = nil }
     }
     private var transportButtons: some View {
         HStack(spacing: 4) {
-            control((library.isPlaying || library.isPreparingPlayback) && library.playingID == track.id ? "pause.fill" : "play.fill", "播放 / 暂停", action: onPlay)
             control("backward.end", "上一曲") { library.skip(-1) }
-            MusicWallModeMenu(side: buttonSide)
+            control((library.isPlaying || library.isPreparingPlayback) && library.playingID == track.id ? "pause.fill" : "play.fill", "播放 / 暂停", action: onPlay)
             control("forward.end", "下一曲") { library.skip(1) }
+            control(isFavorite ? "heart.fill" : "heart", isFavorite ? "取消收藏" : "收藏歌曲", action: onFavorite)
+            MusicWallModeMenu(side: buttonSide)
             Spacer(minLength: 0)
             if isExpanded {
                 control(lyricsStyle.symbol, "歌词样式：\(lyricsStyle.title)，点击切换为\(lyricsStyle.next.title)") {
@@ -201,6 +206,58 @@ private struct MusicWallTransport: View {
     private func time(_ value: Double) -> String {
         let seconds = Int(max(0, value.isFinite ? value : 0))
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+/// Draw the compact progress rail directly so its fill and thumb follow the
+/// same geometry while the wall player changes size.
+private struct MusicWallProgressSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let onEditingChanged: (Bool) -> Void
+    @Environment(\.isEnabled) private var enabled
+    @State private var dragging = false
+    private let thumbSize: CGFloat = 8
+
+    var body: some View {
+        GeometryReader { geometry in
+            let fraction = PlaybackSliderMetrics.fraction(value: value, range: range)
+            let travel = max(0, geometry.size.width - thumbSize)
+            let center = thumbSize / 2 + travel * fraction
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.35)).frame(height: 2)
+                Capsule().fill(.white).frame(width: center, height: 2)
+                Circle().fill(.white).frame(width: thumbSize, height: thumbSize)
+                    .offset(x: travel * fraction)
+            }
+            .frame(height: geometry.size.height)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { gesture in
+                    guard enabled else { return }
+                    if !dragging { dragging = true; onEditingChanged(true) }
+                    value = PlaybackSliderMetrics.value(position: gesture.location.x,
+                        width: geometry.size.width, thumbSize: thumbSize, range: range)
+                }
+                .onEnded { _ in
+                    guard dragging else { return }
+                    dragging = false
+                    onEditingChanged(false)
+                })
+        }
+        .focusable()
+        .onMoveCommand { direction in
+            guard enabled, direction == .left || direction == .right else { return }
+            onEditingChanged(true)
+            value = min(range.upperBound, max(range.lowerBound,
+                value + (direction == .right ? 1 : -1) * (range.upperBound - range.lowerBound) / 100))
+            onEditingChanged(false)
+        }
+        .accessibilityRepresentation {
+            Slider(value: Binding(get: { value }, set: { value = $0; onEditingChanged(false) }), in: range)
+                .accessibilityLabel("播放进度")
+        }
+        .onDisappear { if dragging { dragging = false; onEditingChanged(false) } }
     }
 }
 

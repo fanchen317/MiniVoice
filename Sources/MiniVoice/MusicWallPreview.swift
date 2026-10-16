@@ -4,7 +4,6 @@ import SwiftUI
 struct MusicWallPreview: View {
     let track: Track
     let onPlay: () -> Void
-    let onExpand: () -> Void
     var body: some View {
         GeometryReader { geometry in
             let sizing = MusicWallCardSizing(size: geometry.size)
@@ -16,9 +15,6 @@ struct MusicWallPreview: View {
                     HStack {
                         Button(action: onPlay) { Image(systemName: "play.fill").font(.system(size: max(13, sizing.title * 0.6))).frame(width: 28, height: 30) }
                             .buttonStyle(MusicWallControlStyle()).help("播放歌曲").accessibilityLabel("播放歌曲")
-                        Spacer()
-                        Button(action: onExpand) { Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: max(13, sizing.title * 0.6))).frame(width: 28, height: 30) }
-                            .buttonStyle(MusicWallControlStyle()).help("展开播放器")
                     }.padding(.top, 12)
                 }.padding(sizing.padding)
             }.foregroundStyle(.white)

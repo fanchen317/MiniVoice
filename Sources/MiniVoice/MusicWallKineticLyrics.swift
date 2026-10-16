@@ -44,7 +44,8 @@ struct MusicWallKineticLyrics: View {
             trackDuration: track.duration)
         let playing = library.playingID == track.id && library.isPlaying
         let waiting = active == nil && snapshot.kind != .plain
-        VStack(alignment: .leading, spacing: 18) {
+        GeometryReader { viewport in
+          VStack(alignment: .leading, spacing: 8) {
             GeometryReader { geometry in
                 if waiting || line.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text("•••")
@@ -64,16 +65,35 @@ struct MusicWallKineticLyrics: View {
                 }
             }
             .id(original.id)
-            .transition(.opacity)
+            .transition(.opacity.combined(with: .offset(y: 12)))
+            .frame(height: max(80, viewport.size.height * 0.58))
             if showTranslation, !waiting, let translation = line.translation {
                 Text(translation).font(.system(size: 16, weight: .medium))
                     .foregroundStyle(.white.opacity(0.7)).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            Spacer(minLength: 4)
+            if !waiting {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(snapshot.lines.dropFirst(index + 1).prefix(2).enumerated()), id: \.element.id) { offset, upcoming in
+                        Text(upcoming.text)
+                            .font(.system(size: min(30, viewport.size.width * 0.052), weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .foregroundStyle(.white.opacity(offset == 0 ? 0.52 : 0.34))
+                            .blur(radius: offset == 0 ? 1.1 : 2.2)
+                            .scaleEffect(offset == 0 ? 0.96 : 0.92, anchor: .leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+          }
+          .padding(.horizontal, 8)
+          .padding(.vertical, 12)
+          .frame(width: viewport.size.width, height: viewport.size.height, alignment: .topLeading)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 24)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: index)
+        .animation(reduceMotion ? nil : .spring(response: 0.48, dampingFraction: 0.82), value: index)
         .id(track.id)
     }
 }
@@ -92,14 +112,15 @@ struct KineticLyricsGlyphs: View {
             Canvas { context, _ in
                 for (index, glyph) in layout.glyphs.enumerated() {
                     let word = characters[index]
-                    let entrance = LyricsSweep.progress(time: displayTime, start: word.start, end: word.start + 0.22)
-                    let progress = LyricsSweep.progress(time: displayTime, start: word.start, end: max(word.start + 0.18, word.end ?? word.start + 0.5))
-                    let pulse = displayTime >= word.start ? sin(progress * .pi) : 0
+                    let entrance = LyricsSweep.progress(time: displayTime, start: word.start, end: word.start + 0.34)
+                    let progress = LyricsSweep.progress(time: displayTime, start: word.start, end: max(word.start + 0.24, word.end ?? word.start + 0.5))
+                    let pulse = displayTime >= word.start ? max(0, sin(progress * .pi)) : 0
+                    let bounce = sin(entrance * .pi) * (1 - entrance) * layout.fontSize * 0.19
                     var ink = context
-                    ink.opacity = displayTime < word.start ? 0 : 0.8 + 0.2 * entrance
-                    ink.translateBy(x: glyph.x, y: glyph.y + (1 - entrance) * layout.fontSize * 0.3)
-                    ink.rotate(by: .degrees(sin(Double(index) * 2.4) * 9 * entrance))
-                    let scale = 0.86 + 0.14 * entrance + 0.22 * pulse
+                    ink.opacity = displayTime < word.start ? 0.26 : 0.82 + 0.18 * entrance
+                    ink.translateBy(x: glyph.x, y: glyph.y + (1 - entrance) * layout.fontSize * 0.12 - bounce - pulse * layout.fontSize * 0.08)
+                    ink.rotate(by: .degrees(sin(Double(index) * 1.7) * 3 * sin(entrance * .pi)))
+                    let scale = 0.94 + 0.06 * entrance + 0.12 * pulse
                     ink.scaleBy(x: scale, y: scale)
                     let color = Color(red: 1 - 0.45 * pulse, green: 1 - 0.12 * pulse, blue: 1)
                     ink.addFilter(.shadow(color: .cyan.opacity(pulse * 0.6), radius: 10 * pulse))
