@@ -1,0 +1,2 @@
+Vendor/LyricsAI/arm64/*.tar.gz filter=lfs diff=lfs merge=lfs -text
+Vendor/LyricsAI/arm64/*.pt filter=lfs diff=lfs merge=lfs -text

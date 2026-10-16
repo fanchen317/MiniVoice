@@ -17,6 +17,7 @@ cd "$ROOT"
 
 ARCH="$(uname -m)"
 VENDORED_FFMPEG="$ROOT/Vendor/FFmpeg/$ARCH"
+VENDORED_AI="$ROOT/Vendor/LyricsAI/$ARCH"
 if [[ "$ARCH" != "arm64" ]]; then
   echo "error: 当前仅提供 arm64 的内置 FFmpeg，缺少 $ARCH 资源" >&2
   exit 1
@@ -30,6 +31,18 @@ for TOOL in ffmpeg ffprobe; do
   ACTUAL="$(shasum -a 256 "$VENDORED_FFMPEG/$TOOL" | awk '{print $1}')"
   if [[ -z "$EXPECTED" || "$ACTUAL" != "$EXPECTED" ]]; then
     echo "error: $TOOL 校验失败，请检查 Vendor/FFmpeg" >&2
+    exit 1
+  fi
+done
+for ASSET in lyrics-worker.tar.gz small.pt; do
+  if [[ ! -s "$VENDORED_AI/$ASSET" ]]; then
+    echo "error: 缺少 $VENDORED_AI/$ASSET；请先安装 Git LFS 并运行 git lfs pull" >&2
+    exit 1
+  fi
+  EXPECTED="$(awk -v name="$ASSET" '$2 == name {print $1}' "$VENDORED_AI/SHA256SUMS")"
+  ACTUAL="$(shasum -a 256 "$VENDORED_AI/$ASSET" | awk '{print $1}')"
+  if [[ -z "$EXPECTED" || "$ACTUAL" != "$EXPECTED" ]]; then
+    echo "error: $ASSET 校验失败，请检查 Git LFS 资源是否完整" >&2
     exit 1
   fi
 done
@@ -84,6 +97,17 @@ for TOOL in ffmpeg ffprobe; do
 done
 cp "$ROOT/Vendor/FFmpeg/README.md" "$APP_PATH/Contents/Resources/FFmpeg-NOTICES.txt"
 cp "$ROOT/Vendor/FFmpeg/COPYING.LGPLv2.1" "$APP_PATH/Contents/Resources/FFmpeg-LGPL-2.1.txt"
+
+echo "==> 集成离线歌词 AI..."
+tar -xzf "$VENDORED_AI/lyrics-worker.tar.gz" -C "$APP_PATH/Contents/Resources"
+mkdir -p "$APP_PATH/Contents/Resources/LyricsModels"
+cp "$VENDORED_AI/small.pt" "$APP_PATH/Contents/Resources/LyricsModels/small.pt"
+cp "$ROOT/Vendor/LyricsAI/README.md" "$APP_PATH/Contents/Resources/LyricsAI-NOTICES.txt"
+ditto "$ROOT/Vendor/LyricsAI/licenses" "$APP_PATH/Contents/Resources/LyricsAI-Licenses"
+if [[ ! -x "$APP_PATH/Contents/Resources/lyrics-worker/lyrics-worker" ]]; then
+  echo "error: 歌词 AI 运行环境不完整" >&2
+  exit 1
+fi
 
 echo "==> 签名..."
 codesign --force --sign - \

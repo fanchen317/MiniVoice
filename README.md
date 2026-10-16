@@ -42,7 +42,7 @@ Scripts/deploy.sh
 
 应用标识为 `com.xcosmos.MiniVoice`。新版首次启动会从 `local.fanchen.MiniVoice`（及更早的 `com.local.minivoice`）迁移设置，包括音乐文件夹、播放状态、快捷键、歌词选项和窗口位置；保留旧配置，已有新配置优先，之后不重复导入。`~/Library/Application Support/MiniVoice/` 下的本地歌词资源和音乐文件夹中的歌单缓存继续沿用。
 
-部署脚本先构建 release、验证签名，再退出旧版并替换 `/Applications/MiniVoice.app`，最后启动。歌词编辑页并行查询网易云（优先取 YRC 逐字歌词）、QQ 音乐、酷狗音乐（优先取 KRC 逐字歌词）、LRCLIB 与偏重中文曲目的 LrcAPI，外文歌还可由 lyrics.ovh 补充纯文本；候选会标明来源、合并重复内容，并保留简体预览与应用选项（仅转换字形，不翻译粤语）。确认应用后再明确保存到本地。arm64 安装包内置仓库中固定版本的 ffmpeg/ffprobe，构建和安装不再依赖 Homebrew FFmpeg；来源、校验值和许可见 `Vendor/FFmpeg/README.md`。大型 AI 模型和 Python 依赖仍按需安装：首次启用需要 Python 3.11/3.12，并按需安装运行环境和模型；已有本地资源不会删除。
+部署脚本先构建 release、验证签名，再退出旧版并替换 `/Applications/MiniVoice.app`，最后启动。歌词编辑页并行查询网易云（优先取 YRC 逐字歌词）、QQ 音乐、酷狗音乐（优先取 KRC 逐字歌词）、LRCLIB 与偏重中文曲目的 LrcAPI，外文歌还可由 lyrics.ovh 补充纯文本；候选会标明来源、合并重复内容，并保留简体预览与应用选项（仅转换字形，不翻译粤语）。确认应用后再明确保存到本地。arm64 安装包内置仓库中固定版本的 ffmpeg/ffprobe、歌词 AI 运行环境和默认 Whisper small 模型；构建与使用 small 模型不需要临时下载资源或安装 Python。来源、校验值和许可见 `Vendor/FFmpeg/README.md` 与 `Vendor/LyricsAI/README.md`。medium 模型仍按需下载；已有本地资源不会删除。
 
 单独构建：`Scripts/build-app.sh [debug|release]`，产物在 `.build/MiniVoice.app`。
 
@@ -75,9 +75,9 @@ Scripts/deploy.sh
 
 ## AI 歌词自动跟随
 
-在“编辑歌曲信息”粘贴纯文本、LRC 或 SRT 后保存。完整时间标签直接使用；缺少时间标签时，后台进程读取当前歌曲音频，使用 [stable-ts](https://github.com/jianfch/stable-ts) + Whisper small 在本机生成逐行时间轴。首次使用自动建立独立 Python 环境并下载依赖和约 461 MiB 模型；依赖安装不保留 pip 下载缓存，之后可离线使用，无需 API Key，歌曲和歌词不上传。结果按编辑器选择保存到文件标签、`lrc/` 或两者，并更新歌单缓存。拖动进度和桌面歌词复用同一时间轴。
+在“编辑歌曲信息”粘贴纯文本、LRC 或 SRT 后保存。完整时间标签直接使用；缺少时间标签时，后台进程读取当前歌曲音频，使用 [stable-ts](https://github.com/jianfch/stable-ts) + Whisper small 在本机生成逐行时间轴。arm64 安装包已内置约 338 MiB 的离线运行环境与约 461 MiB 的原版 small 模型，首次使用无需额外下载；之后也可离线使用，无需 API Key，歌曲和歌词不上传。medium 模型约 1.5 GiB，可在设置中按需下载。结果按编辑器选择保存到文件标签、`lrc/` 或两者，并更新歌单缓存。拖动进度和桌面歌词复用同一时间轴。
 
-- AI 文件位于 `~/Library/Application Support/MiniVoice/LyricsAI/`；使用 Homebrew Python 3.11/3.12 或本机 Xcode Python 3.9，以及现有 FFmpeg。
+- 内置 small 模型和运行环境位于 `.app/Contents/Resources/`。按需下载的 medium 模型及旧版 AI 资源仍位于 `~/Library/Application Support/MiniVoice/LyricsAI/`；直接运行 `swift run` 时仍使用本机 Python 环境。
 - 歌名、常见作词/作曲等信息和段落标记保存在 LRC 的 `[note:...]` 元数据中，不参与演唱对齐。歌词正文保留输入顺序和重复段落；已有手动时间点保留，时间冲突时会提示。
 - 处理时编辑窗口保持打开，取消后保留输入。只有对齐成功后才写文件；失败可选“仅保存原歌词”。仅保存的纯文本不会自动滚动，可再次打开编辑器保存重试。
 - 应输入完整、与当前音频版本一致的歌词。复杂伴奏、现场版、漏句或副歌省略可能导致失败或偏移；可手动打点校正。本地 AI 匹配生成逐行时间轴；已有有效逐字时间片段会保留。
@@ -123,4 +123,4 @@ Scripts/deploy.sh
 
 ### 可再生构建文件
 
-`.build/` 内的编译缓存、预览程序、日志和 DMG 均不属于源码。清理会释放空间，但编译缓存删除后下次构建需要重新编译；`offline-ai` 中的本地 AI 资源删除后可能需要重新下载。`Docs` 中的采样文件是性能报告的依据，建议保留。
+`.build/` 内的编译缓存、预览程序、日志和 DMG 均不属于源码。清理会释放空间，但编译缓存删除后下次构建需要重新编译；内置 AI 资源的原件由 `Vendor/LyricsAI/` 中的 Git LFS 文件保存，重新检出时需要 Git LFS。`Docs` 中的采样文件是性能报告的依据，建议保留。

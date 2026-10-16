@@ -134,6 +134,10 @@ def main():
 
 
 if __name__ == "__main__":
+    # PyInstaller's frozen worker can be started by multiprocessing's resource
+    # tracker. Handle those arguments before treating them as alignment inputs.
+    import multiprocessing
+    multiprocessing.freeze_support()
     if sys.argv[1] == "--self-test":
         import stable_whisper
         import torch
