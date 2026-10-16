@@ -156,6 +156,9 @@ struct ContentView: View {
             if !Task.isCancelled {
                 songs = matches
                 selectedIDs.formIntersection(Set(matches.map(\.id)))
+                if let locateTarget, matches.contains(where: { $0.id == locateTarget }) {
+                    locateRequest = UUID()
+                }
             }
             return
         }
@@ -199,6 +202,9 @@ struct ContentView: View {
             if locateGroupTarget?.destination == destination { locateRequest = UUID() }
         }
         selectedIDs.formIntersection(Set(songs.map(\.id)))
+        if let locateTarget, songs.contains(where: { $0.id == locateTarget }) {
+            locateRequest = UUID()
+        }
     }
 
     private func migrateSortPreferenceIfNeeded() {
@@ -946,6 +952,23 @@ private extension ContentView {
         browseGroup = nil; albumPlayback = false
         restoreBrowsePage()
         selectedIDs.removeAll(); multiSelecting = false
+        // Center the playing row when switching between the song collections.
+        // The list may still be loading; its song-ID change handler completes the scroll.
+        if let id = library.playingID, let track = library.track(for: id) {
+            switch target {
+            case .all:
+                locateTarget = id
+            case .recent:
+                locateTarget = library.recentPaths.contains(track.url.path) ? id : nil
+            case .favorites:
+                locateTarget = collections.isFavorite(track.url.path) ? id : nil
+            default:
+                locateTarget = nil
+            }
+        } else {
+            locateTarget = nil
+        }
+        if locateTarget != nil { locateRequest = UUID() }
     }
 
     func savePlaylistName() {
@@ -967,12 +990,14 @@ private extension ContentView {
     }
 
     func musicWallWorkspace(size: CGSize) -> some View {
-        let sidebarWidth = min(260, max(230, size.width * 0.25))
-        let overlays = size.width < sidebarWidth + 640 + 48
-        let inset = sidebarVisible && !overlays ? sidebarWidth + 24 : 0
+        let layout = MusicWallWorkspaceMetrics(width: size.width, sidebarVisible: sidebarVisible)
+        let sidebarWidth = layout.sidebarWidth
+        let overlays = layout.overlaysSidebar
+        let inset = layout.leadingInset
         return ZStack(alignment: .topLeading) {
             MusicWallView(tracks: songs.isEmpty && query.isEmpty && destination == .all ? library.tracks : songs, groups: browsingGroups ? songGroups : [],
-                          isGrouping: browsingGroups, canGoBack: browseGroup != nil, sidebarVisible: $sidebarVisible, toolsLeadingInset: sidebarVisible ? sidebarWidth + 24 : 0, sidebarInset: inset,
+                          isGrouping: browsingGroups, autoFocusPlaying: !browsingGroups,
+                          canGoBack: browseGroup != nil, sidebarVisible: $sidebarVisible, toolsLeadingInset: sidebarVisible ? sidebarWidth + 24 : 0, sidebarInset: inset,
                           sidebarBlocksWall: sidebarVisible && overlays, title: wallNavigationTitle,
                           sortingControls: AnyView(sortOptions.buttonStyle(SortOptionButtonStyle())),
                           query: $query, emptyMessage: emptyListMessage, isPreparing: listPreparationRequest != nil || library.isImporting,
@@ -985,6 +1010,7 @@ private extension ContentView {
                           isFavorite: { collections.isFavorite($0.url.path) },
                           onFavorite: { collections.toggleFavorite($0.url.path) },
                           onAddToPlaylist: { track in playlistAddTracks = [track]; showingPlaylistPicker = true })
+                .id(LibraryListLocation(destination: destination, group: browseGroup))
             if sidebarVisible {
                 if overlays {
                     Color.black.opacity(0.18)

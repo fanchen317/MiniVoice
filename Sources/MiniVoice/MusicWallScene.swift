@@ -80,6 +80,43 @@ struct MusicWallScene {
     }
 }
 
+struct MusicWallWorkspaceMetrics {
+    let sidebarWidth: CGFloat
+    let overlaysSidebar: Bool
+    let leadingInset: CGFloat
+
+    init(width: CGFloat, sidebarVisible: Bool) {
+        sidebarWidth = min(260, max(230, width * 0.25))
+        let minimumContentWidth: CGFloat = 540
+        overlaysSidebar = width < sidebarWidth + minimumContentWidth + 48
+        // Release the reserved space continuously as the window narrows. Changing
+        // the sidebar's presentation must not move the wall and dock by half a sidebar.
+        leadingInset = sidebarVisible
+            ? min(sidebarWidth + 24, max(0, width - minimumContentWidth - 24)) : 0
+    }
+}
+
+struct MusicWallViewportLayout: Equatable {
+    let size: CGSize
+    let leadingInset: CGFloat
+    var center: CGPoint { CGPoint(x: (size.width + leadingInset) / 2, y: size.height / 2) }
+    func displacement(from previous: Self) -> CGSize {
+        CGSize(width: center.x - previous.center.x, height: center.y - previous.center.y)
+    }
+}
+
+struct MusicWallDockMetrics {
+    let detailProgress: CGFloat
+    var spacing: CGFloat { 8 + 4 * detailProgress }
+    var horizontalPadding: CGFloat { 12 + 4 * detailProgress }
+    var playButtonSide: CGFloat { 40 + 6 * detailProgress }
+    var playButtonFont: CGFloat { 18 + 3 * detailProgress }
+    init(width: CGFloat) {
+        let progress = min(1, max(0, (width - 340) / 100))
+        detailProgress = progress * progress * (3 - 2 * progress)
+    }
+}
+
 struct MusicWallChromeMetrics {
     let dockWidth: CGFloat
     let toolsAboveDock: Bool

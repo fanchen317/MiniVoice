@@ -61,9 +61,6 @@ struct MusicWallPlayer: View, @MainActor Equatable {
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
             }
             .foregroundStyle(.white).clipped()
-            .overlay {
-                if !isExpanded { Rectangle().strokeBorder(Color.mint.opacity(0.85), lineWidth: 3).allowsHitTesting(false) }
-            }
         }
     }
 }
@@ -277,13 +274,14 @@ struct MusicWallControlStyle: ButtonStyle {
                 .background(.white.opacity(!enabled ? 0 : configuration.isPressed ? 0.25 : hovered ? 0.13 : 0),
                             in: RoundedRectangle(cornerRadius: 10))
                 .foregroundStyle(configuration.isPressed ? Color.mint : Color.white)
-                .scaleEffect(reduceMotion || !enabled ? 1 : configuration.isPressed ? 0.88 : hovered ? 1.06 : 1)
+                .scaleEffect(reduceMotion || !enabled ? 1 : configuration.isPressed ? 0.86 : hovered ? 1.2 : 1)
+                .offset(y: reduceMotion || !enabled || configuration.isPressed ? 0 : hovered ? -2 : 0)
                 .opacity(enabled ? 1 : 0.4)
                 .contentShape(Rectangle())
                 .background(MusicWallInputExclusion(allowsWallDrag: true))
                 .onHover { hovered = $0 }
                 .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hovered)
+                .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.62), value: hovered)
         }
     }
 }

@@ -8,6 +8,7 @@ struct MusicWallView: View {
     let tracks: [Track]
     let groups: [(name: String, tracks: [Track])]
     let isGrouping: Bool
+    let autoFocusPlaying: Bool
     let canGoBack: Bool
     @Binding var sidebarVisible: Bool
     let toolsLeadingInset: CGFloat
@@ -31,6 +32,7 @@ struct MusicWallView: View {
     @State private var reloadTask: Task<Void, Never>?
     @State private var focusedInstance: MusicWallInstance?
     @State private var focusedTrack: Track?
+    @State private var pendingLocateID: UUID?
     @State private var immersive = false
     @State private var sidebarBeforeImmersive: Bool?
     @State private var expansionTransitioning = false
@@ -47,6 +49,7 @@ struct MusicWallView: View {
         nonmutating set { cameraMotion.dragOffset = newValue }
     }
     @State private var scene: MusicWallScene?
+    @State private var viewportLayout: MusicWallViewportLayout?
     @State private var sceneRevision = 0
     @State private var mountedInstances: [MusicWallInstance] = []
     @State private var lastTapped: MusicWallInstance?
@@ -203,6 +206,15 @@ struct MusicWallView: View {
                                      y: immersive ? 1 : rect.height / playerSize.height)
                         .frame(width: immersive ? geometry.size.width : rect.width,
                                height: immersive ? geometry.size.height : rect.height)
+                        // Draw the selection outline in the final player bounds only.
+                        // During expansion the poster and player follow different geometry;
+                        // revealing either outline early leaves a detached rectangle behind.
+                        .overlay {
+                            Rectangle().strokeBorder(Color.mint.opacity(0.85), lineWidth: 3)
+                                .opacity(library.playingID == track.id && !immersive && !expansionTransitioning ? 1 : 0)
+                                .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: expansionTransitioning)
+                                .allowsHitTesting(false)
+                        }
                         .contentShape(Rectangle())
                         .contextMenu { posterMenu(instance, track: track, index: index, viewport: geometry.size) }
                         .position(x: immersive ? geometry.size.width / 2 : rect.midX,
@@ -278,7 +290,11 @@ struct MusicWallView: View {
                 .animation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.88), value: chromeVisible)
                 MusicWallDock(track: library.playingTrack ?? focusedTrack,
                               onPlay: { playFromDock() }, onLocate: {
-                    if let track = library.playingTrack ?? focusedTrack { focusTrack(track, viewport: geometry.size) }
+                    if let track = library.playingTrack ?? focusedTrack {
+                        pendingLocateID = track.id
+                        if !query.isEmpty { query = "" }
+                        else { locatePendingTrack(viewport: geometry.size) }
+                    }
                 })
                     .frame(width: chrome.dockWidth)
                     .padding(.bottom, 18).padding(.leading, sidebarInset)
@@ -307,16 +323,24 @@ struct MusicWallView: View {
                     mountedInstances = next
                 }
             }
-            .onAppear { reloadOpacity = 1; rebuild(viewport: geometry.size) }
-            .onChange(of: geometry.size) { size in rebuild(viewport: size) }
-            .onChange(of: sidebarInset) { newInset in
-                guard !immersive, !expansionTransitioning, let current = focusedInstance else { return }
-                // Use the value delivered by onChange. Re-entering focus through
-                // the captured view can use the previous sidebar layout on its first toggle.
-                let target = MusicWallCamera.centeredOffset(frame: current.frame, viewport: geometry.size,
-                    leadingInset: newInset, scale: cameraMotion.scale)
-                if reduceMotion { camera = target }
-                else { cameraMotion.travel(to: target, duration: 0.32) }
+            .onAppear {
+                viewportLayout = MusicWallViewportLayout(size: geometry.size, leadingInset: sidebarInset)
+                reloadOpacity = 1
+                rebuild(viewport: geometry.size)
+            }
+            .onChange(of: MusicWallViewportLayout(size: geometry.size, leadingInset: sidebarInset)) { layout in
+                let previous = viewportLayout
+                viewportLayout = layout
+                guard let previous, !immersive, !expansionTransitioning, focusedInstance != nil else { return }
+                let delta = layout.displacement(from: previous)
+                if previous.size != layout.size || reduceMotion {
+                    cameraMotion.shiftViewport(by: delta)
+                } else {
+                    // A deliberate sidebar toggle still gets a short transition;
+                    // live window resizing follows the pointer without an easing tail.
+                    cameraMotion.travel(to: CGSize(width: camera.width + delta.width,
+                                                   height: camera.height + delta.height), duration: 0.28)
+                }
             }
             .onChange(of: posters.map(\.id)) { _ in
                 reloadTask?.cancel()
@@ -326,6 +350,10 @@ struct MusicWallView: View {
                     do { try await Task.sleep(for: .milliseconds(120)) } catch { return }
                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) { reloadOpacity = 1 }
                 }
+            }
+            .onChange(of: query) { value in
+                if value.isEmpty { locatePendingTrack(viewport: geometry.size) }
+                else { pendingLocateID = nil }
             }
             .onChange(of: library.playingID) { _ in
                 if let track = library.playingTrack, focusedTrack?.id != track.id {
@@ -369,8 +397,7 @@ struct MusicWallView: View {
                 sidebarVisible = previous
                 sidebarBeforeImmersive = nil
                 if let previousCamera = cameraBeforeImmersive {
-                    let sideWidth = min(260, max(230, viewport.width * 0.25))
-                    let restoredInset: CGFloat = previous && viewport.width >= sideWidth + 640 + 48 ? sideWidth + 24 : 0
+                    let restoredInset = MusicWallWorkspaceMetrics(width: viewport.width, sidebarVisible: previous).leadingInset
                     cameraMotion.jump(to: MusicWallCamera.restoredPlayerOffset(original: previousCamera,
                         sourceID: immersiveSourceID, targetID: focusedInstance?.id, targetFrame: focusedInstance?.frame,
                         viewport: viewport, leadingInset: restoredInset, scale: cameraMotion.scale))
@@ -426,6 +453,7 @@ struct MusicWallView: View {
                 Rectangle().strokeBorder(library.playingID == posters[index].id ? Color.mint.opacity(0.85)
                     : .white.opacity(hoveredID == instance.id ? 0.95 : 0),
                     lineWidth: library.playingID == posters[index].id ? 3 : 1.5)
+                    .opacity(focusedInstance?.id == instance.id ? 0 : 1)
                     .allowsHitTesting(false)
             }
             .contentShape(Rectangle())
@@ -510,15 +538,45 @@ struct MusicWallView: View {
     }
 
     private func rebuild(viewport: CGSize) {
+        let previousTrack = focusedTrack
+        // Search results reuse tile indices for different songs. None of the old
+        // instances or intermediate reflow frames belong to the new scene.
+        cameraMotion.freezeForInteraction()
+        cameraMotion.beginReflow(animated: false)
+        focusedTrack = nil
+        focusedInstance = nil
+        reflowOriginFrames = [:]
+        reflowPreviousFocus = nil
+        lastTapped = nil
+        lastTapPoint = nil
+        pressedInstance = nil
+        pressedPoint = nil
+        pressingID = nil
+        hoveredID = nil
+        drag = .zero
         scene = MusicWallScene(count: posters.count, viewport: viewport, density: 1)
         sceneRevision += 1
         mountedInstances = []
-        if let id = focusedTrack?.id, posters.contains(where: { $0.id == id }), let track = focusedTrack {
+        if pendingLocateID != nil {
+            locatePendingTrack(viewport: viewport)
+        } else if let track = previousTrack, posters.contains(where: { $0.id == track.id }) {
+            focusTrack(track, viewport: viewport)
+        } else if autoFocusPlaying, let track = library.playingTrack,
+                  posters.contains(where: { $0.id == track.id }) {
+            focusedTrack = nil
+            focusedInstance = nil
             focusTrack(track, viewport: viewport)
         } else {
             focusedTrack = nil; focusedInstance = nil
             camera = CGSize(width: sidebarInset + 12, height: 80)
         }
+    }
+
+    private func locatePendingTrack(viewport: CGSize) {
+        guard let id = pendingLocateID, !isGrouping, query.isEmpty,
+              let track = posters.first(where: { $0.id == id }), scene?.count == posters.count else { return }
+        focusTrack(track, viewport: viewport)
+        pendingLocateID = nil
     }
 
     private func focus(_ instance: MusicWallInstance, track: Track, viewport: CGSize) {
@@ -631,6 +689,7 @@ private struct MusicWallSearchField: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovered = false
     @State private var expanded = false
+    @State private var symbolBounce = 0
     @State private var revealTask: Task<Void, Never>?
     @FocusState private var focused: Bool
 
@@ -638,11 +697,12 @@ private struct MusicWallSearchField: View {
         HStack(spacing: 0) {
             Button {
                 revealTask?.cancel()
+                if !reduceMotion { symbolBounce += 1 }
                 expanded = true
                 focused = true
             } label: {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 22)).frame(width: 38, height: 38)
+                searchSymbol
+                    .font(.system(size: 22, weight: .medium)).frame(width: 38, height: 38)
             }
             .buttonStyle(MusicWallFloatingButtonStyle(isActive: hovered))
             .accessibilityLabel("搜索音乐")
@@ -664,6 +724,7 @@ private struct MusicWallSearchField: View {
             hovered = inside
             revealTask?.cancel()
             if inside {
+                if !reduceMotion { symbolBounce += 1 }
                 revealTask = Task { @MainActor in
                     do { try await Task.sleep(for: .milliseconds(reduceMotion ? 1 : 140)) } catch { return }
                     expanded = true
@@ -674,7 +735,18 @@ private struct MusicWallSearchField: View {
             }
         }
         .onDisappear { revealTask?.cancel() }
-        .animation(reduceMotion ? nil : .spring(response: 0.26, dampingFraction: 0.94), value: expanded)
+        .animation(reduceMotion ? nil : .spring(response: 0.36, dampingFraction: 0.76), value: expanded)
+    }
+
+    @ViewBuilder private var searchSymbol: some View {
+        if #available(macOS 14.0, *), !reduceMotion {
+            Image(systemName: "magnifyingglass")
+                .symbolEffect(.bounce, options: .speed(1.2), value: symbolBounce)
+        } else {
+            Image(systemName: "magnifyingglass")
+                .rotationEffect(.degrees(!reduceMotion && hovered ? -10 : 0))
+                .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.55), value: hovered)
+        }
     }
 }
 

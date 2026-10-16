@@ -14,13 +14,14 @@ struct MusicWallDock: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let compact = geometry.size.width < 420
-            HStack(spacing: compact ? 8 : 12) {
+            let layout = MusicWallDockMetrics(width: geometry.size.width)
+            let details = layout.detailProgress
+            HStack(spacing: 0) {
                 Button(action: onPlay) {
                     Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: compact ? 18 : 21, weight: .bold))
+                        .font(.system(size: layout.playButtonFont, weight: .bold))
                         .foregroundStyle(.black.opacity(0.9))
-                        .frame(width: compact ? 40 : 46, height: compact ? 40 : 46)
+                        .frame(width: layout.playButtonSide, height: layout.playButtonSide)
                         .background(.white.opacity(0.94), in: Circle())
                 }.buttonStyle(MusicWallFloatingButtonStyle()).disabled(track == nil).help("播放 / 暂停").accessibilityLabel("播放 / 暂停")
                 VStack(spacing: 4) {
@@ -34,8 +35,9 @@ struct MusicWallDock: View {
                         Button { library.skip(1) } label: { Image(systemName: "chevron.right").frame(width: 22, height: 20) }
                             .buttonStyle(MusicWallControlStyle()).help("下一曲").disabled(library.playingTrack == nil)
                     }
-                    HStack(spacing: 8) {
-                        if !compact { Text(time(scrub ?? currentTime)).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
+                    HStack(spacing: 0) {
+                        timeLabel(scrub ?? currentTime, progress: details)
+                            .padding(.trailing, 8 * details)
                         PlaybackGlassSlider(value: Binding(get: {
                             scrub ?? min(max(0, currentTime), max(1, track?.duration ?? 1))
                         }, set: { scrub = $0 }), range: 0...max(1, track?.duration ?? 1),
@@ -43,11 +45,13 @@ struct MusicWallDock: View {
                             if !editing, let scrub { library.seek(to: scrub); self.scrub = nil }
                         })
                         .disabled(track == nil || library.playingID != track?.id)
-                        if !compact { Text(time(track?.duration ?? 0)).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
+                        timeLabel(track?.duration ?? 0, progress: details)
+                            .padding(.leading, 8 * details)
                     }.frame(height: 18)
                 }
+                .padding(.leading, layout.spacing)
                 MusicWallModeMenu()
-                if !compact {
+                    .padding(.leading, layout.spacing)
                     Button { showingQueue.toggle() } label: { Image(systemName: "list.bullet").font(.system(size: 20)).frame(width: 25) }
                         .buttonStyle(MusicWallControlStyle()).help("播放队列")
                         .popover(isPresented: $showingQueue) {
@@ -83,15 +87,29 @@ struct MusicWallDock: View {
                                 .background(Color(red: 0.12, green: 0.14, blue: 0.14))
                                 .environment(\.colorScheme, .dark).foregroundStyle(.white)
                         }
-                }
+                        .frame(width: 31)
+                        .frame(width: 31 * details, alignment: .trailing)
+                        .clipped()
+                        .opacity(details)
+                        .padding(.leading, layout.spacing * details)
+                        .allowsHitTesting(details > 0.8)
+                        .accessibilityHidden(details < 0.5)
             }
-            .padding(.horizontal, compact ? 12 : 16).padding(.vertical, 8)
+            .padding(.horizontal, layout.horizontalPadding).padding(.vertical, 8)
             .frame(width: geometry.size.width, height: geometry.size.height)
             .modifier(MusicWallGlass(radius: 45))
         }
         .frame(height: 64)
         .foregroundStyle(.white)
         .onChange(of: track?.id) { _ in scrub = nil }
+    }
+    private func timeLabel(_ value: Double, progress: CGFloat) -> some View {
+        Text(time(value)).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+            .fixedSize()
+            .frame(width: 30 * progress)
+            .clipped()
+            .opacity(progress)
+            .accessibilityHidden(progress < 0.5)
     }
     private func time(_ value: Double) -> String {
         let seconds = Int(max(0, value.isFinite ? value : 0))

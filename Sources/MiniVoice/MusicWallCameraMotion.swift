@@ -65,6 +65,7 @@ final class MusicWallCameraMotion: ObservableObject {
     @Published private(set) var settledRevision = 0
     private var reflowTask: Task<Void, Never>?
     private var travelTask: Task<Void, Never>?
+    private var travelShift = CGSize.zero
     private var panTask: Task<Void, Never>?
     private var pendingPan = CGSize.zero
     private var wheelTask: Task<Void, Never>?
@@ -77,6 +78,7 @@ final class MusicWallCameraMotion: ObservableObject {
     func stop() {
         wheelTask?.cancel(); wheelTask = nil; pendingWheel = .zero
         travelTask?.cancel(); travelTask = nil
+        travelShift = .zero
         panTask?.cancel(); panTask = nil
         flushPan()
     }
@@ -88,6 +90,15 @@ final class MusicWallCameraMotion: ObservableObject {
         offset = CGSize(width: offset.width + delta.width, height: offset.height + delta.height)
     }
     func jump(to value: CGSize) { stop(); offset = value }
+
+    /// Rebase an in-flight move when the viewport changes, preserving its progress
+    /// instead of cancelling and starting another ease-in on every resize event.
+    func shiftViewport(by delta: CGSize) {
+        guard delta != .zero else { return }
+        travelShift.width += delta.width
+        travelShift.height += delta.height
+        offset = CGSize(width: offset.width + delta.width, height: offset.height + delta.height)
+    }
 
     func pan(by delta: CGSize) {
         guard delta != .zero else { return }
@@ -145,8 +156,8 @@ final class MusicWallCameraMotion: ObservableObject {
                 let elapsed = Date.timeIntervalSinceReferenceDate - began
                 let decay = exp(-resistance * elapsed)
                 let distance = (1 - decay) / resistance
-                self.offset = CGSize(width: start.width + velocity.width * distance,
-                                     height: start.height + velocity.height * distance)
+                self.offset = CGSize(width: start.width + velocity.width * distance + self.travelShift.width,
+                                     height: start.height + velocity.height * distance + self.travelShift.height)
                 if decay < 0.008 { self.travelTask = nil; return }
                 do { try await Task.sleep(for: .milliseconds(8)) } catch { return }
             }
@@ -189,7 +200,8 @@ final class MusicWallCameraMotion: ObservableObject {
                 let eased = (1 - cos(progress * .pi)) / 2
                 let next = startScale + (target - startScale) * eased
                 self.scale = next
-                self.offset = CGSize(width: anchor.x - worldPoint.x * next, height: anchor.y - worldPoint.y * next)
+                self.offset = CGSize(width: anchor.x - worldPoint.x * next + self.travelShift.width,
+                                     height: anchor.y - worldPoint.y * next + self.travelShift.height)
                 if progress >= 1 { self.travelTask = nil; return }
                 do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
             }
@@ -208,10 +220,11 @@ final class MusicWallCameraMotion: ObservableObject {
                 guard let self else { return }
                 let progress = min(1, (Date.timeIntervalSinceReferenceDate - began) / max(0.01, seconds))
                 let eased = (1 - cos(progress * .pi)) / 2
-                self.offset = CGSize(width: start.width + (target.width - start.width) * eased,
-                                     height: start.height + (target.height - start.height) * eased)
+                self.offset = CGSize(width: start.width + (target.width - start.width) * eased + self.travelShift.width,
+                                     height: start.height + (target.height - start.height) * eased + self.travelShift.height)
                 if progress >= 1 {
-                    self.offset = target
+                    self.offset = CGSize(width: target.width + self.travelShift.width,
+                                         height: target.height + self.travelShift.height)
                     self.travelTask = nil
                     self.settledRevision += 1
                     return

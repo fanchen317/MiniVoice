@@ -244,11 +244,12 @@ struct MusicWallFloatingButtonStyle: ButtonStyle {
             configuration.label
                 .foregroundStyle(active ? Color.mint : Color.white)
                 .brightness(hovered && enabled ? 0.1 : 0)
-                .scaleEffect(reduceMotion || !enabled ? 1 : configuration.isPressed ? 0.91 : hovered ? 1.05 : 1)
+                .scaleEffect(reduceMotion || !enabled ? 1 : configuration.isPressed ? 0.88 : hovered ? 1.16 : 1)
+                .offset(y: reduceMotion || !enabled || configuration.isPressed ? 0 : hovered ? -2 : 0)
                 .opacity(enabled ? 1 : 0.4)
                 .onHover { hovered = $0 }
                 .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.8), value: configuration.isPressed)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: hovered)
+                .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.62), value: hovered)
         }
     }
 }
