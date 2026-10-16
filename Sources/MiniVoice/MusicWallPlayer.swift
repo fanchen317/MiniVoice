@@ -10,6 +10,7 @@ struct MusicWallPlayer: View, @MainActor Equatable {
             && lhs.track.resourcesLoaded == rhs.track.resourcesLoaded
             && lhs.track.artwork.map(ObjectIdentifier.init) == rhs.track.artwork.map(ObjectIdentifier.init)
     }
+    @AppStorage("MiniVoice.musicWallLyricsStyle") private var lyricsStyle: MusicWallLyricsStyle = .scrolling
     @EnvironmentObject private var library: MusicLibrary
     let track: Track
     let onPlay: () -> Void
@@ -42,12 +43,12 @@ struct MusicWallPlayer: View, @MainActor Equatable {
                         Text(track.title).font(.system(size: sizing.title, weight: .bold)).lineLimit(2)
                         Text(track.artist).font(.system(size: sizing.artist, weight: .medium)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
                     }.fixedSize(horizontal: false, vertical: true)
-                    MusicWallLyrics(track: track)
+                    MusicWallLyrics(track: track, style: isExpanded ? lyricsStyle : .scrolling)
                         .padding(.horizontal, 6)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .layoutPriority(-1)
                         .clipped()
-                    MusicWallTransport(track: track, onPlay: onPlay, onExpand: onExpand, isExpanded: isExpanded, availableWidth: geometry.size.width - sizing.padding * 2)
+                    MusicWallTransport(track: track, onPlay: onPlay, onExpand: onExpand, isExpanded: isExpanded, lyricsStyle: $lyricsStyle, availableWidth: geometry.size.width - sizing.padding * 2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(sizing.padding)
@@ -66,6 +67,7 @@ private struct MusicWallLyrics: View {
     @EnvironmentObject private var library: MusicLibrary
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let track: Track
+    var style: MusicWallLyricsStyle = .scrolling
     var body: some View {
         GeometryReader { geometry in
             let snapshot = track.lyricSnapshot
@@ -84,6 +86,8 @@ private struct MusicWallLyrics: View {
                     Text(track.title).font(.system(size: fontSize, weight: .bold))
                     Text("暂无歌词").font(.callout).foregroundStyle(.white.opacity(0.5))
                 }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            } else if style == .kinetic {
+                MusicWallKineticLyrics(track: track)
             } else {
                 let rowHeight = layout.rowHeight
                 // Keep each lyric's identity as it moves through the center. Reusing
@@ -138,6 +142,7 @@ private struct MusicWallTransport: View {
     let onPlay: () -> Void
     let onExpand: () -> Void
     let isExpanded: Bool
+    @Binding var lyricsStyle: MusicWallLyricsStyle
     let availableWidth: CGFloat
     private var buttonSide: CGFloat { min(32, max(22, availableWidth * 0.085)) }
     @State private var scrub: Double?
@@ -168,6 +173,12 @@ private struct MusicWallTransport: View {
             MusicWallModeMenu(side: buttonSide)
             control("forward.end", "下一曲") { library.skip(1) }
             Spacer(minLength: 0)
+            if isExpanded {
+                control(lyricsStyle.symbol, "歌词样式：\(lyricsStyle.title)，点击切换为\(lyricsStyle.next.title)") {
+                    lyricsStyle = lyricsStyle.next
+                }
+                .accessibilityValue(lyricsStyle.title)
+            }
             control(isExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right", isExpanded ? "收起播放器" : "展开播放器", action: onExpand)
         }
     }
