@@ -75,7 +75,7 @@ Scripts/deploy.sh
 
 ## AI 歌词自动跟随
 
-在“编辑歌曲信息”粘贴纯文本、LRC 或 SRT 后保存。完整时间标签直接使用；缺少时间标签时，后台进程读取当前歌曲音频，使用 [stable-ts](https://github.com/jianfch/stable-ts) + Whisper small 在本机生成逐行时间轴。首次使用自动建立独立 Python 环境并下载依赖和约 461 MiB 模型；之后可离线使用，无需 API Key，歌曲和歌词不上传。结果按编辑器选择保存到文件标签、`lrc/` 或两者，并更新歌单缓存。拖动进度和桌面歌词复用同一时间轴。
+在“编辑歌曲信息”粘贴纯文本、LRC 或 SRT 后保存。完整时间标签直接使用；缺少时间标签时，后台进程读取当前歌曲音频，使用 [stable-ts](https://github.com/jianfch/stable-ts) + Whisper small 在本机生成逐行时间轴。首次使用自动建立独立 Python 环境并下载依赖和约 461 MiB 模型；依赖安装不保留 pip 下载缓存，之后可离线使用，无需 API Key，歌曲和歌词不上传。结果按编辑器选择保存到文件标签、`lrc/` 或两者，并更新歌单缓存。拖动进度和桌面歌词复用同一时间轴。
 
 - AI 文件位于 `~/Library/Application Support/MiniVoice/LyricsAI/`；使用 Homebrew Python 3.11/3.12 或本机 Xcode Python 3.9，以及现有 FFmpeg。
 - 歌名、常见作词/作曲等信息和段落标记保存在 LRC 的 `[note:...]` 元数据中，不参与演唱对齐。歌词正文保留输入顺序和重复段落；已有手动时间点保留，时间冲突时会提示。

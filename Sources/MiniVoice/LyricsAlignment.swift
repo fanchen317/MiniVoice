@@ -227,7 +227,7 @@ final class LyricsAlignment: ObservableObject {
             }
             try await run(URL(fileURLWithPath: systemPython), ["-m", "venv", environment.path], work: work)
         }
-        try await run(python, ["-m", "pip", "install", "--disable-pip-version-check", "stable-ts==2.19.1"], work: work)
+        try await run(python, ["-m", "pip", "install", "--disable-pip-version-check", "--no-cache-dir", "stable-ts==2.19.1"], work: work)
         try await run(python, ["-c", "import stable_whisper"], work: work)
         try Self.runtimeVersion.write(to: marker, atomically: true, encoding: .utf8)
         return python
