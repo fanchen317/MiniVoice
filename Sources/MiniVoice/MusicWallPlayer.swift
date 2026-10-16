@@ -102,9 +102,7 @@ private struct MusicWallLyrics: View {
                             let line = snapshot.lines[index]
                             Button { if let time = line.timestamp, library.playingID == track.id { library.seek(to: time) } } label: {
                                 VStack(alignment: .leading, spacing: 6) {
-                                    TimedLyricText(line: relative == 0 ? LyricsDisplayTiming.line(line,
-                                                   nextStart: snapshot.lines.dropFirst(index + 1).lazy.compactMap(\.timestamp).first(where: { $0 > (line.timestamp ?? 0) }),
-                                                   trackDuration: track.duration) : line,
+                                    TimedLyricText(line: snapshot.displayLine(at: index),
                                                    time: time, active: relative == 0 && track.id == library.playingID && snapshot.activeIndex(at: time) != nil,
                                                    baseColor: .white, pendingWordOpacity: 0.35, highlightColor: .white,
                                                    isPlaying: track.id == library.playingID && library.isPlaying, sampledAt: clock.sampledAt)

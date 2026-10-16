@@ -39,7 +39,7 @@ struct Track: Identifiable {
     var lyricsAreLoading: Bool { !resourcesLoaded && lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var lyricLines: [LyricLine] { lyricSnapshot.lines }
     var lyricSnapshot: LyricsPlaybackSnapshot {
-        lyricsAreLoading ? LyricsPlaybackSnapshot(lines: []) : lyricCache.snapshot(for: lyrics)
+        lyricsAreLoading ? LyricsPlaybackSnapshot(lines: []) : lyricCache.snapshot(for: lyrics, duration: duration)
     }
 
     init(id: UUID = UUID(), url: URL, title: String, artist: String, album: String,
@@ -55,9 +55,9 @@ struct Track: Identifiable {
 
 private final class LyricCache {
     private var cached: LyricsPlaybackSnapshot?
-    func snapshot(for source: String) -> LyricsPlaybackSnapshot {
+    func snapshot(for source: String, duration: TimeInterval) -> LyricsPlaybackSnapshot {
         if let cached { return cached }
-        let snapshot = LyricsPlaybackSnapshot(lines: LRCParser.parse(source))
+        let snapshot = LyricsPlaybackSnapshot(lines: LRCParser.parse(source), trackDuration: duration)
         cached = snapshot
         return snapshot
     }
@@ -70,15 +70,35 @@ struct LyricsPlaybackSnapshot: Sendable {
     let hasTranslation: Bool
     private let timedIndices: [Int]
     private let ordered: Bool
+    /// Presentation-only character schedules for `.line` and `.plain` snapshots.
+    /// Source `LyricLine.words` stays empty so detect / merge / encoded behave
+    /// the same; views read from here instead of re-synthesizing every frame.
+    private let displayWords: [Int: [LyricWord]]
+    private let trackDuration: TimeInterval?
 
-    init(lines: [LyricLine]) {
+    init(lines: [LyricLine], trackDuration: TimeInterval? = nil) {
         self.lines = lines
+        self.trackDuration = trackDuration
         kind = LyricTimingKind.detect(lines)
         hasTranslation = lines.contains { $0.translation != nil }
         timedIndices = lines.indices.filter { lines[$0].timestamp != nil }
         ordered = zip(timedIndices, timedIndices.dropFirst()).allSatisfy {
             lines[$0.0].timestamp! <= lines[$0.1].timestamp!
         }
+        var cache: [Int: [LyricWord]] = [:]
+        cache.reserveCapacity(timedIndices.count)
+        for index in timedIndices {
+            let line = lines[index]
+            let nextStart: Double? = {
+                for next in lines[(index + 1)...].lazy.compactMap(\.timestamp) where next > (line.timestamp ?? 0) {
+                    return next
+                }
+                return nil
+            }()
+            let synthesized = LyricsDisplayTiming.line(line, nextStart: nextStart, trackDuration: trackDuration).words
+            cache[index] = synthesized
+        }
+        displayWords = cache
     }
 
     func activeIndex(at time: TimeInterval) -> Int? {
@@ -90,6 +110,18 @@ struct LyricsPlaybackSnapshot: Sendable {
             else { upper = middle }
         }
         return lower > 0 ? timedIndices[lower - 1] : nil
+    }
+
+    /// Returns a copy of `lines[index]` with synthesized character `words`
+    /// populated for display. Lines with no scheduled schedule (untimed inserts,
+    /// out-of-range indices) fall through unchanged. Cheap: dict lookup + struct copy.
+    func displayLine(at index: Int) -> LyricLine {
+        guard lines.indices.contains(index) else { return LyricLine(timestamp: nil, text: "") }
+        var copy = lines[index]
+        if let synthesized = displayWords[index], !synthesized.isEmpty {
+            copy.words = synthesized
+        }
+        return copy
     }
 }
 

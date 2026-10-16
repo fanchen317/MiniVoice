@@ -289,9 +289,7 @@ struct OnlineLyricsPreview: View {
                                                 .foregroundStyle(Color.primary.opacity(0.75))
                                                 .frame(width: 82, alignment: .leading)
                                         }
-                                        TimedLyricText(line: active == index ? LyricsDisplayTiming.line(line,
-                                                       nextStart: lines.dropFirst(index + 1).lazy.compactMap(\.timestamp).first(where: { $0 > (line.timestamp ?? 0) }),
-                                                       trackDuration: nil) : line, time: time, active: active == index,
+                                        TimedLyricText(line: active == index ? snapshot.displayLine(at: index) : line, time: time, active: active == index,
                                                        baseColor: .primary)
                                             .font(.system(size: 14, weight: .medium))
                                             .foregroundStyle(active == index ? Color.accentColor : Color.primary)

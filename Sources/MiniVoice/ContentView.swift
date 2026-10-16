@@ -1401,12 +1401,14 @@ private extension ContentView {
                                 }
                                 .matchedGeometryEffect(id: "\(destination):\(group.name)",
                                                        in: browseReflow, properties: .position)
-                                .background {
-                                    GeometryReader { card in
-                                        Color.clear.preference(key: BrowseCardFramePreference.self,
-                                            value: [group.name: card.frame(in: .named(browseCoordinateSpace))])
-                                    }
-                                }
+                                .background(GeometryReader { card in
+                                    // Empty Color.clear + preference pushes each card's
+                                    // bounds out as a side effect of layout. The reader
+                                    // stays so the parent's coordinateSpace translation
+                                    // still receives the frame on layout changes.
+                                    Color.clear.preference(key: BrowseCardFramePreference.self,
+                                        value: [group.name: card.frame(in: .named(browseCoordinateSpace))])
+                                })
                             }
                         }
                         .padding(.horizontal, 8).padding(.top, 8)
@@ -1601,7 +1603,10 @@ private struct LibraryBrowseCard: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: isArtist ? size / 2 : 10, style: .continuous))
+        // Hover scale animates on the cover alone, not the whole card. Animating
+        // the entire card subtree redraws text labels during every pointer move.
         .scaleEffect(hovered && !reduceMotion ? 1.025 : 1)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: hovered)
     }
 
     var body: some View {
@@ -1647,7 +1652,7 @@ private struct LibraryBrowseCard: View {
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: hovered)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: hovered)
         .accessibilityLabel("\(name)，\(tracks.count) 首歌曲")
     }
 }
@@ -1962,9 +1967,10 @@ private struct TimedLyrics: View {
 
     private var timedBody: some View {
         let active = active
-        let lines = track.lyricLines
+        let snapshot = track.lyricSnapshot
+        let lines = snapshot.lines
         return GeometryReader { geometry in
-            let bilingual = showTranslation && track.lyricSnapshot.hasTranslation
+            let bilingual = showTranslation && snapshot.hasTranslation
             let baseHeight = min(expanded ? 72.0 : 92.0, max(28.0, (geometry.size.height - 36) / (expanded ? 6 : 5)))
             let rowHeight = bilingual ? max(62.0, baseHeight * 1.45) : baseHeight
             let fontSize = expanded ? min(38.0, max(22.0, geometry.size.width * 0.058)) : min(34.0, max(19.0, baseHeight * 0.56))
@@ -1972,9 +1978,7 @@ private struct TimedLyrics: View {
                 PlayerScrollView(fadesEdges: true) {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                            PlayerLyricRow(line: active == index ? LyricsDisplayTiming.line(line,
-                                           nextStart: lines.dropFirst(index + 1).lazy.compactMap(\.timestamp).first(where: { $0 > (line.timestamp ?? 0) }),
-                                           trackDuration: track.duration) : line,
+                            PlayerLyricRow(line: active == index ? snapshot.displayLine(at: index) : line,
                                            emphasis: active.map { min(2, abs(index - $0)) } ?? -1,
                                            time: active == index ? clock.time : 0,
                                            fontSize: fontSize, rowHeight: rowHeight, bilingual: bilingual,
@@ -2398,6 +2402,11 @@ private struct ListArtwork: View {
     var highResolution = false
     @StateObject private var loader = ListArtworkLoader()
     @EnvironmentObject private var library: MusicLibrary
+    private struct RequestKey: Equatable, Hashable {
+        let key: String?
+        let source: URL
+        let highResolution: Bool
+    }
     var body: some View {
         Group {
             if let image = track.artwork ?? PreparedBrowseArtwork.shared.image(track.artworkKey) ?? loader.currentImage(key: track.artworkKey, source: track.url, browse: highResolution) ??
@@ -2411,14 +2420,11 @@ private struct ListArtwork: View {
         .frame(width: size, height: size)
         .background(playerGreen.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .onAppear {
+        // Single keyed task replaces three onChange handlers, each of which fired
+        // on every library revision bump and re-keyed loader work on every row.
+        .task(id: RequestKey(key: track.artworkKey, source: track.url, highResolution: highResolution)) {
             loader.load(key: track.artworkKey, source: track.url, browse: highResolution)
         }
-        .onChange(of: library.browseArtworkRevision) { _ in
-            loader.load(key: track.artworkKey, source: track.url, browse: highResolution)
-        }
-        .onChange(of: track.artworkKey) { key in loader.load(key: key, source: track.url, browse: highResolution) }
-        .onChange(of: track.url) { source in loader.load(key: track.artworkKey, source: source, browse: highResolution) }
         .onDisappear { loader.cancel() }
     }
 }

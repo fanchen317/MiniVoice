@@ -78,7 +78,7 @@ final class DesktopLyricsController: ObservableObject {
                 identity = "\(track.id)-\(active)"
                 primary = lines[active].text
                 translation = lines[active].translation
-                timed = LyricsDisplayTiming.line(lines[active], nextStart: end, trackDuration: track.duration)
+                timed = track.lyricSnapshot.displayLine(at: active)
                 secondary = lines.dropFirst(active + 1).first(where: { !$0.text.isEmpty })?.text
                     ?? "\(track.title) - \(track.artist)"
             } else {

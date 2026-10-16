@@ -103,18 +103,22 @@ struct MusicWallView: View {
                     ForEach(instances) { instance in
                         let rect = MusicWallReflow.mosaicFrame(instance.frame, focus: focusedInstance?.frame,
                                                          size: expansionSize(viewport: geometry.size))
+                        // World-coord: camera transform lives on the parent
+                        // ZStack so each frame only re-evaluates ONE hierarchy
+                        // level, not 30+ poster bodies.
                         let displayed = renderedFrame(instance, viewport: geometry.size, progress: progress)
-                            .applying(CGAffineTransform(scaleX: zoom, y: zoom))
-                            .offsetBy(dx: liveOffset.width, dy: liveOffset.height)
                         stagedPoster(instance, displayed: displayed, target: rect, viewport: geometry.size)
                             .position(x: displayed.midX, y: displayed.midY)
                             .zIndex(focusedInstance?.id == instance.id ? 2 : hoveredID == instance.id ? 1 : 0)
                             .accessibilityHidden(sidebarBlocksWall)
                     }
                   }
-                  .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+                  .frame(width: readyScene.world.width, height: readyScene.world.height, alignment: .topLeading)
+                  .scaleEffect(zoom, anchor: .zero)
+                  .offset(liveOffset)
                   }
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+                .clipped()
                 .contentShape(Rectangle())
                 .background {
                     MusicWallScrollInput(onPointer: { point in

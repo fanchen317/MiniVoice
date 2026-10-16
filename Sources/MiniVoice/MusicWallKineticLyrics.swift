@@ -39,9 +39,7 @@ struct MusicWallKineticLyrics: View {
         let active = snapshot.activeIndex(at: time)
         let index = active ?? 0
         let original = snapshot.lines[index]
-        let line = LyricsDisplayTiming.line(original,
-            nextStart: snapshot.lines.dropFirst(index + 1).compactMap(\.timestamp).first { $0 > (original.timestamp ?? 0) },
-            trackDuration: track.duration)
+        let line = snapshot.displayLine(at: index)
         let playing = library.playingID == track.id && library.isPlaying
         let waiting = active == nil && snapshot.kind != .plain
         GeometryReader { viewport in
