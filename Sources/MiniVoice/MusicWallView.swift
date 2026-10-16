@@ -100,12 +100,6 @@ struct MusicWallView: View {
                 viewport: sourceViewport, offset: sourceOffset, focusedID: focusedInstance?.id) : mountedInstances
             ZStack(alignment: .topLeading) {
                 Color(red: 0.09, green: 0.08, blue: 0.08)
-                WallPosterLayer(key: WallPosterLayerKey(ids: instances.map(\.id), songOrder: posters.map(\.id), focus: focusedInstance?.id,
-                    hovered: hoveredID, pressed: pressingID, playing: library.playingID,
-                    revision: library.tracksRevision, sceneRevision: sceneRevision,
-                    settledRevision: cameraMotion.settledRevision, viewport: geometry.size, scale: zoom,
-                    expansion: expansionSize(viewport: geometry.size),
-                    blocked: sidebarBlocksWall, reducedMotion: reduceMotion, grouping: isGrouping)) {
                   MusicWallViewportContent(translation: cameraMotion.translation, reflow: cameraMotion.reflow) { liveOffset, progress in
                    ZStack(alignment: .topLeading) {
                     ForEach(instances) { instance in
@@ -122,8 +116,6 @@ struct MusicWallView: View {
                   }
                   .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
                   }
-                }
-                .equatable()
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
                 .contentShape(Rectangle())
                 .background {
@@ -842,33 +834,6 @@ private struct MusicWallSearchField: View {
     }
 }
 
-
-// Only the viewport projection observes camera frames. The parent wall and its
-// cached cover/caption inputs still update only at culling or content boundaries.
-private struct WallPosterLayer<Content: View>: View, @MainActor Equatable {
-    let key: WallPosterLayerKey
-    @ViewBuilder let content: () -> Content
-    static func == (lhs: Self, rhs: Self) -> Bool { lhs.key == rhs.key }
-    var body: some View { content() }
-}
-
-private struct WallPosterLayerKey: Equatable {
-    let ids: [String]
-    let songOrder: [UUID]
-    let focus: String?
-    let hovered: String?
-    let pressed: String?
-    let playing: UUID?
-    let revision: Int
-    let sceneRevision: Int
-    let settledRevision: Int
-    let viewport: CGSize
-    let scale: CGFloat
-    let expansion: CGSize
-    let blocked: Bool
-    let reducedMotion: Bool
-    let grouping: Bool
-}
 
 private struct WallMountKey: Equatable {
     let x: Int
