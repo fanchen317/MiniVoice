@@ -244,7 +244,7 @@ final class LyricsAlignment: ObservableObject {
         process.executableURL = executable
         process.arguments = executable.lastPathComponent == "lyrics-worker" ? Array(arguments.dropFirst()) : arguments
         var environment = ProcessInfo.processInfo.environment
-        let helpers = Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/lyrics-worker/_internal").path
+        let helpers = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers").path
         environment["PATH"] = helpers + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
         environment["PYTHONNOUSERSITE"] = "1"
         environment["PYTHONDONTWRITEBYTECODE"] = "1"

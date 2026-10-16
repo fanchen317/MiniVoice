@@ -30,9 +30,10 @@
 ## 运行与部署
 
 ```sh
-brew install ffmpeg
 swift run
 ```
+
+`swift run` 不组装 `.app`，需要本机提供 FFmpeg 才能使用扫描和标签编辑功能；`Scripts/build-app.sh`、`deploy.sh` 与 `build-dmg.sh` 使用仓库内置的 arm64 FFmpeg。
 
 ```sh
 swift test
@@ -41,7 +42,7 @@ Scripts/deploy.sh
 
 应用标识为 `com.xcosmos.MiniVoice`。新版首次启动会从 `local.fanchen.MiniVoice`（及更早的 `com.local.minivoice`）迁移设置，包括音乐文件夹、播放状态、快捷键、歌词选项和窗口位置；保留旧配置，已有新配置优先，之后不重复导入。`~/Library/Application Support/MiniVoice/` 下的本地歌词资源和音乐文件夹中的歌单缓存继续沿用。
 
-部署脚本先构建 release、验证签名，再退出旧版并替换 `/Applications/MiniVoice.app`，最后启动。歌词编辑页并行查询网易云（优先取 YRC 逐字歌词）、QQ 音乐、酷狗音乐（优先取 KRC 逐字歌词）、LRCLIB 与偏重中文曲目的 LrcAPI，外文歌还可由 lyrics.ovh 补充纯文本；候选会标明来源、合并重复内容，并保留简体预览与应用选项（仅转换字形，不翻译粤语）。确认应用后再明确保存到本地。大型 AI 模型和 Python 依赖不再随 App 打包。本地 AI 对齐保留为可选功能：首次启用需要 Python 3.11/3.12，并按需安装运行环境和模型；已有本地资源不会删除。
+部署脚本先构建 release、验证签名，再退出旧版并替换 `/Applications/MiniVoice.app`，最后启动。歌词编辑页并行查询网易云（优先取 YRC 逐字歌词）、QQ 音乐、酷狗音乐（优先取 KRC 逐字歌词）、LRCLIB 与偏重中文曲目的 LrcAPI，外文歌还可由 lyrics.ovh 补充纯文本；候选会标明来源、合并重复内容，并保留简体预览与应用选项（仅转换字形，不翻译粤语）。确认应用后再明确保存到本地。arm64 安装包内置仓库中固定版本的 ffmpeg/ffprobe，构建和安装不再依赖 Homebrew FFmpeg；来源、校验值和许可见 `Vendor/FFmpeg/README.md`。大型 AI 模型和 Python 依赖仍按需安装：首次启用需要 Python 3.11/3.12，并按需安装运行环境和模型；已有本地资源不会删除。
 
 单独构建：`Scripts/build-app.sh [debug|release]`，产物在 `.build/MiniVoice.app`。
 
@@ -64,7 +65,7 @@ Scripts/deploy.sh
 - 歌词自动选择逐字、逐行或普通文本展示：支持 Enhanced LRC 的 `<mm:ss.xxx>` 标签及 YRC 时间片段；无效逐字数据按行降级。真实逐字歌词按原始时间高亮；逐行歌词在主播放器、桌面歌词和在线预览中使用仅供显示的估算逐字扫描，不写入歌词文件、不改变来源类型；纯文本不估算。在线候选标明类型，支持 LRCLIB Lyricsfile 逐字数据，并可拖动预览时间轴；应用、保存和整体偏移保留原始逐字标签。支持 QQ 原生 QRC、网易云 YRC、酷狗 KRC 及 AMLL 原生 TTML 逐字时间。具体可用性取决于歌曲版本与服务响应。
 - 目录内容变化后点“重新扫描”更新隐藏歌单；启动不自动遍历音频。目录移动后需重新配置，缓存内使用相对路径。歌词推荐 UTF-8。
 - 旧版逐文件导入已移除；首次升级需在设置里添加音乐文件夹。
-- 本机使用 ad-hoc 签名；向其他 Mac 正式分发还需处理 ffmpeg 依赖、开发者签名与公证。
+- 本机使用 ad-hoc 签名；向其他 Mac 正式分发还需处理开发者签名、公证与 FFmpeg 许可要求。当前内置 FFmpeg 仅支持 arm64。
 
 音乐墙样式可在设置的“播放器样式”中选择，也可点击侧栏的应用图标循环切换。封面以大小交错的拼贴铺满窗口，支持鼠标四向拖拽、触控板双向滚动和双指捏合等比缩放。单击卡片在墙面内展开并居中，周围封面同步让位；双击聚焦并播放。底部玻璃播放条固定显示，右上角搜索图标在悬浮时展开，鼠标移出恢复圆形。侧栏沿用音乐库尺寸，宽窗口可保持展开，窄窗口覆盖墙面并可点击外部收起。macOS 26 及以上使用原生液态玻璃，旧系统使用毛玻璃兼容效果。
 

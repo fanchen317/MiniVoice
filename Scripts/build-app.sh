@@ -15,9 +15,21 @@ fi
 
 cd "$ROOT"
 
+ARCH="$(uname -m)"
+VENDORED_FFMPEG="$ROOT/Vendor/FFmpeg/$ARCH"
+if [[ "$ARCH" != "arm64" ]]; then
+  echo "error: 当前仅提供 arm64 的内置 FFmpeg，缺少 $ARCH 资源" >&2
+  exit 1
+fi
 for TOOL in ffmpeg ffprobe; do
-  if [[ ! -x "/opt/homebrew/bin/$TOOL" && ! -x "/usr/local/bin/$TOOL" ]]; then
-    echo "error: 缺少 $TOOL，请先执行 brew install ffmpeg" >&2
+  if [[ ! -x "$VENDORED_FFMPEG/$TOOL" ]]; then
+    echo "error: 缺少仓库内的 $VENDORED_FFMPEG/$TOOL" >&2
+    exit 1
+  fi
+  EXPECTED="$(awk -v name="$TOOL" '$2 == name {print $1}' "$VENDORED_FFMPEG/SHA256SUMS")"
+  ACTUAL="$(shasum -a 256 "$VENDORED_FFMPEG/$TOOL" | awk '{print $1}')"
+  if [[ -z "$EXPECTED" || "$ACTUAL" != "$EXPECTED" ]]; then
+    echo "error: $TOOL 校验失败，请检查 Vendor/FFmpeg" >&2
     exit 1
   fi
 done
@@ -46,7 +58,7 @@ fi
 
 echo "==> 组装应用包..."
 rm -rf "$APP_PATH"
-mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
+mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources" "$APP_PATH/Contents/Helpers"
 cp "$INFO_PLIST" "$APP_PATH/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP_PATH/Contents/Info.plist"
 cp "$EXECUTABLE" "$APP_PATH/Contents/MacOS/$APP_NAME"
@@ -63,6 +75,15 @@ if [[ ! -s "$ICON_SOURCE" ]]; then
   exit 1
 fi
 cp "$ICON_SOURCE" "$APP_PATH/Contents/Resources/MiniVoice.icns"
+
+echo "==> 集成 FFmpeg..."
+for TOOL in ffmpeg ffprobe; do
+  cp "$VENDORED_FFMPEG/$TOOL" "$APP_PATH/Contents/Helpers/$TOOL"
+  chmod +x "$APP_PATH/Contents/Helpers/$TOOL"
+  codesign --force --sign - "$APP_PATH/Contents/Helpers/$TOOL"
+done
+cp "$ROOT/Vendor/FFmpeg/README.md" "$APP_PATH/Contents/Resources/FFmpeg-NOTICES.txt"
+cp "$ROOT/Vendor/FFmpeg/COPYING.LGPLv2.1" "$APP_PATH/Contents/Resources/FFmpeg-LGPL-2.1.txt"
 
 echo "==> 签名..."
 codesign --force --sign - \

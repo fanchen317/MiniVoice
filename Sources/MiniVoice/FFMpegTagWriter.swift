@@ -8,7 +8,7 @@ enum TagWriteError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .missingFFmpeg: return "未找到 ffmpeg / ffprobe。请先运行 brew install ffmpeg。"
+        case .missingFFmpeg: return "未找到 ffmpeg / ffprobe。若使用安装版，请重新安装应用；若通过 swift run 启动，请先安装本机 FFmpeg。"
         case .artworkEncodingFailed: return "无法将封面转换为 PNG。"
         case .failed(let message): return message
         }
