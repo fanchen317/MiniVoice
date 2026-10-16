@@ -169,7 +169,7 @@ private struct MusicWallTransport: View {
             MusicWallProgressSlider(value: Binding(get: { scrub ?? min(max(0, library.playingID == track.id ? clock.time : 0), max(1, track.duration)) }, set: { scrub = $0 }),
                    range: 0...max(1, track.duration), onEditingChanged: { editing in
                 if !editing, let scrub { library.seek(to: scrub); self.scrub = nil }
-            }).frame(height: 18).background(MusicWallInputExclusion()).help("播放进度").disabled(library.playingID != track.id)
+            }).frame(height: 18).background(MusicWallInputExclusion(allowsWallGestures: true)).help("播放进度").disabled(library.playingID != track.id)
         }
         .onChange(of: track.id) { _ in scrub = nil }
     }

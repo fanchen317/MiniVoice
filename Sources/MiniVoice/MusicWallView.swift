@@ -125,12 +125,12 @@ struct MusicWallView: View {
                         let next = hitInstance(at: point, instances: instances, viewport: geometry.size, offset: liveOffset)?.id
                         if hoveredID != next { hoveredID = next }
                     }, onScroll: { delta, point, precise in
-                        guard allowsPan(from: point, viewport: geometry.size, includingButtons: true) else { return false }
+                        guard allowsPan(from: point, viewport: geometry.size, includingButtons: true, wallGesture: true) else { return false }
                         if precise { cameraMotion.pan(by: delta) }
                         else { cameraMotion.wheel(by: delta) }
                         return true
                     }, onMagnify: { amount, point in
-                        guard allowsPan(from: point, viewport: geometry.size, includingButtons: true) else { return false }
+                        guard allowsPan(from: point, viewport: geometry.size, includingButtons: true, wallGesture: true) else { return false }
                         cameraMotion.zoom(to: cameraMotion.scale * (1 + amount), anchor: point, animated: false)
                         return true
                     }, onDown: { point, clicks in
@@ -231,7 +231,6 @@ struct MusicWallView: View {
                         if isPreparing { ProgressView().controlSize(.large) }
                         else { Image(systemName: "square.grid.3x3.fill").font(.system(size: 44)).foregroundStyle(.mint) }
                         Text(isPreparing ? "正在载入音乐库…" : emptyMessage).foregroundStyle(.white.opacity(0.7))
-                        Button("打开设置") { NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) }
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 header.padding(.leading, max(12, sidebarInset)).padding(.trailing, 12).padding(.top, 34)
@@ -312,6 +311,9 @@ struct MusicWallView: View {
             }
             .onPreferenceChange(MusicWallDraggableControlRegions.self) { regions in
                 controlRegionStore.draggableRegions = regions.filter { !$0.isEmpty && !$0.isNull }
+            }
+            .onPreferenceChange(MusicWallGestureRegions.self) { regions in
+                controlRegionStore.gestureRegions = regions.filter { !$0.isEmpty && !$0.isNull }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .ignoresSafeArea()
@@ -651,9 +653,10 @@ struct MusicWallView: View {
         }
         if let nearest { focus(nearest, track: track, viewport: viewport) }
     }
-    private func allowsPan(from point: CGPoint, viewport: CGSize, includingButtons: Bool = false) -> Bool {
+    private func allowsPan(from point: CGPoint, viewport: CGSize, includingButtons: Bool = false, wallGesture: Bool = false) -> Bool {
         guard !immersive else { return false }
-        guard !controlRegionStore.regions.contains(where: { $0.contains(point) }) else { return false }
+        guard !controlRegionStore.regions.contains(where: { $0.contains(point) }) ||
+              (wallGesture && controlRegionStore.gestureRegions.contains(where: { $0.contains(point) })) else { return false }
         guard includingButtons || !controlRegionStore.draggableRegions.contains(where: { $0.contains(point) }) else { return false }
         guard !sidebarBlocksWall, point.x >= sidebarInset, point.y > 28 else { return false }
         let chrome = MusicWallChromeMetrics(width: viewport.width, leadingInset: sidebarInset)
@@ -730,6 +733,12 @@ private struct MusicWallSearchField: View {
                     expanded = true
                 }
             } else {
+                focused = false
+                if query.isEmpty { expanded = false }
+            }
+        }
+        .onChange(of: query) { text in
+            if text.isEmpty && !hovered {
                 focused = false
                 expanded = false
             }

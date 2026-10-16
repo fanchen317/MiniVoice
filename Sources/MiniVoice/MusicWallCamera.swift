@@ -13,6 +13,7 @@ enum MusicWallClickTarget {
 final class MusicWallControlRegionStore {
     var regions: [CGRect] = []
     var draggableRegions: [CGRect] = []
+    var gestureRegions: [CGRect] = []
 }
 
 enum MusicWallPointerCapture { case none, wall, button }
@@ -193,14 +194,21 @@ struct MusicWallGlass: ViewModifier {
 /// same coordinate space as the wall input surface. No native-view registry.
 struct MusicWallInputExclusion: View {
     var allowsWallDrag = false
+    var allowsWallGestures = false
     var body: some View {
         GeometryReader { geometry in
             let region = geometry.frame(in: .named("musicWallViewport"))
             Color.clear
                 .preference(key: MusicWallControlRegions.self, value: allowsWallDrag ? [] : [region])
                 .preference(key: MusicWallDraggableControlRegions.self, value: allowsWallDrag ? [region] : [])
+                .preference(key: MusicWallGestureRegions.self, value: allowsWallGestures ? [region] : [])
         }.allowsHitTesting(false)
     }
+}
+
+struct MusicWallGestureRegions: PreferenceKey {
+    static let defaultValue: [CGRect] = []
+    static func reduce(value: inout [CGRect], nextValue: () -> [CGRect]) { value.append(contentsOf: nextValue()) }
 }
 
 struct MusicWallDraggableControlRegions: PreferenceKey {
