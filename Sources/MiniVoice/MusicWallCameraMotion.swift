@@ -89,7 +89,11 @@ final class MusicWallCameraMotion: ObservableObject {
         pendingPan = .zero
         offset = CGSize(width: offset.width + delta.width, height: offset.height + delta.height)
     }
-    func jump(to value: CGSize) { stop(); offset = value }
+    func jump(to value: CGSize, refreshContent: Bool = false) {
+        stop()
+        offset = value
+        if refreshContent { settledRevision += 1 }
+    }
 
     /// Rebase an in-flight move when the viewport changes, preserving its progress
     /// instead of cancelling and starting another ease-in on every resize event.

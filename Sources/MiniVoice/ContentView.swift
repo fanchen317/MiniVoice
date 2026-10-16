@@ -67,8 +67,7 @@ struct ContentView: View {
     @State private var showingTasks = false
     @State private var unreadScan = false
     @State private var hideFinishedScan = false
-    @State private var locateRequest = UUID()
-    @State private var locateTarget: UUID?
+    @State private var trackLocation = TrackLocationRequest()
     @State private var locateAnimated = true
     @State private var needsInitialPlayingFocus = true
     @State private var locateGroupTarget: LibraryListLocation?
@@ -167,8 +166,8 @@ struct ContentView: View {
                 songs = matches
                 songsWorkspaceRequest = workspace
                 selectedIDs.formIntersection(Set(matches.map(\.id)))
-                if let locateTarget, matches.contains(where: { $0.id == locateTarget }) {
-                    locateRequest = UUID()
+                if !wallStyle, let target = trackLocation.target, matches.contains(where: { $0.id == target }) {
+                    trackLocation.token = UUID()
                 }
                 focusInitialPlayingTrackIfNeeded()
             }
@@ -212,12 +211,12 @@ struct ContentView: View {
             // a missing cover must never hold the entire classification page open.
             songGroups = groups.map { (name: $0.name, tracks: $0.ids.compactMap { library.track(for: $0) }) }
             browsePages[destination] = BrowsePageSnapshot(request: workspace, songs: songs, groups: songGroups)
-            if locateGroupTarget?.destination == destination { locateRequest = UUID() }
+            if locateGroupTarget?.destination == destination { trackLocation.token = UUID() }
         }
         selectedIDs.formIntersection(Set(songs.map(\.id)))
         songsWorkspaceRequest = workspace
-        if let locateTarget, songs.contains(where: { $0.id == locateTarget }) {
-            locateRequest = UUID()
+        if !wallStyle, let target = trackLocation.target, songs.contains(where: { $0.id == target }) {
+            trackLocation.token = UUID()
         }
         focusInitialPlayingTrackIfNeeded()
     }
@@ -228,8 +227,8 @@ struct ContentView: View {
               let id = library.playingID, songs.contains(where: { $0.id == id }) else { return }
         needsInitialPlayingFocus = false
         locateAnimated = false
-        locateTarget = id
-        locateRequest = UUID()
+        trackLocation.target = id
+        trackLocation.token = UUID()
     }
 
     private func migrateSortPreferenceIfNeeded() {
@@ -354,8 +353,8 @@ struct ContentView: View {
             recent = false; destination = .all; browseGroup = nil; query = ""
             albumPlayback = false; selectedIDs.removeAll(); multiSelecting = false
             locateAnimated = false
-            locateTarget = library.playingID
-            locateRequest = UUID()
+            trackLocation.target = library.playingID
+            trackLocation.token = UUID()
         }
         .sheet(isPresented: $showingPlaylistPicker) {
             PlaylistAddPicker(collections: collections, paths: playlistAddTracks.map { $0.url.path },
@@ -536,17 +535,19 @@ struct ContentView: View {
                 }
               }
               .id(recent)
-              .task(id: locateRequest) {
-                  if let target = locateTarget, songs.contains(where: { $0.id == target }) {
+              .task(id: trackLocation.token) {
+                  if songsWorkspaceRequest == workspaceRequest,
+                     let target = trackLocation.target, songs.contains(where: { $0.id == target }) {
                       if locateAnimated { withAnimation { proxy.scrollTo(target, anchor: .center) } }
                       else { proxy.scrollTo(target, anchor: .center) }
+                      trackLocation.target = nil
                   }
               }
               .onChange(of: songs.map(\.id)) { ids in
-                  if let target = locateTarget, ids.contains(target) {
+                  if songsWorkspaceRequest == workspaceRequest, let target = trackLocation.target, ids.contains(target) {
                       if locateAnimated { withAnimation { proxy.scrollTo(target, anchor: .center) } }
                       else { proxy.scrollTo(target, anchor: .center) }
-                      locateTarget = nil
+                      trackLocation.target = nil
                   }
               }
             }
@@ -736,24 +737,24 @@ struct ContentView: View {
             Button {
                 guard let id = library.playingID else { return }
                 if groups, let track = library.track(for: id) {
-                    locateTarget = nil
+                    trackLocation.target = nil
                     locateGroupTarget = LibraryListLocation(destination: destination,
                         group: destination == .artists ? artistName(track) : albumName(track))
                     locatedGroup = nil
                     locateNotice = nil
                     query = ""
-                    locateRequest = UUID()
+                    trackLocation.token = UUID()
                     return
                 }
                 locateGroupTarget = nil
-                locateTarget = id
+                trackLocation.target = id
                 locateAnimated = true
                 library.selectedID = id
                 if !songs.contains(where: { $0.id == id }) {
                     query = ""; recent = false; destination = .all; browseGroup = nil
                 }
                 if libraryStyle { albumPlayback = false }
-                locateRequest = UUID()
+                trackLocation.token = UUID()
             } label: {
                 ZStack {
                     Circle().stroke(style: StrokeStyle(lineWidth: 1.5, dash: [9, 3])).frame(width: 17, height: 17)
@@ -992,20 +993,20 @@ private extension ContentView {
         if let id = library.playingID, let track = library.track(for: id) {
             switch target {
             case .all:
-                locateTarget = id
+                trackLocation.target = id
             case .recent:
-                locateTarget = library.recentPaths.contains(track.url.path) ? id : nil
+                trackLocation.target = library.recentPaths.contains(track.url.path) ? id : nil
             case .favorites:
-                locateTarget = collections.isFavorite(track.url.path) ? id : nil
+                trackLocation.target = collections.isFavorite(track.url.path) ? id : nil
             case .playlist(let playlistID):
-                locateTarget = collections.playlists.first(where: { $0.id == playlistID })?.paths.contains(track.url.path) == true ? id : nil
+                trackLocation.target = collections.playlists.first(where: { $0.id == playlistID })?.paths.contains(track.url.path) == true ? id : nil
             default:
-                locateTarget = nil
+                trackLocation.target = nil
             }
         } else {
-            locateTarget = nil
+            trackLocation.target = nil
         }
-        locateRequest = UUID()
+        trackLocation.token = UUID()
     }
 
     func savePlaylistName() {
@@ -1026,22 +1027,49 @@ private extension ContentView {
         }
     }
 
+    private func locateWallTrack(_ track: Track) {
+        let inPlaylist: Bool
+        if case .playlist(let id) = destination {
+            inPlaylist = collections.playlists.first(where: { $0.id == id })?.paths.contains(track.url.path) == true
+        } else { inPlaylist = false }
+        let location = destination.locationForTrack(track,
+            isFavorite: collections.isFavorite(track.url.path),
+            isRecent: library.recentPaths.contains(track.url.path), isInPlaylist: inPlaylist)
+        browseTransition.reset()
+        destination = location.destination
+        browseGroup = location.group
+        recent = location.destination == .recent
+        query = ""
+        albumPlayback = false
+        selectedIDs.removeAll()
+        multiSelecting = false
+        locateAnimated = true
+        trackLocation = TrackLocationRequest(target: track.id)
+    }
+
     func musicWallWorkspace(size: CGSize) -> some View {
         let layout = MusicWallWorkspaceMetrics(width: size.width, sidebarVisible: sidebarVisible)
         let sidebarWidth = layout.sidebarWidth
         let overlays = layout.overlaysSidebar
         let inset = layout.leadingInset
-        let wallSongs = songsWorkspaceRequest == workspaceRequest ? songs : []
-        let wallGroups = songsWorkspaceRequest == workspaceRequest ? songGroups : []
+        let canDisplayResults = workspaceRequest.canDisplayResults(from: songsWorkspaceRequest)
+        let wallSongs = canDisplayResults ? songs : []
+        let wallGroups = canDisplayResults ? songGroups : []
         return ZStack(alignment: .topLeading) {
             MusicWallView(tracks: wallSongs, groups: browsingGroups ? wallGroups : [],
                           isGrouping: browsingGroups, autoFocusPlaying: !browsingGroups,
-                          focusRequestID: locateTarget, focusRequestToken: locateRequest,
+                          focusRequestID: trackLocation.target, focusRequestToken: trackLocation.token,
+                          focusRequestAnimated: locateAnimated,
+                          onFocusRequestHandled: { token in
+                              trackLocation.complete(token)
+                          },
+                          onLocateTrack: locateWallTrack,
                           canGoBack: browseGroup != nil, sidebarVisible: $sidebarVisible, headerLeadingInset: layout.headerLeadingInset, sidebarInset: inset,
                           sidebarBlocksWall: sidebarVisible && overlays, title: wallNavigationTitle,
                           sortingControls: AnyView(sortOptions.buttonStyle(SortOptionButtonStyle())),
                           query: $query, emptyMessage: emptyListMessage,
-                          isPreparing: songsWorkspaceRequest != workspaceRequest || listPreparationRequest != nil || library.isImporting,
+                          isPreparing: !canDisplayResults || listPreparationRequest != nil || library.isImporting,
+                          isContentReady: canDisplayResults,
                           onToggleSidebar: {
                               withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.88)) {
                                   sidebarVisible.toggle()
@@ -1405,21 +1433,24 @@ private extension ContentView {
                         }.foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 40)
                     }
                 }
-                .task(id: locateRequest) {
+                .task(id: trackLocation.token) {
                     if showsGroups { locateBrowseCard(using: proxy) }
-                    if !showsGroups, let target = locateTarget, songs.contains(where: { $0.id == target }) {
+                    if !showsGroups, songsWorkspaceRequest == workspaceRequest,
+                       let target = trackLocation.target, songs.contains(where: { $0.id == target }) {
                         if locateAnimated { withAnimation { proxy.scrollTo(target, anchor: .center) } }
                         else { proxy.scrollTo(target, anchor: .center) }
+                        trackLocation.target = nil
                     }
                 }
                 .onChange(of: songGroups.map(\.name)) { _ in
                     if showsGroups { locateBrowseCard(using: proxy) }
                 }
                 .onChange(of: songs.map(\.id)) { ids in
-                    if !showsGroups, let target = locateTarget, ids.contains(target) {
+                    if !showsGroups, songsWorkspaceRequest == workspaceRequest,
+                       let target = trackLocation.target, ids.contains(target) {
                         if locateAnimated { withAnimation { proxy.scrollTo(target, anchor: .center) } }
                         else { proxy.scrollTo(target, anchor: .center) }
-                        locateTarget = nil
+                        trackLocation.target = nil
                     }
                 }
             }

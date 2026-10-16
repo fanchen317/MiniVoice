@@ -28,6 +28,20 @@ final class MusicWallScrollPerformanceTests: XCTestCase {
         XCTAssertEqual(motion.settledRevision, 2)
     }
 
+    func testImmediateFocusPublishesFinalCoordinatesWithoutWaitingForPointerMovement() {
+        let motion = MusicWallCameraMotion()
+        var arrivals: [CGSize] = []
+        let observation = motion.$settledRevision.dropFirst().sink { _ in arrivals.append(motion.offset) }
+        let nearby = CGSize(width: 40, height: 40)
+        let distant = CGSize(width: -8400, height: -5600)
+        motion.jump(to: nearby, refreshContent: true)
+        motion.jump(to: distant, refreshContent: true)
+        motion.jump(to: distant, refreshContent: true)
+        XCTAssertEqual(arrivals, [nearby, distant, distant])
+        XCTAssertEqual(motion.settledRevision, 3)
+        withExtendedLifetime(observation) {}
+    }
+
     func testTranslationFramesDoNotInvalidateWallUntilCullingBoundary() {
         let motion = MusicWallCameraMotion()
         var wallUpdates = 0

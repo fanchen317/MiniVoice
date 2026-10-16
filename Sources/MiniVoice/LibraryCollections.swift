@@ -111,6 +111,36 @@ enum LibraryDestination: Hashable, Sendable {
     case all, recent, favorites, artists, albums, playlist(UUID)
 }
 
+extension LibraryDestination {
+    func locationForTrack(_ track: Track, isFavorite: Bool, isRecent: Bool,
+                          isInPlaylist: Bool) -> LibraryListLocation {
+        switch self {
+        case .all: return LibraryListLocation(destination: .all, group: nil)
+        case .recent where isRecent, .favorites where isFavorite:
+            return LibraryListLocation(destination: self, group: nil)
+        case .playlist where isInPlaylist:
+            return LibraryListLocation(destination: self, group: nil)
+        case .artists:
+            return LibraryListLocation(destination: .artists, group: LibraryBrowseIndex.name(track.artist, artist: true))
+        case .albums:
+            return LibraryListLocation(destination: .albums, group: LibraryBrowseIndex.name(track.album, artist: false))
+        default: return LibraryListLocation(destination: .all, group: nil)
+        }
+    }
+}
+
+/// A location is a one-time command. Its completion may arrive after the user
+/// has selected another page, so only the matching command can clear it.
+struct TrackLocationRequest: Equatable {
+    var target: UUID?
+    var token = UUID()
+
+    mutating func complete(_ completedToken: UUID) {
+        guard token == completedToken else { return }
+        target = nil
+    }
+}
+
 struct WorkspaceListRequest: Equatable {
     let list: SongListRequest
     let destination: LibraryDestination
@@ -118,4 +148,12 @@ struct WorkspaceListRequest: Equatable {
     let collectionsRevision: Int
     var groupSortField = "name"
     var groupSortAscending = true
+
+    /// Background metadata/cache revisions refresh the same page in place.
+    /// Only a different search or location must hide the previous results.
+    func canDisplayResults(from previous: Self?) -> Bool {
+        guard let previous else { return false }
+        return destination == previous.destination && group == previous.group
+            && list.query == previous.list.query && list.recent == previous.list.recent
+    }
 }

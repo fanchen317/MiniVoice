@@ -3,6 +3,21 @@ import AppKit
 @testable import MiniVoice
 
 final class LibraryBrowseTests: XCTestCase {
+    func testWallKeepsResultsDuringMetadataRefreshButHidesOtherSearches() {
+        let previous = WorkspaceListRequest(list: SongListRequest(revision: 1), destination: .all,
+            group: nil, collectionsRevision: 0)
+        let refresh = WorkspaceListRequest(list: SongListRequest(revision: 2), destination: .all,
+            group: nil, collectionsRevision: 1)
+        XCTAssertTrue(refresh.canDisplayResults(from: previous))
+        let search = WorkspaceListRequest(list: SongListRequest(revision: 2, query: "爱琴海"),
+            destination: .all, group: nil, collectionsRevision: 1)
+        XCTAssertFalse(search.canDisplayResults(from: previous))
+        XCTAssertFalse(previous.canDisplayResults(from: search))
+        let album = WorkspaceListRequest(list: SongListRequest(revision: 2), destination: .albums,
+            group: "太阳之子", collectionsRevision: 1)
+        XCTAssertFalse(album.canDisplayResults(from: previous))
+        XCTAssertFalse(refresh.canDisplayResults(from: nil))
+    }
     func testDelayedSongSnapshotInvalidatesRowEvenAtSameLibraryRevision() {
         let id = UUID()
         func key(artwork: String?, title: String = "Song") -> SongRowRenderKey {
