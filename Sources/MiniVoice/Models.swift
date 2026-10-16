@@ -427,13 +427,15 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     /// Full lyrics and artwork are hydrated only for selection/playback/editing.
     func resolveTrack(_ id: UUID, fullResolution: Bool = false) async -> Track? {
-        if fullResolution, let base = tracksByID[id] {
+        if fullResolution {
+            guard let base = tracksByID[id] else { return nil }
             let generation = scanGeneration
             if var source = await loadTrack(base.url) {
                 guard !Task.isCancelled, scanGeneration == generation, tracksByID[id]?.url == base.url else { return nil }
                 source.id = id; source.artworkKey = base.artworkKey; source.lyricsKey = base.lyricsKey
                 return source
             }
+            return nil
         }
         if let loaded = detailTracks[id] { return loaded }
         guard let base = tracksByID[id] else { return nil }
@@ -613,7 +615,9 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func save(_ updated: Track, lyricsDestination: LyricsDestination = .tags) async throws {
-        guard let existing = await resolveTrack(updated.id, fullResolution: true) else { return }
+        guard let existing = await resolveTrack(updated.id, fullResolution: true) else {
+            throw TagWriteError.failed("无法读取歌曲文件，未保存修改。请检查文件是否存在及访问权限。")
+        }
         guard updated.hasFileChanges(comparedTo: existing) else { return }
         let nonLyricsChanged = updated.title != existing.title || updated.artist != existing.artist || updated.album != existing.album || updated.artworkWasEdited
         let lyricsChanged = updated.lyrics != existing.lyrics

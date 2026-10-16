@@ -84,11 +84,13 @@ struct MusicWallWorkspaceMetrics {
     let sidebarWidth: CGFloat
     let overlaysSidebar: Bool
     let leadingInset: CGFloat
+    let headerLeadingInset: CGFloat
 
     init(width: CGFloat, sidebarVisible: Bool) {
         sidebarWidth = min(260, max(230, width * 0.25))
         let minimumContentWidth: CGFloat = 540
         overlaysSidebar = width < sidebarWidth + minimumContentWidth + 48
+        headerLeadingInset = sidebarVisible && !overlaysSidebar ? sidebarWidth + 24 : 12
         // Release the reserved space continuously as the window narrows. Changing
         // the sidebar's presentation must not move the wall and dock by half a sidebar.
         leadingInset = sidebarVisible

@@ -46,6 +46,7 @@ struct ContentView: View {
         guard browsingGroups, let page = browsePages[destination], page.request == workspaceRequest else { return false }
         songs = page.songs
         songGroups = page.groups
+        songsWorkspaceRequest = page.request
         return true
     }
     @State private var albumPlayback = false
@@ -68,6 +69,8 @@ struct ContentView: View {
     @State private var hideFinishedScan = false
     @State private var locateRequest = UUID()
     @State private var locateTarget: UUID?
+    @State private var locateAnimated = true
+    @State private var needsInitialPlayingFocus = true
     @State private var locateGroupTarget: LibraryListLocation?
     @State private var locatedGroup: LibraryListLocation?
     @State private var locateNotice: String?
@@ -93,7 +96,13 @@ struct ContentView: View {
             let resolved = await library.resolveTrack(track.id, fullResolution: true)
             guard songInfoLoadRequest == request, editingTrack?.id == track.id,
                   library.track(for: track.id) != nil else { return }
-            editingTrack = resolved ?? track
+            guard let resolved else {
+                editingTrack = nil
+                songInfoIsLoading = false
+                library.errorMessage = "无法读取歌曲文件，请检查文件是否存在及访问权限。"
+                return
+            }
+            editingTrack = resolved
             songInfoIsLoading = false
         }
     }
@@ -109,6 +118,7 @@ struct ContentView: View {
     @AppStorage("MiniVoice.albumSortAscending") private var albumSortAscending = true
 
     @State private var songs: [Track] = []
+    @State private var songsWorkspaceRequest: WorkspaceListRequest?
     @State private var listIndex = SongListIndex()
     @State private var listEntriesRevision: Int?
     @State private var listEntries: [SongListEntry] = []
@@ -155,10 +165,12 @@ struct ContentView: View {
             let matches = library.recentTracks(matching: query)
             if !Task.isCancelled {
                 songs = matches
+                songsWorkspaceRequest = workspace
                 selectedIDs.formIntersection(Set(matches.map(\.id)))
                 if let locateTarget, matches.contains(where: { $0.id == locateTarget }) {
                     locateRequest = UUID()
                 }
+                focusInitialPlayingTrackIfNeeded()
             }
             return
         }
@@ -174,6 +186,7 @@ struct ContentView: View {
         let ordered = ids.compactMap { library.track(for: $0) }
         guard libraryStyle else {
             songs = ordered
+            songsWorkspaceRequest = workspace
             selectedIDs.formIntersection(Set(ordered.map(\.id)))
             return
         }
@@ -202,9 +215,21 @@ struct ContentView: View {
             if locateGroupTarget?.destination == destination { locateRequest = UUID() }
         }
         selectedIDs.formIntersection(Set(songs.map(\.id)))
+        songsWorkspaceRequest = workspace
         if let locateTarget, songs.contains(where: { $0.id == locateTarget }) {
             locateRequest = UUID()
         }
+        focusInitialPlayingTrackIfNeeded()
+    }
+
+    private func focusInitialPlayingTrackIfNeeded() {
+        guard needsInitialPlayingFocus, libraryStyle, !wallStyle, !browsingGroups,
+              songsWorkspaceRequest == workspaceRequest,
+              let id = library.playingID, songs.contains(where: { $0.id == id }) else { return }
+        needsInitialPlayingFocus = false
+        locateAnimated = false
+        locateTarget = id
+        locateRequest = UUID()
     }
 
     private func migrateSortPreferenceIfNeeded() {
@@ -324,9 +349,13 @@ struct ContentView: View {
             .ignoresSafeArea()
         }
         .task(id: workspaceRequest) { await updateSongs() }
+        .onChange(of: library.playingID) { _ in focusInitialPlayingTrackIfNeeded() }
         .onChange(of: interfaceStyle) { _ in
-            recent = false; destination = .all; browseGroup = nil
+            recent = false; destination = .all; browseGroup = nil; query = ""
             albumPlayback = false; selectedIDs.removeAll(); multiSelecting = false
+            locateAnimated = false
+            locateTarget = library.playingID
+            locateRequest = UUID()
         }
         .sheet(isPresented: $showingPlaylistPicker) {
             PlaylistAddPicker(collections: collections, paths: playlistAddTracks.map { $0.url.path },
@@ -507,14 +536,16 @@ struct ContentView: View {
                 }
               }
               .id(recent)
-              .onChange(of: locateRequest) { _ in
+              .task(id: locateRequest) {
                   if let target = locateTarget, songs.contains(where: { $0.id == target }) {
-                      withAnimation { proxy.scrollTo(target, anchor: .center) }
+                      if locateAnimated { withAnimation { proxy.scrollTo(target, anchor: .center) } }
+                      else { proxy.scrollTo(target, anchor: .center) }
                   }
               }
               .onChange(of: songs.map(\.id)) { ids in
                   if let target = locateTarget, ids.contains(target) {
-                      withAnimation { proxy.scrollTo(target, anchor: .center) }
+                      if locateAnimated { withAnimation { proxy.scrollTo(target, anchor: .center) } }
+                      else { proxy.scrollTo(target, anchor: .center) }
                       locateTarget = nil
                   }
               }
@@ -716,6 +747,7 @@ struct ContentView: View {
                 }
                 locateGroupTarget = nil
                 locateTarget = id
+                locateAnimated = true
                 library.selectedID = id
                 if !songs.contains(where: { $0.id == id }) {
                     query = ""; recent = false; destination = .all; browseGroup = nil
@@ -942,8 +974,11 @@ private extension ContentView {
 
     func navigate(_ target: LibraryDestination) {
         browseTransition.reset()
+        needsInitialPlayingFocus = false
+        locateAnimated = false
         if destination != target {
             songGroups = []
+            query = ""
             // Fresh tabs start with a complete first row. Returning from a group
             // uses closeBrowseGroup and keeps its original card scroll position.
             browseScrollPositions.position(target).offset = 0
@@ -962,13 +997,15 @@ private extension ContentView {
                 locateTarget = library.recentPaths.contains(track.url.path) ? id : nil
             case .favorites:
                 locateTarget = collections.isFavorite(track.url.path) ? id : nil
+            case .playlist(let playlistID):
+                locateTarget = collections.playlists.first(where: { $0.id == playlistID })?.paths.contains(track.url.path) == true ? id : nil
             default:
                 locateTarget = nil
             }
         } else {
             locateTarget = nil
         }
-        if locateTarget != nil { locateRequest = UUID() }
+        locateRequest = UUID()
     }
 
     func savePlaylistName() {
@@ -994,13 +1031,17 @@ private extension ContentView {
         let sidebarWidth = layout.sidebarWidth
         let overlays = layout.overlaysSidebar
         let inset = layout.leadingInset
+        let wallSongs = songsWorkspaceRequest == workspaceRequest ? songs : []
+        let wallGroups = songsWorkspaceRequest == workspaceRequest ? songGroups : []
         return ZStack(alignment: .topLeading) {
-            MusicWallView(tracks: songs.isEmpty && query.isEmpty && destination == .all ? library.tracks : songs, groups: browsingGroups ? songGroups : [],
+            MusicWallView(tracks: wallSongs, groups: browsingGroups ? wallGroups : [],
                           isGrouping: browsingGroups, autoFocusPlaying: !browsingGroups,
-                          canGoBack: browseGroup != nil, sidebarVisible: $sidebarVisible, toolsLeadingInset: sidebarVisible ? sidebarWidth + 24 : 0, sidebarInset: inset,
+                          focusRequestID: locateTarget, focusRequestToken: locateRequest,
+                          canGoBack: browseGroup != nil, sidebarVisible: $sidebarVisible, headerLeadingInset: layout.headerLeadingInset, sidebarInset: inset,
                           sidebarBlocksWall: sidebarVisible && overlays, title: wallNavigationTitle,
                           sortingControls: AnyView(sortOptions.buttonStyle(SortOptionButtonStyle())),
-                          query: $query, emptyMessage: emptyListMessage, isPreparing: listPreparationRequest != nil || library.isImporting,
+                          query: $query, emptyMessage: emptyListMessage,
+                          isPreparing: songsWorkspaceRequest != workspaceRequest || listPreparationRequest != nil || library.isImporting,
                           onToggleSidebar: {
                               withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.88)) {
                                   sidebarVisible.toggle()
@@ -1234,6 +1275,7 @@ private extension ContentView {
                 selectedIDs.removeAll()
                 multiSelecting = false
                 browseGroup = name
+                songsWorkspaceRequest = workspaceRequest
             }
         }
     }
@@ -1363,10 +1405,11 @@ private extension ContentView {
                         }.foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 40)
                     }
                 }
-                .onChange(of: locateRequest) { _ in
+                .task(id: locateRequest) {
                     if showsGroups { locateBrowseCard(using: proxy) }
                     if !showsGroups, let target = locateTarget, songs.contains(where: { $0.id == target }) {
-                        withAnimation { proxy.scrollTo(target, anchor: .center) }
+                        if locateAnimated { withAnimation { proxy.scrollTo(target, anchor: .center) } }
+                        else { proxy.scrollTo(target, anchor: .center) }
                     }
                 }
                 .onChange(of: songGroups.map(\.name)) { _ in
@@ -1374,7 +1417,8 @@ private extension ContentView {
                 }
                 .onChange(of: songs.map(\.id)) { ids in
                     if !showsGroups, let target = locateTarget, ids.contains(target) {
-                        withAnimation { proxy.scrollTo(target, anchor: .center) }
+                        if locateAnimated { withAnimation { proxy.scrollTo(target, anchor: .center) } }
+                        else { proxy.scrollTo(target, anchor: .center) }
                         locateTarget = nil
                     }
                 }

@@ -9,9 +9,11 @@ struct MusicWallView: View {
     let groups: [(name: String, tracks: [Track])]
     let isGrouping: Bool
     let autoFocusPlaying: Bool
+    let focusRequestID: UUID?
+    let focusRequestToken: UUID
     let canGoBack: Bool
     @Binding var sidebarVisible: Bool
-    let toolsLeadingInset: CGFloat
+    let headerLeadingInset: CGFloat
     let sidebarInset: CGFloat
     private var focusLeadingInset: CGFloat { sidebarInset }
     let sidebarBlocksWall: Bool
@@ -28,11 +30,13 @@ struct MusicWallView: View {
     let onFavorite: (Track) -> Void
     let onAddToPlaylist: (Track) -> Void
     @State private var showingTools = false
-    @State private var reloadOpacity = 1.0
+    @State private var reloadOpacity = 0.0
+    @State private var hasLoadedPosters = false
     @State private var reloadTask: Task<Void, Never>?
     @State private var focusedInstance: MusicWallInstance?
     @State private var focusedTrack: Track?
     @State private var pendingLocateID: UUID?
+    @State private var pendingLocateAnimated = false
     @State private var immersive = false
     @State private var sidebarBeforeImmersive: Bool?
     @State private var expansionTransitioning = false
@@ -73,7 +77,7 @@ struct MusicWallView: View {
         GeometryReader { geometry in
             let offset = CGSize(width: camera.width + drag.width, height: camera.height + drag.height)
             let readyScene = scene?.count == posters.count ? scene! : MusicWallScene(count: posters.count, viewport: geometry.size, density: 1)
-            let chrome = MusicWallChromeMetrics(width: geometry.size.width, leadingInset: sidebarInset, toolsLeadingInset: toolsLeadingInset)
+            let chrome = MusicWallChromeMetrics(width: geometry.size.width, leadingInset: sidebarInset)
             let zoom = cameraMotion.scale
             let sourceViewport = CGSize(width: geometry.size.width / zoom, height: geometry.size.height / zoom)
             let sourceOffset = CGSize(width: offset.width / zoom, height: offset.height / zoom)
@@ -233,7 +237,7 @@ struct MusicWallView: View {
                         Text(isPreparing ? "正在载入音乐库…" : emptyMessage).foregroundStyle(.white.opacity(0.7))
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                header.padding(.leading, max(12, sidebarInset)).padding(.trailing, 12).padding(.top, 34)
+                header.padding(.leading, headerLeadingInset).padding(.trailing, 12).padding(.top, 34)
                     .allowsHitTesting(chromeVisible)
                 HStack(spacing: 8) {
                     wallButton("slider.horizontal.3", "音乐墙设置", isActive: showingTools) { showingTools.toggle() }
@@ -291,6 +295,7 @@ struct MusicWallView: View {
                               onPlay: { playFromDock() }, onLocate: {
                     if let track = library.playingTrack ?? focusedTrack {
                         pendingLocateID = track.id
+                        pendingLocateAnimated = true
                         if !query.isEmpty { query = "" }
                         else { locatePendingTrack(viewport: geometry.size) }
                     }
@@ -326,9 +331,21 @@ struct MusicWallView: View {
                 }
             }
             .onAppear {
-                viewportLayout = MusicWallViewportLayout(size: geometry.size, leadingInset: sidebarInset)
-                reloadOpacity = 1
-                rebuild(viewport: geometry.size)
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    viewportLayout = MusicWallViewportLayout(size: geometry.size, leadingInset: sidebarInset)
+                    pendingLocateID = focusRequestID
+                    pendingLocateAnimated = false
+                    rebuild(viewport: geometry.size)
+                    hasLoadedPosters = !posters.isEmpty
+                    reloadOpacity = 1
+                }
+            }
+            .onChange(of: focusRequestToken) { _ in
+                pendingLocateID = focusRequestID
+                pendingLocateAnimated = false
+                locatePendingTrack(viewport: geometry.size)
             }
             .onChange(of: MusicWallViewportLayout(size: geometry.size, leadingInset: sidebarInset)) { layout in
                 let previous = viewportLayout
@@ -346,8 +363,18 @@ struct MusicWallView: View {
             }
             .onChange(of: posters.map(\.id)) { _ in
                 reloadTask?.cancel()
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) { reloadOpacity = 0.55 }
+                let animateReload = hasLoadedPosters && !posters.isEmpty
+                if animateReload {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) { reloadOpacity = 0.55 }
+                }
                 rebuild(viewport: geometry.size)
+                hasLoadedPosters = !posters.isEmpty
+                guard animateReload else {
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) { reloadOpacity = 1 }
+                    return
+                }
                 reloadTask = Task { @MainActor in
                     do { try await Task.sleep(for: .milliseconds(120)) } catch { return }
                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) { reloadOpacity = 1 }
@@ -359,7 +386,7 @@ struct MusicWallView: View {
             }
             .onChange(of: library.playingID) { _ in
                 if let track = library.playingTrack, focusedTrack?.id != track.id {
-                    focusTrack(track, viewport: geometry.size)
+                    focusTrack(track, viewport: geometry.size, animated: focusedTrack != nil)
                 }
             }
             .onChange(of: library.tracksRevision) { _ in
@@ -418,16 +445,21 @@ struct MusicWallView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-          HStack(spacing: 10) {
-            wallButton("sidebar.left", "打开侧边栏", isActive: sidebarVisible, action: onToggleSidebar)
-            if title != "音乐库" {
-                Text(title).font(.headline).lineLimit(1).padding(.horizontal, 14).padding(.vertical, 10)
-                    .modifier(MusicWallGlass())
+            // The overlay sidebar supplies its own close button. Remove this group
+            // at the same breakpoint instead of sliding it underneath the sidebar.
+            if !sidebarBlocksWall {
+                HStack(spacing: 10) {
+                    wallButton("sidebar.left", "打开侧边栏", isActive: sidebarVisible, action: onToggleSidebar)
+                    if title != "音乐库" {
+                        Text(title).font(.headline).lineLimit(1).padding(.horizontal, 14).padding(.vertical, 10)
+                            .modifier(MusicWallGlass())
+                    }
+                    if canGoBack { wallButton("chevron.left", "返回", action: onBack) }
+                }
+                .offset(x: chromeVisible ? 0 : -90).opacity(chromeVisible ? 1 : 0)
+                .animation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.88), value: chromeVisible)
+                .transition(.identity)
             }
-            if canGoBack { wallButton("chevron.left", "返回", action: onBack) }
-          }
-          .offset(x: chromeVisible ? 0 : -90).opacity(chromeVisible ? 1 : 0)
-          .animation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.88), value: chromeVisible)
             Spacer(minLength: 0)
             MusicWallSearchField(query: $query)
                 .offset(x: chromeVisible ? 0 : 90).opacity(chromeVisible ? 1 : 0)
@@ -562,12 +594,12 @@ struct MusicWallView: View {
         if pendingLocateID != nil {
             locatePendingTrack(viewport: viewport)
         } else if let track = previousTrack, posters.contains(where: { $0.id == track.id }) {
-            focusTrack(track, viewport: viewport)
+            focusTrack(track, viewport: viewport, animated: false)
         } else if autoFocusPlaying, let track = library.playingTrack,
                   posters.contains(where: { $0.id == track.id }) {
             focusedTrack = nil
             focusedInstance = nil
-            focusTrack(track, viewport: viewport)
+            focusTrack(track, viewport: viewport, animated: false)
         } else {
             focusedTrack = nil; focusedInstance = nil
             camera = CGSize(width: sidebarInset + 12, height: 80)
@@ -577,11 +609,12 @@ struct MusicWallView: View {
     private func locatePendingTrack(viewport: CGSize) {
         guard let id = pendingLocateID, !isGrouping, query.isEmpty,
               let track = posters.first(where: { $0.id == id }), scene?.count == posters.count else { return }
-        focusTrack(track, viewport: viewport)
+        focusTrack(track, viewport: viewport, animated: pendingLocateAnimated)
         pendingLocateID = nil
+        pendingLocateAnimated = false
     }
 
-    private func focus(_ instance: MusicWallInstance, track: Track, viewport: CGSize) {
+    private func focus(_ instance: MusicWallInstance, track: Track, viewport: CGSize, animated: Bool = true) {
         let changesFocus = focusedInstance?.id != instance.id || cameraMotion.reflowProgress < 1
         cameraMotion.freezeForInteraction()
         if changesFocus {
@@ -600,7 +633,14 @@ struct MusicWallView: View {
             reflowPreviousSize = expansionSize(viewport: viewport)
             expandedPosterSide = min(520, max(320, (viewport.height - 150) * 0.85))
         }
-        if changesFocus { cameraMotion.beginReflow(animated: !reduceMotion) }
+        if changesFocus {
+            if animated && !reduceMotion { cameraMotion.beginReflow(animated: true) }
+            else {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { cameraMotion.beginReflow(animated: false) }
+            }
+        }
         focusedInstance = instance; focusedTrack = track
         let target = MusicWallCamera.centeredOffset(frame: instance.frame, viewport: viewport, leadingInset: focusLeadingInset, scale: cameraMotion.scale)
         // Make destination neighbours available before the camera gets there.
@@ -613,7 +653,12 @@ struct MusicWallView: View {
             for card in destination { reserved[card.id] = card }
             mountedInstances = reserved.values.sorted { $0.id < $1.id }
         }
-        if reduceMotion { camera = target } else { cameraMotion.travel(to: target, duration: 0.48) }
+        if animated && !reduceMotion { cameraMotion.travel(to: target, duration: 0.48) }
+        else {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { camera = target }
+        }
         Task {
             let resolved = await library.resolveTrack(track.id)
             if focusedTrack?.id == track.id { focusedTrack = resolved ?? track }
@@ -624,13 +669,14 @@ struct MusicWallView: View {
         MusicWallSequence.index(base: instance.tile.index, horizontalCopy: instance.copyX,
                                 stride: horizontalStride, count: posters.count) ?? 0
     }
-    private func focusTrack(_ track: Track, viewport: CGSize) {
+    private func focusTrack(_ track: Track, viewport: CGSize, animated: Bool = true) {
         guard !isGrouping, let index = posters.firstIndex(where: { $0.id == track.id }) else { return }
         // Preserve the instance actually clicked, including horizontally advanced copies.
         if let current = focusedInstance, displayIndex(current) == index,
            let tile = tiles.first(where: { $0.id == current.tile.id }) {
             let frame = tile.frame.offsetBy(dx: CGFloat(current.copyX) * world.width, dy: CGFloat(current.copyY) * world.height)
-            focus(MusicWallInstance(tile: tile, copyX: current.copyX, copyY: current.copyY, frame: frame), track: track, viewport: viewport)
+            focus(MusicWallInstance(tile: tile, copyX: current.copyX, copyY: current.copyY, frame: frame),
+                  track: track, viewport: viewport, animated: animated)
             return
         }
         let center = CGPoint(x: ((viewport.width + focusLeadingInset) / 2 - camera.width) / cameraMotion.scale,
@@ -651,7 +697,7 @@ struct MusicWallView: View {
                 }
             }
         }
-        if let nearest { focus(nearest, track: track, viewport: viewport) }
+        if let nearest { focus(nearest, track: track, viewport: viewport, animated: animated) }
     }
     private func allowsPan(from point: CGPoint, viewport: CGSize, includingButtons: Bool = false, wallGesture: Bool = false) -> Bool {
         guard !immersive else { return false }

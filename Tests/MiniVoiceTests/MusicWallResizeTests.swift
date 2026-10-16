@@ -33,6 +33,22 @@ final class MusicWallResizeLayoutTests: XCTestCase {
         }
     }
 
+    func testHeaderUsesSidebarEdgeUntilExactOverlayBreakpoint() {
+        for width: CGFloat in [1200, 948, 928, 840, 819, 818] {
+            let layout = MusicWallWorkspaceMetrics(width: width, sidebarVisible: true)
+            XCTAssertFalse(layout.overlaysSidebar)
+            // The sidebar starts 12pt from the edge; leave another 12pt before
+            // the complete toggle, rather than borrowing the wall's shrinking inset.
+            XCTAssertEqual(layout.headerLeadingInset - (12 + layout.sidebarWidth), 12)
+        }
+        for width: CGFloat in [817, 805, 789, 600, 304] {
+            let layout = MusicWallWorkspaceMetrics(width: width, sidebarVisible: true)
+            XCTAssertTrue(layout.overlaysSidebar)
+            XCTAssertEqual(layout.headerLeadingInset, 12)
+        }
+        XCTAssertEqual(MusicWallWorkspaceMetrics(width: 928, sidebarVisible: false).headerLeadingInset, 12)
+    }
+
     func testNarrowingOnlyRaisesSettingsOnceWithNewSidebarBreakpoint() {
         var previous = false
         var transitions = 0
