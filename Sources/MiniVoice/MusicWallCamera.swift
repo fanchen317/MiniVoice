@@ -28,6 +28,10 @@ struct MusicWallInstance: Identifiable {
 }
 
 enum MusicWallCamera {
+    static func preservingFocusOffset(original: CGSize, previous: CGRect, current: CGRect, scale: CGFloat) -> CGSize {
+        CGSize(width: original.width + (previous.midX - current.midX) * scale,
+               height: original.height + (previous.midY - current.midY) * scale)
+    }
     static func restoredPlayerOffset(original: CGSize, sourceID: String?, targetID: String?, targetFrame: CGRect?,
                                      viewport: CGSize, leadingInset: CGFloat, scale: CGFloat) -> CGSize {
         guard sourceID != targetID, let targetFrame else { return original }

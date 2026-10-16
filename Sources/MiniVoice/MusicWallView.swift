@@ -34,12 +34,6 @@ struct MusicWallView: View {
     let onFavorite: (Track) -> Void
     let onAddToPlaylist: (Track) -> Void
     @State private var showingTools = false
-    // The cover layer must be drawable on its first pass. The style-switch
-    // snapshot already conceals setup; starting this layer hidden can leave the
-    // hosting view with an empty backing surface until the next wall gesture.
-    @State private var reloadOpacity = 1.0
-    @State private var hasLoadedPosters = false
-    @State private var reloadTask: Task<Void, Never>?
     @State private var focusedInstance: MusicWallInstance?
     @State private var focusedTrack: Track?
     @State private var pendingLocateID: UUID?
@@ -61,6 +55,9 @@ struct MusicWallView: View {
         nonmutating set { cameraMotion.dragOffset = newValue }
     }
     @State private var scene: MusicWallScene?
+    @State private var sceneContent: MusicWallContent?
+    @State private var contentReady = false
+    @State private var lastPlaybackPath: String?
     @State private var viewportLayout: MusicWallViewportLayout?
     @State private var sceneRevision = 0
     @State private var mountedInstances: [MusicWallInstance] = []
@@ -79,7 +76,14 @@ struct MusicWallView: View {
     private var tiles: [MusicWallTile] { scene?.tiles ?? [] }
     private var world: CGSize { scene?.world ?? .zero }
     private var horizontalStride: Int { scene?.horizontalStride ?? 1 }
-    private var posters: [Track] { isGrouping ? groups.compactMap { $0.tracks.first } : tracks }
+    private var incomingContent: MusicWallContent {
+        MusicWallContent(tracks: tracks, groups: groups, isGrouping: isGrouping, query: query, isReady: isContentReady)
+    }
+    private var focusCommand: MusicWallFocusCommand {
+        MusicWallFocusCommand(id: focusRequestID, token: focusRequestToken, animated: focusRequestAnimated)
+    }
+    private var posters: [Track] { sceneContent?.posters ?? [] }
+    private var displayGroups: [(name: String, tracks: [Track])] { sceneContent?.groups ?? [] }
 
     var body: some View {
         GeometryReader { geometry in
@@ -89,10 +93,6 @@ struct MusicWallView: View {
             let zoom = cameraMotion.scale
             let sourceViewport = CGSize(width: geometry.size.width / zoom, height: geometry.size.height / zoom)
             let sourceOffset = CGSize(width: offset.width / zoom, height: offset.height / zoom)
-            // Keep mounted SwiftUI geometry near the viewport. Very distant world
-            // coordinates can be culled before the outer translation is applied.
-            let renderOrigin = CGSize(width: floor(sourceOffset.width / 192) * 192 * zoom,
-                                      height: floor(sourceOffset.height / 192) * 192 * zoom)
             let mountKey = WallMountKey(x: Int(floor(sourceOffset.width / 192)), y: Int(floor(sourceOffset.height / 192)),
                 viewport: sourceViewport, count: readyScene.count, focus: focusedInstance?.id,
                 settledRevision: cameraMotion.settledRevision)
@@ -104,16 +104,16 @@ struct MusicWallView: View {
                     hovered: hoveredID, pressed: pressingID, playing: library.playingID,
                     revision: library.tracksRevision, sceneRevision: sceneRevision,
                     settledRevision: cameraMotion.settledRevision, viewport: geometry.size, scale: zoom,
-                    expansion: expansionSize(viewport: geometry.size), renderOrigin: renderOrigin,
+                    expansion: expansionSize(viewport: geometry.size),
                     blocked: sidebarBlocksWall, reducedMotion: reduceMotion, grouping: isGrouping)) {
-                  MusicWallReflowContent(motion: cameraMotion.reflow) { _ in
+                  MusicWallViewportContent(translation: cameraMotion.translation, reflow: cameraMotion.reflow) { liveOffset, progress in
                    ZStack(alignment: .topLeading) {
                     ForEach(instances) { instance in
                         let rect = MusicWallReflow.mosaicFrame(instance.frame, focus: focusedInstance?.frame,
                                                          size: expansionSize(viewport: geometry.size))
-                        let displayed = renderedFrame(instance, viewport: geometry.size)
+                        let displayed = renderedFrame(instance, viewport: geometry.size, progress: progress)
                             .applying(CGAffineTransform(scaleX: zoom, y: zoom))
-                            .offsetBy(dx: renderOrigin.width, dy: renderOrigin.height)
+                            .offsetBy(dx: liveOffset.width, dy: liveOffset.height)
                         stagedPoster(instance, displayed: displayed, target: rect, viewport: geometry.size)
                             .position(x: displayed.midX, y: displayed.midY)
                             .zIndex(focusedInstance?.id == instance.id ? 2 : hoveredID == instance.id ? 1 : 0)
@@ -124,8 +124,6 @@ struct MusicWallView: View {
                   }
                 }
                 .equatable()
-                .opacity(reloadOpacity)
-                .modifier(MusicWallTranslationModifier(translation: cameraMotion.translation, relativeTo: renderOrigin))
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
                 .contentShape(Rectangle())
                 .background {
@@ -178,24 +176,23 @@ struct MusicWallView: View {
                         guard posters.indices.contains(index) else { return }
                         lastTapped = hit
                         lastTapPoint = pressedPoint
-                        if isGrouping { onOpenGroup(groups[index].name); return }
+                        if isGrouping { onOpenGroup(displayGroups[index].name); return }
                         if !doubleClick || focusedInstance?.id != hit.id {
                             focus(hit, track: posters[index], viewport: geometry.size)
                         }
                         if doubleClick { startPlayback(posters[index]) }
                     })
                 }
-                // Interactive content lives in viewport coordinates. World-space posters
-                // can be visible outside their original layout bounds after camera travel;
-                // putting buttons there makes native hit testing miss the visible controls.
+                // Artwork and controls share the same viewport projection. Keep the
+                // interactive player separate so playback ticks do not rebuild posters.
                 if !isGrouping, let instance = focusedInstance {
                     let index = displayIndex(instance)
                     if posters.indices.contains(index), posters[index].id == focusedTrack?.id {
                         let track = posters[index]
-                        MusicWallReflowContent(motion: cameraMotion.reflow) { _ in
-                        let rect = renderedFrame(instance, viewport: geometry.size)
+                        MusicWallViewportContent(translation: cameraMotion.translation, reflow: cameraMotion.reflow) { liveOffset, progress in
+                        let rect = renderedFrame(instance, viewport: geometry.size, progress: progress)
                             .applying(CGAffineTransform(scaleX: zoom, y: zoom))
-                            .offsetBy(dx: renderOrigin.width, dy: renderOrigin.height)
+                            .offsetBy(dx: liveOffset.width, dy: liveOffset.height)
                         let playerSize = immersive ? geometry.size : CGSize(
                             width: expansionSize(viewport: geometry.size).width * zoom,
                             height: expansionSize(viewport: geometry.size).height * zoom)
@@ -231,7 +228,6 @@ struct MusicWallView: View {
                         .contextMenu { posterMenu(instance, track: track, index: index, viewport: geometry.size) }
                         .position(x: immersive ? geometry.size.width / 2 : rect.midX,
                                   y: immersive ? geometry.size.height / 2 : rect.midY)
-                        .modifier(MusicWallTranslationModifier(translation: cameraMotion.translation, enabled: !immersive, relativeTo: renderOrigin))
                         .zIndex(immersive || expansionTransitioning ? 10 : 0)
                         .allowsHitTesting(immersive || !sidebarBlocksWall)
                         }
@@ -336,19 +332,13 @@ struct MusicWallView: View {
                 }
             }
             .onAppear {
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) {
-                    viewportLayout = MusicWallViewportLayout(size: geometry.size, leadingInset: sidebarInset)
-                    rebuild(viewport: geometry.size)
-                    hasLoadedPosters = !posters.isEmpty
-                    reloadOpacity = 1
-                }
+                viewportLayout = MusicWallViewportLayout(size: geometry.size, leadingInset: sidebarInset)
+                lastPlaybackPath = library.playingTrack?.url.path
+                enqueueFocus(focusCommand)
+                updateContent(incomingContent, viewport: geometry.size)
             }
-            .task(id: focusRequestToken) {
-                pendingLocateID = focusRequestID
-                pendingLocateToken = focusRequestID == nil ? nil : focusRequestToken
-                pendingLocateAnimated = focusRequestAnimated
+            .onChange(of: focusCommand) { command in
+                enqueueFocus(command)
                 locatePendingTrack(viewport: geometry.size)
             }
             .onChange(of: MusicWallViewportLayout(size: geometry.size, leadingInset: sidebarInset)) { layout in
@@ -365,40 +355,19 @@ struct MusicWallView: View {
                                                    height: camera.height + delta.height), duration: 0.28)
                 }
             }
-            .onChange(of: posters.map(\.id)) { _ in
-                reloadTask?.cancel()
-                let animateReload = hasLoadedPosters && !posters.isEmpty
-                if animateReload {
-                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) { reloadOpacity = 0.55 }
-                }
-                rebuild(viewport: geometry.size)
-                hasLoadedPosters = !posters.isEmpty
-                guard animateReload else {
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) { reloadOpacity = 1 }
-                    return
-                }
-                reloadTask = Task { @MainActor in
-                    do { try await Task.sleep(for: .milliseconds(120)) } catch { return }
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) { reloadOpacity = 1 }
-                }
+            .onChange(of: incomingContent) { content in
+                updateContent(content, viewport: geometry.size)
             }
             .onChange(of: query) { value in
                 if value.isEmpty { locatePendingTrack(viewport: geometry.size) }
                 else { finishPendingLocate() }
             }
-            .onChange(of: isContentReady) { ready in
-                if ready { locatePendingTrack(viewport: geometry.size) }
-            }
-            .onChange(of: library.playingID) { _ in
-                if let track = library.playingTrack {
-                    // A navigation request for the previous song must not run
-                    // after a new playback selection finishes loading.
-                    if pendingLocateID != nil && pendingLocateID != track.id { finishPendingLocate() }
-                    if focusedTrack?.id != track.id {
-                        focusTrack(track, viewport: geometry.size, animated: focusedTrack != nil)
-                    }
+            .onChange(of: library.playingTrack?.url.path) { path in
+                guard let path, path != lastPlaybackPath, let track = library.playingTrack else { return }
+                lastPlaybackPath = path
+                if pendingLocateID != nil && pendingLocateID != track.id { finishPendingLocate() }
+                if focusedTrack?.id != track.id {
+                    focusTrack(track, viewport: geometry.size, animated: focusedTrack != nil)
                 }
             }
             .onChange(of: library.tracksRevision) { _ in
@@ -406,7 +375,6 @@ struct MusicWallView: View {
             }
             .onDisappear {
                 expansionTask?.cancel()
-                reloadTask?.cancel()
                 if let previous = sidebarBeforeImmersive { sidebarVisible = previous; sidebarBeforeImmersive = nil }
             }
             .onExitCommand {
@@ -519,8 +487,8 @@ struct MusicWallView: View {
             let expanded = focusedInstance?.id == instance.id
             let size = frame.size
             ZStack {
-                MusicWallPoster(track: track, title: isGrouping ? groups[index].name : track.title,
-                                subtitle: isGrouping ? "\(groups[index].tracks.count) 首歌曲" : track.artist,
+                MusicWallPoster(track: track, title: isGrouping ? displayGroups[index].name : track.title,
+                                subtitle: isGrouping ? "\(displayGroups[index].tracks.count) 首歌曲" : track.artist,
                                 number: index + 1, size: size, showsArtwork: false)
                     .equatable()
                     .opacity(expanded ? 0 : 1)
@@ -545,7 +513,7 @@ struct MusicWallView: View {
 
     @ViewBuilder private func posterMenu(_ instance: MusicWallInstance, track: Track, index: Int, viewport: CGSize) -> some View {
         if isGrouping {
-            Button("打开") { onOpenGroup(groups[index].name) }
+            Button("打开") { onOpenGroup(displayGroups[index].name) }
         } else {
             Button("聚焦") { focus(instance, track: track, viewport: viewport) }
             Button("播放") { focus(instance, track: track, viewport: viewport); startPlayback(track) }
@@ -562,12 +530,13 @@ struct MusicWallView: View {
         cameraMotion.zoom(to: scale, anchor: zoomAnchor(viewport: viewport), animated: !reduceMotion)
     }
 
-    private func renderedFrame(_ instance: MusicWallInstance, viewport: CGSize) -> CGRect {
+    private func renderedFrame(_ instance: MusicWallInstance, viewport: CGSize, progress: CGFloat? = nil) -> CGRect {
         let target = MusicWallReflow.mosaicFrame(instance.frame, focus: focusedInstance?.frame, size: expansionSize(viewport: viewport))
-        guard cameraMotion.reflowProgress < 1 else { return target }
+        let progress = progress ?? cameraMotion.reflowProgress
+        guard progress < 1 else { return target }
         let origin = reflowOriginFrames[instance.id] ?? MusicWallReflow.mosaicFrame(instance.frame,
             focus: reflowPreviousFocus, size: reflowPreviousSize)
-        return MusicWallReflow.interpolate(origin, target, progress: cameraMotion.reflowProgress)
+        return MusicWallReflow.interpolate(origin, target, progress: progress)
     }
 
     private func hitInstance(at point: CGPoint, instances: [MusicWallInstance], viewport: CGSize, offset: CGSize) -> MusicWallInstance? {
@@ -583,8 +552,32 @@ struct MusicWallView: View {
         return CGSize(width: max(260, side), height: max(320, side))
     }
 
-    private func rebuild(viewport: CGSize) {
+    private func enqueueFocus(_ command: MusicWallFocusCommand) {
+        pendingLocateID = command.id
+        pendingLocateToken = command.id == nil ? nil : command.token
+        pendingLocateAnimated = command.animated
+    }
+
+    private func updateContent(_ content: MusicWallContent, viewport: CGSize) {
+        contentReady = content.isReady
+        let update = content.update(from: sceneContent)
+        guard update != .waiting else { return }
+        sceneContent = content
+        switch update {
+        case .metadata:
+            // Metadata hydration and saving tags update the existing posters.
+            // They are not instructions to move the camera or change selection.
+            locatePendingTrack(viewport: viewport)
+        case .rebuild(let preserveViewport):
+            rebuild(viewport: viewport, preserveViewport: preserveViewport)
+        case .waiting: break
+        }
+    }
+
+    private func rebuild(viewport: CGSize, preserveViewport: Bool = false) {
         let previousTrack = focusedTrack
+        let previousInstance = focusedInstance
+        let previousCamera = camera
         // Search results reuse tile indices for different songs. None of the old
         // instances or intermediate reflow frames belong to the new scene.
         cameraMotion.freezeForInteraction()
@@ -611,6 +604,17 @@ struct MusicWallView: View {
                 return
             }
         }
+        if preserveViewport {
+            if let previousTrack, let previousInstance,
+               let track = posters.first(where: { $0.id == previousTrack.id || $0.url == previousTrack.url }),
+               focusTrack(track, viewport: viewport, animated: false), let current = focusedInstance {
+                camera = MusicWallCamera.preservingFocusOffset(original: previousCamera, previous: previousInstance.frame,
+                    current: current.frame, scale: cameraMotion.scale)
+            } else {
+                camera = previousCamera
+            }
+            return
+        }
         if let track = previousTrack, posters.contains(where: { $0.id == track.id }) {
             focusTrack(track, viewport: viewport, animated: false)
         } else if autoFocusPlaying, let track = library.playingTrack,
@@ -625,7 +629,7 @@ struct MusicWallView: View {
     }
 
     private func locatePendingTrack(viewport: CGSize) {
-        guard let id = pendingLocateID, isContentReady, !isGrouping, query.isEmpty else { return }
+        guard let id = pendingLocateID, contentReady, !isGrouping, query.isEmpty else { return }
         guard let track = posters.first(where: { $0.id == id }) else {
             if !isPreparing { finishPendingLocate() }
             return
@@ -839,8 +843,8 @@ private struct MusicWallSearchField: View {
 }
 
 
-// Camera translation deliberately stays outside this subtree. Cover geometry,
-// captions and context menus only rebuild when their own inputs change.
+// Only the viewport projection observes camera frames. The parent wall and its
+// cached cover/caption inputs still update only at culling or content boundaries.
 private struct WallPosterLayer<Content: View>: View, @MainActor Equatable {
     let key: WallPosterLayerKey
     @ViewBuilder let content: () -> Content
@@ -861,7 +865,6 @@ private struct WallPosterLayerKey: Equatable {
     let viewport: CGSize
     let scale: CGFloat
     let expansion: CGSize
-    let renderOrigin: CGSize
     let blocked: Bool
     let reducedMotion: Bool
     let grouping: Bool

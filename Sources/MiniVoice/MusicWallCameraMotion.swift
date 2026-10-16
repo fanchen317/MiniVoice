@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Only the translation modifiers observe this high-frequency state. The wall's
-/// content tree observes MusicWallCameraMotion, which publishes at cull boundaries.
+/// Only viewport projection observes this high-frequency state. The parent wall
+/// observes MusicWallCameraMotion, which publishes at cull boundaries.
 @MainActor
 final class MusicWallTranslation: ObservableObject {
     @Published var offset = CGSize.zero
@@ -13,19 +13,15 @@ final class MusicWallReflowMotion: ObservableObject {
     @Published var progress: CGFloat = 1
 }
 
-struct MusicWallReflowContent<Content: View>: View {
-    @ObservedObject var motion: MusicWallReflowMotion
-    @ViewBuilder var content: (CGFloat) -> Content
-    var body: some View { content(motion.progress) }
-}
-
-struct MusicWallTranslationModifier: ViewModifier {
+/// Project posters into the viewport before SwiftUI lays them out. Translating
+/// an already-laid-out wall lets SwiftUI cull its contents at stale world bounds.
+struct MusicWallViewportContent<Content: View>: View {
     @ObservedObject var translation: MusicWallTranslation
-    var enabled = true
-    var relativeTo = CGSize.zero
-    func body(content: Content) -> some View {
-        content.offset(x: enabled ? translation.offset.width + translation.drag.width - relativeTo.width : 0,
-                       y: enabled ? translation.offset.height + translation.drag.height - relativeTo.height : 0)
+    @ObservedObject var reflow: MusicWallReflowMotion
+    @ViewBuilder var content: (CGSize, CGFloat) -> Content
+    var body: some View {
+        content(CGSize(width: translation.offset.width + translation.drag.width,
+                       height: translation.offset.height + translation.drag.height), reflow.progress)
     }
 }
 
