@@ -1,6 +1,13 @@
 import SwiftUI
 
 @main
+struct MiniVoiceEntry {
+    @MainActor static func main() {
+        if CommandLine.arguments.contains("--desktop-engine") { DesktopEngine.run() }
+        else { MiniVoiceApp.main() }
+    }
+}
+
 struct MiniVoiceApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var statusBar: StatusBarController

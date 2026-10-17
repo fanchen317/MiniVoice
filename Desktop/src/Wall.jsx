@@ -1,0 +1,191 @@
+import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { command } from './store';
+import { createScene, visibleTiles, wheelStep, releaseDistance, reflowFrame, focusProgress, reflowProgress, nearestInstance, restoredPlayerCamera, wallFocusSide } from './wallGeometry';
+import { Cover, Icon, WallCardPlayer } from './components';
+import { springEasing,springProgress,posterArtworkMotion } from './motion';
+
+const reflowEasing=`linear(${Array.from({length:53},(_,i)=>`${reflowProgress(i*10).toFixed(5)} ${(i/52*100).toFixed(2)}%`).join(',')})`;
+const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, onMenu,onPlay,onExpand,expanded,transitioning,reduceMotion,visible,onReveal }) {
+  const element=useRef(),previous=useRef(),animation=useRef(),artwork=useRef(),artworkAnimation=useRef();
+  useLayoutEffect(()=>{
+    const before=previous.current;previous.current=tile;
+    const node=element.current,matrix=new DOMMatrix(getComputedStyle(node).transform),image=artwork.current?.querySelector('img');
+    const artworkMotion=posterArtworkMotion(before||tile,tile,image?.naturalWidth/ image?.naturalHeight,p=>p);
+    if(image){image.style.width=`${artworkMotion.width}px`;image.style.height=`${artworkMotion.height}px`;}
+    if(!before||reduceMotion){animation.current?.cancel();artworkAnimation.current?.cancel();return;}
+    const from=animation.current?{x:matrix.e,y:matrix.f,width:before.width*matrix.a,height:before.height*matrix.d}:before;
+    animation.current?.cancel();artworkAnimation.current?.cancel();
+    if(Math.abs(from.x-tile.x)+Math.abs(from.y-tile.y)+Math.abs(from.width-tile.width)+Math.abs(from.height-tile.height)<.01)return;
+    node.style.willChange='transform';
+    const current=node.animate([{transform:`translate3d(${from.x}px,${from.y}px,0) scale(${from.width/tile.width},${from.height/tile.height})`},{transform:`translate3d(${tile.x}px,${tile.y}px,0) scale(1,1)`}],{duration:transitioning?600:520,easing:transitioning?springEasing(.48,.9):reflowEasing});
+    if(image){
+      const duration=transitioning?600:520,motion=posterArtworkMotion(from,tile,image.naturalWidth/image.naturalHeight,p=>transitioning?(p===1?1:springProgress(p*600,.48,.9)):reflowProgress(p*520),transitioning?61:53);
+      image.style.width=`${motion.width}px`;image.style.height=`${motion.height}px`;
+      artworkAnimation.current=image.animate(motion.frames,{duration,easing:'linear'});
+    }
+    animation.current=current;current.finished.catch(()=>{}).finally(()=>{if(animation.current===current){animation.current=null;node.style.willChange='';}});
+  },[tile.x,tile.y,tile.width,tile.height,reduceMotion]);
+  useEffect(()=>()=>{animation.current?.cancel();artworkAnimation.current?.cancel();},[]);
+  return <article ref={element} className={`wall-poster ${focused?'focused':''} ${playing?'playing':''}`} 
+    style={{'--caption-inset':`${Math.min(14,Math.max(8,tile.width*.06))}px`,'--poster-title':`${Math.min(30,Math.max(18,tile.width*.105))}px`,'--poster-subtitle':`${Math.min(13,Math.max(10,tile.width*.045))}px`,width:tile.width,height:tile.height,transform:`translate3d(${tile.x}px,${tile.y}px,0)`}}
+    inert={!visible} onFocusCapture={event=>{const rect=event.target.getBoundingClientRect();if(rect.right<0||rect.left>innerWidth||rect.bottom<0||rect.top>innerHeight)onReveal();}} onClick={event=>onFocus(tile,track,event)} onDoubleClick={onPlay} onContextMenu={event=>onMenu(event,track)} tabIndex={visible?0:-1} role="button" aria-label={`聚焦 ${track.title}，双击播放`} onKeyDown={event=>{if(event.key==='Enter'&&event.target===event.currentTarget)onFocus(tile,track,event);}}>
+    <div className="poster-face"><div className="poster-artwork" ref={artwork} onLoadCapture={event=>{const image=event.target;if(image.tagName!=='IMG')return;const motion=posterArtworkMotion(tile,tile,image.naturalWidth/image.naturalHeight,p=>p);image.style.width=`${motion.width}px`;image.style.height=`${motion.height}px`;}}><Cover track={track} detail={focused}/></div><div className="poster-shade"/>{!focused&&<><span className="poster-number">{String(tile.index+1).padStart(3,'0')}</span><div className="poster-caption"><h2>{track.title}</h2><p>{track.artist}</p></div></>}
+    {focused&&<WallCardPlayer size={tile} track={track} playing={playing} onPlay={onPlay} onExpand={onExpand} expanded={expanded}/>}</div>
+  </article>;
+});
+export function Wall({ tracks, playingID, onMenu, locateToken, selectedID, reduceMotion,onImmersive,onChromeHidden,leadingInset=0,groups,onOpenGroup,sorting }) {
+  const surface = useRef(), plane = useRef(), camera = useRef({ x: 0, y: 0, scale: 1 });
+  const viewport = useRef({ width: 1, height: 1 }), mountedAt = useRef({ x: Infinity, y: Infinity, scale: 1 });
+  const animation = useRef(0), gesture = useRef(null), pendingWheel = useRef({ x: 0, y: 0 });
+  const inset=useRef(leadingInset),resizingUntil=useRef(0),tools=useRef(),toolsButton=useRef(),lastTapped=useRef(null),previousImmersive=useRef(false),savedCamera=useRef(null),expansionTimer=useRef(),restoring=useRef(false);
+  const drag = useRef(null), suppressClick = useRef(false), wheelSource = useRef({ time: -Infinity, precise: false });
+  const [showTools,setShowTools]=useState(false),[immersive,setImmersive]=useState(false),[transitioning,setTransitioning]=useState(false);
+  const [tiles, setTiles] = useState([]), [focus, setFocus] = useState(null), [scale, setScale] = useState(1),[preferredSide,setPreferredSide]=useState(480);
+  const scene = useMemo(() => createScene(tracks.length), [tracks.length]);
+  const live = useRef({ scene, tracks, reduceMotion }); live.current = { scene, tracks, reduceMotion,immersive };
+  function stop() { cancelAnimationFrame(animation.current); animation.current = 0; pendingWheel.current = { x: 0, y: 0 }; gesture.current = null; }
+  function apply(force = false) {
+    const c = camera.current;
+    if (plane.current) plane.current.style.transform = `translate3d(${c.x}px,${c.y}px,0) scale(${c.scale})`;
+    const mounted = mountedAt.current;
+    if (force || Math.abs(c.x-mounted.x) > 180 || Math.abs(c.y-mounted.y) > 180 || c.scale !== mounted.scale) {
+      mountedAt.current = { ...c }; setTiles(visibleTiles(live.current.scene, c, viewport.current));
+    }
+  }
+  function travel(target,animate=true,duration=420){
+    stop();const c=camera.current,start={...c};
+    if(!animate||live.current.reduceMotion){Object.assign(c,target);apply(true);return;}
+    const began=performance.now();
+    function tick(now){const p=Math.min(1,(now-began)/duration),eased=focusProgress(p);c.x=start.x+(target.x-start.x)*eased;c.y=start.y+(target.y-start.y)*eased;apply();if(p<1)animation.current=requestAnimationFrame(tick);else{animation.current=0;apply(true);}}
+    animation.current=requestAnimationFrame(tick);
+  }
+  function center(tile,animate=true){const c=camera.current;travel({x:(viewport.current.width+inset.current)/2-(tile.x+tile.width/2)*c.scale,y:viewport.current.height/2-(tile.y+tile.height/2)*c.scale},animate);}
+  function prepareFocus(tile){if(focus?.tile.id!==tile.id)setPreferredSide(wallFocusSide(surface.current?.clientHeight||viewport.current.height));}
+  const sequence=tracks.map(track=>track.id).join('|');
+  useLayoutEffect(() => {
+    clearTimeout(expansionTimer.current);savedCamera.current=null;restoring.current=false;setTransitioning(false);setImmersive(false);onImmersive?.(false);onChromeHidden?.(false); const playingIndex=tracks.findIndex(t=>t.id===playingID),index=playingIndex>=0?playingIndex:tracks.findIndex(t=>t.id===selectedID);
+    const base=scene.tiles[Math.max(0,index)],tile=base?{...base,id:`${base.index}:0:0`}:null;if(tile)prepareFocus(tile);setFocus(tile&&playingIndex>=0?{tile,track:tracks[tile.index]}:null);if(tile)center(tile,false);else apply(true);
+  }, [scene, sequence]);
+  useLayoutEffect(()=>{
+    const previous=inset.current;inset.current=immersive?0:leadingInset;
+    const changed=previousImmersive.current!==immersive;previousImmersive.current=immersive;
+    if(!focus)return;
+    if(changed&&!immersive&&savedCamera.current){
+      const saved=savedCamera.current;savedCamera.current=null;restoring.current=false;
+      travel(restoredPlayerCamera(saved,focus.tile,viewport.current,inset.current,camera.current.scale),true,600);
+    }else if(changed)center(focus.tile);
+    else if(!restoring.current)travel({x:camera.current.x+(inset.current-previous)/2,y:camera.current.y},performance.now()>=resizingUntil.current,280);
+  },[leadingInset,immersive]);
+  useEffect(()=>()=>clearTimeout(expansionTimer.current),[]);
+  useEffect(() => {
+    const observer = new ResizeObserver(entries => {
+      const rect = entries[0].contentRect, previous = viewport.current;resizingUntil.current=performance.now()+140;
+      viewport.current = { width: rect.width, height: rect.height };
+      camera.current.x += (rect.width-previous.width)/2; camera.current.y += (rect.height-previous.height)/2; apply(true);
+    }); observer.observe(surface.current); return () => observer.disconnect();
+  }, [scene]);
+  useEffect(() => {
+    if (!locateToken) return;
+    const tile=nearestInstance(scene,tracks.findIndex(t=>t.id===selectedID),camera.current,viewport.current);if(tile){prepareFocus(tile);setFocus({tile,track:tracks[tile.index]});center(tile);}
+  }, [locateToken]);
+  useEffect(() => {
+    const node = surface.current;
+    function wheel(event) {
+      // Controls belong to the card's pan surface: hovering a lyric, transport
+      // button or seek slider must never interrupt an ongoing trackpad gesture.
+      // Floating tools retain their own wheel behavior outside the card.
+      if (live.current.immersive||(!event.target.closest('.wall-card-content')&&event.target.closest('button,input,.wall-zoom,.wall-tools-popover'))) return;
+      event.preventDefault();
+      const c = camera.current;
+      if (event.ctrlKey || event.metaKey) {
+        stop(); const r = node.getBoundingClientRect(), x = event.clientX-r.left, y = event.clientY-r.top;
+        const next = Math.min(1.2,Math.max(.8,c.scale*Math.exp(-event.deltaY*.007)));
+        c.x = x-(x-c.x)*next/c.scale; c.y = y-(y-c.y)*next/c.scale; c.scale = next; setScale(next); apply(true); return;
+      }
+      const multiplier = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.current.height : 1;
+      const dx = (event.shiftKey && !event.deltaX ? event.deltaY : event.deltaX)*multiplier;
+      const dy = (event.shiftKey && !event.deltaX ? 0 : event.deltaY)*multiplier;
+      const source = wheelSource.current;
+      if (event.timeStamp-source.time > 120) source.precise = false;
+      source.time = event.timeStamp;
+      source.precise ||= !event.deltaMode && ((event.deltaX && event.deltaY) || Math.max(Math.abs(dx),Math.abs(dy)) < 50);
+      if (source.precise || live.current.reduceMotion) { stop(); c.x -= dx; c.y -= dy; apply(); return; }
+      if (gesture.current !== 'wheel') { stop(); gesture.current = 'wheel'; }
+      pendingWheel.current.x -= dx; pendingWheel.current.y -= dy;
+      if (animation.current) return;
+      let previous = performance.now();
+      function tick(now) {
+        const result = wheelStep(pendingWheel.current, now-previous); previous = now;
+        pendingWheel.current = result.pending; c.x += result.step.x; c.y += result.step.y; apply();
+        if (result.pending.x || result.pending.y) animation.current = requestAnimationFrame(tick);
+        else { animation.current = 0; gesture.current = null; }
+      }
+      animation.current = requestAnimationFrame(tick);
+    }
+    node.addEventListener('wheel',wheel,{ passive:false });
+    return () => { node.removeEventListener('wheel',wheel); stop(); };
+  }, []);
+  function down(event) {
+    if(immersive||event.button!==0||event.target.closest('input,.wall-tools-popover')||(event.target.closest('button')&&!event.target.closest('.wall-card-content')))return;
+    stop(); drag.current = { pointer:event.pointerId, x:event.clientX, y:event.clientY, lastX:event.clientX, lastY:event.clientY, time:event.timeStamp, vx:0,vy:0, start:{ ...camera.current }, moved:false };
+  }
+  function move(event) {
+    const d = drag.current; if (!d) return;
+    const dx = event.clientX-d.x,dy = event.clientY-d.y,dt = event.timeStamp-d.time;
+    if (!d.moved && Math.hypot(dx,dy)>6) { d.moved = true; surface.current.setPointerCapture(event.pointerId); }
+    if (dt>0) { d.vx = (event.clientX-d.lastX)/dt*1000; d.vy = (event.clientY-d.lastY)/dt*1000; }
+    d.lastX=event.clientX; d.lastY=event.clientY; d.time=event.timeStamp;
+    if (d.moved) { camera.current.x=d.start.x+dx; camera.current.y=d.start.y+dy; apply(); }
+  }
+  function up(event) {
+    const d = drag.current; drag.current=null; if (!d) return;
+    if (surface.current.hasPointerCapture(event.pointerId)) surface.current.releasePointerCapture(event.pointerId);
+    suppressClick.current = d.moved;
+    if (!d.moved || live.current.reduceMotion || event.timeStamp-d.time>80) return;
+    const speed=Math.hypot(d.vx,d.vy); if(speed<40)return;
+    const start={ ...camera.current }, began=performance.now();
+    function tick(now) {
+      const distance=releaseDistance(speed,now-began);
+      camera.current.x=start.x+distance*d.vx/speed; camera.current.y=start.y+distance*d.vy/speed; apply();
+      if(Math.min(speed,4000)*.3-distance>.5)animation.current=requestAnimationFrame(tick); else animation.current=0;
+    }
+    animation.current=requestAnimationFrame(tick);
+  }
+  function zoomTo(requested,animate=true){
+    stop();const c=camera.current,target=Math.min(1.2,Math.max(.8,requested)),start=c.scale,anchor={x:(viewport.current.width+inset.current)/2,y:viewport.current.height/2},world={x:(anchor.x-c.x)/start,y:(anchor.y-c.y)/start},began=performance.now();
+    function tick(now){const p=!animate||live.current.reduceMotion?1:Math.min(1,(now-began)/280),next=start+(target-start)*(1-Math.cos(p*Math.PI))/2;c.x=anchor.x-world.x*next;c.y=anchor.y-world.y*next;c.scale=next;setScale(next);apply(true);if(p<1)animation.current=requestAnimationFrame(tick);else animation.current=0;}
+    tick(began);
+  }
+  useEffect(()=>{if(!showTools)return;const outside=event=>{if(!tools.current?.contains(event.target)&&!toolsButton.current?.contains(event.target))setShowTools(false);},key=event=>{if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();setShowTools(false);toolsButton.current?.focus();}};window.addEventListener('pointerdown',outside,true);window.addEventListener('keydown',key,true);return()=>{window.removeEventListener('pointerdown',outside,true);window.removeEventListener('keydown',key,true);};},[showTools]);
+  function expand(){
+    stop();clearTimeout(expansionTimer.current);const next=!immersive;
+    if(next){savedCamera.current={...camera.current,sourceID:focus?.tile.id};setShowTools(false);}else restoring.current=true;
+    setTransitioning(true);onChromeHidden?.(true);setImmersive(next);onImmersive?.(next);
+    expansionTimer.current=setTimeout(()=>{setTransitioning(false);if(!next)onChromeHidden?.(false);},reduceMotion?1:600);
+  }
+  useEffect(()=>{const key=event=>{if(event.key==='Escape'){if(immersive)expand();else setFocus(null);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[immersive,focus]);
+  useEffect(()=>{if(!playingID||groups)return;const tile=nearestInstance(scene,tracks.findIndex(t=>t.id===playingID),camera.current,viewport.current);if(tile&&focus?.track.id!==playingID){prepareFocus(tile);setFocus({tile,track:tracks[tile.index]});center(tile,Boolean(focus));}},[playingID,sequence]);
+  function doubleClick(event){
+    if(event.target.closest('button,input'))return;
+    const last=lastTapped.current;if(!last||last.group||Math.hypot(event.clientX-last.x,event.clientY-last.y)>6||event.timeStamp-last.time>700)return;
+    event.stopPropagation();event.preventDefault();command('play',{id:last.track.id,ids:tracks.map(t=>t.id)});
+  }
+  function continuedClick(event){if(suppressClick.current){suppressClick.current=false;event.stopPropagation();event.preventDefault();return;}if(event.target.closest('button,input'))return;const last=lastTapped.current;if(event.detail>1&&last&&Math.hypot(event.clientX-last.x,event.clientY-last.y)<=6&&event.timeStamp-last.time<700){event.stopPropagation();event.preventDefault();}}
+  const rendered = focus && !tiles.some(t => t.id === focus.tile.id) ? [...tiles, focus.tile] : tiles;
+  return <section ref={surface} className={`wall-surface ${immersive?'is-immersive':''} ${transitioning?'is-expanding':''} ${playingID&&!groups?'has-playing-track':''}`} aria-label="音乐墙" onClickCapture={continuedClick} onDoubleClickCapture={doubleClick} onPointerDown={down} onPointerMove={move} onPointerUp={up}
+    onPointerCancel={() => { drag.current=null; stop(); }}>
+    <div className="wall-plane" ref={plane}>{rendered.map(tile => {
+      const track=tracks[tile.index]; if(!track)return null;
+      const focused=focus?.tile.id===tile.id;
+      const side=Math.max(260,Math.min(preferredSide,viewport.current.width-leadingInset-40,viewport.current.height-150));
+      const size=immersive?{width:viewport.current.width/camera.current.scale,height:viewport.current.height/camera.current.scale}:{width:side,height:Math.max(320,side)};
+      const frame=reflowFrame(tile,focus?.tile,size),c=camera.current,visible=frame.x*c.scale+c.x<viewport.current.width+200&&(frame.x+frame.width)*c.scale+c.x> -200&&frame.y*c.scale+c.y<viewport.current.height+200&&(frame.y+frame.height)*c.scale+c.y> -200;
+      return <Poster key={tile.id} tile={frame} visible={visible} onReveal={()=>center(tile,false)} track={track} focused={focused} playing={playingID===track.id} onMenu={onMenu} expanded={immersive} transitioning={transitioning} reduceMotion={reduceMotion||performance.now()<resizingUntil.current} onExpand={expand} onPlay={()=>groups?onOpenGroup(groups[tile.index].name):command('play',{id:track.id,ids:tracks.map(t=>t.id)})}
+        onFocus={(_,__,event)=>{if(suppressClick.current){suppressClick.current=false;return;}lastTapped.current={track,x:event.clientX,y:event.clientY,time:event.timeStamp,group:Boolean(groups)};if(groups){onOpenGroup(groups[tile.index].name);return;}if(focus?.tile.id===tile.id)return;prepareFocus(tile);setFocus({tile,track});command('select',{id:track.id});center(tile);}}/>
+
+    })}</div>
+    {!tracks.length && <div className="empty"><h2>让音乐铺满整个窗口</h2><p>添加音乐文件夹，或尝试其他搜索词。</p></div>}
+    <button ref={toolsButton} className="wall-settings icon-button" inert={immersive} aria-label="音乐墙设置" aria-expanded={showTools} onClick={()=>setShowTools(v=>!v)}><Icon name="settings"/></button>{showTools&&!immersive&&<div ref={tools} className="wall-tools-popover" role="dialog" aria-label="音乐墙设置"><header><strong>音乐墙</strong><button aria-label="关闭设置" onClick={()=>setShowTools(false)}><Icon name="close"/></button></header><div className="wall-scale-label"><span>显示比例</span><b>{Math.round(scale*100)}%</b></div><div className="wall-scale-controls"><button aria-label="缩小" disabled={scale<=.801} onClick={()=>zoomTo(scale/1.2)}><Icon name="zoomOut"/></button><input aria-label="显示比例" type="range" min=".8" max="1.2" step=".001" value={scale} onChange={event=>zoomTo(Number(event.target.value),false)}/><button aria-label="放大" disabled={scale>=1.199} onClick={()=>zoomTo(scale*1.2)}><Icon name="zoomIn"/></button></div><button className="wall-reset-zoom" disabled={Math.abs(scale-1)<.001} onClick={()=>zoomTo(1)}><Icon name="refresh"/>恢复 100%</button><hr/><strong className="wall-sort-heading"><Icon name="sort"/>列表排序</strong><div className="wall-sort-options">{(sorting?.grouping?[['name',sorting.artist?'歌手姓名':'专辑名称'],['count','歌曲数量']]:[['title','歌曲名称'],['artist','歌手姓名'],['album','专辑名称'],['sourceAdded','添加时间'],['added','更新时间']]).map(([value,label])=><button key={value} aria-pressed={sorting?.sort===value} onClick={()=>sorting?.onSort(value)}><span>{label}</span>{sorting?.sort===value&&<span>✓</span>}</button>)}<hr/>{[[true,'正序'],[false,'降序']].map(([value,label])=><button key={label} aria-pressed={sorting?.ascending===value} onClick={()=>sorting?.onAscending(value)}><span>{label}</span>{sorting?.ascending===value&&<span>✓</span>}</button>)}</div></div>}
+
+  </section>;
+}

@@ -146,7 +146,7 @@ struct MusicWallScrollInput: NSViewRepresentable {
                     if elapsed > 0.001 {
                         let vx = (point.x - self.previousPoint.x) / elapsed
                         let vy = (point.y - self.previousPoint.y) / elapsed
-                        self.velocity = CGSize(width: max(-4000, min(4000, vx)), height: max(-4000, min(4000, vy)))
+                        self.velocity = CGSize(width: vx, height: vy)
                     }
                     self.previousPoint = point; self.previousTime = event.timestamp
                     if self.hasDragged { self.onDrag?(delta) }
@@ -157,7 +157,7 @@ struct MusicWallScrollInput: NSViewRepresentable {
                     let buttonDown = self.buttonDown, dragged = self.hasDragged
                     self.buttonDown = false
                     if !buttonDown || dragged {
-                        self.onUp?(point, event.clickCount, dragged, event.timestamp - self.previousTime < 0.1 ? self.velocity : .zero)
+                        self.onUp?(point, event.clickCount, dragged, event.timestamp - self.previousTime < MusicWallMotionTuning.staleReleaseInterval ? self.velocity : .zero)
                     }
                     self.hasDragged = false
                     if buttonDown {

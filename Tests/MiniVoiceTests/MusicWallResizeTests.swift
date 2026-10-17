@@ -80,25 +80,27 @@ final class MusicWallResizeLayoutTests: XCTestCase {
 @MainActor
 final class MusicWallResizeMotionTests: XCTestCase {
     func testResizeRebasesRunningFocusWithoutRestartingItsArrival() async throws {
-        let motion = MusicWallCameraMotion()
+        let clock = MusicWallTestClock()
+        let motion = clock.motion
         motion.travel(to: CGSize(width: -400, height: 200), duration: 0.2)
         for _ in 0..<3 {
-            try await Task.sleep(for: .milliseconds(40))
+            clock.advance(by: 0.04)
             let before = motion.offset
             motion.shiftViewport(by: CGSize(width: -30, height: 10))
             XCTAssertEqual(motion.offset.width, before.width - 30, accuracy: 0.001)
             XCTAssertEqual(motion.offset.height, before.height + 10, accuracy: 0.001)
         }
-        try await Task.sleep(for: .milliseconds(140))
+        clock.advance(by: 0.14)
         XCTAssertEqual(motion.offset, CGSize(width: -490, height: 230))
         XCTAssertEqual(motion.settledRevision, 1)
     }
 
     func testNextFocusDoesNotInheritPreviousResizeShift() async throws {
-        let motion = MusicWallCameraMotion()
+        let clock = MusicWallTestClock()
+        let motion = clock.motion
         motion.shiftViewport(by: CGSize(width: -150, height: 20))
         motion.travel(to: CGSize(width: 10, height: 30), duration: 0.04)
-        try await Task.sleep(for: .milliseconds(120))
+        clock.advance(by: 0.12)
         XCTAssertEqual(motion.offset, CGSize(width: 10, height: 30))
     }
 }

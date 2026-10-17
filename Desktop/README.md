@@ -1,0 +1,70 @@
+# MiniVoice · Electron 窗口迁移版
+
+主窗口由 Electron + React + Chromium 渲染，不嵌入 SwiftUI 主界面。现有 Swift 可执行文件以 `--desktop-engine` 模式启动，只负责音频、曲库、标签和歌词服务。
+
+## 构建与运行
+
+在仓库根目录执行：
+
+```sh
+Scripts/build-electron-app.sh release
+```
+
+产物：`.build/electron/MiniVoice Electron-darwin-arm64/MiniVoice Electron.app`。
+
+运行该应用即可；无需 Node、Homebrew 或终端常驻。FFmpeg、歌词模型和 Swift 后台已打包。旧版 SwiftUI 应用仍可通过 `Scripts/build-app.sh release` 构建，便于对比和回退。测试音频时请暂停另一个版本，避免两个播放器同时发声。
+
+开发流程：
+
+```sh
+npm --prefix Desktop --cache .build/npm-cache ci
+node Desktop/electron/prepare-runtime.mjs
+npm --prefix Desktop run build
+MINIVOICE_ENGINE=/absolute/path/to/MiniVoice npm --prefix Desktop start
+```
+
+Electron 分发包按 npm 官方包中的 SHA-256 校验。GitHub 下载失败时可从区域镜像取得相同字节，不关闭校验。`package-lock.json` 固定依赖版本。
+
+## 本轮迁移范围
+
+- 三种主界面：音乐墙、音乐库、简易样式；样式切换使用 Chromium View Transitions。
+- 音乐墙：原 MiniVoice 权重分割布局、重复边缘、空间索引和可见区域挂载；触控板、鼠标滚轮、二维拖拽与惯性、聚焦、缩放、定位歌曲。
+- 虚拟化歌曲列表和歌手/专辑卡片；搜索、排序、最近播放、收藏、歌单创建/加入/移除。
+- Swift 音频播放、队列快照、播放模式、音量、输出设备、进度拖动。
+- 歌词展示、逐字高亮、点击歌词定位、独立歌词视图；React 歌曲信息/歌词编辑器、在线歌词搜索、AI 同步入口。
+- 音乐文件夹管理、扫描、主题和减弱动态效果设置。桌面歌词沿用原有原生浮窗服务。
+
+这是一套可运行的主窗口迁移版本，不代表旧版所有辅助功能已经逐项对齐。macOS 上关闭主窗口会隐藏窗口并保留播放，Command + Q 才退出并保存进度。在线封面挑选、封面导出、多选批处理、自定义全局快捷键、歌词翻译设置和部分高级设置仍需迁移；现有 Swift 实现保留。逐字歌词的字体和过渡也仍需按实际曲库验收。
+
+新版使用相同 MiniVoice 曲库、缓存和收藏/歌单数据；不复制音乐文件。界面外观/样式偏好独立保存在 Electron 应用数据中。macOS 可能要求新窗口进程重新获准访问原曲库文件夹；文件夹访问提示需在解锁状态处理。
+
+## 渲染路径
+
+相机位置存在 ref 中，以 `requestAnimationFrame` 写入单个 `translate3d + scale`。React 不订阅逐帧相机位置，只有越过可见区域边界时更新海报集合。虚拟列表/卡片按行挂载。播放状态、曲库和时钟分开发布，重复状态通知去重；歌词高频绘制只更新当前歌词的样式。
+
+进度拖动在等待后台时间回传时保留手指释放的位置，避免先跳回旧进度。停止交互、卸载视图后取消动画帧。
+
+## 进程边界
+
+- Renderer：`Desktop/src/`，没有 Node/文件系统权限。
+- Preload：仅暴露命令调用和后台事件订阅。
+- Electron main：命令白名单、主 frame 校验、文件夹选择、窗口、受限本地封面协议。
+- Swift：`Sources/MiniVoice/DesktopEngine.swift`，有界 JSON 行输入与请求 ID，后台串行输出；不创建 SwiftUI 主窗口。
+- 禁止外部页面导航和新窗口。封面请求只接受缓存根目录中的 64 位十六进制 key。
+
+## 验证
+
+```sh
+MINIVOICE_ENGINE="$(pwd)/.build/electron/MiniVoice Electron-darwin-arm64/MiniVoice Electron.app/Contents/Resources/Native/MiniVoice.app/Contents/MacOS/MiniVoice" npm --prefix Desktop test
+swift test --disable-sandbox
+```
+
+桌面测试使用独立偏好设置域和临时静音 WAV / LRC，覆盖启动、请求/事件分离、错误命令、歌单创建、真实音频解码、时间推进、seek、暂停、定时歌词、空间查询和 60/120Hz 运动一致性。它们不会播放用户曲库或修改用户音乐。
+
+当前自动化：6 项桌面测试全部通过；Swift 全量 246 项中 235 项通过、10 项跳过，1 项基线已有的歌词缓存测试失败（见 `Docs/ScrollingPerformance-2026-10-17.md`）。界面已验证实际 1,040 首曲库载入、封面显示、中文搜索、音乐墙滚动与样式切换。没有采集实际显示帧耗时，不能据此宣称已经追平 Folia。
+
+## 外观约束
+
+以原 SwiftUI MiniVoice 为视觉基准：保留三种样式的布局、封面背景、绿色点缀、浮动音乐墙工具和胶囊播放器。Folia 仅作为滑动体验参考，不沿用其界面设计。侧栏左上品牌图标循环切换样式，系统“显示”菜单可直接选择样式。Chromium 材质与原生玻璃仍有细节差异，当前属于第一轮还原。
+
+后续验收标准已提升为原版 1:1，包含动效和交互状态。当前恢复记录与未完成项见 `Docs/InterfaceRestoration-2026-10-17.md`；不应将本轮主界面恢复描述为全应用复刻完成。

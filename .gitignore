@@ -7,3 +7,7 @@ build/
 # Python runtime caches
 __pycache__/
 *.py[cod]
+
+# Electron renderer and dependencies
+Desktop/node_modules/
+Desktop/dist/

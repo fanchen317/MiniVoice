@@ -26,7 +26,7 @@ struct ContentView: View {
     @StateObject private var collections = LibraryCollections()
     @State private var destination: LibraryDestination = .all
     @State private var browseGroup: String?
-    @State private var browseCardFrames: [String: CGRect] = [:]
+    @State private var browseCardFrames = BrowseCardFrameStore()
     @StateObject private var browseTransition = BrowseCardTransition()
     @Namespace private var browseReflow
     @Namespace private var browseCoordinateSpace
@@ -1295,7 +1295,7 @@ private extension ContentView {
     }
 
     private func openBrowseGroup(_ name: String, tracks: [Track]) {
-        browseTransition.open(origin: browseCardFrames[name] ?? .zero, reduceMotion: reduceMotion) {
+        browseTransition.open(origin: browseCardFrames.frames[name] ?? .zero, reduceMotion: reduceMotion) {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
@@ -1310,7 +1310,7 @@ private extension ContentView {
 
     private func closeBrowseGroup() {
         guard let group = browseGroup else { return }
-        browseTransition.close(origin: browseCardFrames[group], reduceMotion: reduceMotion) {
+        browseTransition.close(origin: browseCardFrames.frames[group], reduceMotion: reduceMotion) {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
@@ -1344,7 +1344,7 @@ private extension ContentView {
                     }
                 }
                 .coordinateSpace(name: browseCoordinateSpace)
-                .onPreferenceChange(BrowseCardFramePreference.self) { browseCardFrames = $0 }
+                .onPreferenceChange(BrowseCardFramePreference.self) { browseCardFrames.frames = $0 }
                 .clipped()
                 .onChange(of: destination) { _ in browseTransition.reset() }
                 .onDisappear { browseTransition.reset() }
@@ -2400,9 +2400,10 @@ private struct ListArtwork: View {
     @EnvironmentObject private var library: MusicLibrary
     var body: some View {
         Group {
-            if let image = track.artwork ?? PreparedBrowseArtwork.shared.image(track.artworkKey) ?? loader.currentImage(key: track.artworkKey, source: track.url, browse: highResolution) ??
-                (highResolution ? BrowseArtworkLoader.shared.cachedImage(track.artworkKey) : ThumbnailLoader.shared.cachedImage(track.artworkKey))?.displayImage() ??
-                (highResolution ? nil : ThumbnailLoader.shared.cachedImage(track.artworkKey)?.displayImage()) {
+            if let image = (highResolution ? BrowseArtworkLoader.shared.cachedImage(track.artworkKey)
+                              : ThumbnailLoader.shared.cachedImage(track.artworkKey))?.displayImage()
+                ?? loader.currentImage(key: track.artworkKey, source: track.url, browse: highResolution)
+                ?? PreparedBrowseArtwork.shared.image(track.artworkKey) ?? track.artwork {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: highResolution ? .fill : .fit)
             } else {
                 Image(systemName: "music.note").foregroundStyle(playerGreen.opacity(0.6))
@@ -2558,15 +2559,24 @@ private final class ScrollViewReference {
 /// Scroll notifications only invalidate the thumb, never the list or lyric content.
 @MainActor
 private final class PlayerScrollState: ObservableObject {
-    @Published var metrics = ScrollMetrics()
+    @Published var metrics = ScrollMetrics() { didSet { updateEdges() } }
     @Published var isThumbVisible = false
-    @Published var hasUserScrolled = false
+    private var hasUserScrolled = false
+    let edges = PlayerScrollEdgeState()
+    var viewportHeight: CGFloat = 0 { didSet { updateEdges() } }
+
+    private func updateEdges() {
+        let top = hasUserScrolled && metrics.offset > 1
+        let bottom = hasUserScrolled && metrics.height - metrics.offset > viewportHeight + 1
+        if edges.top != top { edges.top = top }
+        if edges.bottom != bottom { edges.bottom = bottom }
+    }
     var isDragging = false
     private var lastInteraction = ProcessInfo.processInfo.systemUptime
     private var hideTask: Task<Void, Never>?
 
     func userScrolled() {
-        if !hasUserScrolled { hasUserScrolled = true }
+        if !hasUserScrolled { hasUserScrolled = true; updateEdges() }
         revealThumb()
     }
 
@@ -2589,7 +2599,7 @@ private final class PlayerScrollState: ObservableObject {
     }
 
     func cancelHide() { hideTask?.cancel(); hideTask = nil }
-    func reset() { cancelHide(); isDragging = false; isThumbVisible = false; hasUserScrolled = false }
+    func reset() { cancelHide(); isDragging = false; isThumbVisible = false; hasUserScrolled = false; updateEdges() }
 }
 
 /// One thumb geometry and interaction model for both songs and lyrics.
@@ -2623,6 +2633,7 @@ private struct PlayerScrollView<Content: View>: View {
                                 }
                             } else { savedPosition.offset = max(0, offset) }
                         }
+                        scrollState.viewportHeight = viewport.size.height
                         let updated = ScrollMetrics(offset: offset, height: height)
                         if scrollState.metrics != updated { scrollState.metrics = updated }
                     }, onScrollView: { scrollReference.view = $0 }, onUserScroll: { scrollState.userScrolled() })
@@ -2632,7 +2643,7 @@ private struct PlayerScrollView<Content: View>: View {
             .coordinateSpace(name: coordinateSpace)
             .mask {
                 if fadesEdges {
-                    ScrollEdgeFade(state: scrollState, height: viewport.size.height,
+                    ScrollEdgeFade(state: scrollState.edges, height: viewport.size.height,
                                    edgeLength: fadeEdgeLength, onlyOverflow: fadeOnlyOverflow)
                 } else { Rectangle() }
             }
@@ -2640,22 +2651,30 @@ private struct PlayerScrollView<Content: View>: View {
                 PlayerScrollThumb(state: scrollState, scrollReference: scrollReference,
                                   height: viewport.size.height, thumbOffset: thumbOffset, coordinateSpace: coordinateSpace)
             }
+            .onAppear { scrollState.viewportHeight = viewport.size.height }
+            .onChange(of: viewport.size.height) { scrollState.viewportHeight = $0 }
             .onDisappear { scrollState.reset(); scrollReference.view = nil }
         }
     }
 }
 
-/// Only the mask observes scroll metrics, keeping list rows out of scroll-driven updates.
+/// Pixel offsets only update the thumb. The mask changes at the two edge thresholds.
+@MainActor
+private final class PlayerScrollEdgeState: ObservableObject {
+    @Published var top = false
+    @Published var bottom = false
+}
+
 private struct ScrollEdgeFade: View {
-    @ObservedObject var state: PlayerScrollState
+    @ObservedObject var state: PlayerScrollEdgeState
     let height: CGFloat
     let edgeLength: CGFloat?
     let onlyOverflow: Bool
 
     var body: some View {
         let inset = edgeLength.map { min(0.15, max(0, $0 / max(1, height))) } ?? 0.1
-        let fadeTop = !onlyOverflow || (state.hasUserScrolled && state.metrics.offset > 1)
-        let fadeBottom = !onlyOverflow || (state.hasUserScrolled && state.metrics.height - state.metrics.offset > height + 1)
+        let fadeTop = !onlyOverflow || state.top
+        let fadeBottom = !onlyOverflow || state.bottom
         LinearGradient(stops: [
             .init(color: fadeTop ? .clear : .black, location: 0),
             .init(color: .black, location: inset),
@@ -3025,6 +3044,12 @@ private struct SidebarToggleStyle: ButtonStyle {
             .background(Color(nsColor: .controlBackgroundColor).opacity(configuration.isPressed ? 0.48 : 0.74), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: .black.opacity(0.05), radius: 8, y: 3)
     }
+}
+
+/// Geometry is read when opening/closing a card, not rendered by the workspace.
+/// Scrolling must not invalidate the whole grid just to remember click origins.
+private final class BrowseCardFrameStore {
+    var frames: [String: CGRect] = [:]
 }
 
 private struct BrowseCardFramePreference: PreferenceKey {

@@ -98,7 +98,7 @@ struct MusicWallView: View {
                 viewport: sourceViewport, offset: sourceOffset, focusedID: focusedInstance?.id)
             ZStack(alignment: .topLeading) {
                 Color(red: 0.09, green: 0.08, blue: 0.08)
-                  MusicWallViewportContent(translation: cameraMotion.translation, reflow: cameraMotion.reflow) { liveOffset, progress in
+                  MusicWallCompositedViewport(motion: cameraMotion, viewport: geometry.size) { liveOffset, progress, documentSize in
                    ZStack(alignment: .topLeading) {
                     ForEach(instances) { instance in
                         let rect = MusicWallReflow.mosaicFrame(instance.frame, focus: focusedInstance?.frame,
@@ -112,7 +112,8 @@ struct MusicWallView: View {
                             .accessibilityHidden(sidebarBlocksWall)
                     }
                   }
-                  .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+                  .frame(width: documentSize.width, height: documentSize.height, alignment: .topLeading)
+                  .environmentObject(library)
                   }
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
                 .contentShape(Rectangle())
@@ -126,7 +127,7 @@ struct MusicWallView: View {
                         if hoveredID != next { hoveredID = next }
                     }, onScroll: { delta, point, precise in
                         guard allowsPan(from: point, viewport: geometry.size, includingButtons: true, wallGesture: true) else { return false }
-                        if precise { cameraMotion.pan(by: delta) }
+                        if precise || reduceMotion { cameraMotion.pan(by: delta) }
                         else { cameraMotion.wheel(by: delta) }
                         return true
                     }, onMagnify: { amount, point in
@@ -357,6 +358,7 @@ struct MusicWallView: View {
                 if let id = focusedTrack?.id, let updated = library.track(for: id) { focusedTrack = updated }
             }
             .onDisappear {
+                cameraMotion.freezeForInteraction()
                 expansionTask?.cancel()
                 if let previous = sidebarBeforeImmersive { sidebarVisible = previous; sidebarBeforeImmersive = nil }
             }
@@ -656,7 +658,7 @@ struct MusicWallView: View {
         }
         focusedInstance = instance; focusedTrack = track
         let target = MusicWallCamera.centeredOffset(frame: instance.frame, viewport: viewport, leadingInset: focusLeadingInset, scale: cameraMotion.scale)
-        if animated && !reduceMotion { cameraMotion.travel(to: target, duration: 0.48) }
+        if animated && !reduceMotion { cameraMotion.travel(to: target, duration: MusicWallMotionTuning.focusDuration) }
         else {
             var transaction = Transaction()
             transaction.disablesAnimations = true

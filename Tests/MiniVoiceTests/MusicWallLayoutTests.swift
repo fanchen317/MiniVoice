@@ -226,20 +226,21 @@ final class MusicWallSceneTests: XCTestCase {
 @MainActor
 final class MusicWallCameraMotionTests: XCTestCase {
     func testDragReleaseDecaysAndNewPanCancelsMomentum() async throws {
-        let motion = MusicWallCameraMotion()
+        let clock = MusicWallTestClock()
+        let motion = clock.motion
         motion.coast(velocity: CGSize(width: 1000, height: -500))
-        try await Task.sleep(for: .milliseconds(80))
+        clock.advance(by: 0.08)
         let first = motion.offset
         XCTAssertGreaterThan(first.width, 0)
         XCTAssertLessThan(first.height, 0)
-        try await Task.sleep(for: .milliseconds(80))
+        clock.advance(by: 0.08)
         let second = motion.offset
         XCTAssertGreaterThan(second.width, first.width)
         XCTAssertLessThan(second.width - first.width, first.width)
         motion.pan(by: CGSize(width: 10, height: 20))
-        try await Task.sleep(for: .milliseconds(30))
+        clock.advance(by: 0.03)
         let stopped = motion.offset
-        try await Task.sleep(for: .milliseconds(80))
+        clock.advance(by: 0.08)
         XCTAssertEqual(motion.offset, stopped)
     }
     func testToolsReturnBesideDockWhenSpaceIsAvailable() {
@@ -247,7 +248,8 @@ final class MusicWallCameraMotionTests: XCTestCase {
         XCTAssertFalse(MusicWallChromeMetrics(width: 1400, leadingInset: 260).toolsAboveDock)
     }
     func testZoomKeepsPointUnderPointerAndDoesNotRebuildGeometry() {
-        let motion = MusicWallCameraMotion()
+        let clock = MusicWallTestClock()
+        let motion = clock.motion
         motion.jump(to: CGSize(width: -500, height: -800))
         let anchor = CGPoint(x: 400, y: 300)
         let before = CGPoint(x: (anchor.x - motion.offset.width) / motion.scale,
@@ -259,13 +261,14 @@ final class MusicWallCameraMotionTests: XCTestCase {
         XCTAssertEqual((anchor.x - motion.offset.width) / motion.scale, before.x, accuracy: 0.001)
     }
     func testLocateTravelsThroughIntermediateCoordinatesAndCanBeInterrupted() async throws {
-        let motion = MusicWallCameraMotion()
+        let clock = MusicWallTestClock()
+        let motion = clock.motion
         motion.travel(to: CGSize(width: -1000, height: -600), duration: 0.12)
-        try await Task.sleep(for: .milliseconds(55))
+        clock.advance(by: 0.055)
         XCTAssertLessThan(motion.offset.width, 0)
         XCTAssertGreaterThan(motion.offset.width, -1000)
         motion.jump(to: CGSize(width: 30, height: 40))
-        try await Task.sleep(for: .milliseconds(140))
+        clock.advance(by: 0.14)
         XCTAssertEqual(motion.offset, CGSize(width: 30, height: 40))
     }
 }
@@ -317,7 +320,8 @@ final class MusicWallStabilityTests: XCTestCase {
         }
     }
     @MainActor func testEveryZoomInputIsClampedToUserRange() {
-        let motion = MusicWallCameraMotion()
+        let clock = MusicWallTestClock()
+        let motion = clock.motion
         motion.zoom(to: 0.1, anchor: .zero, animated: false)
         XCTAssertEqual(motion.scale, 0.8)
         motion.zoom(to: 3, anchor: .zero, animated: false)

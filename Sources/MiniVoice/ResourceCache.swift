@@ -106,8 +106,11 @@ final class PreparedBrowseArtwork {
     @MainActor func image(_ key: String?) -> NSImage? {
         guard let key else { return nil }
         if let hit = presentations.object(forKey: key as NSString) { return hit }
-        let data = bytes[key]
-        guard let data, let image = NSImage(data: data) else { return nil }
+        guard let data = bytes[key] else { return nil }
+        // Preparation decodes on the artwork worker; avoid first-draw JPEG/PNG
+        // decompression on the scrolling thread while the bounded cache is warm.
+        guard let image = BrowseArtworkLoader.shared.cachedImage(key)?.displayImage()
+            ?? NSImage(data: data) else { return nil }
         presentations.totalCostLimit = 64 * 1024 * 1024
         presentations.setObject(image, forKey: key as NSString,
                                 cost: Int(image.size.width * image.size.height * 4))
@@ -174,9 +177,9 @@ final class ListArtworkLoader: ObservableObject {
         if identity == next, image != nil || request != nil { return }
         cancel()
         identity = next
-        image = PreparedBrowseArtwork.shared.image(key)
-            ?? (browse ? BrowseArtworkLoader.shared.cachedImage(key)?.displayImage()
+        image = (browse ? BrowseArtworkLoader.shared.cachedImage(key)?.displayImage()
                 : ThumbnailLoader.shared.cachedImage(key)?.displayImage())
+            ?? PreparedBrowseArtwork.shared.image(key)
         guard let key, image == nil else { return }
         let token = generation
         request = Task { [weak self] in
@@ -211,10 +214,18 @@ actor BrowseArtworkLoader {
             guard !Task.isCancelled else { return prepared }
             if let data = await BrowseArtworkWorker.shared.preparedData(entry.key, source: entry.source) {
                 prepared[entry.key] = data
+                if let decoded = Self.decodePrepared(data) { memory.insert(decoded, key: entry.key) }
             }
             if index % 16 == 0 || index == unique.count - 1 { await progress(index + 1, unique.count) }
         }
         return prepared
+    }
+
+    private static func decodePrepared(_ data: Data) -> CachedArtwork? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0,
+                [kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else { return nil }
+        return CachedArtwork(image)
     }
 
     func image(_ key: String, source: URL) async -> CachedArtwork? {

@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import QuartzCore
 
 /// Only viewport projection observes this high-frequency state. The parent wall
 /// observes MusicWallCameraMotion, which publishes at cull boundaries.
@@ -25,13 +27,40 @@ struct MusicWallViewportContent<Content: View>: View {
     }
 }
 
-// MusicWallCameraMotion.swift: animate the real camera so culling follows every intermediate frame.
+// Camera physics and reflow share one display-synchronized, monotonic clock.
 @MainActor
 final class MusicWallCameraMotion: ObservableObject {
     let translation = MusicWallTranslation()
+    let reflow = MusicWallReflowMotion()
+    private let clock = DisplayRefreshClock()
+    private let now: () -> TimeInterval
+    private let automaticallyTicks: Bool
+    private var previousFrame: TimeInterval = 0
+    private var reflowStart: TimeInterval?
+    private var movement: Movement?
+    private var travelShift = CGSize.zero
+    private var pendingPan = CGSize.zero
+    private var pendingWheel = CGSize.zero
+
+    private enum Movement {
+        case coast(start: CGSize, velocity: CGSize, began: TimeInterval)
+        case travel(start: CGSize, target: CGSize, began: TimeInterval, duration: Double)
+        case zoom(start: CGFloat, target: CGFloat, world: CGPoint, anchor: CGPoint, began: TimeInterval)
+    }
+
+    init(automaticallyTicks: Bool = true, now: @escaping () -> TimeInterval = { CACurrentMediaTime() }) {
+        self.automaticallyTicks = automaticallyTicks
+        self.now = now
+        clock.onFrame = { [weak self] time in self?.advanceFrame(at: time) }
+    }
+
+    /// Track the containing display when the window moves between monitors.
+    func attach(to view: NSView) { clock.view = view }
+
     private(set) var offset: CGSize {
         get { translation.offset }
         set {
+            guard newValue != offset else { return }
             notifyCullBoundary(from: offset, to: newValue, extra: dragOffset)
             translation.offset = newValue
         }
@@ -39,6 +68,7 @@ final class MusicWallCameraMotion: ObservableObject {
     var dragOffset: CGSize {
         get { translation.drag }
         set {
+            guard newValue != dragOffset else { return }
             notifyCullBoundary(from: dragOffset, to: newValue, extra: offset)
             translation.drag = newValue
         }
@@ -51,186 +81,132 @@ final class MusicWallCameraMotion: ObservableObject {
         }
     }
     @Published private(set) var scale: CGFloat = 1
-    let reflow = MusicWallReflowMotion()
     private(set) var reflowProgress: CGFloat {
         get { reflow.progress }
-        set { reflow.progress = newValue }
+        set { if reflow.progress != newValue { reflow.progress = newValue } }
     }
-    // A final content pass is required even when travel ends inside the same
-    // culling bucket as its previous frame.
     @Published private(set) var settledRevision = 0
-    private var reflowTask: Task<Void, Never>?
-    private var travelTask: Task<Void, Never>?
-    private var travelShift = CGSize.zero
-    private var panTask: Task<Void, Never>?
-    private var pendingPan = CGSize.zero
-    private var wheelTask: Task<Void, Never>?
-    private var pendingWheel = CGSize.zero
-    /// Freeze both parts of a focus transition without snapping to its destination.
+
+    private func wake() {
+        if previousFrame == 0 { previousFrame = now() }
+        if automaticallyTicks { clock.start() }
+    }
+    private func sleepIfIdle() {
+        if movement == nil, reflowStart == nil, pendingPan == .zero, pendingWheel == .zero {
+            clock.stop(); previousFrame = 0
+        }
+    }
     func freezeForInteraction() {
-        reflowTask?.cancel(); reflowTask = nil
+        reflowStart = nil
         stop()
     }
     func stop() {
-        wheelTask?.cancel(); wheelTask = nil; pendingWheel = .zero
-        travelTask?.cancel(); travelTask = nil
-        travelShift = .zero
-        panTask?.cancel(); panTask = nil
+        movement = nil; pendingWheel = .zero; travelShift = .zero
         flushPan()
+        sleepIfIdle()
     }
-
     private func flushPan() {
         guard pendingPan != .zero else { return }
-        let delta = pendingPan
-        pendingPan = .zero
+        let delta = pendingPan; pendingPan = .zero
         offset = CGSize(width: offset.width + delta.width, height: offset.height + delta.height)
     }
     func jump(to value: CGSize, refreshContent: Bool = false) {
-        stop()
-        offset = value
+        stop(); offset = value
         if refreshContent { settledRevision += 1 }
     }
-
-    /// Rebase an in-flight move when the viewport changes, preserving its progress
-    /// instead of cancelling and starting another ease-in on every resize event.
     func shiftViewport(by delta: CGSize) {
         guard delta != .zero else { return }
-        travelShift.width += delta.width
-        travelShift.height += delta.height
+        travelShift.width += delta.width; travelShift.height += delta.height
         offset = CGSize(width: offset.width + delta.width, height: offset.height + delta.height)
     }
-
     func pan(by delta: CGSize) {
         guard delta != .zero else { return }
-        wheelTask?.cancel(); wheelTask = nil; pendingWheel = .zero
-        travelTask?.cancel(); travelTask = nil
-        pendingPan.width += delta.width
-        pendingPan.height += delta.height
-        // Coalesce high-frequency wheel events without losing native momentum deltas.
-        guard panTask == nil else { return }
-        panTask = Task { [weak self] in
-            do { try await Task.sleep(for: .milliseconds(8)) } catch { return }
-            guard let self else { return }
-            self.panTask = nil
-            self.flushPan()
-        }
+        movement = nil; pendingWheel = .zero; travelShift = .zero
+        pendingPan.width += delta.width; pendingPan.height += delta.height
+        wake()
     }
-
-    /// Discrete mouse notches follow a short exponential curve. Native trackpad
-    /// momentum uses pan(by:) directly, without an additional smoothing tail.
     func wheel(by delta: CGSize) {
         guard delta != .zero else { return }
-        travelTask?.cancel(); travelTask = nil
-        pendingWheel.width += delta.width
-        pendingWheel.height += delta.height
-        guard wheelTask == nil else { return }
-        wheelTask = Task { [weak self] in
-            var previous = ProcessInfo.processInfo.systemUptime
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: .milliseconds(8)) } catch { return }
-                guard let self else { return }
-                let now = ProcessInfo.processInfo.systemUptime
-                let factor = 1 - exp(-min(0.05, now - previous) / 0.08)
-                previous = now
-                let done = hypot(self.pendingWheel.width, self.pendingWheel.height) < 0.5
-                let step = CGSize(width: self.pendingWheel.width * (done ? 1 : factor),
-                                  height: self.pendingWheel.height * (done ? 1 : factor))
-                self.pendingWheel.width -= step.width
-                self.pendingWheel.height -= step.height
-                self.offset = CGSize(width: self.offset.width + step.width, height: self.offset.height + step.height)
-                if done { self.wheelTask = nil; return }
-            }
-        }
+        movement = nil; travelShift = .zero
+        pendingWheel.width += delta.width; pendingWheel.height += delta.height
+        wake()
     }
-
-    /// Exponential drag release, integrated by elapsed time rather than frame count.
     func coast(velocity: CGSize) {
         stop()
-        guard hypot(velocity.width, velocity.height) > 40 else { return }
-        let start = offset
-        travelTask = Task { [weak self] in
-            let began = Date.timeIntervalSinceReferenceDate
-            let resistance = 5.5
-            while !Task.isCancelled {
-                guard let self else { return }
-                let elapsed = Date.timeIntervalSinceReferenceDate - began
-                let decay = exp(-resistance * elapsed)
-                let distance = (1 - decay) / resistance
-                self.offset = CGSize(width: start.width + velocity.width * distance + self.travelShift.width,
-                                     height: start.height + velocity.height * distance + self.travelShift.height)
-                if decay < 0.008 { self.travelTask = nil; return }
-                do { try await Task.sleep(for: .milliseconds(8)) } catch { return }
-            }
-        }
+        let speed = hypot(velocity.width, velocity.height)
+        guard speed > MusicWallMotionTuning.minimumReleaseSpeed else { return }
+        let limit = min(1, MusicWallMotionTuning.maximumReleaseSpeed / speed)
+        movement = .coast(start: offset,
+                          velocity: CGSize(width: velocity.width * limit, height: velocity.height * limit), began: now())
+        wake()
     }
-
     func beginReflow(animated: Bool) {
-        reflowTask?.cancel()
-        guard animated else { reflowProgress = 1; return }
-        reflowProgress = 0
-        reflowTask = Task { [weak self] in
-            let began = Date.timeIntervalSinceReferenceDate
-            while !Task.isCancelled {
-                guard let self else { return }
-                let progress = min(1, (Date.timeIntervalSinceReferenceDate - began) / 0.48)
-                self.reflowProgress = (1 - cos(progress * .pi)) / 2
-                if progress >= 1 { self.reflowProgress = 1; self.reflowTask = nil; return }
-                do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
-            }
-        }
+        reflowStart = animated ? now() : nil
+        reflowProgress = animated ? 0 : 1
+        if animated { wake() } else { sleepIfIdle() }
     }
-
-    /// Preserve the world point under the pointer throughout a zoom, including every animation frame.
     func zoom(to requested: CGFloat, anchor: CGPoint, animated: Bool) {
         let target = min(1.2, max(0.8, requested))
         guard abs(target - scale) > 0.0001 else { return }
         stop()
-        let startScale = scale
-        let worldPoint = CGPoint(x: (anchor.x - offset.width) / scale, y: (anchor.y - offset.height) / scale)
+        let world = CGPoint(x: (anchor.x - offset.width) / scale, y: (anchor.y - offset.height) / scale)
         if !animated {
             scale = target
-            offset = CGSize(width: anchor.x - worldPoint.x * target, height: anchor.y - worldPoint.y * target)
-            return
-        }
-        travelTask = Task { [weak self] in
-            let began = Date.timeIntervalSinceReferenceDate
-            while !Task.isCancelled {
-                guard let self else { return }
-                let progress = min(1, (Date.timeIntervalSinceReferenceDate - began) / 0.28)
-                let eased = (1 - cos(progress * .pi)) / 2
-                let next = startScale + (target - startScale) * eased
-                self.scale = next
-                self.offset = CGSize(width: anchor.x - worldPoint.x * next + self.travelShift.width,
-                                     height: anchor.y - worldPoint.y * next + self.travelShift.height)
-                if progress >= 1 { self.travelTask = nil; return }
-                do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
-            }
+            offset = CGSize(width: anchor.x - world.x * target, height: anchor.y - world.y * target)
+        } else {
+            movement = .zoom(start: scale, target: target, world: world, anchor: anchor, began: now())
+            wake()
         }
     }
-
     func travel(to target: CGSize, duration: Double? = nil) {
         stop()
-        let start = offset
-        let distance = hypot(target.width - start.width, target.height - start.height)
+        let distance = hypot(target.width - offset.width, target.height - offset.height)
         guard distance > 0.5 else { offset = target; settledRevision += 1; return }
-        let seconds = duration ?? min(1.15, max(0.45, Double(distance) / 2400))
-        travelTask = Task { [weak self] in
-            let began = Date.timeIntervalSinceReferenceDate
-            while !Task.isCancelled {
-                guard let self else { return }
-                let progress = min(1, (Date.timeIntervalSinceReferenceDate - began) / max(0.01, seconds))
-                let eased = (1 - cos(progress * .pi)) / 2
-                self.offset = CGSize(width: start.width + (target.width - start.width) * eased + self.travelShift.width,
-                                     height: start.height + (target.height - start.height) * eased + self.travelShift.height)
-                if progress >= 1 {
-                    self.offset = CGSize(width: target.width + self.travelShift.width,
-                                         height: target.height + self.travelShift.height)
-                    self.travelTask = nil
-                    self.settledRevision += 1
-                    return
-                }
-                do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
+        movement = .travel(start: offset, target: target, began: now(),
+                           duration: max(0.01, duration ?? MusicWallMotionTuning.focusDuration))
+        wake()
+    }
+
+    /// Exposed internally for deterministic 60/120 Hz physics regression tests.
+    func advanceFrame(at time: TimeInterval) {
+        let elapsed = max(0, time - previousFrame)
+        previousFrame = time
+        flushPan()
+        if pendingWheel != .zero {
+            var factor = 1 - exp(-min(elapsed, MusicWallMotionTuning.maximumWheelFrame) / MusicWallMotionTuning.wheelTimeConstant)
+            if hypot(pendingWheel.width, pendingWheel.height) * (1 - factor) < MusicWallMotionTuning.restDistance { factor = 1 }
+            let step = CGSize(width: pendingWheel.width * factor, height: pendingWheel.height * factor)
+            pendingWheel.width -= step.width; pendingWheel.height -= step.height
+            offset = CGSize(width: offset.width + step.width, height: offset.height + step.height)
+        }
+        if let movement {
+            switch movement {
+            case let .coast(start, velocity, began):
+                let decay = exp(-max(0, time - began) / MusicWallMotionTuning.releaseTimeConstant)
+                let done = hypot(velocity.width, velocity.height) * MusicWallMotionTuning.releaseProjection * decay
+                    < MusicWallMotionTuning.restDistance
+                let distance = MusicWallMotionTuning.releaseProjection * (done ? 1 : 1 - decay)
+                offset = CGSize(width: start.width + velocity.width * distance + travelShift.width,
+                                height: start.height + velocity.height * distance + travelShift.height)
+                if done { self.movement = nil }
+            case let .travel(start, target, began, duration):
+                let progress = min(1, max(0, (time - began) / duration))
+                let eased = MusicWallMotionTuning.focusProgress(progress)
+                offset = CGSize(width: start.width + (target.width - start.width) * eased + travelShift.width,
+                                height: start.height + (target.height - start.height) * eased + travelShift.height)
+                if progress >= 1 { self.movement = nil; settledRevision += 1 }
+            case let .zoom(start, target, world, anchor, began):
+                let progress = min(1, max(0, (time - began) / 0.28))
+                scale = start + (target - start) * (1 - cos(progress * .pi)) / 2
+                offset = CGSize(width: anchor.x - world.x * scale + travelShift.width,
+                                height: anchor.y - world.y * scale + travelShift.height)
+                if progress >= 1 { self.movement = nil }
             }
         }
+        if let began = reflowStart {
+            reflowProgress = MusicWallMotionTuning.reflowProgress(time - began)
+            if reflowProgress >= 1 { reflowStart = nil }
+        }
+        sleepIfIdle()
     }
 }
