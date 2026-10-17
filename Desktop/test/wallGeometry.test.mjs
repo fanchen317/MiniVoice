@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createScene, visibleTiles, wheelStep, releaseDistance, restoredPlayerCamera } from '../src/wallGeometry.js';
+import { createScene, visibleTiles, wheelStep, releaseDistance, restoredPlayerCamera, wallWorkspaceMetrics } from '../src/wallGeometry.js';
 
 test('all tracks have unique seats and visibility matches exhaustive periodic projection',()=>{
   for(const count of [0,1,7,1040,10000]){
@@ -33,5 +33,17 @@ test('collapsing a player preserves a panned camera, but reveals a changed playi
     const camera=restoredPlayerCamera(saved,{...target,id:'8:0:0'},{width:1000,height:700},inset,scale);
     assert.equal(camera.x+(target.x+target.width/2)*scale,(1000+inset)/2);
     assert.equal(camera.y+(target.y+target.height/2)*scale,350);
+  }
+});
+test('live wall resize keeps the dock visible and its centre continuous across sidebar breakpoints',()=>{
+  for(const sidebar of [false,true]){
+    let previous;
+    for(let width=480;width<=1600;width++){
+      const layout=wallWorkspaceMetrics(width,sidebar),center=(width+layout.leadingInset)/2;
+      const left=center-layout.dockWidth/2,right=center+layout.dockWidth/2;
+      assert.ok(left>=20&&right<=width-20,`dock clipped at ${width}, sidebar ${sidebar}`);
+      if(previous!==undefined)assert.ok(center-previous>=0&&center-previous<=1.001,`centre jumped at ${width}`);
+      previous=center;
+    }
   }
 });

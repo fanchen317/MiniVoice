@@ -20,6 +20,11 @@ test('Swift engine starts without a SwiftUI window and keeps JSON request/event 
   try{
     const ready=await wait(message=>message.event==='ready');assert.equal(ready.data.protocol,1);
     const state=await wait(message=>message.event==='state');assert.ok(Array.isArray(state.data.folders));
+    assert.ok(state.data.doubleClickIntervalMs>0&&state.data.doubleClickIntervalMs<5000);
+    assert.equal(state.data.closeBehavior,'background');
+    assert.equal(state.data.playbackShortcuts.length,3);
+    send('missing-editor','openEditor',{id:'missing'});assert.match((await wait(m=>m.id==='missing-editor')).error,/歌曲已移除/);
+    send('style','interfaceStyle',{value:'library'});assert.equal((await wait(m=>m.id==='style')).result,true);
     send('invalid','notAllowed');assert.match((await wait(m=>m.id==='invalid')).error,/不支持/);
     send('playlist','createPlaylist',{name:'测试歌单'});assert.match((await wait(m=>m.id==='playlist')).result,/^[A-F0-9-]+$/);
     send('appearance','appearance',{value:'dark'});assert.equal((await wait(m=>m.id==='appearance')).result,true);await wait(m=>m.event==='state'&&m.data.appearance==='dark');
@@ -53,6 +58,20 @@ test('packaged audio backend plays, advances, seeks and pauses a silent fixture 
     send('detail','detail',{id});const detail=await wait(m=>m.id==='detail');assert.ok(detail.result.lines.some(line=>line.text==='第一句'));assert.ok(detail.result.lines.some(line=>line.words.length>0));
     send('seek','seek',{time:2});await wait(m=>m.id==='seek');await wait(m=>m.event==='clock'&&m.data.time>=2);
     send('pause','pause');await wait(m=>m.id==='pause');await wait(m=>m.event==='clock'&&!m.data.playing&&m.data.time>=2);
+    const resumeAt=messages.length;
+    send('wall-resume','play',{id,preservePosition:true});await wait(m=>m.id==='wall-resume');
+    const resumed=await wait(m=>messages.indexOf(m)>=resumeAt&&m.event==='clock'&&m.data.playing);
+    assert.ok(resumed.data.time>=2,'Double-clicking a paused wall card must resume its position');
+    const repeatAt=messages.length;
+    send('wall-repeat','play',{id,preservePosition:true});await wait(m=>m.id==='wall-repeat');
+    const repeated=await wait(m=>messages.indexOf(m)>=repeatAt&&m.event==='clock'&&m.data.playing);
+    assert.ok(repeated.data.time>=resumed.data.time,'Double-clicking the playing card must not restart it');
+    send('panel-editor','openEditor',{id});assert.equal((await wait(m=>m.id==='panel-editor')).result,true);
+    send('panel-settings','openSettings');assert.equal((await wait(m=>m.id==='panel-settings')).result,true);
+    const panelAt=messages.length;
+    send('panel-snapshot','snapshot');assert.equal((await wait(m=>m.id==='panel-snapshot')).result,true);
+    await wait(m=>messages.indexOf(m)>=panelAt&&m.event==='clock');
+    assert.equal(child.exitCode,null,'Opening native editor/settings must keep the audio service alive');
     send('removeFolder','removeFolder',{path:root});await wait(m=>m.id==='removeFolder');
   }finally{child.stdin.end();await new Promise(resolve=>{child.once('exit',resolve);setTimeout(()=>{child.kill();resolve();},1000).unref();});await fs.rm(root,{recursive:true,force:true});}
 });

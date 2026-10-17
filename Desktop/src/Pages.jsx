@@ -6,6 +6,8 @@ import { playerDetailMetrics } from './motion';
 
 export function Backdrop({track}){
   const url=artwork(track),[layers,setLayers]=useState([]);
+  const colors=track?.backdropColors||[[.90,.97,.98],[.94,.99,.97]];
+  const gradient=`linear-gradient(to bottom right,${colors.map(rgb=>`rgb(${rgb.map(value=>Math.round(value*255)).join(' ')})`).join(',')})`;
   useEffect(()=>{
     let live=true,timer;
     if(!url){setLayers([]);return;}
@@ -13,7 +15,7 @@ export function Backdrop({track}){
     image.decode().then(()=>{if(live){setLayers(previous=>[...previous.slice(-1),url]);timer=setTimeout(()=>live&&setLayers([url]),500);}}).catch(()=>{});
     return()=>{live=false;clearTimeout(timer);};
   },[url]);
-  return <div className="cover-backdrop" aria-hidden="true">{layers.map((src,index)=><img src={src} key={src} alt=""/>)}</div>;
+  return <div className="cover-backdrop" aria-hidden="true"><div className="cover-palette" style={{background:gradient}}/>{layers.map((src,index)=><img src={src} key={src} alt=""/>)}</div>;
 }
 export function NavigationSelection({value}){
   const marker=useRef();

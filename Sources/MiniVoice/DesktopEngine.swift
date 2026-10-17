@@ -2,7 +2,7 @@ import AppKit
 import Combine
 
 /// The Electron shell owns every main-window pixel. This process owns audio,
-/// library/cache access and tag writes; JSON lines are its only UI transport.
+/// library/cache access, tag writes and the original auxiliary windows.
 @MainActor
 final class DesktopEngine {
     private let defaults: UserDefaults
@@ -12,20 +12,27 @@ final class DesktopEngine {
     private let lyricsSync = LyricsSyncCoordinator()
     private let songIndex = SongListIndex()
     private let desktopLyrics = DesktopLyricsController()
+    private lazy var panels = DesktopPanels(library: library, lyricsSync: lyricsSync, volume: volume) { [weak self] action in
+        self?.send(["event": "shell", "data": action])
+    }
+    private var lastInterfaceStyle: String?
     private var observations = Set<AnyCancellable>()
     private var input = Data()
     private var pendingState = false
     private var catalogRevision = -1
     private var artworkRevision = -1
+    private let backdropColors = NSCache<NSImage, NSArray>()
     private var timer: Timer?
     private let writer = DispatchQueue(label: "MiniVoice.engine.output", qos: .userInitiated)
 
     static func run() {
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
+        let delegate = DesktopEngineApplicationDelegate()
+        app.delegate = delegate
         let engine = DesktopEngine()
         engine.start()
-        withExtendedLifetime(engine) { app.run() }
+        withExtendedLifetime((engine, delegate)) { app.run() }
     }
 
     init(defaults: UserDefaults? = nil) {
@@ -68,6 +75,11 @@ final class DesktopEngine {
             }
         }
         send(["event": "ready", "data": ["protocol": 1, "artworkRoot": ResourceCache.directory.path]])
+        if ProcessInfo.processInfo.environment["MINIVOICE_ENGINE_TEST_DOMAIN"] == nil {
+            _ = panels
+        }
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .sink { [weak self] _ in Task { @MainActor in self?.scheduleState() } }.store(in: &observations)
         publishState()
         library.rescan(preferCache: true)
     }
@@ -103,7 +115,18 @@ final class DesktopEngine {
     private func detail(_ track: Track?) -> Any {
         guard let track else { return NSNull() }
         var result = row(track)
+        if let image = track.artwork {
+            if let cached = backdropColors.object(forKey: image) { result["backdropColors"] = cached }
+            else if let base = ArtworkPresentation.averageColor(of: image) {
+                let rgb = [base.redComponent, base.greenComponent, base.blueComponent]
+                let colors = [rgb.map { min(1, $0 * 0.38 + 0.62) }, rgb.map { min(1, $0 * 0.20 + 0.80) }]
+                backdropColors.countLimit = 8
+                backdropColors.setObject(colors as NSArray, forKey: image)
+                result["backdropColors"] = colors
+            }
+        }
         result["lyrics"] = track.lyrics
+        result["lyricsLoading"] = track.lyricsAreLoading
         result["lines"] = track.lyricLines.map { line -> [String: Any] in
             ["time": line.timestamp.map { $0 as Any } ?? NSNull(), "text": line.text,
              "translation": line.translation ?? "", "end": line.endTime.map { $0 as Any } ?? NSNull(),
@@ -112,12 +135,25 @@ final class DesktopEngine {
         return result
     }
     private func publishState() {
+        let style = defaults.string(forKey: PlayerInterfaceStyle.preferenceKey) ?? "simple"
+        if lastInterfaceStyle != nil, lastInterfaceStyle != style { send(["event": "style", "data": style]) }
+        lastInterfaceStyle = style
+        if ProcessInfo.processInfo.environment["MINIVOICE_ENGINE_TEST_DOMAIN"] == nil {
+            panels.applyAppearance(defaults.string(forKey: "MiniVoice.appearance") ?? "system")
+        }
         if catalogRevision != library.tracksRevision || artworkRevision != library.browseArtworkRevision {
             catalogRevision = library.tracksRevision; artworkRevision = library.browseArtworkRevision
             send(["event": "catalog", "data": library.tracks.map(row)])
         }
         send(["event": "state", "data": [
             "appearance": defaults.string(forKey: "MiniVoice.appearance") ?? "system", "desktopLyrics": desktopLyrics.isEnabled,
+            "closeBehavior": defaults.string(forKey: "MiniVoice.closeBehavior") ?? "background",
+            "playbackShortcuts": PlaybackShortcutAction.allCases.map { action -> [String: Any] in
+                let key = "MiniVoice.playbackShortcut.\(action.rawValue)"
+                let shortcut = defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(PlaybackShortcut.self, from: $0) } ?? action.defaultShortcut
+                return ["action": action.rawValue, "keyCode": shortcut.keyCode, "modifiers": shortcut.modifiers]
+            },
+            "doubleClickIntervalMs": NSEvent.doubleClickInterval * 1000,
             "wallLyricsStyle": defaults.string(forKey: "MiniVoice.musicWallLyricsStyle") ?? "scrolling",
             "showLyricsTranslation": defaults.object(forKey: "MiniVoice.showLyricsTranslation") == nil ? true : defaults.bool(forKey: "MiniVoice.showLyricsTranslation"),
             "selected": detail(library.selectedTrack), "playing": detail(library.playingTrack),
@@ -148,6 +184,15 @@ final class DesktopEngine {
     }
     private func command(_ action: String, _ payload: [String: Any]) async throws -> Any {
         switch action {
+        case "openSettings": panels.showSettings(); return true
+        case "openEditor":
+            let selected = try track(payload); panels.showEditor(selected); return true
+        case "interfaceStyle":
+            if let value = payload["value"] as? String, PlayerInterfaceStyle(rawValue: value) != nil {
+                // The renderer already applied this explicit change.
+                lastInterfaceStyle = value; defaults.set(value, forKey: PlayerInterfaceStyle.preferenceKey)
+            }
+            return true
         case "orderedTracks":
             let field = payload["field"] as? String ?? "title"
             guard ["title", "artist", "album", "sourceAdded", "added"].contains(field) else { return [] }
@@ -169,7 +214,10 @@ final class DesktopEngine {
         case "play":
             let track = try track(payload)
             let ids = (payload["ids"] as? [String])?.compactMap(UUID.init(uuidString:))
-            library.play(track.id, in: ids); return true
+            if payload["preservePosition"] as? Bool == true, library.playingID == track.id {
+                if !library.isPlaying { library.play() }
+            } else { library.play(track.id, in: ids) }
+            return true
         case "select": library.select(try track(payload).id); return true
         case "toggle": library.togglePlayback(); return true
         case "pause": library.pause(); return true
@@ -217,4 +265,10 @@ final class DesktopEngine {
         default: throw NSError(domain: "MiniVoice", code: 2, userInfo: [NSLocalizedDescriptionKey: "不支持的后台命令：\(action)"])
         }
     }
+}
+
+/// Closing an auxiliary window must never end the audio service.
+@MainActor
+private final class DesktopEngineApplicationDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }

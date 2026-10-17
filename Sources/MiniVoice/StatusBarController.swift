@@ -15,6 +15,8 @@ enum StatusIconStyle: String, CaseIterable, Identifiable {
 
 @MainActor
 final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
+    var onQuit: (() -> Void)?
+    var activatesNativeApp = true
     private var item: NSStatusItem?
     private var renderedStyle: StatusIconStyle?
     private weak var library: MusicLibrary?
@@ -78,7 +80,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     @objc private func showApp() {
         openMainWindow?()
-        NSApp.activate(ignoringOtherApps: true)
+        if activatesNativeApp { NSApp.activate(ignoringOtherApps: true) }
     }
     @objc private func previousTrack() { library?.skip(-1) }
     @objc private func nextTrack() { library?.skip(1) }
@@ -88,5 +90,5 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         UserDefaults.standard.set(value, forKey: Self.preferenceKey)
         refresh()
     }
-    @objc private func quit() { NSApp.terminate(nil) }
+    @objc private func quit() { if let onQuit { onQuit() } else { NSApp.terminate(nil) } }
 }

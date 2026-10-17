@@ -10,7 +10,8 @@ const { pathToFileURL } = require('node:url');
 protocol.registerSchemesAsPrivileged([{ scheme: 'minivoice-art', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 let window, engine, artworkRoot, quitting = false;
 const pending = new Map(), latest = new Map();
-const actions = new Set(['orderedTracks','lyricsPresentation','favoriteMany','appearance','snapshot','play','select','toggle','pause','seek','skip','volume','mode','favorite','rescan','removeFolder','recursive','createPlaylist','renamePlaylist','deletePlaylist','addToPlaylist','removeFromPlaylist','clearRecent','detail','reveal','desktopLyrics','outputDevice','clearError','lyricsSearch','syncLyrics','saveMetadata','removeTrack']);
+let engineRestarts = [], restartTimer;
+const actions = new Set(['openSettings','openEditor','interfaceStyle','orderedTracks','lyricsPresentation','favoriteMany','appearance','snapshot','play','select','toggle','pause','seek','skip','volume','mode','favorite','rescan','removeFolder','recursive','createPlaylist','renamePlaylist','deletePlaylist','addToPlaylist','removeFromPlaylist','clearRecent','detail','reveal','desktopLyrics','outputDevice','clearError','lyricsSearch','syncLyrics','saveMetadata','removeTrack']);
 const stateFile = () => path.join(app.getPath('userData'), 'window.json');
 const packagedEngine = () => path.join(process.resourcesPath, 'Native', 'MiniVoice.app', 'Contents', 'MacOS', 'MiniVoice');
 function request(action, payload = {}) {
@@ -26,10 +27,14 @@ function emit(event, data) {
   latest.set(event, data);
   if (window && !window.isDestroyed()) window.webContents.send('engine:event', { event, data });
 }
+function logEngine(message) {
+  try { fs.mkdirSync(app.getPath('logs'), { recursive: true }); fs.appendFileSync(path.join(app.getPath('logs'), 'audio-engine.log'), `${new Date().toISOString()} ${message}\n`); } catch {}
+}
 function startEngine() {
   const executable = process.env.MINIVOICE_ENGINE || (app.isPackaged ? packagedEngine() : path.resolve(__dirname, '../../.build/MiniVoice.app/Contents/MacOS/MiniVoice'));
   engine = spawn(executable, ['--desktop-engine'], { stdio: ['pipe','pipe','pipe'], env: { ...process.env } });
-  engine.stderr.on('data', bytes => process.stderr.write(bytes));
+  const child = engine;
+  child.stderr.on('data', bytes => { process.stderr.write(bytes); logEngine(bytes.toString().trim()); });
   const reader = createInterface({ input: engine.stdout });
   reader.on('line', line => {
     let message; try { message = JSON.parse(line); } catch { return; }
@@ -38,16 +43,32 @@ function startEngine() {
       clearTimeout(item.timeout); pending.delete(message.id);
       if (message.error) item.reject(new Error(message.error)); else item.resolve(message.result);
     } else if (message.event) {
-      if (message.event === 'ready') artworkRoot = message.data.artworkRoot;
-      emit(message.event, message.data);
+      if (message.event === 'ready') {
+        artworkRoot = message.data.artworkRoot;
+        if (engineRestarts.length) { logEngine('后台重新连接'); emit('engineError', '播放后台已重新连接，可以继续播放。'); }
+      }
+      if (message.event === 'shell') {
+        if (message.data === 'quit') app.quit();
+        else if (message.data === 'toggleWindow' && window?.isVisible() && window?.isFocused()) window.hide();
+        else if (['showWindow','focusWindow','toggleWindow'].includes(message.data)) { window?.show(); app.focus({ steal: true }); }
+      } else emit(message.event, message.data);
     }
   });
   const fail = message => {
     for (const item of pending.values()) { clearTimeout(item.timeout); item.reject(new Error(message)); }
     pending.clear(); if (!quitting) emit('engineError', message);
   };
-  engine.on('error', error => fail(error.message));
-  engine.on('exit', code => fail(`播放后台已退出（${code ?? 'signal'}）。请重新打开应用。`));
+  child.on('error', error => { logEngine(error.stack || error.message); fail(error.message); });
+  child.on('exit', (code, signal) => {
+    if (engine !== child) return;
+    logEngine(`后台退出 code=${code} signal=${signal || 'none'} quitting=${quitting}`);
+    fail('播放后台连接中断，正在重新连接…');
+    if (quitting) return;
+    const now = Date.now(); engineRestarts = engineRestarts.filter(time => now-time < 60000);
+    if (engineRestarts.length >= 3) { emit('engineError', '播放后台连续退出，请重新打开应用。诊断已保存在音频后台日志中。'); return; }
+    engineRestarts.push(now);
+    restartTimer = setTimeout(() => { restartTimer = undefined; if (!quitting) startEngine(); }, 300);
+  });
 }
 function createWindow() {
   let bounds = { width: 1280, height: 820 };
@@ -62,7 +83,12 @@ function createWindow() {
   window.webContents.on('did-finish-load', () => { for (const [event, data] of latest) window.webContents.send('engine:event', { event, data }); });
   window.on('close', event => {
     try { if (!window.isFullScreen()) fs.writeFileSync(stateFile(), JSON.stringify(window.getNormalBounds())); } catch {}
-    if (!quitting && process.platform === 'darwin') { event.preventDefault(); window.hide(); }
+    if (!quitting && process.platform === 'darwin') {
+      event.preventDefault();
+      const behavior = latest.get('state')?.closeBehavior;
+      if (behavior === 'quit') app.quit();
+      else { if (behavior === 'pause') request('pause').catch(error => emit('engineError', error.message)); window.hide(); }
+    }
   });
   window.once('ready-to-show', () => window.show());
   window.loadFile(index);
@@ -99,9 +125,9 @@ app.whenReady().then(() => {
   });
   const menuAction = (action, payload) => request(action, payload).catch(error => emit('engineError', error.message));
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: 'MiniVoice', submenu: [{ role: 'about' }, { type: 'separator' }, { label: '设置…', accelerator: 'Cmd+,', click: () => emit('navigate', 'settings') }, { role: 'hide' }, { role: 'hideOthers' }, { type: 'separator' }, { role: 'quit' }] },
+    { label: 'MiniVoice', submenu: [{ role: 'about' }, { type: 'separator' }, { label: '设置…', accelerator: 'Cmd+,', click: () => menuAction('openSettings') }, { role: 'hide' }, { role: 'hideOthers' }, { type: 'separator' }, { role: 'quit' }] },
     { role: 'editMenu' },
-    { label: '播放', submenu: [{ label: '播放 / 暂停', accelerator: 'CmdOrCtrl+P', click: () => menuAction('toggle') }, { label: '上一首', accelerator: 'Alt+Left', click: () => menuAction('skip', { delta: -1 }) }, { label: '下一首', accelerator: 'Alt+Right', click: () => menuAction('skip', { delta: 1 }) }] },
+    { label: '播放', submenu: [{ label: '播放 / 暂停', click: () => menuAction('toggle') }, { label: '上一首', click: () => menuAction('skip', { delta: -1 }) }, { label: '下一首', click: () => menuAction('skip', { delta: 1 }) }] },
     { label: '显示', submenu: [{ role: 'togglefullscreen' }, { label: '简易样式', click: () => emit('style','simple') }, { label: '音乐库样式', click: () => emit('style','library') }, { label: '音乐墙样式', click: () => emit('style','wall') }] },
     { role: 'windowMenu' }
   ]));
@@ -111,7 +137,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => app.quit());
 app.on('before-quit', event => {
   if (quitting) return;
-  event.preventDefault(); quitting = true;
+  event.preventDefault(); quitting = true; clearTimeout(restartTimer);
   // Persist the native playback position before terminating the child process.
   Promise.race([request('pause').catch(() => {}), new Promise(resolve => setTimeout(resolve, 1500))])
     .finally(() => { if (engine && engine.exitCode === null) engine.kill('SIGTERM'); app.quit(); });

@@ -1,0 +1,26 @@
+/* Floating controls keep their SF Symbol ink above the glass backdrop. */
+.app.style-wall .window-tools .icon-button,.app.style-wall .wall-settings{color:#fff;filter:none;isolation:isolate}
+.app.style-wall .window-tools .icon-button.active,.app.style-wall .wall-settings[aria-expanded=true]{color:var(--wall-mint)}
+.app.style-wall .window-tools .icon-button>.glyph,.app.style-wall .wall-settings>.glyph{
+  position:absolute;inset:0;translate:none;width:100%;height:100%;margin:0;display:block;pointer-events:none;
+}
+/* The search circle never scales: only the symbol performs one short pulse. */
+.app.style-wall .wall-search-button,.app.style-wall .wall-search-button:hover,.app.style-wall .wall-search-button:active{
+  position:relative;padding:0;line-height:0;transform:none;scale:1;filter:none;background:transparent;overflow:visible;
+  grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);
+}
+/* Fill the hit target rather than combining grid alignment, 50% offsets and
+   a translated child. The pulse now has the same fixed centre as the glass. */
+.wall-search-button>.wall-search-symbol{display:block;position:absolute;inset:0;width:auto;height:auto;transform-origin:50% 50%;line-height:0;pointer-events:none;transition:color .18s,scale .18s}
+.app.style-wall .wall-search-symbol>.glyph{position:absolute;inset:0;translate:none;width:100%;height:100%;display:block;margin:0;pointer-events:none}
+.wall-search-field:hover .wall-search-symbol{color:var(--wall-mint)}
+.wall-search-button:active>.wall-search-symbol{scale:.88}
+/* Queue uses the same white SF Symbols and control feedback as shuffle/skip. */
+.app.style-wall .player.compact .dock-queue-slot[data-fully-visible=true]{overflow:visible}
+.app.style-wall .player.compact .dock-queue-slot>.icon-button{padding:0;line-height:0;color:#fff;border-radius:10px}
+.app.style-wall .player.compact .dock-queue-slot .glyph{width:22px;height:22px;margin:0}
+.app.style-wall .player.compact .dock-queue-slot>.icon-button:hover{background:#ffffff21;transform:translateY(-2px) scale(1.2)}
+.app.style-wall .player.compact .dock-queue-slot>.icon-button:active{background:#ffffff40;transform:scale(.86);color:var(--wall-mint)}
+.reduce-motion .wall-search-symbol.search-bounce{animation:none}
+.reduce-motion .wall-search-button:active>.wall-search-symbol{scale:1}
+.reduce-motion .app.style-wall .player.compact .dock-queue-slot>.icon-button:hover,.reduce-motion .app.style-wall .player.compact .dock-queue-slot>.icon-button:active{transform:none}

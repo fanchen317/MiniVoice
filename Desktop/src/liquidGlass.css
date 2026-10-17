@@ -1,0 +1,66 @@
+/* Refraction lives behind the content: glyphs and labels remain sharp. */
+.app.style-wall .custom-liquid-glass{
+  background:linear-gradient(145deg,#ffffff1c 0%,#ffffff05 38%,#10101012 65%,#ffffff0a 100%),#18181819!important;
+  backdrop-filter:var(--glass-lens) blur(1.5px) saturate(1.32) brightness(1.12);
+  -webkit-backdrop-filter:var(--glass-lens) blur(1.5px) saturate(1.32) brightness(1.12);
+  border:.65px solid #ffffff26;
+  box-shadow:inset 0 1px 1px #ffffff6b,inset 1px 0 1px #ffffff24,inset 0 -1px 1px #ffffff2e,inset -1px 0 1px #0000003b,0 5px 12px #00000033;
+}
+.app.style-wall .custom-liquid-glass:before{
+  content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:radial-gradient(ellipse at var(--glass-light-x,25%) var(--glass-light-y,0%),#ffffff16,transparent 70%),linear-gradient(145deg,#ffffff0a,transparent 30% 70%,#ffffff09);
+}
+.style-wall .window-tools .custom-liquid-glass{position:relative}
+.app.style-wall .custom-liquid-glass:hover{border-color:#ffffff4d}
+.app.style-wall .custom-liquid-glass:active{box-shadow:inset 0 1px 2px #ffffff59,inset 0 -1px 1px #ffffff21,0 2px 7px #0003}
+/* The contour must be above artwork, gradients, lyrics and controls. */
+.wall-poster.playing>.poster-face,.wall-poster.playing:hover>.poster-face{outline:0!important}
+.wall-poster.playing:after{
+  content:"";position:absolute;inset:0;z-index:10;pointer-events:none;
+  border:calc(3px / var(--wall-camera-scale,1)) solid color-mix(in srgb,var(--wall-mint) 85%,transparent);
+  box-shadow:0 0 calc(28px / var(--wall-camera-scale,1)) color-mix(in srgb,var(--wall-mint) 50%,transparent);
+}
+.wall-surface.is-immersive .wall-poster.focused:after,.wall-surface.is-expanding .wall-poster.focused:after{opacity:0}
+/* Paint the hover stroke above the cover, outside its brightness filter.
+   Match the face's transform so the contour follows its spring animation. */
+.wall-poster:hover:not(.focused):not(.playing)>.poster-face{outline:0!important}
+.wall-poster:not(.playing):after{
+  content:"";position:absolute;inset:0;z-index:10;pointer-events:none;
+  border:calc(1.5px / var(--wall-camera-scale,1)) solid transparent;
+  transform-origin:center;transition:transform .6s var(--poster-spring);
+}
+.wall-poster:hover:not(.focused):not(.playing):after{
+  border-color:#fffffff2;
+  border-width:calc(1.5px / var(--wall-camera-scale,1) / 1.025);
+  transform:scale(1.025);
+}
+.wall-poster:active:not(.focused):not(.playing):after{
+  border-width:calc(1.5px / var(--wall-camera-scale,1) / .96);
+  transform:scale(.96);transition:transform .1s ease-out;
+}
+.reduce-motion .wall-poster:not(.playing):after{
+  transform:none!important;transition:none;
+  border-width:calc(1.5px / var(--wall-camera-scale,1));
+}
+/* A neutral mask disc protects the light SF Symbol from the refracted cover. */
+.style-wall .window-tools .glyph,.wall-search-button .glyph,.wall-settings>.glyph{flex-shrink:0;position:relative;z-index:1;opacity:1}
+/* SwiftUI text's shadow has room outside its typographic ink bounds. */
+.wall-lyric-line{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-weight:700;font-synthesis:weight;letter-spacing:0}
+.wall-lyric-line>span{padding-block:3px;max-height:calc(var(--wall-lyric-row) - 6px);line-height:1.25;text-shadow:0 2px 5px #000000bf}
+.wall-lyric-line .lyric-word{white-space:pre-wrap}
+
+/* The wall sidebar uses the same glass family, with its native 15pt corners. */
+.app.style-wall .sidebar.custom-liquid-glass{background:linear-gradient(145deg,#ffffff0d,transparent 38%,#0000000d),#1c1c1c26!important;backdrop-filter:var(--glass-lens) blur(3px) saturate(1.3);-webkit-backdrop-filter:var(--glass-lens) blur(3px) saturate(1.3);border-color:#ffffff2b;box-shadow:inset 0 1px 1px #ffffff40,inset 0 -1px 1px #ffffff21,0 12px 48px #0006}
+.app.style-wall .player.compact .icon-button{color:#fff}
+.app.style-wall .context-menu{background:#252525db;color:#fff;border-color:#ffffff2b;backdrop-filter:blur(18px) saturate(1.25);box-shadow:0 8px 25px #0006}
+.app.style-wall .context-menu>strong{color:#ffffff9e}
+.app.style-wall .context-menu>button:hover{background:#ffffff18}
+/* Native card typography must not inherit the general paragraph's 1.7 line height. */
+.wall-card-content.has-playback>header>p{line-height:1.2}
+.wall-card-content .wall-card-transport{gap:7px 12px}
+.wall-card-transport .wall-transport-buttons{gap:4px}
+.wall-waveform{width:16px}
+
+.app.style-wall .sidebar.custom-liquid-glass:before{z-index:-1}
+/* Hovering a focused player must not fade its two native readability gradients. */
+.wall-poster.focused>.poster-face>.poster-shade{opacity:1}

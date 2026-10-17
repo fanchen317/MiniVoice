@@ -7,6 +7,7 @@ import Carbon.HIToolbox
 /// chord so other apps don't also receive the keystroke.
 @MainActor
 final class WindowToggleController: ObservableObject {
+    var onToggle: (() -> Void)?
     @Published private(set) var configuredShortcut: PlaybackShortcut
     @Published private(set) var hasRegistrationConflict: Bool = false
     @Published var recording: Bool = false
@@ -141,6 +142,7 @@ final class WindowToggleController: ObservableObject {
     }
 
     private func toggleMainWindow() {
+        if let onToggle { onToggle(); return }
         let main = NSApp.windows.first(where: { $0.identifier?.rawValue == "MiniVoice.main" })
         if let main, main.isVisible, !main.isMiniaturized {
             main.orderOut(nil)
