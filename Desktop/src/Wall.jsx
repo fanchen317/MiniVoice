@@ -1,3 +1,4 @@
+import {SortMenuItem} from './SortMenuItem';
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { command,state as playbackState } from './store';
 import { WallClickSequence } from './wallClick';
@@ -6,7 +7,7 @@ import { Cover, Icon, WallCardPlayer } from './components';
 import { springEasing,springProgress,posterArtworkMotion } from './motion';
 
 const reflowEasing=`linear(${Array.from({length:53},(_,i)=>`${reflowProgress(i*10).toFixed(5)} ${(i/52*100).toFixed(2)}%`).join(',')})`;
-const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, onMenu,onPlay,onExpand,expanded,transitioning,reduceMotion,visible,onReveal }) {
+const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, onMenu,onPlay,onExpand,expanded,transitioning,reduceMotion,visible,onReveal,grouped }) {
   const element=useRef(),previous=useRef(),animation=useRef(),artwork=useRef(),artworkAnimation=useRef();
   useLayoutEffect(()=>{
     const before=previous.current;previous.current=tile;
@@ -29,12 +30,13 @@ const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, on
   useEffect(()=>()=>{animation.current?.cancel();artworkAnimation.current?.cancel();},[]);
   return <article ref={element} className={`wall-poster ${focused?'focused':''} ${playing?'playing':''}`} 
     style={{'--caption-inset':`${Math.min(14,Math.max(8,tile.width*.06))}px`,'--poster-title':`${Math.min(30,Math.max(18,tile.width*.105))}px`,'--poster-subtitle':`${Math.min(13,Math.max(10,tile.width*.045))}px`,width:tile.width,height:tile.height,transform:`translate3d(${tile.x}px,${tile.y}px,0)`}}
-    inert={!visible} onFocusCapture={event=>{const rect=event.target.getBoundingClientRect();if(rect.right<0||rect.left>innerWidth||rect.bottom<0||rect.top>innerHeight)onReveal();}} onClick={event=>onFocus(tile,track,event)} onContextMenu={event=>onMenu(event,track)} tabIndex={visible?0:-1} data-track-id={track.id} role="button" aria-label={`聚焦 ${track.title}，双击播放`} onKeyDown={event=>{if(event.key==='Enter'&&event.target===event.currentTarget)onFocus(tile,track,event);}}>
+    inert={!visible} onFocusCapture={event=>{const rect=event.target.getBoundingClientRect();if(rect.right<0||rect.left>innerWidth||rect.bottom<0||rect.top>innerHeight)onReveal();}} onClick={event=>onFocus(tile,track,event)} onContextMenu={event=>grouped?event.preventDefault():onMenu(event,track)} tabIndex={visible?0:-1} data-track-id={track.id} role="button" aria-label={grouped?`打开 ${track.title}`:`聚焦 ${track.title}，双击播放`} onKeyDown={event=>{if(event.key==='Enter'&&event.target===event.currentTarget)onFocus(tile,track,event);}}>
     <div className="poster-face"><div className="poster-artwork" ref={artwork} onLoadCapture={event=>{const image=event.target;if(image.tagName!=='IMG')return;const motion=posterArtworkMotion(tile,tile,image.naturalWidth/image.naturalHeight,p=>p);image.style.width=`${motion.width}px`;image.style.height=`${motion.height}px`;}}><Cover track={track} detail={focused}/></div><div className="poster-shade"/>{!focused&&<><span className="poster-number">{String(tile.index+1).padStart(3,'0')}</span><div className="poster-caption"><h2>{track.title}</h2><p>{track.artist}</p></div></>}
     {focused&&<WallCardPlayer size={tile} track={track} playing={playing} onPlay={onPlay} onExpand={onExpand} expanded={expanded}/>}</div>
   </article>;
 });
-export function Wall({ tracks, playingID, onMenu, locateToken, selectedID, reduceMotion,onImmersive,onChromeHidden,leadingInset=0,groups,onOpenGroup,sorting }) {
+export function Wall({ tracks, playingID, onMenu, locateToken, selectedID, reduceMotion,onImmersive,onChromeHidden,leadingInset=0,groups,onOpenGroup,sorting,emptyTitle }) {
+  const grouped=Boolean(groups);
   const surface = useRef(), plane = useRef(), camera = useRef({ x: 0, y: 0, scale: 1 });
   const borderScale=useRef(0);
   const viewport = useRef({ width: 1, height: 1 }), mountedAt = useRef({ x: Infinity, y: Infinity, scale: 1 });
@@ -68,9 +70,9 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID, reduc
   function prepareFocus(tile){if(focus?.tile.id!==tile.id)setPreferredSide(wallFocusSide(surface.current?.clientHeight||viewport.current.height));}
   const sequence=tracks.map(track=>track.id).join('|');
   useLayoutEffect(() => {
-    clearTimeout(expansionTimer.current);clickSequence.current.reset();savedCamera.current=null;restoring.current=false;setTransitioning(false);setImmersive(false);onImmersive?.(false);onChromeHidden?.(false); const playingIndex=tracks.findIndex(t=>t.id===playingID),index=playingIndex>=0?playingIndex:tracks.findIndex(t=>t.id===selectedID);
+    clearTimeout(expansionTimer.current);clickSequence.current.reset();savedCamera.current=null;restoring.current=false;setTransitioning(false);setImmersive(false);onImmersive?.(false);onChromeHidden?.(false); const playingIndex=grouped?-1:tracks.findIndex(t=>t.id===playingID),index=grouped?0:playingIndex>=0?playingIndex:tracks.findIndex(t=>t.id===selectedID);
     const base=scene.tiles[Math.max(0,index)],tile=base?{...base,id:`${base.index}:0:0`}:null;if(tile)prepareFocus(tile);setFocus(tile&&playingIndex>=0?{tile,track:tracks[tile.index]}:null);if(tile)center(tile,false);else apply(true);
-  }, [scene, sequence]);
+  }, [scene, sequence, grouped]);
   useLayoutEffect(()=>{
     const previous=inset.current;inset.current=immersive?0:leadingInset;
     const changed=previousImmersive.current!==immersive;previousImmersive.current=immersive;
@@ -99,9 +101,9 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID, reduc
     }); observer.observe(surface.current); return () => observer.disconnect();
   }, [scene]);
   useEffect(() => {
-    if (!locateToken) return;
+    if (!locateToken||grouped) return;
     const tile=nearestInstance(scene,tracks.findIndex(t=>t.id===selectedID),camera.current,viewport.current);if(tile){prepareFocus(tile);setFocus({tile,track:tracks[tile.index]});center(tile);}
-  }, [locateToken]);
+  }, [locateToken,grouped]);
   useEffect(() => {
     const node = surface.current;
     function wheel(event) {
@@ -113,7 +115,7 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID, reduc
       const c = camera.current;
       if (event.ctrlKey || event.metaKey) {
         stop(); const r = node.getBoundingClientRect(), x = event.clientX-r.left, y = event.clientY-r.top;
-        const next = Math.min(1.2,Math.max(.8,c.scale*Math.exp(-event.deltaY*.007)));
+        const next = Math.min(1.2,Math.max(.6,c.scale*Math.exp(-event.deltaY*.007)));
         c.x = x-(x-c.x)*next/c.scale; c.y = y-(y-c.y)*next/c.scale; c.scale = next; setScale(next); apply(true); return;
       }
       const multiplier = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.current.height : 1;
@@ -166,7 +168,7 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID, reduc
     animation.current=requestAnimationFrame(tick);
   }
   function zoomTo(requested,animate=true){
-    stop();const c=camera.current,target=Math.min(1.2,Math.max(.8,requested)),start=c.scale,anchor={x:(viewport.current.width+inset.current)/2,y:viewport.current.height/2},world={x:(anchor.x-c.x)/start,y:(anchor.y-c.y)/start},began=performance.now();
+    stop();const c=camera.current,target=Math.min(1.2,Math.max(.6,requested)),start=c.scale,anchor={x:(viewport.current.width+inset.current)/2,y:viewport.current.height/2},world={x:(anchor.x-c.x)/start,y:(anchor.y-c.y)/start},began=performance.now();
     function tick(now){const p=!animate||live.current.reduceMotion?1:Math.min(1,(now-began)/280),next=start+(target-start)*(1-Math.cos(p*Math.PI))/2;c.x=anchor.x-world.x*next;c.y=anchor.y-world.y*next;c.scale=next;setScale(next);apply(true);if(p<1)animation.current=requestAnimationFrame(tick);else animation.current=0;}
     tick(began);
   }
@@ -178,7 +180,7 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID, reduc
     expansionTimer.current=setTimeout(()=>{setTransitioning(false);if(!next)onChromeHidden?.(false);},reduceMotion?1:600);
   }
   useEffect(()=>{const key=event=>{if(event.key==='Escape'){if(immersive)expand();else setFocus(null);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[immersive,focus]);
-  useEffect(()=>{if(!playingID||groups)return;const tile=nearestInstance(scene,tracks.findIndex(t=>t.id===playingID),camera.current,viewport.current);if(tile&&focus?.track.id!==playingID){prepareFocus(tile);setFocus({tile,track:tracks[tile.index]});center(tile,Boolean(focus));}},[playingID,sequence]);
+  useEffect(()=>{if(!playingID||grouped)return;const tile=nearestInstance(scene,tracks.findIndex(t=>t.id===playingID),camera.current,viewport.current);if(tile&&focus?.track.id!==playingID){prepareFocus(tile);setFocus({tile,track:tracks[tile.index]});center(tile,Boolean(focus));}},[playingID,sequence,grouped]);
   function playPoster(id){command('play',{id,ids:tracks.map(track=>track.id),preservePosition:true});}
   function continuedClick(event){
     if(suppressClick.current){suppressClick.current=false;clickSequence.current.reset();event.stopPropagation();event.preventDefault();return;}
@@ -187,21 +189,24 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID, reduc
       control:Boolean(event.target.closest('button,input,.wall-tools-popover')),group:Boolean(groups),keyboard:event.detail===0},playbackState.get().doubleClickIntervalMs??500);
     if(result.type==='play'){event.stopPropagation();event.preventDefault();playPoster(result.id);}
   }
-  const rendered = focus && !tiles.some(t => t.id === focus.tile.id) ? [...tiles, focus.tile] : tiles;
+  // Group covers borrow their first track's artwork/ID, but must never borrow
+  // its playback state or an old song focus while navigation effects settle.
+  const activeFocus=grouped?null:focus;
+  const rendered = activeFocus && !tiles.some(t => t.id === activeFocus.tile.id) ? [...tiles, activeFocus.tile] : tiles;
   return <section ref={surface} className={`wall-surface ${immersive?'is-immersive':''} ${transitioning?'is-expanding':''} ${playingID&&!groups?'has-playing-track':''}`} aria-label="音乐墙" onClickCapture={continuedClick} onPointerDown={down} onPointerMove={move} onPointerUp={up}
     onPointerCancel={() => { drag.current=null;clickSequence.current.reset(); stop(); }}>
     <div className="wall-plane" ref={plane}>{rendered.map(tile => {
       const track=tracks[tile.index]; if(!track)return null;
-      const focused=focus?.tile.id===tile.id;
+      const focused=activeFocus?.tile.id===tile.id;
       const side=Math.max(260,Math.min(preferredSide,viewport.current.width-leadingInset-40,viewport.current.height-150));
       const size=immersive?{width:viewport.current.width/camera.current.scale,height:viewport.current.height/camera.current.scale}:{width:side,height:Math.max(320,side)};
-      const frame=reflowFrame(tile,focus?.tile,size),c=camera.current,visible=frame.x*c.scale+c.x<viewport.current.width+200&&(frame.x+frame.width)*c.scale+c.x> -200&&frame.y*c.scale+c.y<viewport.current.height+200&&(frame.y+frame.height)*c.scale+c.y> -200;
-      return <Poster key={tile.id} tile={frame} visible={visible} onReveal={()=>center(tile,false)} track={track} focused={focused} playing={playingID===track.id} onMenu={onMenu} expanded={immersive} transitioning={transitioning} reduceMotion={reduceMotion||performance.now()<resizingUntil.current} onExpand={expand} onPlay={()=>groups?onOpenGroup(groups[tile.index].name):playPoster(track.id)}
+      const frame=reflowFrame(tile,activeFocus?.tile,size),c=camera.current,visible=frame.x*c.scale+c.x<viewport.current.width+200&&(frame.x+frame.width)*c.scale+c.x> -200&&frame.y*c.scale+c.y<viewport.current.height+200&&(frame.y+frame.height)*c.scale+c.y> -200;
+      return <Poster key={tile.id} tile={frame} grouped={grouped} visible={visible} onReveal={()=>center(tile,false)} track={track} focused={focused} playing={!grouped&&playingID===track.id} onMenu={onMenu} expanded={immersive} transitioning={transitioning} reduceMotion={reduceMotion||performance.now()<resizingUntil.current} onExpand={expand} onPlay={()=>groups?onOpenGroup(groups[tile.index].name):playPoster(track.id)}
         onFocus={(_,__,event)=>{if(suppressClick.current){suppressClick.current=false;return;}if(groups){onOpenGroup(groups[tile.index].name);return;}if(focus?.tile.id===tile.id)return;prepareFocus(tile);setFocus({tile,track});command('select',{id:track.id});center(tile);}}/>
 
     })}</div>
-    {!tracks.length && <div className="empty"><h2>让音乐铺满整个窗口</h2><p>添加音乐文件夹，或尝试其他搜索词。</p></div>}
-    <button ref={toolsButton} className="wall-settings icon-button" inert={immersive} aria-label="音乐墙设置" title="音乐墙设置" aria-expanded={showTools} onClick={()=>setShowTools(v=>!v)}><Icon name="wall-settings"/></button>{showTools&&!immersive&&<div ref={tools} className="wall-tools-popover" role="dialog" aria-label="音乐墙设置"><header><strong>音乐墙</strong><button aria-label="关闭设置" onClick={()=>setShowTools(false)}><Icon name="close"/></button></header><div className="wall-scale-label"><span>显示比例</span><b>{Math.round(scale*100)}%</b></div><div className="wall-scale-controls"><button aria-label="缩小" disabled={scale<=.801} onClick={()=>zoomTo(scale/1.2)}><Icon name="zoomOut"/></button><input aria-label="显示比例" type="range" min=".8" max="1.2" step=".001" value={scale} onChange={event=>zoomTo(Number(event.target.value),false)}/><button aria-label="放大" disabled={scale>=1.199} onClick={()=>zoomTo(scale*1.2)}><Icon name="zoomIn"/></button></div><button className="wall-reset-zoom" disabled={Math.abs(scale-1)<.001} onClick={()=>zoomTo(1)}><Icon name="refresh"/>恢复 100%</button><hr/><strong className="wall-sort-heading"><Icon name="sort"/>列表排序</strong><div className="wall-sort-options">{(sorting?.grouping?[['name',sorting.artist?'歌手姓名':'专辑名称'],['count','歌曲数量']]:[['title','歌曲名称'],['artist','歌手姓名'],['album','专辑名称'],['sourceAdded','添加时间'],['added','更新时间']]).map(([value,label])=><button key={value} aria-pressed={sorting?.sort===value} onClick={()=>sorting?.onSort(value)}><span>{label}</span>{sorting?.sort===value&&<span>✓</span>}</button>)}<hr/>{[[true,'正序'],[false,'降序']].map(([value,label])=><button key={label} aria-pressed={sorting?.ascending===value} onClick={()=>sorting?.onAscending(value)}><span>{label}</span>{sorting?.ascending===value&&<span>✓</span>}</button>)}</div></div>}
+    {!tracks.length && <div className="empty"><h2>{emptyTitle||'让音乐铺满整个窗口'}</h2>{!emptyTitle&&<p>添加音乐文件夹，或尝试其他搜索词。</p>}</div>}
+    <button ref={toolsButton} className="wall-settings icon-button" inert={immersive} aria-label="音乐墙设置" title="音乐墙设置" aria-expanded={showTools} onClick={()=>setShowTools(v=>!v)}><Icon name="wall-settings"/></button>{showTools&&!immersive&&<div ref={tools} className="wall-tools-popover" role="dialog" aria-label="音乐墙设置"><header><strong>音乐墙</strong><button aria-label="关闭设置" onClick={()=>setShowTools(false)}><Icon name="close"/></button></header><div className="wall-scale-label"><span>显示比例</span><b>{Math.round(scale*100)}%</b></div><div className="wall-scale-controls"><button aria-label="缩小" disabled={scale<=.601} onClick={()=>zoomTo(scale/1.2)}><Icon name="zoomOut"/></button><input aria-label="显示比例" type="range" min=".6" max="1.2" step=".001" value={scale} onChange={event=>zoomTo(Number(event.target.value),false)}/><button aria-label="放大" disabled={scale>=1.199} onClick={()=>zoomTo(scale*1.2)}><Icon name="zoomIn"/></button></div><button className="wall-reset-zoom" disabled={Math.abs(scale-1)<.001} onClick={()=>zoomTo(1)}><Icon name="refresh"/>恢复 100%</button><hr/><strong className="wall-sort-heading"><Icon name="sort"/>列表排序</strong><div className="wall-sort-options">{(sorting?.grouping?[['name',sorting.artist?'歌手姓名':'专辑名称'],['count','歌曲数量']]:[['title','歌曲名称'],['artist','歌手姓名'],['album','专辑名称'],['sourceAdded','添加时间'],['added','更新时间']]).map(([value,label])=><SortMenuItem key={value} selected={Boolean(sorting?.sort===value||(sorting?.grouping&&value==='name'&&sorting?.sort!=='count'))} onClick={()=>sorting?.onSort(value)}>{label}</SortMenuItem>)}<hr/>{[[true,'正序'],[false,'降序']].map(([value,label])=><SortMenuItem key={label} selected={sorting?.ascending===value} onClick={()=>sorting?.onAscending(value)}>{label}</SortMenuItem>)}</div></div>}
 
   </section>;
 }

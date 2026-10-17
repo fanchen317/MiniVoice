@@ -75,7 +75,9 @@ function createWindow() {
   try { const saved = JSON.parse(fs.readFileSync(stateFile())); if (Number.isFinite(saved.width) && Number.isFinite(saved.height) && saved.width >= 304 && saved.height >= 600) bounds = saved; } catch {}
   window = new BrowserWindow({ ...bounds, minWidth: 304, minHeight: 600, show: false,
     title: 'MiniVoice · Electron', titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 9, y: 9 },
-    backgroundColor: '#111615', vibrancy: 'under-window',
+    // The renderer draws its own glass over artwork. An additional AppKit
+    // visual-effect surface needlessly recomposites the whole window on resize.
+    backgroundColor: '#111615',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false } });
   const index = path.resolve(__dirname, '../dist/index.html');
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));

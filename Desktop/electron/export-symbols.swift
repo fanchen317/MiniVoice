@@ -28,7 +28,7 @@ for (name, symbol) in ["locate":"scope", "refresh":"arrow.clockwise", "sort":"ar
     try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: output).appendingPathComponent("toolbar-"+name+".png"))
 }
 // Floating wall chrome uses 22 pt medium SF Symbols in a 38 pt circle.
-for (name, symbol) in ["sidebar":"sidebar.left", "search":"magnifyingglass", "settings":"slider.horizontal.3"] {
+for (name, symbol) in ["sidebar":"sidebar.left", "search":"magnifyingglass", "settings":"slider.horizontal.3", "info":"info.circle"] {
     guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 22, weight: .medium)) else { continue }
     let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 114, pixelsHigh: 114, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
     bitmap.size = NSSize(width: 38, height: 38)

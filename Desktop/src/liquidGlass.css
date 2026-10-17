@@ -62,5 +62,13 @@
 .wall-waveform{width:16px}
 
 .app.style-wall .sidebar.custom-liquid-glass:before{z-index:-1}
+:root:has(.app.style-wall){background:#000;color-scheme:dark}
+/* Keep newly exposed window pixels opaque, including before the next paint. */
+html,body,#root{width:100%;height:100%;overflow:hidden}
+:root.is-resizing .app.style-wall .custom-liquid-glass,
+.app.style-wall .custom-liquid-glass.glass-in-motion{
+  backdrop-filter:blur(3px) saturate(1.3);
+  -webkit-backdrop-filter:blur(3px) saturate(1.3);
+}
 /* Hovering a focused player must not fade its two native readability gradients. */
 .wall-poster.focused>.poster-face>.poster-shade{opacity:1}

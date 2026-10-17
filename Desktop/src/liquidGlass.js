@@ -43,10 +43,19 @@ export function useLiquidGlass(style){
       for(const element of [entry.filter,entry.image]){element.setAttribute('width',w);element.setAttribute('height',h);element.setAttribute('x','0');element.setAttribute('y','0');}
     }
     const observer=new ResizeObserver(entries=>{
-      for(const {target} of entries)pending.add(target);
-      if(timer)return;timer=setTimeout(()=>{timer=null;for(const node of pending)update(node);pending.clear();},80);
+      for(const {target} of entries){
+        const entry=maps.get(target);
+        if(entry&&entry.w===target.clientWidth&&entry.h===target.clientHeight)continue;
+        pending.add(target);target.classList.add('glass-in-motion');
+      }
+      if(!pending.size)return;
+      // Rebuilding PNG displacement maps while AppKit is resizing blocks the
+      // renderer. Use the light glass while dimensions move, rebuild once idle.
+      clearTimeout(timer);timer=setTimeout(()=>{
+        timer=null;for(const node of pending){update(node);node.classList.remove('glass-in-motion');}pending.clear();
+      },180);
     });
     for(const node of nodes){update(node);observer.observe(node);node.addEventListener('pointermove',light);}
-    return()=>{clearTimeout(timer);observer.disconnect();svg.remove();for(const node of nodes){node.removeEventListener('pointermove',light);node.classList.remove('custom-liquid-glass');for(const name of ['--glass-lens','--glass-light-x','--glass-light-y'])node.style.removeProperty(name);}};
+    return()=>{clearTimeout(timer);observer.disconnect();svg.remove();for(const node of nodes){node.removeEventListener('pointermove',light);node.classList.remove('custom-liquid-glass','glass-in-motion');for(const name of ['--glass-lens','--glass-light-x','--glass-light-y'])node.style.removeProperty(name);}};
   },[style]);
 }
