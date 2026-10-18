@@ -177,3 +177,13 @@ img{-webkit-user-drag:none}
    Keep the panel scrollable at the 304 × 600 minimum window size. */
 .wall-tools-popover{position:fixed;z-index:60;height:auto;max-height:min(520px,calc(100dvh - var(--wall-tools-bottom) - 96px));overscroll-behavior:contain;scrollbar-gutter:stable}
 .wall-tools-popover>header{position:sticky;top:-12px;z-index:2;background:#1f2424;padding-block:0}
+
+/* Empty and loading messages follow the surface, not just the system theme.
+   The wall stays black even when the rest of the app uses the light theme. */
+.app .empty,.app .list-empty{--empty-title:var(--text);--empty-detail:var(--muted);color:var(--empty-detail);gap:10px;text-align:center}
+.app.style-wall .empty,.app.style-wall .list-empty{--empty-title:#f2f2f2;--empty-detail:#a5a7a6}
+.app .empty :is(h2,h3),.app .list-empty :is(h2,h3){color:var(--empty-title);font-size:18px;font-weight:600;line-height:1.4;overflow-wrap:anywhere}
+.app .empty p,.app .list-empty p{color:var(--empty-detail);font-size:13px;line-height:1.6;max-width:36em;overflow-wrap:anywhere}
+.app .list-empty{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
+.songs-panel:has(>.list-empty)>.track-list{flex:0}
+.app .empty>.glyph,.app .list-empty>.glyph{width:32px;height:32px;color:var(--empty-detail)}
