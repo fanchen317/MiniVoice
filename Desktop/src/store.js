@@ -28,5 +28,5 @@ window.miniVoice.subscribe(({ event, data }) => {
   else if (event === 'clock') clock.set({ ...data, sampledAt: performance.now() });
   else signals.dispatchEvent(new CustomEvent(event, { detail: data }));
 });
-export const artwork = (track, detail = false) => track?.artworkKey ? `minivoice-art://${detail ? 'detail' : 'cover'}/${track.artworkKey}` : '';
+export {artwork} from './artworkUrl';
 export const seconds = value => `${Math.floor((value || 0) / 60)}:${String(Math.floor((value || 0) % 60)).padStart(2, '0')}`;

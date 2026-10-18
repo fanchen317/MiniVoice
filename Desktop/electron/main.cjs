@@ -4,6 +4,7 @@ const { createInterface } = require('node:readline');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { cachedArtworkFile } = require('./artwork-files.cjs');
 
 // Keep the existing renderer preferences when adopting the shipping app name.
 app.setPath('userData', path.join(app.getPath('appData'), 'minivoice-desktop'));
@@ -101,14 +102,8 @@ function createWindow() {
 }
 app.whenReady().then(() => {
   protocol.handle('minivoice-art', async request => {
-    const url = new URL(request.url), key = url.pathname.slice(1), detail = url.hostname === 'detail';
-    if (!artworkRoot || !/^[0-9a-f]{64}$/.test(key)) return new Response('', { status: 404 });
-    const roots = detail ? ['Detail','Browse','List'] : ['Browse','List'];
-    for (const kind of roots) {
-      const file = path.join(artworkRoot, 'Artwork', kind, key);
-      if (fs.existsSync(file)) return net.fetch(pathToFileURL(file).href);
-    }
-    return new Response('', { status: 404 });
+    const file = cachedArtworkFile(artworkRoot, request.url);
+    return file ? net.fetch(pathToFileURL(file).href) : new Response('', { status: 404 });
   });
   ipcMain.handle('engine:command', async (event, { action, payload = {} } = {}) => {
     if (event.sender !== window?.webContents || event.senderFrame !== window?.webContents.mainFrame) throw new Error('无效的界面来源');

@@ -110,7 +110,8 @@ final class DesktopEngine {
     private func row(_ track: Track) -> [String: Any] {
         ["id": track.id.uuidString, "path": track.url.path, "title": track.title, "artist": track.artist,
          "album": track.album, "duration": track.duration.isFinite ? track.duration : 0,
-         "artworkKey": track.artworkKey ?? "", "favorite": collections.isFavorite(track.url.path)]
+         "artworkKey": track.artworkKey ?? "", "artworkRevision": library.browseArtworkRevision,
+         "favorite": collections.isFavorite(track.url.path)]
     }
     private func detail(_ track: Track?) -> Any {
         guard let track else { return NSNull() }
