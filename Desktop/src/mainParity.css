@@ -176,4 +176,4 @@ img{-webkit-user-drag:none}
 /* Portal to the app root: escape wall containment and cover floating controls.
    Keep the panel scrollable at the 304 × 600 minimum window size. */
 .wall-tools-popover{position:fixed;z-index:60;height:auto;max-height:min(520px,calc(100dvh - var(--wall-tools-bottom) - 96px));overscroll-behavior:contain;scrollbar-gutter:stable}
-.wall-tools-popover>header{position:sticky;top:-18px;z-index:2;background:#1f2424;padding-block:8px}
+.wall-tools-popover>header{position:sticky;top:-12px;z-index:2;background:#1f2424;padding-block:0}
