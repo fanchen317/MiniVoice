@@ -1,4 +1,4 @@
-# MiniVoice · Electron 窗口迁移版
+# MiniVoice 主窗口
 
 主窗口由 Electron + React + Chromium 渲染，不嵌入 SwiftUI 主界面。现有 Swift 可执行文件以 `--desktop-engine` 模式启动，只负责音频、曲库、标签和歌词服务。
 
@@ -7,12 +7,12 @@
 在仓库根目录执行：
 
 ```sh
-Scripts/build-electron-app.sh release
+Scripts/build-app.sh release
 ```
 
-产物：`.build/electron/MiniVoice Electron-darwin-arm64/MiniVoice Electron.app`。
+唯一主应用产物：`.build/MiniVoice.app`。
 
-运行该应用即可；无需 Node、Homebrew 或终端常驻。FFmpeg、歌词模型和 Swift 后台已打包。旧版 SwiftUI 应用仍可通过 `Scripts/build-app.sh release` 构建，便于对比和回退。测试音频时请暂停另一个版本，避免两个播放器同时发声。
+运行该应用即可；无需 Node、Homebrew 或终端常驻。FFmpeg、歌词模型和 Swift 后台已打包。主窗口只有这一套正式入口，Swift 可执行文件仅作为内置服务启动，不会再打开独立 SwiftUI 播放器。旧 `build-electron-app.sh` 只保留为构建别名。
 
 开发流程：
 
@@ -34,7 +34,7 @@ Electron 分发包按 npm 官方包中的 SHA-256 校验。GitHub 下载失败�
 - 歌词展示、逐字高亮、点击歌词定位、独立歌词视图；React 歌曲信息/歌词编辑器、在线歌词搜索、AI 同步入口。
 - 音乐文件夹管理、扫描、主题和减弱动态效果设置。桌面歌词沿用原有原生浮窗服务。
 
-这是一套可运行的主窗口迁移版本，不代表旧版所有辅助功能已经逐项对齐。macOS 上关闭主窗口会隐藏窗口并保留播放，Command + Q 才退出并保存进度。在线封面挑选、封面导出、多选批处理、自定义全局快捷键、歌词翻译设置和部分高级设置仍需迁移；现有 Swift 实现保留。逐字歌词的字体和过渡也仍需按实际曲库验收。
+macOS 上关闭主窗口遵循设置中的关闭行为，Command + Q 退出并保存进度。设置、歌曲编辑、在线封面与歌词工具复用原生窗口；歌单管理、多选删除、任务面板与排序偏好接通同一后台。渲染材质、跨行逐字及动画中间帧仍需原版同场景视觉验收，不能以构建成功宣称逐像素 1:1。
 
 新版使用相同 MiniVoice 曲库、缓存和收藏/歌单数据；不复制音乐文件。界面外观/样式偏好独立保存在 Electron 应用数据中。macOS 可能要求新窗口进程重新获准访问原曲库文件夹；文件夹访问提示需在解锁状态处理。
 
@@ -55,7 +55,7 @@ Electron 分发包按 npm 官方包中的 SHA-256 校验。GitHub 下载失败�
 ## 验证
 
 ```sh
-MINIVOICE_ENGINE="$(pwd)/.build/electron/MiniVoice Electron-darwin-arm64/MiniVoice Electron.app/Contents/Resources/Native/MiniVoice.app/Contents/MacOS/MiniVoice" npm --prefix Desktop test
+MINIVOICE_ENGINE="$(pwd)/.build/MiniVoice.app/Contents/Resources/Native/MiniVoice.app/Contents/MacOS/MiniVoice" npm --prefix Desktop test
 swift test --disable-sandbox
 ```
 

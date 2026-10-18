@@ -39,6 +39,11 @@ final class DesktopEngine {
         let testDomain = ProcessInfo.processInfo.environment["MINIVOICE_ENGINE_TEST_DOMAIN"]
         let domain = testDomain?.hasPrefix("MiniVoice.Test.") == true ? testDomain! : AppIdentity.bundleIdentifier
         self.defaults = defaults ?? (domain == Bundle.main.bundleIdentifier ? .standard : UserDefaults(suiteName: domain) ?? .standard)
+        if self.defaults.object(forKey: "MiniVoice.trackSortField") == nil {
+            let old = self.defaults.string(forKey: "MiniVoice.trackSortOrder") ?? "modified"
+            self.defaults.set(["artist", "title"].contains(old) ? old : "added", forKey: "MiniVoice.trackSortField")
+            self.defaults.set(["artist", "title"].contains(old), forKey: "MiniVoice.trackSortAscending")
+        }
         library = MusicLibrary(defaults: self.defaults, scanOnLaunch: false)
         collections = LibraryCollections(defaults: self.defaults)
         volume.connect(library: library)
@@ -147,6 +152,12 @@ final class DesktopEngine {
             send(["event": "catalog", "data": library.tracks.map(row)])
         }
         send(["event": "state", "data": [
+            "interfaceStyle": defaults.string(forKey: PlayerInterfaceStyle.preferenceKey) ?? "simple",
+            "sorting": [
+                "tracks": ["field": defaults.string(forKey: "MiniVoice.trackSortField") ?? "added", "ascending": defaults.object(forKey: "MiniVoice.trackSortAscending") == nil ? false : defaults.bool(forKey: "MiniVoice.trackSortAscending")] as [String: Any],
+                "artists": ["field": defaults.string(forKey: "MiniVoice.artistSortField") ?? "name", "ascending": defaults.object(forKey: "MiniVoice.artistSortAscending") == nil ? true : defaults.bool(forKey: "MiniVoice.artistSortAscending")] as [String: Any],
+                "albums": ["field": defaults.string(forKey: "MiniVoice.albumSortField") ?? "name", "ascending": defaults.object(forKey: "MiniVoice.albumSortAscending") == nil ? true : defaults.bool(forKey: "MiniVoice.albumSortAscending")] as [String: Any]
+            ],
             "appearance": defaults.string(forKey: "MiniVoice.appearance") ?? "system", "desktopLyrics": desktopLyrics.isEnabled,
             "closeBehavior": defaults.string(forKey: "MiniVoice.closeBehavior") ?? "background",
             "playbackShortcuts": PlaybackShortcutAction.allCases.map { action -> [String: Any] in
@@ -168,7 +179,7 @@ final class DesktopEngine {
             "favorites": library.tracks.filter { collections.isFavorite($0.url.path) }.map { $0.url.path },
             "playlists": collections.playlists.map { ["id": $0.id.uuidString, "name": $0.name, "paths": $0.paths] as [String: Any] },
             "outputDevices": volume.outputDevices.map { ["id": $0.id, "name": $0.name] as [String: Any] },
-            "outputDevice": volume.outputDeviceID,
+            "outputDevice": volume.outputDeviceID, "outputDeviceName": volume.deviceName, "outputError": volume.error ?? "",
             "tasks": ["modelStatus": lyricsSync.modelStatus ?? "", "modelProgress": lyricsSync.modelProgress.map { $0 as Any } ?? NSNull(), "downloadingModel": lyricsSync.downloadingModel, "modelFailed": lyricsSync.modelFailed, "hasUnread": lyricsSync.hasUnread,
                       "notice": lyricsSync.alert.map { ["title": $0.title, "message": $0.message, "kind": $0.kind == .failure ? "failure" : "warning"] as [String: Any] } as Any? ?? NSNull()] as [String: Any],
             "jobs": lyricsSync.jobs.map { ["id": $0.id.uuidString, "title": $0.track.title, "detail": $0.detail, "finished": $0.finished, "failed": $0.failed] as [String: Any] }
@@ -195,6 +206,15 @@ final class DesktopEngine {
                 // The renderer already applied this explicit change.
                 lastInterfaceStyle = value; defaults.set(value, forKey: PlayerInterfaceStyle.preferenceKey)
             }
+            return true
+        case "sorting":
+            let category = payload["category"] as? String ?? "tracks"
+            guard ["tracks", "artists", "albums"].contains(category) else { return false }
+            let prefix = category == "tracks" ? "track" : category == "artists" ? "artist" : "album"
+            let field = payload["field"] as? String ?? ""
+            guard (category == "tracks" ? ["title", "artist", "album", "sourceAdded", "added"] : ["name", "count"]).contains(field) else { return false }
+            defaults.set(field, forKey: "MiniVoice.\(prefix)SortField")
+            defaults.set(payload["ascending"] as? Bool ?? true, forKey: "MiniVoice.\(prefix)SortAscending")
             return true
         case "tasks":
             switch payload["operation"] as? String {
@@ -251,13 +271,22 @@ final class DesktopEngine {
         case "deletePlaylist": if let id = UUID(uuidString: payload["playlist"] as? String ?? "") { collections.deletePlaylist(id) }; return true
         case "addToPlaylist":
             if let id = UUID(uuidString: payload["playlist"] as? String ?? "") { return collections.add([try track(payload).url.path], to: id) }; return 0
+        case "addManyToPlaylist":
+            let ids = Set((payload["ids"] as? [String] ?? []).compactMap(UUID.init(uuidString:)))
+            if let id = UUID(uuidString: payload["playlist"] as? String ?? "") { return collections.add(library.tracks.filter { ids.contains($0.id) }.map { $0.url.path }, to: id) }; return 0
+        case "removeManyFromPlaylist":
+            let ids = Set((payload["ids"] as? [String] ?? []).compactMap(UUID.init(uuidString:)))
+            if let id = UUID(uuidString: payload["playlist"] as? String ?? "") {
+                for track in library.tracks where ids.contains(track.id) { collections.remove(track.url.path, from: id) }
+            }
+            return true
         case "removeFromPlaylist":
             if let id = UUID(uuidString: payload["playlist"] as? String ?? "") { collections.remove(try track(payload).url.path, from: id) }; return true
         case "clearRecent": library.clearRecentPlayback(); return true
         case "detail": return detail(await library.resolveTrack(try track(payload).id))
         case "reveal": NSWorkspace.shared.activateFileViewerSelecting([try track(payload).url]); return true
         case "desktopLyrics": desktopLyrics.toggle(); return desktopLyrics.isEnabled
-        case "outputDevice": volume.selectOutputDevice(UInt32(max(0, min(Double(UInt32.max), finite(payload, "id"))))); return true
+        case "outputDevice": volume.selectOutputDevice(UInt32(max(0, min(Double(UInt32.max), finite(payload, "id"))))); return ["ok": volume.error == nil, "error": volume.error ?? ""] as [String: Any]
         case "clearError": library.errorMessage = nil; return true
         case "lyricsSearch":
             let track = try track(payload)
@@ -275,6 +304,9 @@ final class DesktopEngine {
             resolved.lyrics = payload["lyrics"] as? String ?? resolved.lyrics
             let destination: LyricsDestination = payload["destination"] as? String == "tags" ? .tags : .sidecar
             try await library.save(resolved, lyricsDestination: destination); return true
+        case "deleteTracks":
+            let ids = Set((payload["ids"] as? [String] ?? []).compactMap(UUID.init(uuidString:)))
+            library.deleteTracks(ids: ids, moveFilesToTrash: payload["trash"] as? Bool ?? false); return true
         case "removeTrack": library.deleteTracks(ids: [try track(payload).id], moveFilesToTrash: false); return true
         case "shutdown": library.pause(); defaults.synchronize(); NSApp.terminate(nil); return true
         default: throw NSError(domain: "MiniVoice", code: 2, userInfo: [NSLocalizedDescriptionKey: "不支持的后台命令：\(action)"])

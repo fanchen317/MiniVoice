@@ -30,7 +30,7 @@ export function SimplePage({sizing,track,playbackTrack,expanded,onExpanded,onEdi
 
   useLayoutEffect(()=>{if(previousExpanded.current&&!expanded&&!reducedMotion())root.current.querySelector('.simple-hero').animate([{opacity:0,transform:'scale(.94)'},{opacity:1,transform:'none'}],{duration:460,easing:'ease-out'});previousExpanded.current=expanded;},[expanded]);
   function toggle(){if(!expanded)fadeHeroOut();springLayout(()=>onExpanded(!expanded),'.simple-lyrics',.46,.9);}
-  return <section ref={root} className={`simple-player ${expanded?'lyrics-expanded':''}`} style={{'--hero-size':`${metrics.artworkSize}px`,'--hero-title-size':`${metrics.titleSize}px`}}>
+  return <section ref={root} className={`simple-player ${expanded?'lyrics-expanded':''}`} style={{'--hero-size':`${metrics.artworkSize}px`,'--hero-title-size':`${metrics.titleSize}px`,'--hero-text-gap':metrics.artworkSize<160?'6px':'12px','--hero-album-lines':metrics.artworkSize<160?1:2}}>
     <div className="simple-hero-slot" aria-hidden={expanded} inert={expanded}>
       <div className="simple-hero"><div className="simple-art"><Cover track={track} detail/></div><div><h1>{track?.title||'选择一首音乐'}</h1><h3>{track?.artist}</h3><p>{track?.album}</p></div></div>
     </div>

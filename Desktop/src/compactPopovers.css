@@ -1,0 +1,67 @@
+/* Shared density for application popovers, with eight-point viewport gutters. */
+:is(.background-tasks-panel,.playback-mode-popover,.wall-queue-popover,.output-popover,.sort-popover,.context-menu,.wall-tools-popover,.name-dialog){
+  --popup-padding:12px;--popup-gap:6px;
+  padding:var(--popup-padding);border-radius:12px;font-size:13px;line-height:1.4;
+  max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px);
+  background:var(--panel);color:var(--text);
+}
+/* Portals live outside .app, so choose their palette from the visible surface. */
+body:has(.app.style-wall) :is(.background-tasks-panel,.playback-mode-popover,.wall-queue-popover,.output-popover,.sort-popover,.context-menu,.wall-tools-popover,.name-dialog){
+  --text:#f2f2f2;--muted:#a5a7a6;--line:#ffffff24;--glass-line:#ffffff24;--surface:#292e2d;--raised:#292e2d;--mint:#0fa875;
+  background:#1f2424;color:var(--text);border-color:var(--line);color-scheme:dark;
+}
+.background-tasks-panel{width:min(300px,calc(100vw - 16px));gap:6px}
+.background-tasks-panel[data-empty=true]{width:min(240px,calc(100vw - 16px))}
+.background-tasks-panel>header{gap:8px;min-height:24px}
+.background-tasks-panel header h3{font-size:13px;line-height:20px}
+.background-tasks-panel header button{font-size:12px}
+.background-tasks-panel>p{margin:0;font-size:12px;line-height:20px}
+.background-tasks-scroll{max-height:min(300px,calc(100dvh - 100px))}
+.task-panel-actions{gap:6px}
+.task-row{padding:8px 0;gap:6px}
+.task-row>.glyph{width:18px;height:18px}
+.task-row strong{font-size:12px;line-height:18px}
+.task-row p{font-size:12px;line-height:1.45;margin-top:2px}
+.task-row small{margin-top:2px;line-height:16px}
+.task-row details{margin-top:4px}
+.playback-mode-popover{width:min(208px,calc(100vw - 16px));overflow:auto}
+.playback-mode-popover>strong{font-size:13px;line-height:20px;margin-bottom:6px}
+.playback-mode-popover>button{height:28px;gap:8px;font-size:13px;padding:3px 8px}
+/* Compact menus keep their rows in place while hovered. */
+.playback-mode-popover.wall-mode-popover>button:hover,.playback-mode-popover.wall-mode-popover>button:active{transform:none}
+.wall-queue-popover{width:min(280px,calc(100vw - 16px));height:auto;gap:6px;display:flex;flex-direction:column}
+.wall-queue-popover>header{height:auto;min-height:22px;padding:0}
+.wall-queue-popover>header strong{font-size:13px}
+.wall-queue-scroll{min-height:0;max-height:264px;flex-shrink:1}
+.wall-queue-scroll button{height:44px;padding:4px 6px;gap:8px}
+.wall-queue-scroll strong{font-size:12px;line-height:17px}
+.wall-queue-scroll small{font-size:11px;line-height:15px}
+.queue-empty{font-size:12px;line-height:20px;color:var(--muted)}
+.output-popover{gap:6px}
+.output-popover>strong{font-size:13px;height:22px;padding:0 6px}
+.output-device-list{gap:2px;max-height:240px}
+.output-device-list>button{height:34px;padding:0 8px;border-radius:8px}
+.output-popover p{padding:4px 6px}
+.sort-popover{gap:2px;min-width:168px;overflow:auto}
+.sort-popover>strong{padding:2px 6px 6px;font-size:13px}
+.sort-popover button,.context-menu button{min-height:28px;padding:4px 8px;font-size:13px;line-height:20px}
+.context-menu{padding:6px}
+.modal-backdrop{padding:8px}
+.name-dialog{width:min(320px,calc(100vw - 16px));gap:10px;overflow:auto}
+.name-dialog form{gap:10px;min-width:0}
+.name-dialog h2{font-size:15px;line-height:22px;margin:0}
+.name-dialog p{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.name-dialog input:not([type=checkbox]){min-height:30px;padding:5px 8px;font-size:13px}
+.name-dialog .dialog-actions{gap:8px;margin-top:2px;flex-wrap:wrap}
+.name-dialog .primary-button,.name-dialog .soft-button{padding:6px 12px;min-height:30px;font-size:13px}
+.name-dialog.playlist-picker{width:min(340px,calc(100vw - 16px));height:auto;gap:8px}
+.playlist-picker>header{gap:8px}
+.playlist-picker-list{flex:0 1 auto;max-height:min(220px,calc(100dvh - 200px))}
+.playlist-picker-list>button{min-height:32px;padding:4px 6px;border-radius:6px}
+.playlist-picker-empty{padding:12px 0;gap:6px}
+.playlist-picker>form{padding-top:8px;gap:6px;flex-wrap:wrap}
+.playlist-picker form>input{flex:1 1 140px;width:auto}
+.playlist-picker form>button{flex:0 0 auto}
+.wall-queue-scroll{padding:0;flex:0 1 auto}
+.wall-queue-scroll button{color:var(--text)}
+.wall-queue-popover small,.wall-queue-scroll button>.glyph{color:var(--muted)}

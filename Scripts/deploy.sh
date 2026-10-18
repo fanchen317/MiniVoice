@@ -20,7 +20,7 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
-if [[ "$SKIP_BUILD" != true ]]; then "$ROOT/Scripts/build-electron-app.sh" "$CONFIGURATION"; fi
+if [[ "$SKIP_BUILD" != true ]]; then "$ROOT/Scripts/build-app.sh" "$CONFIGURATION"; fi
 verify_desktop_app "$DESKTOP_APP_PATH"
 PARENT="$(dirname "$APP_PATH")"
 mkdir -p "$PARENT"

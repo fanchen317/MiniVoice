@@ -32,12 +32,12 @@ macOS 本地音乐播放器，当前发行架构为 Electron / React 主窗口 +
 需要 Node.js / npm、Xcode 命令行工具及仓库内的 Git LFS 资源。正式构建、部署和 DMG 统一使用 Electron + Swift 架构：
 
 ```sh
-Scripts/build-electron-app.sh release
+Scripts/build-app.sh release
 Scripts/deploy.sh
 Scripts/build-dmg.sh
 ```
 
-主应用产物为 `.build/electron/MiniVoice-darwin-arm64/MiniVoice.app`，包含 `app.asar` 前端和 `Contents/Resources/Native/MiniVoice.app` 原生后台。`Scripts/build-app.sh [debug|release]` 仅生成 `.build/MiniVoice.app` 原生后台 / SwiftUI 参考应用，不再作为正式部署与 DMG 的入口。`swift run` 也仅运行原生版本。
+唯一主应用产物为 `.build/MiniVoice.app`，包含 `app.asar` 主窗口和内置原生音频、设置、歌曲编辑与桌面歌词服务。`Scripts/build-app.sh [debug|release]`、部署和 DMG 都使用同一应用；旧 `build-electron-app.sh` 仅作为兼容别名。`build-native-engine.sh` 是内部组装步骤，生成的服务不会独立打开另一个播放器。
 
 部署默认构建 release、校验完整应用及签名，退出目标位置的旧应用后替换 `/Applications/MiniVoice.app` 并启动；替换或启动命令失败时恢复旧安装。支持复用已构建产物、跳过启动或指定安装位置：
 
@@ -48,15 +48,15 @@ Scripts/build-dmg.sh --skip-build
 
 当前版本 **2.3.0**（构建号 8），Electron 外层和 Swift 后台版本在打包时同步。DMG 输出 `.build/dist/MiniVoice-2.3.0-arm64.dmg`。安装布局由脚本直接写入 `.DS_Store`，无需 Finder 自动化权限；首次运行会在 `.build/dmg-tools` 中建立独立 Python 环境并安装 `Scripts/dmg-requirements.txt` 固定版本依赖。仍支持 `--reuse-layout` 或 `--layout-from /absolute/path/previous.dmg` 复用布局。
 
-Electron 应用标识为 `com.xcosmos.MiniVoice.electron`，保留现有 `~/Library/Application Support/minivoice-desktop/` 前端偏好路径；原生后台继续使用 `com.xcosmos.MiniVoice`，沿用音乐库、收藏、歌单及原生设置。更早的 `local.fanchen.MiniVoice` / `com.local.minivoice` 配置由后台迁移，已有新配置优先。原生资源目录 `~/Library/Application Support/MiniVoice/` 及缓存目录保持不变。
+唯一主应用继续使用已安装版本的标识 `com.xcosmos.MiniVoice.electron`，保留现有签名身份与 `~/Library/Application Support/minivoice-desktop/` 前端偏好路径。内置服务保留 `com.xcosmos.MiniVoice` 偏好域，沿用音乐库、收藏、歌单及原生设置；这两个内部标识不代表两套可运行的主窗口。更早的 `local.fanchen.MiniVoice` / `com.local.minivoice` 配置由后台迁移，已有新配置优先。原生资源目录 `~/Library/Application Support/MiniVoice/` 及缓存目录保持不变。
 
-arm64 完整应用内置固定版本的 ffmpeg / ffprobe、歌词 AI 运行环境和默认 Whisper small 模型，使用 small 模型无需额外安装 Python 或 FFmpeg。资源位于内嵌原生应用的 `Contents/Resources/`；来源、校验值和许可见 `Vendor/FFmpeg/README.md` 与 `Vendor/LyricsAI/README.md`。medium 模型仍按需下载。直接 `swift run` 不组装这些资源，需要本机依赖。
+arm64 完整应用内置固定版本的 ffmpeg / ffprobe、歌词 AI 运行环境和默认 Whisper small 模型，使用 small 模型无需额外安装 Python 或 FFmpeg。资源位于内嵌原生应用的 `Contents/Resources/`；来源、校验值和许可见 `Vendor/FFmpeg/README.md` 与 `Vendor/LyricsAI/README.md`。medium 模型仍按需下载。`swift run` 仅提示使用统一应用构建入口，不再启动另一套主窗口。
 
 歌词编辑页并行查询网易云、QQ 音乐、酷狗音乐、LRCLIB 和 LrcAPI 等来源，确认候选并保存后才写入本地文件。当前安装包使用 ad-hoc 签名，尚未进行 Developer ID 签名与公证。
 
 本地构建的 Electron 外层使用固定应用标识的 designated requirement，避免默认 ad-hoc 签名按每次构建的 cdhash 识别应用而反复请求文件夹权限。首次访问“下载”等受保护目录仍需允许；从旧签名切换后也可能再确认一次。撤销权限、系统重置权限或改变签名身份后仍可能重新提示，不能通过应用内的“已授权”标记跳过。此方式仅用于本地构建，不验证发布者身份；对外分发应固定使用开发者证书，可设置 `MINIVOICE_CODESIGN_IDENTITY` 指定签名身份。权限是否跨更新保留需在系统弹窗上实际验收。
 
-前端验证使用 `npm --prefix Desktop test`，原生后台验证使用 `swift test`。界面还原现状及待验收差异见 [还原差异清单](Docs/InterfaceParityAudit-2026-10-18.md)。
+前端验证使用 `npm --prefix Desktop test`，原生后台验证使用 `swift test`。正式入口、还原实施和验收边界见 [单一应用与还原实施记录](Docs/UnifiedApp-2026-10-18.md)。
 
 ## 当前边界
 

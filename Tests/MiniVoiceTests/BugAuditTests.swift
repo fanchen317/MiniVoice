@@ -92,7 +92,12 @@ final class BugAuditTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(name)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let index = PlaylistCache.indexURL(root: root)
-        var entry = CachedTrack(track: Track(url: root.appendingPathComponent("unavailable.mp3"),
+        // The comparison intentionally reads the source again before saving.
+        // A missing audio file cannot validate the current source's lyrics.
+        let audio = root.appendingPathComponent("current.wav")
+        _ = try MediaTools.run("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "4", audio.path])
+        try LyricsStorage.write("[00:01]真实歌词", to: LyricsStorage.sidecarURL(for: audio))
+        var entry = CachedTrack(track: Track(url: audio,
             title: "歌曲", artist: "歌手", album: "专辑", lyrics: "[00:01]真实歌词", artwork: nil, duration: 4), root: root)
         try entry.splitResources()
         let lyricsURL = ResourceCache.url(try XCTUnwrap(entry.lyricsKey), kind: "Lyrics")

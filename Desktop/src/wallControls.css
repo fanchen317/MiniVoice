@@ -41,3 +41,14 @@
 :root.is-resizing .app.style-wall .wall-search-field{transition-duration:320ms,320ms,320ms,360ms}
 .reduce-motion .app.style-wall .wall-search-field{transform:none;translate:none}
 .app.style-wall.wall-immersive .wall-search-field{translate:90px 0;opacity:0;pointer-events:none}
+
+/* Let the timestamp move to its own row before control buttons can overlap it.
+   Flex wrapping measures the actual controls, including the immersive toggle. */
+.wall-card-content .wall-card-transport,.wall-card-content.is-immersive .wall-card-transport{
+  display:flex;flex-wrap:wrap;column-gap:16px;row-gap:6px;
+}
+.wall-card-transport .wall-transport-buttons{
+  flex:1 0 auto;width:max-content;max-width:100%;flex-wrap:wrap;row-gap:6px;
+}
+.wall-card-transport .wall-playback-time{flex:0 0 auto;margin-left:auto}
+.wall-card-transport>input[type=range]{flex:0 0 100%;min-width:0}

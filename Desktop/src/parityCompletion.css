@@ -1,8 +1,41 @@
-/* Background task panel and compact lyrics controls. */
+/* Final interaction contracts shared by the single shipping MiniVoice app. */
+.list-empty{position:absolute;inset:48px 12px 12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;pointer-events:none;color:var(--muted);text-align:center}
+.list-empty>.glyph{width:32px;height:32px}.list-empty h2{font-size:13px;font-weight:400}.list-empty>button{pointer-events:auto}
+.songs-panel{position:relative}.library-toolbar{z-index:2;flex-shrink:0}
+.context-menu{max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px);overflow:auto;z-index:1100}
+.destructive{color:#e55e58}.primary-button.destructive{background:#d64b45;color:white}
+.modal-backdrop{z-index:1500}.name-dialog{width:min(340px,calc(100vw - 32px));padding:24px;display:flex;flex-direction:column;gap:18px;background:var(--glass,#292d2b);color:var(--text,#eee);border:1px solid var(--glass-line,#ffffff24)}
+.name-dialog form{display:flex;flex-direction:column;gap:18px}.name-dialog h2{font-size:17px}.name-dialog p{line-height:1.5}.name-dialog input:not([type=checkbox]){width:100%;min-width:0}.name-dialog .dialog-actions{margin-top:0}.trash-option{display:flex;align-items:center;gap:8px;font-size:13px}.trash-option input{width:14px;height:14px}
+.playlist-picker{width:min(420px,calc(100vw - 24px));height:min(400px,calc(100dvh - 40px));padding:20px;gap:16px}
+.playlist-picker>header,.background-tasks-panel>header{display:flex;align-items:center;justify-content:space-between;gap:12px}.playlist-picker>p{font-size:13px;color:var(--muted)}
+.playlist-picker-list{flex:1;min-height:0;overflow:auto}.playlist-picker-list>button{display:flex;align-items:center;gap:10px;width:100%;min-height:40px;text-align:left;padding:4px 8px;border-radius:8px}.playlist-picker-list>button:hover:not(:disabled){background:#0fa8751f}.playlist-picker-list>button>.glyph{color:var(--mint);width:20px;height:20px}.playlist-picker-list>button>span:nth-child(2){flex:1}.playlist-picker-list small{font-size:12px;color:var(--muted)}.playlist-picker-empty{height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:var(--muted)}
+.playlist-picker>form{border-top:1px solid var(--line);padding-top:16px;display:flex;flex-direction:row;gap:8px}.playlist-picker form>input{flex:1}.playlist-picker form>button{flex-shrink:0}
 .background-tasks-anchor{display:inline-flex;flex-shrink:0}.brand .background-tasks-anchor>.icon-button{width:24px;height:24px;color:var(--mint);padding:0}.background-tasks-anchor .glyph{width:22px;height:22px}
 .background-tasks-panel{position:fixed;z-index:1200;width:min(360px,calc(100vw - 16px));max-height:calc(100dvh - 16px);padding:18px;border-radius:12px;border:1px solid var(--glass-line);background:var(--glass);backdrop-filter:blur(20px);color:var(--text);box-shadow:var(--shadow);display:flex;flex-direction:column;gap:12px;font-size:13px}
 .background-tasks-panel header h3{font-size:14px}.background-tasks-panel header button{font-size:12px;color:var(--mint)}.background-tasks-panel>p{color:var(--muted)}.background-tasks-scroll{overflow:auto;max-height:340px}.task-row{display:flex;gap:8px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--line)}.task-row>.glyph{width:20px;height:20px;flex-shrink:0}.task-row>div{min-width:0;flex:1}.task-row p{font-size:12px;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}.task-row .icon-button{width:24px;height:24px;flex-shrink:0}.task-row .icon-button>.glyph{width:16px;height:16px}.task-row progress{width:100%;margin-top:6px;accent-color:var(--mint)}
-.background-tasks-panel>header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.selection-toolbar .glyph{width:15px;height:15px;vertical-align:middle}.selection-toolbar button:not(.icon-button){display:inline-flex;align-items:center;gap:5px}
+/* Apply one common global pivot to the separate grid regions. This produces
+   the native workspace's trailing-anchored 0.975 scale and 8pt descent. */
+.app:not(.style-wall)>.workspace,.app:not(.style-wall)>.player,.app:not(.style-wall)>.window-tools{scale:calc(1 - .025 * var(--sidebar-depth,0));translate:0 calc(8px * var(--sidebar-depth,0));transition:scale .36s ease-in-out,translate .36s ease-in-out}
+.app:not(.style-wall)>.workspace{transform-origin:right calc((100dvh - 46px)/2)}
+.app:not(.style-wall)>.player{transform-origin:right calc(var(--controls-height) + 23px - 50dvh)}
+.app:not(.style-wall)>.window-tools{transform-origin:var(--content-width) calc((100dvh - 46px)/2)}
+.app.album-mode:not(.album-stacked)>.player{transform-origin:var(--content-width) calc((100dvh - 46px)/2 - 62px)}
+.app.no-track:not(.style-wall){--controls-height:0px;grid-template-rows:34px minmax(0,1fr) 0}
+.app.no-track .workspace>.simple-info-button{display:none}
+.player:not(.compact) .seek input::-webkit-slider-thumb{width:28px;height:18px;border-radius:9px;background:#fffffff0;border:.75px solid #ffffffd9;box-shadow:0 1px 4px #00000024;backdrop-filter:blur(4px)}
+.player:not(.compact) .seek input:hover::-webkit-slider-thumb,.player-tools input:hover::-webkit-slider-thumb{background:#ffffff0a;border-color:#ffffffa6}
+.player:not(.compact) .seek input:active::-webkit-slider-thumb,.player-tools input:active::-webkit-slider-thumb{background:#ffffff06;border-color:#ffffff61}
+.player .seek input:disabled{opacity:.5}.player .icon-button:disabled,.player .play-main:disabled{opacity:.45;pointer-events:none}
+.player .transport-buttons>.icon-button[data-mode]{color:var(--mint)}
+.player .transport-buttons>.icon-button[data-mode=list]{color:var(--muted)}
+.output-popover{width:min(280px,calc(100vw - 24px));padding:12px;gap:8px}.output-popover>strong{font-size:14px;height:28px;padding:0 12px;display:flex;align-items:center}.output-popover p{font-size:12px;color:var(--muted);padding:8px}.output-device-list{max-height:284px;overflow:auto;display:flex;flex-direction:column;gap:4px}
+.output-device-list>button{width:100%;height:44px;flex-shrink:0;display:flex;align-items:center;gap:10px;text-align:left;padding:0 12px;border-radius:12px;font-size:12px}.output-device-list>button>.glyph{width:20px;height:20px;flex-shrink:0}.output-device-list>button>span:nth-child(2){flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.output-device-list .device-check{width:16px}.output-device-list .active{color:var(--mint);background:#0fa8751f}.output-device-list>button:hover{background:#0fa8751a}
+.playback-artwork-flight>.cover{width:100%;height:100%;object-fit:cover}
+.lyric-line>.lyric-content,.lyric-line>small{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}.plain-lyrics .lyric-line>.lyric-content,.plain-lyrics .lyric-line>small{display:block;overflow:visible}
+.reduce-motion .app:not(.style-wall)>.workspace,.reduce-motion .app:not(.style-wall)>.player,.reduce-motion .app:not(.style-wall)>.window-tools{transition:none}
+.reduce-motion .wall-lyric-line,.reduce-motion .lyric-line{transition:none!important}
+
 /* Lyrics share the existing control row instead of reserving a title row. */
 .simple-lyrics>header{min-height:36px;padding:4px 12px;justify-content:flex-end;flex-shrink:0}
 .app.album-mode .workspace-header{height:50px;padding:6px 12px}
@@ -39,3 +72,81 @@
 .cover-empty.cover-artwork>.glyph{width:40cqmin;height:40cqmin}
 .wall-poster .cover-empty.cover-wall{color:#ffffff26;background:linear-gradient(135deg,#384c4a,#000)}
 .cover-empty.cover-wall>.glyph{width:min(128px,max(18px,25cqmin));height:min(128px,max(18px,25cqmin))}
+/* SwiftUI panel strokes overlay their content; they do not consume an inset. */
+.sidebar,.player:not(.compact),.simple-lyrics,.songs-panel,.browse-card-detail{border:0;outline:1px solid var(--glass-line);outline-offset:-1px}
+.app .sidebar{gap:12px}
+.app:not(.style-simple) .main-navigation button,.app:not(.style-simple) .playlist-nav>button{height:44px;min-height:44px;flex-shrink:0;padding:0 12px}
+.app:not(.style-simple) .sidebar>.playlist-heading{margin-top:-6px;padding:22px 12px 8px;line-height:16px}
+.app:not(.style-simple) .sidebar>.playlist-nav{margin-top:-6px;gap:6px}
+.songs-panel{padding-top:8px}.songs-panel .library-toolbar-main{height:28px;color:var(--muted)}
+.simple-songs .library-toolbar-main{height:36px}
+:root[data-theme=light]{--glass:#e3eaecb3}
+.player:not(.compact) .play-main{background:linear-gradient(180deg,#18b386,#0c9f6d);box-shadow:0 4px 8px #0fa87538}
+.app.album-mode:not(.album-stacked)>.player.album-controls{outline:0}
+
+/* One clipped background follows measured line fragments, preserving browser
+   shaping and kerning even when an individual timed word wraps. */
+.lyric-content.sweep-surface{background-repeat:no-repeat;background-clip:text;-webkit-background-clip:text}
+.lyric-line.current .lyric-content.sweep-surface,.wall-lyric-line.current.timed-active>.lyric-content.sweep-surface{color:transparent!important}
+.lyric-content.sweep-surface>.lyric-word{color:inherit!important;background:none!important}
+.lyric-line:not(.current) .lyric-content.sweep-surface,.wall-lyric-line:not(.current)>.lyric-content.sweep-surface{background-image:none!important}
+
+/* Expanded playback shares the workspace surface and native typography. */
+.app.album-mode .workspace{border:0;outline:1px solid var(--glass-line);outline-offset:-1px}
+.app.album-mode .workspace-header{height:62px;padding:12px}
+.app.album-mode .album-lyrics{padding:24px 0 0}
+.app.album-mode>.player.album-controls{background:transparent!important;backdrop-filter:none!important;outline:0;box-shadow:none!important}
+.album-mode:not(.album-stacked) .transport>.transport-buttons{justify-content:center}
+.album-mode:not(.album-stacked) .now-playing-title strong{font-size:15px}
+.album-mode:not(.album-stacked) .now-playing-title>span{font-size:12px;margin-top:4px}
+.album-mode:not(.album-stacked) .now-playing-title>small{font-size:10px;margin-top:4px}
+.player:not(.compact) .transport-buttons>.icon-button>.glyph{width:36px;height:52px}
+.player:not(.compact) .play-main .glyph{width:52px;height:52px}
+.player:not(.compact) .seek>span{width:34px;flex-shrink:0;font-family:inherit;font-size:10px;font-variant-numeric:tabular-nums}
+.player:not(.compact) .seek>span:last-child{text-align:right}
+.cover-empty.cover-artwork>.glyph{width:100%;height:100%}
+.simple-art,.album-mode:not(.album-stacked) .mini-cover{border-radius:15px;outline:.75px solid #ffffff73;outline-offset:-.75px}
+.style-simple .simple-hero{gap:22px}
+.style-simple .simple-hero h3,.style-simple .simple-hero p{margin-top:var(--hero-text-gap)}
+.style-simple .simple-hero p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:var(--hero-album-lines);white-space:normal;line-height:1.2}
+.workspace-lyrics .empty-lyrics-icon{width:32px;height:29px}
+.workspace-lyrics .empty-lyrics-icon .glyph{width:32px;height:29px;opacity:1;color:var(--muted)}
+.workspace-lyrics .empty h3{font-size:13px}
+.workspace-lyrics .empty .soft-button{padding:10px 14px;border:0;border-radius:12px;background:#ffffffa6;font-weight:600}
+:root[data-theme=dark] .workspace-lyrics .empty .soft-button{background:#ffffff14}
+
+/* macOS semantic sizes differ from their iOS namesakes. */
+.app .brand strong{font-size:15px}
+.app .brand small{font-size:10px}
+.player:not(.album-controls) .now-playing-title strong,.album-stacked .now-playing-title strong{font-size:11px}
+.player:not(.album-controls) .now-playing-title>span,.album-stacked .now-playing-title>span{font-size:10px}
+.app:not(.style-simple) .playlist-heading{font-size:12px}
+.app:not(.style-simple) .main-navigation i>.glyph,.app:not(.style-simple) .playlist-nav i>.glyph{width:22px;height:24px}
+.lyrics-scroll .empty .soft-button{font-size:11px;font-weight:500;padding:10px 14px;border:0;border-radius:12px;background:#ffffffa6}
+:root[data-theme=dark] .lyrics-scroll .empty .soft-button{background:#ffffff14}
+.simple-lyrics .empty h3{font-size:15px}
+
+.simple-art{box-shadow:0 6px 32px #0000001a}
+.album-mode:not(.album-stacked) .now-playing>.mini-cover{box-shadow:0 8px 32px #00000024}
+
+.simple-hero-slot{overflow:visible}
+.lyrics-expanded .simple-hero-slot{visibility:hidden}
+.simple-songs .library-toolbar-main{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:14px 14px;align-content:center;gap:2px 8px}
+.simple-songs .library-toolbar-main>span:first-child{display:block;grid-area:1/1;font-size:10px;line-height:14px}
+.simple-songs .library-toolbar-main>span:nth-child(2){grid-area:2/1;font-size:10px;line-height:14px}
+.simple-songs .library-toolbar-main>.toolbar-actions{grid-area:1/2/3/3}
+.simple-songs .track-row{grid-template-rows:16px 12px;gap:4px 10px;align-content:center;padding:7px}
+.simple-songs .track-row>.row-cover{align-self:center}
+.simple-songs .row-title{line-height:16px}
+.simple-songs .track-row>.row-artist{font-size:10px;line-height:12px;align-self:start}
+/* The stacked album player is embedded in one continuous workspace panel. */
+.app.album-mode.album-stacked .workspace{grid-row:2/-1;margin-bottom:0}
+.app.album-mode.album-stacked .album-lyrics{bottom:var(--controls-height)}
+.app.album-mode.album-stacked>.player.album-controls{position:absolute;left:var(--content-left);right:12px;bottom:12px;top:auto;width:var(--content-width);border:0!important}
+
+/* Text shadows paint above background-clipped karaoke ink in Chromium.
+   Composite one faint shadow after the glyph mask, never on each timed span. */
+.wall-lyric-line,.wall-lyric-line .lyric-content,.wall-lyric-line .lyric-word,.wall-lyric-line small{text-shadow:none}
+.wall-lyric-line{font-weight:600;font-synthesis:none;filter:none}
+.wall-lyric-line>.lyric-content{filter:drop-shadow(0 1px 2px #00000040)}
+.wall-lyric-line small{font-weight:400;filter:none}

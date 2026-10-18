@@ -1,3 +1,5 @@
+import {paintLyricSweep} from './lyricSweep';
+import {flyPlaybackArtwork} from './transitions';
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useScrollThumb } from './scrollbar';
 import { WallQueue } from './WallQueue';
@@ -8,19 +10,33 @@ import { wallDockMetrics,browseGridMetrics,springEasing } from './motion';
 import { displayLine, wallCardSizing } from './kinetic';
 import { artwork, command, seconds, useClock, usePlayback, useCatalog } from './store';
 
-export const Cover = memo(function Cover({ track, detail=false }) {
-  const [failed,setFailed]=useState(false), url=artwork(track,detail);
+export const Cover = memo(function Cover({track,detail=false,presentation=detail?'artwork':'list'}){
+  const [failed,setFailed]=useState(false),url=artwork(track,detail);
   useEffect(()=>setFailed(false),[url]);
-  return url&&!failed ? <img className="cover" src={url} alt="" decoding="async" draggable="false" onError={()=>setFailed(true)}/> : <div className="cover cover-empty">♫</div>;
+  if(!url||failed)return <div className={`cover cover-empty cover-${presentation}`}><Icon name={presentation==='artwork'?'artwork-music':'music'}/></div>;
+  if(presentation==='artwork')return <div className="cover artwork-fit"><img className="artwork-blur" src={url} alt="" decoding="async" draggable="false"/><img className="artwork-foreground" src={url} alt="" decoding="async" draggable="false" onError={()=>setFailed(true)}/></div>;
+  return <img className={`cover cover-${presentation}`} src={url} alt="" decoding="async" draggable="false" onError={()=>setFailed(true)}/>;
 });
-export function Icon({name}){return <span className="glyph" aria-hidden="true" style={{maskImage:`url("./symbols/${name}.png")`,WebkitMaskImage:`url("./symbols/${name}.png")`}}/>;}
+export function Icon({name}){return <span className="glyph" data-symbol={name} aria-hidden="true" style={{maskImage:`url("./symbols/${name}.png")`,WebkitMaskImage:`url("./symbols/${name}.png")`}}/>;}
 export function IconButton({ label, children, onClick, active=false, className='', ...props }) {
   return <button className={`icon-button ${active?'active':''} ${className}`} title={label} aria-label={label} onClick={onClick} {...props}>{children}</button>;
 }
+function fitLyricContent(root){
+  if(root.classList.contains('plain-lyrics'))return;
+  for(const row of root.querySelectorAll('[data-lyric]')){
+    for(const element of row.querySelectorAll('.lyric-content,small')){
+      const translation=element.tagName==='SMALL',base=parseFloat(getComputedStyle(row).fontSize)*(translation?.58:1),minimum=translation?.75:.6;
+      let low=minimum,high=1;element.style.lineHeight=translation?'1.3':'1.2';
+      for(let i=0;i<8;i++){const scale=(low+high)/2;element.style.fontSize=`${Math.max(translation?13:0,base)*scale}px`;if(element.scrollHeight>parseFloat(getComputedStyle(element).fontSize)*(translation?1.3:1.2)*2+1)high=scale;else low=scale;}
+      element.style.fontSize=`${Math.max(translation?13:0,base)*(high>.99?1:low)}px`;
+    }
+  }
+}
 const EMPTY_LINES=[];
-export function Lyrics({ track, expanded=false, onEdit }) {
+export function Lyrics({ track, expanded=false, workspace=false, onEdit }) {
   const {showLyricsTranslation=true}=usePlayback(),clock=useClock(),root=useRef(),activeRef=useRef(-2),scrollFrame=useRef(0),manualUntil=useRef(0),sourceLines=track?.lyrics?.trim()?(track.lines||EMPTY_LINES):EMPTY_LINES;
   const lines=useMemo(()=>sourceLines.map((line,index)=>displayLine(line,sourceLines.slice(index+1).find(next=>next.time>line.time)?.time,track?.duration)),[sourceLines,track?.duration]);
+  const clockRef=useRef(clock);clockRef.current=clock;
   useScrollThumb(root);
   function align(index,animate=false){
     const el=root.current,line=el?.querySelector(`[data-lyric="${Math.max(0,index)}"]`);if(!line)return;
@@ -36,7 +52,7 @@ export function Lyrics({ track, expanded=false, onEdit }) {
       const height=el.clientHeight,width=el.clientWidth,bilingual=showLyricsTranslation&&lines.some(l=>l.translation);
       const base=Math.min(expanded?72:92,Math.max(28,(height-36)/(expanded?6:5))),row=bilingual?Math.max(62,base*1.45):base;
       el.style.setProperty('--lyric-row',`${row}px`);el.style.setProperty('--lyric-font',`${expanded?Math.min(38,Math.max(22,width*.058)):Math.min(34,Math.max(19,base*.56))}px`);
-      el.style.setProperty('--lyric-padding',`${height/2}px`);align(activeRef.current,false);
+      el.style.setProperty('--lyric-padding',`${height/2}px`);fitLyricContent(el);align(activeRef.current,false);const sample=clockRef.current;paintLyricSweep(el.querySelector('.current .lyric-content'),sample.time+(sample.playing?Math.min(.24,Math.max(0,(performance.now()-sample.sampledAt)/1000)):0),{reduced:document.documentElement.classList.contains('reduce-motion')});
     });observer.observe(el);
     const manual=()=>{cancelAnimationFrame(scrollFrame.current);manualUntil.current=performance.now()+2000;};el.addEventListener('wheel',manual,{passive:true});el.addEventListener('pointerdown',manual);
     return()=>{observer.disconnect();el.removeEventListener('wheel',manual);el.removeEventListener('pointerdown',manual);cancelAnimationFrame(scrollFrame.current);};
@@ -50,14 +66,14 @@ export function Lyrics({ track, expanded=false, onEdit }) {
         for(const line of el.querySelectorAll('[data-lyric]')){const n=Number(line.dataset.lyric);line.classList.toggle('current',n===index);line.dataset.emphasis=index<0?'-1':String(Math.min(2,Math.abs(n-index)));}
         if(performance.now()>=manualUntil.current)align(index,previous!==-2);
       }
-      const current=el.querySelector('.current');if(current)for(const word of current.querySelectorAll('[data-word-start]')){const from=Number(word.dataset.wordStart),to=Number(word.dataset.wordEnd);word.style.setProperty('--word-progress',`${Math.max(0,Math.min(1,(time-from)/Math.max(.01,to-from)))*100}%`);}
-      if(clock.playing)frame=requestAnimationFrame(update);
+      const reduced=document.documentElement.classList.contains('reduce-motion');paintLyricSweep(el.querySelector('.current .lyric-content'),time,{reduced});
+      if(clock.playing&&!reduced)frame=requestAnimationFrame(update);
     }
     update();return()=>cancelAnimationFrame(frame);
   },[clock,lines]);
   const plain=lines.length>0&&lines.every(line=>line.time===null);
-  return <div ref={root} className={`lyrics-scroll ${expanded?'expanded':''} ${plain?'plain-lyrics':''}`} aria-label="歌词">
-    {track?.lyricsLoading?<div className="lyrics-loading" role="status"><span className="spinner"/><span>正在加载歌词…</span></div>:lines.length?<div className="lyrics-lines">{lines.map((line,index)=><button key={`${track.id}:${index}`} data-lyric={index} className="lyric-line" onClick={()=>line.time!==null&&command('seek',{time:line.time})}><span className="lyric-content">{line.words?.length?line.words.map((word,i)=><span className="lyric-word" key={i} data-word-start={word.start} data-word-end={word.end??line.words[i+1]?.start??line.end??lines[index+1]?.time??word.start+1}>{word.text}</span>):line.text||'♪'}</span>{showLyricsTranslation&&line.translation&&<small>{line.translation}</small>}</button>)}</div>:<div className="empty"><div className="empty-lyrics-icon"><Icon name="lyrics"/><img src="./app-icon.png" alt=""/></div><h3>尚未添加歌词</h3><button className="soft-button" onClick={onEdit}>添加歌词</button></div>}
+  return <div ref={root} className={`lyrics-scroll ${expanded?'expanded':''} ${plain?'plain-lyrics':''} ${workspace?'workspace-lyrics':''}`} aria-label="歌词">
+    {track?.lyricsLoading?<div className="lyrics-loading" role="status"><span className="spinner"/><span>正在加载歌词…</span></div>:lines.length?<div className="lyrics-lines">{lines.map((line,index)=><button key={`${track.id}:${index}`} data-lyric={index} className="lyric-line" onClick={()=>line.time!==null&&command('seek',{time:line.time})}><span className="lyric-content">{line.words?.length?line.words.map((word,i)=><span className="lyric-word" key={i} data-word-start={word.start} data-word-end={word.end??line.words[i+1]?.start??line.end??lines[index+1]?.time??word.start+1}>{word.text}</span>):line.text||'•••'}</span>{showLyricsTranslation&&line.translation&&<small>{line.translation}</small>}</button>)}</div>:<div className="empty"><div className="empty-lyrics-icon"><Icon name="lyrics"/>{!workspace&&<img src="./app-icon.png" alt=""/>}</div><h3>尚未添加歌词</h3><button className="soft-button" onClick={onEdit}>添加歌词</button></div>}
   </div>;
 }
 export function TranslationToggle({track}){
@@ -72,8 +88,8 @@ export function NowPlayingIndicator({playing,inline=false}){
     tick(performance.now());return()=>cancelAnimationFrame(frame);
   },[playing]);return <span ref={root} className={`now-playing-indicator ${inline?'inline':''}`} aria-label={playing?'正在播放':'当前歌曲已暂停'}><i/><i/><i/><i/></span>;
 }
-export function Player({ onLocate,onEdit, compact=false,compactWidth=460, onExpand,onAlbum,albumExpanded=false,hiddenChrome=false,immersive=false }) {
-  const state=usePlayback(),clock=useClock(),track=state.playing||state.selected,tracks=useCatalog();
+export function Player({ onLocate,onEdit,previewTrack,onPlayPreview, compact=false,compactWidth=460, onExpand,onAlbum,albumExpanded=false,hiddenChrome=false,immersive=false }) {
+  const state=usePlayback(),clock=useClock(),track=state.playing||(compact?previewTrack:state.selected),tracks=useCatalog();
   // The outer dock and all its controls use the same viewport calculation in
   // one commit. Measuring the new dock in an observer left its old details
   // and play-button size visible for a frame during each window resize.
@@ -82,40 +98,41 @@ export function Player({ onLocate,onEdit, compact=false,compactWidth=460, onExpa
   useEffect(()=>{if(hiddenChrome){setQueue(false);setDevices(false);}},[hiddenChrome]);
   useEffect(()=>{if(!devices)return;const outside=event=>{if(!outputRoot.current?.contains(event.target))setDevices(false);},key=event=>{if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();setDevices(false);outputRoot.current?.querySelector('button')?.focus({preventScroll:true});}};window.addEventListener('pointerdown',outside,true);window.addEventListener('keydown',key,true);return()=>{window.removeEventListener('pointerdown',outside,true);window.removeEventListener('keydown',key,true);};},[devices]);
   const [scrub,setScrub]=useState(null),pendingSeek=useRef(null);
+  useEffect(()=>{pendingSeek.current=null;setScrub(null);},[track?.id]);
   useEffect(()=>{if(pendingSeek.current!==null&&Math.abs(clock.time-pendingSeek.current)<.5){pendingSeek.current=null;setScrub(null);}},[clock.time]);
-  function commitSeek(time){pendingSeek.current=time;setScrub(time);command('seek',{time}).catch(()=>{pendingSeek.current=null;setScrub(null);});}
-  const duration=track?.duration||0, time=scrub??clock.time;
+  function commitSeek(time){if(!state.playing){setScrub(null);return;}pendingSeek.current=time;setScrub(time);command('seek',{time}).catch(()=>{pendingSeek.current=null;setScrub(null);});}
+  const duration=track?.duration||0, time=scrub??(track?.id===state.playing?.id?clock.time:0);
   const modes=[['list','≡'],['shuffle','⤨'],['repeatOne','↻¹'],['repeatAll','↻'],['single','①']];
-  const seek=<div className="seek" style={{'--seek':`${Math.max(0,Math.min(100,time/Math.max(1,duration)*100))}%`}}><span aria-hidden={compact&&dock.detail<.5}>{compact?seconds(time).padStart(5,'0'):seconds(time)}</span><input aria-label="播放进度" type="range" min="0" max={Math.max(1,duration)} step=".05" value={Math.min(time,duration)} onChange={event=>setScrub(Number(event.target.value))} onPointerUp={event=>commitSeek(Number(event.currentTarget.value))} onKeyUp={event=>commitSeek(Number(event.currentTarget.value))}/><span aria-hidden={compact&&dock.detail<.5}>{compact?seconds(duration).padStart(5,'0'):seconds(duration)}</span></div>;
-  const play=<button className={`play-main ${state.isPlaying?'is-playing':''}`} title={state.preparing?'正在准备播放':state.isPlaying?'暂停':'播放'} aria-label={state.preparing?'正在准备播放':state.isPlaying?'暂停':'播放'} onClick={()=>command('toggle')}><span className="play-symbol"><Icon name="play"/></span><span className="pause-symbol"><Icon name="pause"/></span></button>;
-  if(compact)return <footer ref={dockRoot} style={{'--dock-detail':dock.detail,'--dock-gap':`${dock.spacing}px`,'--dock-padding':`${dock.padding}px`,'--dock-play-side':`${dock.playSide}px`,'--dock-play-font':`${dock.playFont}px`}} className="player compact" aria-label="播放器" inert={hiddenChrome} aria-hidden={hiddenChrome}>{play}<div className="dock-middle"><div className="dock-title"><IconButton label="上一首" onClick={()=>command('skip',{delta:-1})}><Icon name="previous"/></IconButton><button onClick={onLocate}>{track?.title||'选择一首音乐'}</button><IconButton label="下一首" onClick={()=>command('skip',{delta:1})}><Icon name="next"/></IconButton></div>{seek}</div><PlaybackModeMenu/><span className="dock-queue-slot" data-fully-visible={dock.detail>=.999} inert={dock.detail<=.8} aria-hidden={dock.detail<.5}><IconButton label="播放队列" aria-expanded={queue} active={queue} onClick={()=>setQueue(v=>!v)}><Icon name="queue"/></IconButton></span>{queue&&<WallQueue onClose={()=>setQueue(false)}/>}</footer>;
+  const seek=<div className="seek" style={{'--seek':`${Math.max(0,Math.min(100,time/Math.max(1,duration)*100))}%`}}><span aria-hidden={compact&&dock.detail<.5}>{compact?seconds(time).padStart(5,'0'):seconds(time)}</span><input aria-label="播放进度" type="range" min="0" max={Math.max(1,duration)} step={Math.max(.01,duration/100)} disabled={!track||(compact&&track.id!==state.playing?.id)} value={Math.min(time,duration)} onChange={event=>setScrub(Number(event.target.value))} onPointerCancel={()=>{pendingSeek.current=null;setScrub(null);}} onPointerUp={event=>commitSeek(Number(event.currentTarget.value))} onKeyUp={event=>commitSeek(Number(event.currentTarget.value))}/><span aria-hidden={compact&&dock.detail<.5}>{compact?seconds(duration).padStart(5,'0'):seconds(duration)}</span></div>;
+  const displayingPlaying=state.isPlaying||(compact&&state.preparing);
+  const play=<button className={`play-main ${displayingPlaying?'is-playing':''}`} title={state.preparing?'正在准备播放':state.isPlaying?'暂停':'播放'} aria-label={state.preparing?'正在准备播放':state.isPlaying?'暂停':'播放'} disabled={!track} onClick={()=>compact&&!state.playing?onPlayPreview?.():command('toggle')}><span className="play-symbol"><Icon name={compact?'play':'transport-play'}/></span><span className="pause-symbol"><Icon name={compact?'pause':'transport-pause'}/></span></button>;
+  if(compact)return <footer ref={dockRoot} style={{'--dock-detail':dock.detail,'--dock-gap':`${dock.spacing}px`,'--dock-padding':`${dock.padding}px`,'--dock-play-side':`${dock.playSide}px`,'--dock-play-font':`${dock.playFont}px`}} className="player compact" aria-label="播放器" inert={hiddenChrome} aria-hidden={hiddenChrome}>{play}<div className="dock-middle"><div className="dock-title"><IconButton label="上一首" disabled={compact?!state.playing:!track} onClick={()=>command('skip',{delta:-1})}><Icon name="previous"/></IconButton><button onClick={onLocate}>{track?.title||'选择一首音乐'}</button><IconButton label="下一首" disabled={compact?!state.playing:!track} onClick={()=>command('skip',{delta:1})}><Icon name="next"/></IconButton></div>{seek}</div><PlaybackModeMenu/><span className="dock-queue-slot" data-fully-visible={dock.detail>=.999} inert={dock.detail<=.8} aria-hidden={dock.detail<.5}><IconButton label="播放队列" aria-expanded={queue} active={queue} onClick={()=>setQueue(v=>!v)}><Icon name="queue"/></IconButton></span>{queue&&<WallQueue onClose={()=>setQueue(false)}/>}</footer>;
   return <footer className={`player ${compact?'compact':''} ${albumExpanded?'album-controls':''}`} aria-label="播放器"><div className="player-layout">
-    <div className="now-playing"><button className="mini-cover" aria-label={albumExpanded?'收起专辑播放模式':onAlbum?'打开专辑播放模式':'定位正在播放的歌曲'} disabled={immersive} onClick={onAlbum||onLocate}><Cover track={track} detail={immersive}/>{onAlbum&&!immersive&&<span className="artwork-hover-arrow"><Icon name={albumExpanded?'chevronDown':'chevronUp'}/></span>}</button><div className="song-info-and-favorite"><button className="now-playing-title" onClick={onLocate}><strong>{track?.title||'选择一首歌'}</strong><span>{track?.artist||'MiniVoice'}</span><small>{track?.album}</small></button>{albumExpanded&&<IconButton label="收藏歌曲" className={`album-favorite icon-button ${state.favorites.includes(track?.path)?'active':''}`} onClick={()=>command('favorite',{id:track.id})}><Icon name={state.favorites.includes(track?.path)?'favoriteFill':'favorites'}/></IconButton>}</div></div>
+    <div className="now-playing"><button className="mini-cover" aria-label={albumExpanded?'收起专辑播放模式':onAlbum?'打开专辑播放模式':'定位正在播放的歌曲'} disabled={immersive} onClick={onAlbum||onLocate}><Cover track={track} detail={immersive} presentation="artwork"/>{onAlbum&&!immersive&&<span className="artwork-hover-arrow"><Icon name={albumExpanded?'chevronDown':'chevronUp'}/></span>}</button><div className="song-info-and-favorite"><button className="now-playing-title" onClick={onLocate}><strong>{track?.title||'选择一首歌'}</strong><span>{track?.artist||'MiniVoice'}</span><small>{track?.album}</small></button>{albumExpanded&&<IconButton label="收藏歌曲" className={`album-favorite icon-button ${state.favorites.includes(track?.path)?'active':''}`} onClick={()=>command('favorite',{id:track.id})}><Icon name={state.favorites.includes(track?.path)?'favoriteFill':'favorites'}/></IconButton>}</div></div>
     <div className="transport"><div className="transport-buttons">
-      <IconButton label="播放模式" onClick={()=>command('mode',{value:modes[(modes.findIndex(m=>m[0]===state.mode)+1)%modes.length][0]})}><Icon name={state.mode||'list'}/></IconButton>
-      <IconButton label="上一首" onClick={()=>command('skip',{delta:-1})}><Icon name="previousTrack"/></IconButton>
+      <IconButton label="播放模式" data-mode={state.mode||'list'} onClick={()=>command('mode',{value:modes[(modes.findIndex(m=>m[0]===state.mode)+1)%modes.length][0]})}><Icon name={`transport-${state.mode||'list'}`}/></IconButton>
+      <IconButton label="上一首" disabled={compact?!state.playing:!track} onClick={()=>command('skip',{delta:-1})}><Icon name="transport-previousTrack"/></IconButton>
       {play}
-      <IconButton label="下一首" onClick={()=>command('skip',{delta:1})}><Icon name="nextTrack"/></IconButton>
-      <IconButton label="显示桌面歌词" active={state.desktopLyrics} onClick={()=>command('desktopLyrics')}><Icon name="desktopLyrics"/></IconButton>
+      <IconButton label="下一首" disabled={compact?!state.playing:!track} onClick={()=>command('skip',{delta:1})}><Icon name="transport-nextTrack"/></IconButton>
+      <IconButton label="显示桌面歌词" active={state.desktopLyrics} onClick={()=>command('desktopLyrics')}><Icon name={`transport-${state.desktopLyrics?'desktopLyricsFill':'desktopLyrics'}`}/></IconButton>
     </div>{seek}</div>
-    <div ref={outputRoot} className="player-tools"><div className="volume-row"><Icon name="speaker"/><input type="range" aria-label="播放器音量" min="0" max="1" step=".01" value={state.volume} style={{'--volume':`${state.volume*100}%`}} onChange={event=>command('volume',{value:Number(event.target.value)})}/><span>{Math.round(state.volume*100)}%</span></div><button className="output-device" aria-label="选择播放设备" aria-expanded={devices} onClick={()=>setDevices(v=>!v)}><Icon name="airplay"/><span>{state.outputDevices.find(d=>d.id===state.outputDevice)?.name||'声音输出'}</span><span className={`device-disclosure ${devices?'open':''}`}><Icon name="chevronDown"/></span></button>{devices&&<div className="output-popover"><strong>播放设备</strong>{state.outputDevices.map(device=><button key={device.id} className={state.outputDevice===device.id?'active':''} onClick={()=>{command('outputDevice',{id:device.id});setDevices(false);}}>{device.name}</button>)}</div>}</div>
+    <div ref={outputRoot} className="player-tools"><div className="volume-row"><Icon name={state.volume===0?'speakerMuted':'speaker'}/><input type="range" aria-label="播放器音量" min="0" max="1" step=".01" value={state.volume} style={{'--volume':`${state.volume*100}%`}} onChange={event=>command('volume',{value:Number(event.target.value)})}/><span>{Math.round(state.volume*100)}%</span></div><button className="output-device" aria-label="选择播放设备" aria-expanded={devices} onClick={()=>setDevices(v=>!v)}><Icon name="airplay"/><span>{state.outputError||state.outputDeviceName||state.outputDevices.find(d=>d.id===state.outputDevice)?.name||'声音输出'}</span><span className={`device-disclosure ${devices?'open':''}`}><Icon name="chevronDown"/></span></button>{devices&&<div className="output-popover" role="dialog" aria-label="播放设备"><strong>播放设备</strong>{!state.outputDevices.length&&<p>暂无可用输出设备</p>}<div className="output-device-list">{state.outputDevices.map(device=><button key={device.id} className={state.outputDevice===device.id?'active':''} aria-pressed={state.outputDevice===device.id} onClick={async()=>{const result=await command('outputDevice',{id:device.id});if(result?.ok)setDevices(false);}}><Icon name="airplay"/><span>{device.name}</span><span className="device-check">{state.outputDevice===device.id?'✓':''}</span></button>)}</div>{state.outputError&&<p>{state.outputError}</p>}</div>}</div>
     </div>
   </footer>;
 }
-export function VirtualList({ tracks, favorites, onMenu, onEdit, selectedID, locateToken, onSelect, multiple=false, selection=new Set(),library=false }) {
-  const root=useRef(),[viewport,setViewport]=useState({top:0,height:600,width:800});
+export function VirtualList({ tracks, favorites, onMenu, onEdit, selectedID, locateToken,locateID,locateAnimated=true, onSelect, multiple=false, selection=new Set(),library=false }) {
+  const root=useRef(),handledLocation=useRef(0),[viewport,setViewport]=useState({top:0,height:600,width:800});
   useScrollThumb(root);
   const columns=listColumns(viewport.width,multiple);
   const rowHeight=62,playback=usePlayback();
   useEffect(()=>{const panel=root.current.closest('.songs-panel'),observer=new ResizeObserver(()=>setViewport(v=>({...v,height:root.current.clientHeight,width:panel?.clientWidth||root.current.clientWidth})));observer.observe(root.current);if(panel)observer.observe(panel);return()=>observer.disconnect();},[]);
-  useEffect(()=>{if(!locateToken)return;const index=tracks.findIndex(t=>t.id===selectedID);if(index>=0)root.current.scrollTo({top:Math.max(0,index*rowHeight-viewport.height/2),behavior:'smooth'});},[locateToken]);
-  useEffect(()=>{root.current.scrollTop=0;setViewport(v=>({...v,top:0}));},[tracks]);
+  useEffect(()=>{if(!locateToken||handledLocation.current===locateToken)return;const index=tracks.findIndex(t=>t.id===(locateID||selectedID));if(index>=0){handledLocation.current=locateToken;const top=Math.max(0,index*rowHeight+29-root.current.clientHeight/2);root.current.scrollTo({top,behavior:locateAnimated&&!document.documentElement.classList.contains('reduce-motion')?'smooth':'instant'});setViewport(v=>({...v,top}));}},[locateToken,tracks,locateID]);
   const first=Math.max(0,Math.floor(viewport.top/rowHeight)-5),last=Math.min(tracks.length,Math.ceil((viewport.top+viewport.height)/rowHeight)+5);
   return <div className={`track-list ${library?'native-columns':''}`} style={library?listColumnStyles(columns):undefined} data-album={columns.album} data-duration={columns.duration} data-edit={columns.edit} ref={root} role="list" aria-label="歌曲列表" onScroll={event=>{const top=event.currentTarget.scrollTop;setViewport(v=>Math.abs(top-v.top)>rowHeight*2?{...v,top}:v);}}>
     <div style={{height:tracks.length*rowHeight,position:'relative'}}>{tracks.slice(first,last).map((track,i)=><div key={track.id} className={`track-row ${selectedID===track.id||selection.has(track.id)?'selected':''} ${multiple?'multi-select':''}`} style={{transform:`translateY(${(first+i)*rowHeight}px)`}} role="listitem"
-      onClick={()=>onSelect(track)} onDoubleClick={()=>!multiple&&command('play',{id:track.id,ids:tracks.map(t=>t.id)})} onContextMenu={event=>onMenu(event,track)} tabIndex="0" onKeyDown={event=>event.key==='Enter'&&command('play',{id:track.id,ids:tracks.map(t=>t.id)})}>
+      onClick={()=>onSelect(track)} onDoubleClick={event=>{if(multiple)return;flyPlaybackArtwork(event.currentTarget.querySelector('.row-cover'));command('play',{id:track.id,ids:tracks.map(t=>t.id)});}} onContextMenu={event=>onMenu(event,track)} tabIndex="0" onKeyDown={event=>event.key==='Enter'&&command('play',{id:track.id,ids:tracks.map(t=>t.id)})}>
       <span className="selection-circle" aria-hidden={!multiple}>{selection.has(track.id)?'✓':''}</span><span className="row-index">{String(first+i+1).padStart(2,'0')}</span><div className="row-cover"><Cover track={track}/>{playback.playing?.id===track.id&&<NowPlayingIndicator playing={playback.isPlaying}/>}</div><div className="row-title"><strong>{track.title}</strong></div><span className="row-artist">{track.artist}</span><span className="row-playing">{!multiple&&playback.playing?.id===track.id&&<NowPlayingIndicator playing={playback.isPlaying} inline/>}</span><span className="row-album">{track.album}</span><span className="row-duration">{seconds(track.duration)}</span>
-      <IconButton className="row-favorite" label={`收藏 ${track.title}`} active={favorites.has(track.path)} onClick={event=>{event.stopPropagation();command('favorite',{id:track.id});}}><Icon name={favorites.has(track.path)?'favoriteFill':'favorites'}/></IconButton><IconButton className="row-edit" label={`编辑 ${track.title}`} onClick={event=>{event.stopPropagation();onEdit(track);}}>⋯</IconButton>
+      <IconButton className="row-favorite" label={`收藏 ${track.title}`} active={favorites.has(track.path)} onClick={event=>{event.stopPropagation();command('favorite',{id:track.id});}}><Icon name={favorites.has(track.path)?'favoriteFill':'favorites'}/></IconButton><IconButton className="row-edit" label={`编辑 ${track.title}`} onClick={event=>{event.stopPropagation();onEdit(track);}}><Icon name="info"/></IconButton>
     </div>)}</div>
   </div>;
 }
@@ -144,7 +161,7 @@ export function GroupGrid({ groups, artist, onOpen }) {
     <div style={{height:Math.ceil(groups.length/columns)*stride,width:metrics.available,position:'relative'}}>{groups.slice(firstRow*columns,lastRow*columns).map((group,index)=>{
       const position=firstRow*columns+index,artists=[...new Set(group.tracks.map(track=>track.artist).filter(Boolean))].sort().join(' / ')||'未知歌手',cover=group.tracks.find(track=>track.artworkKey)||group.tracks[0];
       return <button key={group.name} className={`group-card ${artist?'artist':''} ${compact?'compact-card':''}`} aria-label={`${group.name}，${group.tracks.length} 首歌曲`} style={{width,height,transform:`translate(${position%columns*(width+16)}px,${Math.floor(position/columns)*stride}px)`,'--group-art-size':`${metrics.artwork}px`}} onClick={event=>onOpen(group.name,event)}>
-        <div className={`group-art ${cover?.artworkKey?'':'group-art-empty'}`}>{cover?.artworkKey?<Cover track={cover} detail/>:<Icon name={artist?'person':'albums'}/>}</div><div className="group-card-label"><strong title={group.name}>{group.name}</strong>{!artist&&<small title={artists}>{artists}</small>}<small>{group.tracks.length} 首歌曲</small></div>{compact&&<Icon name="next"/>}
+        <div className={`group-art ${cover?.artworkKey?'':'group-art-empty'}`}>{cover?.artworkKey?<Cover track={cover} detail presentation="fill"/>:<Icon name={artist?'person':'albums'}/>}</div><div className="group-card-label"><strong title={group.name}>{group.name}</strong>{!artist&&<small title={artists}>{artists}</small>}<small>{group.tracks.length} 首歌曲</small></div>{compact&&<Icon name="next"/>}
       </button>;
     })}</div>
   </div>;

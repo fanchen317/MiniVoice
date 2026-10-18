@@ -25,6 +25,11 @@ test('Swift engine starts without a SwiftUI window and keeps JSON request/event 
     assert.equal(state.data.playbackShortcuts.length,3);
     send('missing-editor','openEditor',{id:'missing'});assert.match((await wait(m=>m.id==='missing-editor')).error,/歌曲已移除/);
     send('style','interfaceStyle',{value:'library'});assert.equal((await wait(m=>m.id==='style')).result,true);
+    assert.deepEqual(state.data.sorting.tracks,{field:'added',ascending:false});
+    send('sort-artists','sorting',{category:'artists',field:'count',ascending:false});assert.equal((await wait(m=>m.id==='sort-artists')).result,true);
+    const sortedState=await wait(m=>m.event==='state'&&m.data.sorting.artists.field==='count');assert.equal(sortedState.data.sorting.albums.field,'name');
+    send('tasks-read','tasks',{operation:'read'});assert.equal((await wait(m=>m.id==='tasks-read')).result,true);
+    send('sort-invalid','sorting',{category:'tracks',field:'count'});assert.equal((await wait(m=>m.id==='sort-invalid')).result,false);
     send('invalid','notAllowed');assert.match((await wait(m=>m.id==='invalid')).error,/不支持/);
     send('playlist','createPlaylist',{name:'测试歌单'});assert.match((await wait(m=>m.id==='playlist')).result,/^[A-F0-9-]+$/);
     send('appearance','appearance',{value:'dark'});assert.equal((await wait(m=>m.id==='appearance')).result,true);await wait(m=>m.event==='state'&&m.data.appearance==='dark');
@@ -52,6 +57,12 @@ test('packaged audio backend plays, advances, seeks and pauses a silent fixture 
     const catalog=await wait(m=>m.event==='catalog'&&m.data.length===1),id=catalog.data[0].id;
     send('favorites','favoriteMany',{ids:[id],value:true});assert.equal((await wait(m=>m.id==='favorites')).result,true);await wait(m=>m.event==='state'&&m.data.favorites.includes(path.join(root,'Silence.wav')));
     send('ordering','orderedTracks',{field:'sourceAdded',ascending:false});assert.deepEqual((await wait(m=>m.id==='ordering')).result,[id]);
+    send('batch-playlist','createPlaylist',{name:'批量验证'});const playlist=(await wait(m=>m.id==='batch-playlist')).result;
+    send('batch-add','addManyToPlaylist',{ids:[id],playlist});assert.equal((await wait(m=>m.id==='batch-add')).result,1);
+    await wait(m=>m.event==='state'&&m.data.playlists.some(p=>p.id===playlist&&p.paths.includes(path.join(root,'Silence.wav'))));
+    const removeAt=messages.length;
+    send('batch-remove','removeManyFromPlaylist',{ids:[id],playlist});assert.equal((await wait(m=>m.id==='batch-remove')).result,true);
+    await wait(m=>messages.indexOf(m)>=removeAt&&m.event==='state'&&m.data.playlists.some(p=>p.id===playlist&&p.paths.length===0));
     send('volume','volume',{value:0});await wait(m=>m.id==='volume');
     send('play','play',{id});await wait(m=>m.id==='play');
     const progress=await wait(m=>m.event==='clock'&&m.data.playing&&m.data.time>.1);assert.ok(progress.data.time<4);
@@ -72,6 +83,8 @@ test('packaged audio backend plays, advances, seeks and pauses a silent fixture 
     send('panel-snapshot','snapshot');assert.equal((await wait(m=>m.id==='panel-snapshot')).result,true);
     await wait(m=>messages.indexOf(m)>=panelAt&&m.event==='clock');
     assert.equal(child.exitCode,null,'Opening native editor/settings must keep the audio service alive');
+    send('delete-fixture','deleteTracks',{ids:[id],trash:false});assert.equal((await wait(m=>m.id==='delete-fixture')).result,true);
+    assert.ok(existsSync(path.join(root,'Silence.wav')),'Removing from the library must preserve the source fixture');
     send('removeFolder','removeFolder',{path:root});await wait(m=>m.id==='removeFolder');
   }finally{child.stdin.end();await new Promise(resolve=>{child.once('exit',resolve);setTimeout(()=>{child.kill();resolve();},1000).unref();});await fs.rm(root,{recursive:true,force:true});}
 });

@@ -9,6 +9,8 @@ const { cachedArtworkFile } = require('./artwork-files.cjs');
 // Keep the existing renderer preferences when adopting the shipping app name.
 app.setPath('userData', path.join(app.getPath('appData'), 'minivoice-desktop'));
 app.setName('MiniVoice');
+if (!app.requestSingleInstanceLock()) app.exit(0);
+app.on('second-instance', () => { if (window && !window.isDestroyed()) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); } });
 
 // The privileged shell brokers a narrow command protocol. The renderer has no
 // filesystem/Node access, even while displaying local artwork and audio metadata.
@@ -16,7 +18,7 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'minivoice-art', privileges: { s
 let window, engine, artworkRoot, quitting = false;
 const pending = new Map(), latest = new Map();
 let engineRestarts = [], restartTimer;
-const actions = new Set(['tasks','openSettings','openEditor','interfaceStyle','orderedTracks','lyricsPresentation','favoriteMany','appearance','snapshot','play','select','toggle','pause','seek','skip','volume','mode','favorite','rescan','removeFolder','recursive','createPlaylist','renamePlaylist','deletePlaylist','addToPlaylist','removeFromPlaylist','clearRecent','detail','reveal','desktopLyrics','outputDevice','clearError','lyricsSearch','syncLyrics','saveMetadata','removeTrack']);
+const actions = new Set(['sorting','tasks','deleteTracks','addManyToPlaylist','removeManyFromPlaylist','openSettings','openEditor','interfaceStyle','orderedTracks','lyricsPresentation','favoriteMany','appearance','snapshot','play','select','toggle','pause','seek','skip','volume','mode','favorite','rescan','removeFolder','recursive','createPlaylist','renamePlaylist','deletePlaylist','addToPlaylist','removeFromPlaylist','clearRecent','detail','reveal','desktopLyrics','outputDevice','clearError','lyricsSearch','syncLyrics','saveMetadata','removeTrack']);
 const stateFile = () => path.join(app.getPath('userData'), 'window.json');
 const packagedEngine = () => path.join(process.resourcesPath, 'Native', 'MiniVoice.app', 'Contents', 'MacOS', 'MiniVoice');
 function request(action, payload = {}) {
@@ -36,7 +38,7 @@ function logEngine(message) {
   try { fs.mkdirSync(app.getPath('logs'), { recursive: true }); fs.appendFileSync(path.join(app.getPath('logs'), 'audio-engine.log'), `${new Date().toISOString()} ${message}\n`); } catch {}
 }
 function startEngine() {
-  const executable = process.env.MINIVOICE_ENGINE || (app.isPackaged ? packagedEngine() : path.resolve(__dirname, '../../.build/MiniVoice.app/Contents/MacOS/MiniVoice'));
+  const executable = process.env.MINIVOICE_ENGINE || (app.isPackaged ? packagedEngine() : path.resolve(__dirname, '../../.build/native/MiniVoice.app/Contents/MacOS/MiniVoice'));
   engine = spawn(executable, ['--desktop-engine'], { stdio: ['pipe','pipe','pipe'], env: { ...process.env } });
   const child = engine;
   child.stderr.on('data', bytes => { process.stderr.write(bytes); logEngine(bytes.toString().trim()); });
@@ -79,7 +81,7 @@ function createWindow() {
   let bounds = { width: 1280, height: 820 };
   try { const saved = JSON.parse(fs.readFileSync(stateFile())); if (Number.isFinite(saved.width) && Number.isFinite(saved.height) && saved.width >= 304 && saved.height >= 600) bounds = saved; } catch {}
   window = new BrowserWindow({ ...bounds, minWidth: 304, minHeight: 600, show: false,
-    title: 'MiniVoice · Electron', titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 9, y: 9 },
+    title: 'MiniVoice', titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 9, y: 9 },
     // The renderer draws its own glass over artwork. An additional AppKit
     // visual-effect surface needlessly recomposites the whole window on resize.
     backgroundColor: '#111615',

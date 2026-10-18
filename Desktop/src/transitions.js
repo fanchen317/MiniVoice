@@ -69,3 +69,18 @@ export function fadeHeroOut(){
   ghost.append(source.cloneNode(true));document.body.append(ghost);
   ghost.animate([{opacity:1,transform:'scale(1)'},{opacity:0,transform:'scale(.94)'}],{duration:600,easing:springEasing(.46,.9)}).finished.catch(()=>{}).finally(()=>ghost.remove());
 }
+
+// Same 20ms departure, 450ms easeInOut flight and 120ms landing fade as
+// PlaybackArtworkFlight. Animate an independent cover, leaving list geometry alone.
+export function flyPlaybackArtwork(source){
+  if(!source||reducedMotion())return;
+  const target=document.querySelector('.player:not(.compact) .mini-cover');if(!target)return;
+  const from=source.getBoundingClientRect(),to=target.getBoundingClientRect(),ghost=source.cloneNode(true);
+  ghost.querySelectorAll('.now-playing-indicator').forEach(node=>node.remove());
+  ghost.className='playback-artwork-flight';ghost.setAttribute('aria-hidden','true');
+  Object.assign(ghost.style,{position:'fixed',left:`${from.x}px`,top:`${from.y}px`,width:`${from.width}px`,height:`${from.height}px`,zIndex:80,pointerEvents:'none',overflow:'hidden',borderRadius:'8px',boxShadow:'0 4px 8px #0003'});
+  document.body.append(ghost);
+  const motion=ghost.animate([{transform:'none'},{transform:`translate(${to.x-from.x}px,${to.y-from.y}px) scale(${to.width/from.width},${to.height/from.height})`}],{duration:450,delay:20,easing:'ease-in-out',fill:'forwards'});
+  motion.finished.then(()=>ghost.animate([{opacity:1},{opacity:0}],{duration:120,easing:'ease-out',fill:'forwards'}).finished).catch(()=>{}).finally(()=>ghost.remove());
+  ghost.style.transformOrigin='top left';
+}

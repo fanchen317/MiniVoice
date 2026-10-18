@@ -23,7 +23,7 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 if [[ "$SKIP_BUILD" != true ]]; then
-  "$ROOT/Scripts/build-electron-app.sh" release
+  "$ROOT/Scripts/build-app.sh" release
 fi
 verify_desktop_app "$APP_PATH"
 if [[ "$REUSE_LAYOUT" != true ]]; then
