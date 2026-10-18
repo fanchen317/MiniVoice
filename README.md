@@ -46,7 +46,7 @@ Scripts/deploy.sh --skip-build --no-launch --target /absolute/path/MiniVoice.app
 Scripts/build-dmg.sh --skip-build
 ```
 
-当前版本 **2.3.0**（构建号 8），Electron 外层和 Swift 后台版本在打包时同步。DMG 输出 `.build/dist/MiniVoice-2.3.0-arm64.dmg`。安装布局由脚本直接写入 `.DS_Store`，无需 Finder 自动化权限；首次运行会在 `.build/dmg-tools` 中建立独立 Python 环境并安装 `Scripts/dmg-requirements.txt` 固定版本依赖。仍支持 `--reuse-layout` 或 `--layout-from /absolute/path/previous.dmg` 复用布局。
+当前版本 **2.7.0**（构建号 9），Electron 外层和 Swift 后台版本在打包时同步。DMG 输出 `.build/dist/MiniVoice-2.7.0-arm64.dmg`。安装布局由脚本直接写入 `.DS_Store`，无需 Finder 自动化权限；首次运行会在 `.build/dmg-tools` 中建立独立 Python 环境并安装 `Scripts/dmg-requirements.txt` 固定版本依赖。仍支持 `--reuse-layout` 或 `--layout-from /absolute/path/previous.dmg` 复用布局。
 
 唯一主应用继续使用已安装版本的标识 `com.xcosmos.MiniVoice.electron`，保留现有签名身份与 `~/Library/Application Support/minivoice-desktop/` 前端偏好路径。内置服务保留 `com.xcosmos.MiniVoice` 偏好域，沿用音乐库、收藏、歌单及原生设置；这两个内部标识不代表两套可运行的主窗口。更早的 `local.fanchen.MiniVoice` / `com.local.minivoice` 配置由后台迁移，已有新配置优先。原生资源目录 `~/Library/Application Support/MiniVoice/` 及缓存目录保持不变。
 

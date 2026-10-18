@@ -19,8 +19,11 @@ export function useLiquidGlass(style){
     const light=event=>{const node=event.currentTarget,rect=node.getBoundingClientRect();node.style.setProperty('--glass-light-x',`${(event.clientX-rect.left)/rect.width*100}%`);node.style.setProperty('--glass-light-y',`${(event.clientY-rect.top)/rect.height*100}%`);};
     function update(node){
       const w=node.clientWidth,h=node.clientHeight;if(!w||!h)return;
+      const corner=getComputedStyle(node).borderTopLeftRadius;
+      const radius=Math.max(0,Math.min(w/2,h/2,corner.endsWith('%')?Math.min(w,h)*parseFloat(corner)/100:parseFloat(corner)||0));
+      node.style.setProperty('--lens-radius',`${radius}px`);
       let entry=maps.get(node);
-      if(entry&&Math.abs(entry.w-w)<1&&Math.abs(entry.h-h)<1)return;
+      if(entry&&entry.radius===radius&&Math.abs(entry.w-w)<1&&Math.abs(entry.h-h)<1)return;
       if(!entry){const filter=document.createElementNS(ns,'filter'),id=`mv-lens-${maps.size}`;
         filter.id=id;filter.setAttribute('color-interpolation-filters','sRGB');
         filter.setAttribute('filterUnits','userSpaceOnUse');
@@ -30,12 +33,12 @@ export function useLiquidGlass(style){
         filter.append(image,displacement);defs.append(filter);entry={filter,image,id};maps.set(node,entry);
         node.style.setProperty('--glass-lens',`url("#${id}")`);node.classList.add('custom-liquid-glass');
       }
-      entry.w=w;entry.h=h;
+      entry.w=w;entry.h=h;entry.radius=radius;
       const canvas=document.createElement('canvas'),ratio=Math.min(2,640/w,Math.sqrt(98000/(w*h)));
       canvas.width=Math.ceil(w*ratio);canvas.height=Math.ceil(h*ratio);
       const context=canvas.getContext('2d'),pixels=context.createImageData(canvas.width,canvas.height);
       for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++){
-        const [r,g]=glassDisplacement(w,h,(x+.5)/ratio,(y+.5)/ratio,Math.min(w,h)/2>40?15:Math.min(w,h)/2),i=(y*canvas.width+x)*4;
+        const [r,g]=glassDisplacement(w,h,(x+.5)/ratio,(y+.5)/ratio,radius),i=(y*canvas.width+x)*4;
         pixels.data[i]=r;pixels.data[i+1]=g;pixels.data[i+2]=128;pixels.data[i+3]=255;
       }
       context.putImageData(pixels,0,0);
@@ -56,6 +59,6 @@ export function useLiquidGlass(style){
       },180);
     });
     for(const node of nodes){update(node);observer.observe(node);node.addEventListener('pointermove',light);}
-    return()=>{clearTimeout(timer);observer.disconnect();svg.remove();for(const node of nodes){node.removeEventListener('pointermove',light);node.classList.remove('custom-liquid-glass','glass-in-motion');for(const name of ['--glass-lens','--glass-light-x','--glass-light-y'])node.style.removeProperty(name);}};
+    return()=>{clearTimeout(timer);observer.disconnect();svg.remove();for(const node of nodes){node.removeEventListener('pointermove',light);node.classList.remove('custom-liquid-glass','glass-in-motion');for(const name of ['--glass-lens','--glass-light-x','--glass-light-y','--lens-radius'])node.style.removeProperty(name);}};
   },[style]);
 }

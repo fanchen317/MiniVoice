@@ -1,5 +1,6 @@
+import {lyricRowOffsets} from './lyricRowLayout';
 import {paintLyricSweep} from './lyricSweep';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { command, useClock, usePlayback } from './store';
 import { springEasing } from './motion';
 import { displayLine,kineticCharacters,kineticLayout,kineticInk,wallLyricsMetrics } from './kinetic';
@@ -10,6 +11,17 @@ const activeAt=(lines,time)=>{let active=-1;for(let i=0;i<lines.length;i++)if(li
 export function WallLyrics({track,kinetic=false}){
   const clock=useClock(),state=usePlayback(),root=useRef(),size=useSize(root),lines=track.lyrics?.trim()?(track.lines||[]):[];
   const active=activeAt(lines,clock.time),index=Math.max(0,active),layout=wallLyricsMetrics(size.width,size.height),showTranslation=state.showLyricsTranslation!==false,reduced=document.documentElement.classList.contains('reduce-motion');
+  useLayoutEffect(()=>{
+    if(kinetic)return;
+    const rows=[...root.current.querySelectorAll('.wall-lyric-line')];
+    const current=rows.findIndex(row=>row.classList.contains('current'));
+    const place=()=>{
+      const heights=rows.map(row=>row.offsetHeight),offsets=lyricRowOffsets(heights,current);
+      rows.forEach((row,i)=>{row.style.top='50%';row.style.transform=`translateY(${offsets[i]}px) scale(${i===current?1:.94})`;});
+    };
+    place();const observer=new ResizeObserver(place);rows.forEach(row=>observer.observe(row));
+    return()=>observer.disconnect();
+  },[kinetic,index,lines,showTranslation,size.width,size.height,layout.fontSize]);
   const clockRef=useRef(clock);clockRef.current=clock;
   useEffect(()=>{
     const el=root.current;if(!el||kinetic)return;let frame=0;
@@ -19,7 +31,7 @@ export function WallLyrics({track,kinetic=false}){
   return <div ref={root} className={`wall-lyrics ${kinetic?'kinetic-mode':''}`} aria-label="歌词" style={{'--wall-lyric-font':`${layout.fontSize}px`,'--wall-lyric-row':`${layout.rowHeight}px`,'--wall-lyric-spring':springEasing(.48,.9)}}>
     {track.lyricsLoading?<div className="wall-lyrics-loading" role="status"><span className="spinner"/><span>正在加载歌词…</span></div>:!lines.length?<div className="wall-no-lyrics"><strong>{track.title}</strong><small>暂无歌词</small></div>:kinetic?<KineticLyrics track={track} size={size} showTranslation={showTranslation}/>:<div className="wall-lyric-rows">{lines.slice(Math.max(0,index-layout.visibleRadius),Math.min(lines.length,index+layout.visibleRadius+1)).map((line,offset)=>{
       const i=Math.max(0,index-layout.visibleRadius)+offset,relative=i-index,current=relative===0;line=displayLine(line,lines.slice(i+1).find(l=>l.time>line.time)?.time,track.duration);
-      return <button key={`${track.id}:${i}`} className={`wall-lyric-line ${current?'current':''} ${current&&active>=0?'timed-active':''}`} style={{transform:`translateY(${relative*layout.rowHeight}px) scale(${current?1:.94})`,opacity:current?1:Math.abs(relative)===1?.5:Math.abs(relative)===2?.32:.2,'--wall-line-count':!line.translation&&layout.rowHeight>=layout.fontSize*2?2:1}} onClick={()=>line.time!==null&&command('seek',{time:line.time})}><span className="lyric-content">{line.words?.length?line.words.map((word,n)=><span className="lyric-word" key={n} data-word-start={word.start} data-word-end={word.end??line.words[n+1]?.start??line.end??lines[i+1]?.time??word.start+1}>{word.text}</span>):line.text||'•••'}</span>{showTranslation&&line.translation&&layout.rowHeight>=layout.fontSize*1.8&&<small>{line.translation}</small>}</button>;
+      return <button key={`${track.id}:${i}`} className={`wall-lyric-line ${current?'current':''} ${current&&active>=0?'timed-active':''}`} style={{transform:`translateY(${relative*layout.rowHeight}px) scale(${current?1:.94})`,opacity:current?1:Math.abs(relative)===1?.5:Math.abs(relative)===2?.32:.2}} onClick={()=>line.time!==null&&command('seek',{time:line.time})}><span className="lyric-content">{line.words?.length?line.words.map((word,n)=><span className="lyric-word" key={n} data-word-start={word.start} data-word-end={word.end??line.words[n+1]?.start??line.end??lines[i+1]?.time??word.start+1}>{word.text}</span>):line.text||'•••'}</span>{showTranslation&&line.translation&&!layout.singleLine&&<small>{line.translation}</small>}</button>;
     })}</div>}
   </div>;
 }

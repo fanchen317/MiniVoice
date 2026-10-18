@@ -1,3 +1,4 @@
+import {useSurfaceMotion} from './surfaceMotion';
 import React,{useEffect,useRef} from 'react';
 import {createPortal} from 'react-dom';
 
@@ -5,7 +6,8 @@ const stack=[];let originalInert=false;
 // Native sheets suspend the main window's responder chain. Keep the same
 // boundary for web forms, including playback shortcuts and nested popovers.
 export function Modal({title,onClose,children,className='',alert=false}){
-  const root=useRef(),close=useRef(onClose);close.current=onClose;
+  const root=useRef(),layer=useRef(),close=useRef(onClose);close.current=onClose;
+  useSurfaceMotion(layer,true,{modal:true});
   useEffect(()=>{
     const node=root.current,previous=document.activeElement,app=document.querySelector('.app');
     if(!stack.length)originalInert=app?.inert||false;
@@ -25,5 +27,5 @@ export function Modal({title,onClose,children,className='',alert=false}){
     window.addEventListener('keydown',key,true);
     return()=>{window.removeEventListener('keydown',key,true);const index=stack.indexOf(node);if(index>=0)stack.splice(index,1);if(stack.length)stack.at(-1).inert=false;else if(app)app.inert=originalInert;previous?.isConnected&&previous.focus({preventScroll:true});};
   },[]);
-  return createPortal(<div className="modal-backdrop"><section ref={root} className={`name-dialog ${className}`} role={alert?'alertdialog':'dialog'} aria-modal="true" aria-label={title} tabIndex={-1}>{children}</section></div>,document.body);
+  return createPortal(<div ref={layer} className="modal-backdrop"><section ref={root} className={`name-dialog ${className}`} role={alert?'alertdialog':'dialog'} aria-modal="true" aria-label={title} tabIndex={-1}>{children}</section></div>,document.body);
 }

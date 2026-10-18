@@ -52,3 +52,12 @@
 }
 .wall-card-transport .wall-playback-time{flex:0 0 auto;margin-left:auto}
 .wall-card-transport>input[type=range]{flex:0 0 100%;min-width:0}
+
+
+/* Each lyric sentence owns its complete wrapped height. Adjacent sentences
+   are positioned from measured heights instead of a fixed one-line slot. */
+.wall-lyrics .wall-lyric-line{height:auto;min-height:var(--wall-lyric-row);padding-block:4px}
+.wall-lyrics .wall-lyric-line>.lyric-content,.wall-lyrics .wall-lyric-line>small{
+  display:block;-webkit-line-clamp:unset;max-height:none;overflow:visible;flex-shrink:0;
+  white-space:pre-wrap;overflow-wrap:break-word;word-break:normal;
+}

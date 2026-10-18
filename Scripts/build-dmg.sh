@@ -37,7 +37,16 @@ VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_
 ARCH="$(uname -m)"
 OUTPUT_DIR="$ROOT/.build/dist"
 OUTPUT="$OUTPUT_DIR/MiniVoice-${VERSION}-${ARCH}.dmg"
+if [[ "$REUSE_LAYOUT" == true ]]; then
+  LAYOUT_SOURCE="${LAYOUT_SOURCE:-$OUTPUT}"
+  if [[ ! -f "$LAYOUT_SOURCE" ]]; then
+    echo "error: 无现有安装包可复用布局：$LAYOUT_SOURCE" >&2; exit 1
+  fi
+fi
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/minivoice-dmg.XXXXXX")"
+# macOS exposes TMPDIR through /var, but mount reports its /private path.
+# Use the canonical path so cleanup detects and detaches our image reliably.
+WORK_DIR="$(cd "$WORK_DIR" && pwd -P)"
 MOUNT_POINT="$WORK_DIR/volume"
 PREVIOUS_MOUNT="$WORK_DIR/previous"
 cleanup() {

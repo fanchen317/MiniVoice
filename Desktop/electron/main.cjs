@@ -10,12 +10,17 @@ const { cachedArtworkFile } = require('./artwork-files.cjs');
 app.setPath('userData', path.join(app.getPath('appData'), 'minivoice-desktop'));
 app.setName('MiniVoice');
 if (!app.requestSingleInstanceLock()) app.exit(0);
-app.on('second-instance', () => { if (window && !window.isDestroyed()) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); } });
+app.on('second-instance', () => showMainWindow());
 
 // The privileged shell brokers a narrow command protocol. The renderer has no
 // filesystem/Node access, even while displaying local artwork and audio metadata.
 protocol.registerSchemesAsPrivileged([{ scheme: 'minivoice-art', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 let window, engine, artworkRoot, quitting = false;
+function showMainWindow(){
+  if(!window||window.isDestroyed())return;
+  if(window.isMinimized())window.restore();
+  window.show();window.focus();
+}
 const pending = new Map(), latest = new Map();
 let engineRestarts = [], restartTimer;
 const actions = new Set(['sorting','tasks','deleteTracks','addManyToPlaylist','removeManyFromPlaylist','openSettings','openEditor','interfaceStyle','orderedTracks','lyricsPresentation','favoriteMany','appearance','snapshot','play','select','toggle','pause','seek','skip','volume','mode','favorite','rescan','removeFolder','recursive','createPlaylist','renamePlaylist','deletePlaylist','addToPlaylist','removeFromPlaylist','clearRecent','detail','reveal','desktopLyrics','outputDevice','clearError','lyricsSearch','syncLyrics','saveMetadata','removeTrack']);
@@ -57,7 +62,7 @@ function startEngine() {
       if (message.event === 'shell') {
         if (message.data === 'quit') app.quit();
         else if (message.data === 'toggleWindow' && window?.isVisible() && window?.isFocused()) window.hide();
-        else if (['showWindow','focusWindow','toggleWindow'].includes(message.data)) { window?.show(); app.focus({ steal: true }); }
+        else if (['showWindow','focusWindow','toggleWindow'].includes(message.data)) { showMainWindow(); app.focus({ steal: true }); }
       } else emit(message.event, message.data);
     }
   });
@@ -135,7 +140,7 @@ app.whenReady().then(() => {
     { role: 'windowMenu' }
   ]));
   createWindow(); startEngine();
-  app.on('activate', () => { if (!window || window.isDestroyed()) createWindow(); else window.show(); });
+  app.on('activate', () => { if (!window || window.isDestroyed()) createWindow(); else showMainWindow(); });
 });
 app.on('window-all-closed', () => app.quit());
 app.on('before-quit', event => {

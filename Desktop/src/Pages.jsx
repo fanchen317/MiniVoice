@@ -28,6 +28,15 @@ export function NavigationSelection({value}){
 export function SimplePage({sizing,track,playbackTrack,expanded,onExpanded,onEdit}){
   const root=useRef(),previousExpanded=useRef(expanded),metrics=playerDetailMetrics(sizing);
 
+  useLayoutEffect(()=>{
+    const title=root.current.querySelector('.simple-hero h1');
+    const fit=()=>{
+      title.style.fontSize='';const base=metrics.titleSize;let low=.85,high=1;
+      for(let i=0;i<7;i++){const scale=(low+high)/2;title.style.fontSize=`${base*scale}px`;if(title.scrollHeight>parseFloat(getComputedStyle(title).lineHeight)*2+1)high=scale;else low=scale;}
+      title.style.fontSize=`${base*(high>.99?1:low)}px`;
+    };
+    fit();const observer=new ResizeObserver(fit);observer.observe(root.current);return()=>observer.disconnect();
+  },[track?.title,metrics.titleSize]);
   useLayoutEffect(()=>{if(previousExpanded.current&&!expanded&&!reducedMotion())root.current.querySelector('.simple-hero').animate([{opacity:0,transform:'scale(.94)'},{opacity:1,transform:'none'}],{duration:460,easing:'ease-out'});previousExpanded.current=expanded;},[expanded]);
   function toggle(){if(!expanded)fadeHeroOut();springLayout(()=>onExpanded(!expanded),'.simple-lyrics',.46,.9);}
   return <section ref={root} className={`simple-player ${expanded?'lyrics-expanded':''}`} style={{'--hero-size':`${metrics.artworkSize}px`,'--hero-title-size':`${metrics.titleSize}px`,'--hero-text-gap':metrics.artworkSize<160?'6px':'12px','--hero-album-lines':metrics.artworkSize<160?1:2}}>

@@ -1,0 +1,63 @@
+/* Shadows belong to the rounded host. Sampling, refraction and sheen are
+   clipped on their own layer, so an SVG filter cannot paint square corners. */
+:is(.sidebar,.player:not(.compact),.simple-lyrics,.songs-panel,.browse-card-detail,.album-mode .workspace,.name-dialog,.background-tasks-panel,.playback-mode-popover,.wall-queue-popover,.output-popover,.sort-popover,.context-menu,.wall-tools-popover){
+  --surface-fill:var(--glass);--surface-filter:blur(20px) saturate(1.16);
+  isolation:isolate;background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
+}
+:is(.sidebar,.player:not(.compact),.simple-lyrics,.songs-panel,.browse-card-detail,.album-mode .workspace,.name-dialog,.background-tasks-panel,.playback-mode-popover,.wall-queue-popover,.output-popover,.sort-popover,.context-menu,.wall-tools-popover)::before{
+  content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;border-radius:inherit;
+  background:linear-gradient(145deg,#ffffff0d,transparent 45%,#00000006),var(--surface-fill);
+  backdrop-filter:var(--surface-filter);-webkit-backdrop-filter:var(--surface-filter);
+  clip-path:inset(0 round var(--surface-radius,15px));
+}
+:is(.name-dialog,.background-tasks-panel,.playback-mode-popover,.wall-queue-popover,.output-popover,.sort-popover,.context-menu,.wall-tools-popover){
+  --surface-radius:12px;--surface-fill:color-mix(in srgb,var(--panel) 86%,transparent);
+  box-shadow:inset 0 1px 0 #ffffff1a,0 12px 32px #00000026,0 2px 6px #00000014;
+  border:1px solid var(--glass-line);animation:none;
+  transform-origin:var(--surface-origin-x,50%) var(--surface-origin-y,50%);
+}
+body:has(.app.style-wall) :is(.name-dialog,.background-tasks-panel,.playback-mode-popover,.wall-queue-popover,.output-popover,.sort-popover,.context-menu,.wall-tools-popover){--surface-fill:#202626dc;--surface-filter:blur(24px) saturate(1.22)}
+.anchored-popover{position:fixed;right:auto;bottom:auto;z-index:1200}
+.app.style-wall .custom-liquid-glass{
+  isolation:isolate;background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
+  border-color:#ffffff30;
+  box-shadow:inset 0 1px 1px #ffffff52,inset 0 -1px 1px #ffffff1a,0 5px 16px #00000030;
+}
+.app.style-wall .custom-liquid-glass::before{
+  content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none;
+  clip-path:inset(0 round var(--lens-radius,19px));
+  background:radial-gradient(ellipse at var(--glass-light-x,25%) var(--glass-light-y,0%),#ffffff21,transparent 68%),linear-gradient(145deg,#ffffff0b,transparent 45%,#00000012),#171d1d30;
+  backdrop-filter:var(--glass-lens) blur(3.5px) saturate(1.28) brightness(1.06);
+  -webkit-backdrop-filter:var(--glass-lens) blur(3.5px) saturate(1.28) brightness(1.06);
+}
+.app.style-wall .sidebar.custom-liquid-glass{box-shadow:inset 0 1px 1px #ffffff38,inset 0 -1px 1px #ffffff14,0 10px 32px #00000030}
+.app.style-wall .sidebar.custom-liquid-glass::before{background:linear-gradient(145deg,#ffffff0a,transparent 45%,#00000010),#1b242442}
+body:has(.app.style-wall) .custom-liquid-glass:not(.sidebar):not(.player):not(.wall-search-field):not(.wall-settings):not(.icon-button)::before{--surface-filter:blur(24px) saturate(1.22)}
+:root.is-resizing .app.style-wall .custom-liquid-glass::before,
+.app.style-wall .custom-liquid-glass.glass-in-motion::before{backdrop-filter:blur(6px) saturate(1.22);-webkit-backdrop-filter:blur(6px) saturate(1.22)}
+/* Artwork shadows need room outside both enclosing layout rectangles. */
+.style-simple .workspace,.style-simple .browse-body{overflow:visible}
+.artwork-fit,.simple-art,.mini-cover,.row-cover>.cover{border-radius:inherit}
+.simple-art{border-radius:15px}.now-playing .mini-cover{border-radius:13px}
+.controls-two-rows .now-playing .mini-cover{border-radius:7px}
+.album-mode:not(.album-stacked) .now-playing .mini-cover{border-radius:15px}
+/* Embedded controls reveal the single workspace surface. */
+.app.album-mode>.player.album-controls::before{display:none}
+.modal-backdrop{background:#07110d42;backdrop-filter:blur(7px) saturate(.94)}
+.name-dialog{position:relative;outline:0}
+.name-dialog input:not([type=checkbox]){border-radius:7px;border:1px solid var(--line);box-shadow:inset 0 1px 2px #0000000a;transition:border-color .16s,box-shadow .16s}
+.name-dialog input:not([type=checkbox]):focus{border-color:color-mix(in srgb,var(--mint) 65%,transparent);box-shadow:0 0 0 3px color-mix(in srgb,var(--mint) 14%,transparent);outline:0}
+.name-dialog :is(.primary-button,.soft-button,.dialog-actions>button){border-radius:8px;transition:background .16s,box-shadow .16s,scale 180ms ease-out}
+.name-dialog :is(.primary-button,.soft-button,.dialog-actions>button):active:enabled{scale:.96}
+[data-surface-exit]{pointer-events:none!important;user-select:none}
+/* Keep the chosen font metrics, with explicit shaping and clipping behavior. */
+.name-dialog,.background-tasks-panel,.playback-mode-popover,.output-popover,.sort-popover,.context-menu{font-kerning:normal;font-synthesis:none;-webkit-font-smoothing:antialiased}
+:is(.now-playing-title,.brand-name,.group-card-label)>:is(strong,span,small){min-width:0}
+.reduce-motion .name-dialog :is(input,button){transition:none!important}
+
+.simple-lyrics{position:relative}
+.style-library:not(.album-mode) .workspace,.style-library:not(.album-mode) .browse-body{overflow:visible}
+.browse-card-detail .songs-panel::before{display:none}
+.browse-card-detail .songs-panel{outline:0;box-shadow:none}
+.simple-hero h1{overflow-wrap:anywhere}
+.app.style-wall .sidebar.custom-liquid-glass::before{backdrop-filter:var(--glass-lens) blur(14px) saturate(1.16) brightness(1.02);-webkit-backdrop-filter:var(--glass-lens) blur(14px) saturate(1.16) brightness(1.02)}
