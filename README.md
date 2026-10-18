@@ -54,6 +54,8 @@ arm64 完整应用内置固定版本的 ffmpeg / ffprobe、歌词 AI 运行环�
 
 歌词编辑页并行查询网易云、QQ 音乐、酷狗音乐、LRCLIB 和 LrcAPI 等来源，确认候选并保存后才写入本地文件。当前安装包使用 ad-hoc 签名，尚未进行 Developer ID 签名与公证。
 
+本地构建的 Electron 外层使用固定应用标识的 designated requirement，避免默认 ad-hoc 签名按每次构建的 cdhash 识别应用而反复请求文件夹权限。首次访问“下载”等受保护目录仍需允许；从旧签名切换后也可能再确认一次。撤销权限、系统重置权限或改变签名身份后仍可能重新提示，不能通过应用内的“已授权”标记跳过。此方式仅用于本地构建，不验证发布者身份；对外分发应固定使用开发者证书，可设置 `MINIVOICE_CODESIGN_IDENTITY` 指定签名身份。权限是否跨更新保留需在系统弹窗上实际验收。
+
 前端验证使用 `npm --prefix Desktop test`，原生后台验证使用 `swift test`。界面还原现状及待验收差异见 [还原差异清单](Docs/InterfaceParityAudit-2026-10-18.md)。
 
 ## 当前边界

@@ -17,7 +17,6 @@ ELECTRON_CACHE="$ROOT/.build/electron-cache" npm --prefix Desktop run package --
 APP="$DESKTOP_APP_PATH"
 mkdir -p "$APP/Contents/Resources/Native"
 ditto "$ROOT/.build/MiniVoice.app" "$APP/Contents/Resources/Native/MiniVoice.app"
-# Electron's Chromium/V8 executables require their JIT entitlements on Apple silicon.
-codesign --force --deep --sign - --entitlements "$ROOT/Desktop/electron/entitlements.plist" "$APP"
+sign_desktop_app "$APP"
 verify_desktop_app "$APP"
 echo "$APP"

@@ -2,6 +2,24 @@
 # Shared artifact contract for build, deployment and disk-image packaging.
 DESKTOP_APP_PATH="$ROOT/.build/electron/MiniVoice-darwin-arm64/MiniVoice.app"
 DESKTOP_ENGINE_RELATIVE="Contents/Resources/Native/MiniVoice.app/Contents/MacOS/MiniVoice"
+sign_desktop_app() {
+  local candidate="$1"
+  local identity="${MINIVOICE_CODESIGN_IDENTITY:--}"
+  local identifier
+  identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$candidate/Contents/Info.plist")"
+  # Sign nested Chromium code with its own identifiers and JIT entitlements first.
+  codesign --force --deep --sign "$identity" --entitlements "$ROOT/Desktop/electron/entitlements.plist" "$candidate"
+  if [[ "$identity" == "-" ]]; then
+    # Local builds have no certificate identity. Like the Swift backend, give the
+    # outer app a stable DR so an update does not default to a new cdhash identity.
+    # Do not pass --deep here: nested code must keep its own requirements.
+    # Identifier-only requirements are for local builds, not publisher identity.
+    codesign --force --sign - \
+      --requirements "=designated => identifier \"$identifier\"" \
+      --entitlements "$ROOT/Desktop/electron/entitlements.plist" "$candidate"
+  fi
+}
+
 verify_desktop_app() {
   local candidate="$1"
   if [[ ! -f "$candidate/Contents/Resources/app.asar" || ! -x "$candidate/$DESKTOP_ENGINE_RELATIVE" ]]; then
