@@ -35,7 +35,7 @@ export function SimplePage({sizing,track,playbackTrack,expanded,onExpanded,onEdi
       <div className="simple-hero"><div className="simple-art"><Cover track={track} detail/></div><div><h1>{track?.title||'选择一首音乐'}</h1><h3>{track?.artist}</h3><p>{track?.album}</p></div></div>
     </div>
 
-    <section className="simple-lyrics"><header><strong>歌词</strong><span className="lyrics-header-actions"><TranslationToggle track={playbackTrack}/><IconButton label={expanded?'收起歌词':'展开歌词'} active={expanded} onClick={toggle}><span className={`expand-symbol ${expanded?'is-expanded':''}`}><Icon name="expand"/><Icon name="collapse"/></span></IconButton></span></header><Lyrics track={playbackTrack} expanded={expanded} onEdit={()=>playbackTrack&&onEdit(playbackTrack)}/></section>
+    <section className="simple-lyrics" aria-label="歌词"><header><span className="lyrics-header-actions"><TranslationToggle track={playbackTrack}/><IconButton label={expanded?'收起歌词':'展开歌词'} active={expanded} onClick={toggle}><span className={`expand-symbol ${expanded?'is-expanded':''}`}><Icon name="expand"/><Icon name="collapse"/></span></IconButton></span></header><Lyrics track={playbackTrack} expanded={expanded} onEdit={()=>playbackTrack&&onEdit(playbackTrack)}/></section>
   </section>;
 }
 

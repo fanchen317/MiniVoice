@@ -1,0 +1,41 @@
+/* Background task panel and compact lyrics controls. */
+.background-tasks-anchor{display:inline-flex;flex-shrink:0}.brand .background-tasks-anchor>.icon-button{width:24px;height:24px;color:var(--mint);padding:0}.background-tasks-anchor .glyph{width:22px;height:22px}
+.background-tasks-panel{position:fixed;z-index:1200;width:min(360px,calc(100vw - 16px));max-height:calc(100dvh - 16px);padding:18px;border-radius:12px;border:1px solid var(--glass-line);background:var(--glass);backdrop-filter:blur(20px);color:var(--text);box-shadow:var(--shadow);display:flex;flex-direction:column;gap:12px;font-size:13px}
+.background-tasks-panel header h3{font-size:14px}.background-tasks-panel header button{font-size:12px;color:var(--mint)}.background-tasks-panel>p{color:var(--muted)}.background-tasks-scroll{overflow:auto;max-height:340px}.task-row{display:flex;gap:8px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--line)}.task-row>.glyph{width:20px;height:20px;flex-shrink:0}.task-row>div{min-width:0;flex:1}.task-row p{font-size:12px;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}.task-row .icon-button{width:24px;height:24px;flex-shrink:0}.task-row .icon-button>.glyph{width:16px;height:16px}.task-row progress{width:100%;margin-top:6px;accent-color:var(--mint)}
+.background-tasks-panel>header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+/* Lyrics share the existing control row instead of reserving a title row. */
+.simple-lyrics>header{min-height:36px;padding:4px 12px;justify-content:flex-end;flex-shrink:0}
+.app.album-mode .workspace-header{height:50px;padding:6px 12px}
+.app.album-mode .album-lyrics{padding-top:4px}
+.album-header-actions .translation-toggle{align-self:center}
+/* Keep one stable task entry beside the brand; only its state changes. */
+.brand .background-tasks-anchor>.icon-button{color:var(--muted)}
+.brand .background-tasks-anchor[data-unread=true]>.icon-button,.brand .background-tasks-anchor>.icon-button.active{color:var(--mint)}
+.brand .background-tasks-anchor[data-failed=true]>.icon-button{color:#cf752a}
+.background-tasks-anchor{position:relative}
+.background-tasks-anchor[data-unread=true]:after{content:"";position:absolute;right:0;top:0;width:5px;height:5px;border-radius:50%;background:var(--mint);pointer-events:none}
+.background-tasks-panel{overflow:hidden}
+.background-tasks-scroll{min-height:0;overscroll-behavior:contain}
+.task-panel-actions{display:flex;align-items:center;gap:8px}
+.task-panel-actions>.icon-button{width:24px;height:24px;padding:0;color:var(--muted)}
+.task-panel-actions>.icon-button>.glyph{width:16px;height:16px}
+.task-row>.spinner{width:16px;height:16px;flex-shrink:0;margin-top:2px}
+.task-row strong{font-size:13px;overflow-wrap:anywhere}
+.task-row small{display:block;margin-top:4px;font-size:11px}
+.task-row details{margin-top:8px;font-size:12px;color:var(--muted)}
+.task-row summary{cursor:pointer}
+.task-row:last-child{border-bottom:0}
+
+.brand-name{flex:1;overflow:hidden}.brand-name>strong,.brand-name>small{overflow:hidden;text-overflow:ellipsis}
+
+/* Artwork() fits the source over a blurred copy; wall/category posters fill. */
+.artwork-fit{position:relative;width:100%;height:100%;overflow:hidden;container-type:size;background:#0fa87514}
+.artwork-fit>img{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.artwork-fit>.artwork-blur{object-fit:cover;filter:blur(max(4px,8cqw)) brightness(.88)}
+.artwork-fit>.artwork-foreground{object-fit:contain}
+.cover.cover-list{object-fit:contain}
+.cover.cover-empty{width:100%;height:100%;container-type:size;display:grid;place-items:center;background:#0fa87514;color:#0fa87599}
+.cover-empty.cover-list>.glyph{width:14px;height:14px}
+.cover-empty.cover-artwork>.glyph{width:40cqmin;height:40cqmin}
+.wall-poster .cover-empty.cover-wall{color:#ffffff26;background:linear-gradient(135deg,#384c4a,#000)}
+.cover-empty.cover-wall>.glyph{width:min(128px,max(18px,25cqmin));height:min(128px,max(18px,25cqmin))}

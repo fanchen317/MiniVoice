@@ -168,7 +168,9 @@ final class DesktopEngine {
             "playlists": collections.playlists.map { ["id": $0.id.uuidString, "name": $0.name, "paths": $0.paths] as [String: Any] },
             "outputDevices": volume.outputDevices.map { ["id": $0.id, "name": $0.name] as [String: Any] },
             "outputDevice": volume.outputDeviceID,
-            "jobs": lyricsSync.jobs.map { ["id": $0.id.uuidString, "detail": $0.detail, "finished": $0.finished, "failed": $0.failed] as [String: Any] }
+            "tasks": ["modelStatus": lyricsSync.modelStatus ?? "", "modelProgress": lyricsSync.modelProgress.map { $0 as Any } ?? NSNull(), "downloadingModel": lyricsSync.downloadingModel, "modelFailed": lyricsSync.modelFailed, "hasUnread": lyricsSync.hasUnread,
+                      "notice": lyricsSync.alert.map { ["title": $0.title, "message": $0.message, "kind": $0.kind == .failure ? "failure" : "warning"] as [String: Any] } as Any? ?? NSNull()] as [String: Any],
+            "jobs": lyricsSync.jobs.map { ["id": $0.id.uuidString, "title": $0.track.title, "detail": $0.detail, "finished": $0.finished, "failed": $0.failed] as [String: Any] }
         ]])
     }
 
@@ -191,6 +193,18 @@ final class DesktopEngine {
             if let value = payload["value"] as? String, PlayerInterfaceStyle(rawValue: value) != nil {
                 // The renderer already applied this explicit change.
                 lastInterfaceStyle = value; defaults.set(value, forKey: PlayerInterfaceStyle.preferenceKey)
+            }
+            return true
+        case "tasks":
+            switch payload["operation"] as? String {
+            case "read": lyricsSync.hasUnread = false
+            case "clearFinished": lyricsSync.clearFinished(); lyricsSync.alert = nil
+            case "clearNotice": lyricsSync.alert = nil
+            case "clearModel": lyricsSync.clearModelResult()
+            case "retryModel": lyricsSync.retryModel()
+            case "clear": if let id = UUID(uuidString: payload["id"] as? String ?? "") { lyricsSync.clear(id) }
+            case "retry": if let id = UUID(uuidString: payload["id"] as? String ?? "") { lyricsSync.retry(id, library: library) }
+            default: return false
             }
             return true
         case "orderedTracks":
