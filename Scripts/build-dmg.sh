@@ -2,7 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP_PATH="$ROOT/.build/MiniVoice.app"
+source "$ROOT/Scripts/desktop-common.sh"
+APP_PATH="$DESKTOP_APP_PATH"
 SKIP_BUILD=false
 REUSE_LAYOUT=false
 LAYOUT_SOURCE=""
@@ -22,9 +23,16 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 if [[ "$SKIP_BUILD" != true ]]; then
-  "$ROOT/Scripts/build-app.sh" release
+  "$ROOT/Scripts/build-electron-app.sh" release
 fi
-codesign --verify --deep --strict "$APP_PATH"
+verify_desktop_app "$APP_PATH"
+if [[ "$REUSE_LAYOUT" != true ]]; then
+  DMG_PYTHON="$ROOT/.build/dmg-tools/bin/python"
+  if [[ ! -x "$DMG_PYTHON" ]]; then python3 -m venv "$ROOT/.build/dmg-tools"; fi
+  if ! "$DMG_PYTHON" -c 'from importlib.metadata import version; assert version("ds-store") == "1.3.1" and version("mac-alias") == "2.2.2"' >/dev/null 2>&1; then
+    "$DMG_PYTHON" -m pip install --disable-pip-version-check -r "$ROOT/Scripts/dmg-requirements.txt"
+  fi
+fi
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
 ARCH="$(uname -m)"
 OUTPUT_DIR="$ROOT/.build/dist"
@@ -53,7 +61,7 @@ hdiutil create -quiet -srcfolder "$WORK_DIR/content" -volname "MiniVoice $VERSIO
   -fs HFS+ -format UDRW "$WORK_DIR/installer.dmg"
 hdiutil attach -quiet -nobrowse -noautoopen -mountpoint "$MOUNT_POINT" "$WORK_DIR/installer.dmg"
 
-# Persist Finder layout in .DS_Store so opening the DMG shows both install icons.
+# Persist the Finder layout without opening a Finder window.
 if [[ "$REUSE_LAYOUT" == true ]]; then
   # Rebuild without UI automation, reusing a verified installation layout.
   LAYOUT_SOURCE="${LAYOUT_SOURCE:-$OUTPUT}"
@@ -66,33 +74,11 @@ if [[ "$REUSE_LAYOUT" == true ]]; then
   cp "$PREVIOUS_MOUNT/.DS_Store" "$MOUNT_POINT/.DS_Store"
   hdiutil detach -quiet "$PREVIOUS_MOUNT"
 else
-osascript - "$MOUNT_POINT" <<'APPLESCRIPT'
-on run argv
-    set installFolder to POSIX file (item 1 of argv) as alias
-    tell application "Finder"
-        open installFolder
-        set installWindow to container window of installFolder
-        set current view of installWindow to icon view
-        set toolbar visible of installWindow to false
-        set statusbar visible of installWindow to false
-        set bounds of installWindow to {200, 160, 840, 520}
-        set options to icon view options of installWindow
-        set arrangement of options to not arranged
-        set icon size of options to 96
-        set text size of options to 14
-        set background picture of options to file ".background:install.png" of installFolder
-        set position of item "MiniVoice.app" of installFolder to {170, 160}
-        set position of item "Applications" of installFolder to {470, 160}
-        update installFolder without registering applications
-        delay 2
-        close installWindow
-    end tell
-end run
-APPLESCRIPT
+  "$DMG_PYTHON" "$ROOT/Scripts/write-dmg-layout.py" "$MOUNT_POINT"
 fi
 
 if [[ ! -f "$MOUNT_POINT/.DS_Store" ]]; then
-  echo "error: Finder 安装布局未保存，请检查 Finder 自动化权限" >&2
+  echo "error: DMG 安装布局未保存" >&2
   exit 1
 fi
 hdiutil detach -quiet "$MOUNT_POINT"

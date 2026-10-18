@@ -1,6 +1,6 @@
 # MiniVoice
 
-轻量原生 macOS 本地音乐播放器，基于 SwiftUI 与 AVFoundation，macOS 13 及以上。
+macOS 本地音乐播放器，当前发行架构为 Electron / React 主窗口 + Swift 原生播放与音乐库后台；设置、歌曲编辑和桌面歌词继续使用原生窗口。macOS 13 及以上，目前打包支持 Apple silicon（arm64）。
 
 ## 已实现
 
@@ -29,24 +29,32 @@
 
 ## 运行与部署
 
-```sh
-swift run
-```
-
-`swift run` 不组装 `.app`，需要本机提供 FFmpeg 才能使用扫描和标签编辑功能；`Scripts/build-app.sh`、`deploy.sh` 与 `build-dmg.sh` 使用仓库内置的 arm64 FFmpeg。
+需要 Node.js / npm、Xcode 命令行工具及仓库内的 Git LFS 资源。正式构建、部署和 DMG 统一使用 Electron + Swift 架构：
 
 ```sh
-swift test
+Scripts/build-electron-app.sh release
 Scripts/deploy.sh
+Scripts/build-dmg.sh
 ```
 
-应用标识为 `com.xcosmos.MiniVoice`。新版首次启动会从 `local.fanchen.MiniVoice`（及更早的 `com.local.minivoice`）迁移设置，包括音乐文件夹、播放状态、快捷键、歌词选项和窗口位置；保留旧配置，已有新配置优先，之后不重复导入。`~/Library/Application Support/MiniVoice/` 下的本地歌词资源和音乐文件夹中的歌单缓存继续沿用。
+主应用产物为 `.build/electron/MiniVoice-darwin-arm64/MiniVoice.app`，包含 `app.asar` 前端和 `Contents/Resources/Native/MiniVoice.app` 原生后台。`Scripts/build-app.sh [debug|release]` 仅生成 `.build/MiniVoice.app` 原生后台 / SwiftUI 参考应用，不再作为正式部署与 DMG 的入口。`swift run` 也仅运行原生版本。
 
-部署脚本先构建 release、验证签名，再退出旧版并替换 `/Applications/MiniVoice.app`，最后启动。歌词编辑页并行查询网易云（优先取 YRC 逐字歌词）、QQ 音乐、酷狗音乐（优先取 KRC 逐字歌词）、LRCLIB 与偏重中文曲目的 LrcAPI，外文歌还可由 lyrics.ovh 补充纯文本；候选会标明来源、合并重复内容，并保留简体预览与应用选项（仅转换字形，不翻译粤语）。确认应用后再明确保存到本地。arm64 安装包内置仓库中固定版本的 ffmpeg/ffprobe、歌词 AI 运行环境和默认 Whisper small 模型；构建与使用 small 模型不需要临时下载资源或安装 Python。来源、校验值和许可见 `Vendor/FFmpeg/README.md` 与 `Vendor/LyricsAI/README.md`。medium 模型仍按需下载；已有本地资源不会删除。
+部署默认构建 release、校验完整应用及签名，退出目标位置的旧应用后替换 `/Applications/MiniVoice.app` 并启动；替换或启动命令失败时恢复旧安装。支持复用已构建产物、跳过启动或指定安装位置：
 
-单独构建：`Scripts/build-app.sh [debug|release]`，产物在 `.build/MiniVoice.app`。
+```sh
+Scripts/deploy.sh --skip-build --no-launch --target /absolute/path/MiniVoice.app
+Scripts/build-dmg.sh --skip-build
+```
 
-当前版本为 **2.3.0**（构建号 8）。制作拖拽安装包：`Scripts/build-dmg.sh`，自动构建 release 并生成 `.build/dist/MiniVoice-2.3.0-arm64.dmg`（文件名按实际版本和架构生成）。如已构建，可使用 `Scripts/build-dmg.sh --skip-build`。打开 DMG 后，将 MiniVoice 拖入右侧 Applications 文件夹即可安装；首次保存安装布局需要 Finder 自动化，后续可用 `--reuse-layout` 无界面复用同版本布局，或用 `--layout-from /absolute/path/previous.dmg` 复用旧版本布局。安装包沿用当前 ad-hoc 签名，尚未进行开发者签名与公证；其他 Mac 的元数据编辑仍需安装 FFmpeg。
+当前版本 **2.3.0**（构建号 8），Electron 外层和 Swift 后台版本在打包时同步。DMG 输出 `.build/dist/MiniVoice-2.3.0-arm64.dmg`。安装布局由脚本直接写入 `.DS_Store`，无需 Finder 自动化权限；首次运行会在 `.build/dmg-tools` 中建立独立 Python 环境并安装 `Scripts/dmg-requirements.txt` 固定版本依赖。仍支持 `--reuse-layout` 或 `--layout-from /absolute/path/previous.dmg` 复用布局。
+
+Electron 应用标识为 `com.xcosmos.MiniVoice.electron`，保留现有 `~/Library/Application Support/minivoice-desktop/` 前端偏好路径；原生后台继续使用 `com.xcosmos.MiniVoice`，沿用音乐库、收藏、歌单及原生设置。更早的 `local.fanchen.MiniVoice` / `com.local.minivoice` 配置由后台迁移，已有新配置优先。原生资源目录 `~/Library/Application Support/MiniVoice/` 及缓存目录保持不变。
+
+arm64 完整应用内置固定版本的 ffmpeg / ffprobe、歌词 AI 运行环境和默认 Whisper small 模型，使用 small 模型无需额外安装 Python 或 FFmpeg。资源位于内嵌原生应用的 `Contents/Resources/`；来源、校验值和许可见 `Vendor/FFmpeg/README.md` 与 `Vendor/LyricsAI/README.md`。medium 模型仍按需下载。直接 `swift run` 不组装这些资源，需要本机依赖。
+
+歌词编辑页并行查询网易云、QQ 音乐、酷狗音乐、LRCLIB 和 LrcAPI 等来源，确认候选并保存后才写入本地文件。当前安装包使用 ad-hoc 签名，尚未进行 Developer ID 签名与公证。
+
+前端验证使用 `npm --prefix Desktop test`，原生后台验证使用 `swift test`。界面还原现状及待验收差异见 [还原差异清单](Docs/InterfaceParityAudit-2026-10-18.md)。
 
 ## 当前边界
 
@@ -67,7 +75,7 @@ Scripts/deploy.sh
 - 旧版逐文件导入已移除；首次升级需在设置里添加音乐文件夹。
 - 本机使用 ad-hoc 签名；向其他 Mac 正式分发还需处理开发者签名、公证与 FFmpeg 许可要求。当前内置 FFmpeg 仅支持 arm64。
 
-音乐墙样式可在设置的“播放器样式”中选择，也可点击侧栏的应用图标循环切换。封面以大小交错的拼贴铺满窗口，支持鼠标四向拖拽、触控板双向滚动和双指捏合等比缩放。单击卡片在墙面内展开并居中，周围封面同步让位；双击聚焦并播放。底部玻璃播放条固定显示，右上角搜索图标在悬浮时展开，鼠标移出恢复圆形。侧栏沿用音乐库尺寸，宽窗口可保持展开，窄窗口覆盖墙面并可点击外部收起。macOS 26 及以上使用原生液态玻璃，旧系统使用毛玻璃兼容效果。
+音乐墙样式可在设置的“播放器样式”中选择，也可点击侧栏的应用图标循环切换。封面以大小交错的拼贴铺满窗口，支持鼠标四向拖拽、触控板双向滚动和双指捏合等比缩放。单击卡片在墙面内展开并居中，周围封面同步让位；双击聚焦并播放。底部玻璃播放条固定显示，右上角搜索图标在悬浮时展开，鼠标移出恢复圆形。侧栏沿用音乐库尺寸，宽窗口可保持展开，窄窗口覆盖墙面并可点击外部收起。Electron 主窗口使用自绘玻璃效果；原生辅助窗口在 macOS 26 及以上使用原生液态玻璃，旧系统使用毛玻璃兼容效果。
 
 ## 验证
 

@@ -5,6 +5,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
+// Keep the existing renderer preferences when adopting the shipping app name.
+app.setPath('userData', path.join(app.getPath('appData'), 'minivoice-desktop'));
+app.setName('MiniVoice');
+
 // The privileged shell brokers a narrow command protocol. The renderer has no
 // filesystem/Node access, even while displaying local artwork and audio metadata.
 protocol.registerSchemesAsPrivileged([{ scheme: 'minivoice-art', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);

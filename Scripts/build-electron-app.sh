@@ -2,6 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIGURATION="${1:-release}"
+source "$ROOT/Scripts/desktop-common.sh"
 # Build the existing Swift audio backend and its bundled FFmpeg/lyrics runtime.
 "$ROOT/Scripts/build-app.sh" "$CONFIGURATION"
 cd "$ROOT"
@@ -10,11 +11,13 @@ if [[ ! -d Desktop/node_modules ]]; then
 fi
 node Desktop/electron/prepare-runtime.mjs
 npm --prefix Desktop run build
-ELECTRON_CACHE="$ROOT/.build/electron-cache" npm --prefix Desktop run package
-APP="$ROOT/.build/electron/MiniVoice Electron-darwin-arm64/MiniVoice Electron.app"
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ROOT/.build/MiniVoice.app/Contents/Info.plist")"
+BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$ROOT/.build/MiniVoice.app/Contents/Info.plist")"
+ELECTRON_CACHE="$ROOT/.build/electron-cache" npm --prefix Desktop run package -- --app-version="$VERSION" --build-version="$BUILD"
+APP="$DESKTOP_APP_PATH"
 mkdir -p "$APP/Contents/Resources/Native"
 ditto "$ROOT/.build/MiniVoice.app" "$APP/Contents/Resources/Native/MiniVoice.app"
 # Electron's Chromium/V8 executables require their JIT entitlements on Apple silicon.
 codesign --force --deep --sign - --entitlements "$ROOT/Desktop/electron/entitlements.plist" "$APP"
-codesign --verify --deep --strict "$APP"
+verify_desktop_app "$APP"
 echo "$APP"

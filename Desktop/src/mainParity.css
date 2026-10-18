@@ -138,10 +138,9 @@ button:focus-visible,[role=button]:focus-visible{outline:none}
 .style-wall .player.compact .seek input:hover::-webkit-slider-thumb{background:#ffffff0a;backdrop-filter:blur(4px);border-color:#ffffffa6;box-shadow:0 1px 6px #00000038}
 .style-wall .player.compact .seek input:active::-webkit-slider-thumb{background:#ffffff06;border-color:#ffffff61;box-shadow:0 1px 6px #0000001a}
 
-/* Native simple/library overlay: black 18% at full overlap, behind sidebar.
-   Library's exposed header stays interactive above y=84pt. */
+/* Simple/library overlap dims the complete background, including its header. */
 .sidebar-dismiss-layer{position:absolute;inset:0;z-index:29;margin:0;padding:0;border:0;border-radius:16px;background:#000;opacity:0;transition:opacity .36s ease-in-out;cursor:default}
-.sidebar-dismiss-layer.below-header{top:84px;border-radius:0}
+
 
 /* Output rows share the native 20pt icon / flexible content / 32pt value
    columns. A glyph is a span too, so only the final span reserves 32pt. */
@@ -162,3 +161,18 @@ button:focus-visible,[role=button]:focus-visible{outline:none}
 /* Share the wall's 22pt medium SF Symbols in a 38pt header control. */
 .app:not(.style-wall) .window-tools .icon-button,.app:not(.style-wall) .simple-info-button,.app:not(.style-wall) .album-header-actions .icon-button[aria-label="歌曲信息"]{width:38px;height:38px;padding:0;display:grid;place-items:center}
 .app:not(.style-wall) .window-tools .glyph,.app:not(.style-wall) .simple-info-button>.glyph,.app:not(.style-wall) .album-header-actions .icon-button[aria-label="歌曲信息"]>.glyph{width:38px;height:38px;margin:0;display:block}
+
+/* Selection actions wrap onto as many lines as the panel needs at 304pt. */
+.selection-toolbar>div{flex-wrap:wrap;justify-content:flex-start;row-gap:6px;column-gap:8px;min-width:0}
+.selection-toolbar button,.selection-toolbar small{flex:0 0 auto}
+.library-toolbar .playlist-add{top:100%;max-width:100%;min-width:min(180px,100%)}
+
+/* Display-only surfaces behave like a desktop app, not a selectable web page. */
+body{-webkit-user-select:none;user-select:none}
+input:not([readonly]):not([disabled]),textarea:not([readonly]):not([disabled]),[contenteditable="true"]{-webkit-user-select:text;user-select:text}
+input[type=range],input[type=checkbox],input[type=radio]{-webkit-user-select:none;user-select:none}
+img{-webkit-user-drag:none}
+
+/* Fit above the floating tools even at the 304 × 600 minimum window size. */
+.wall-tools-popover{height:auto;max-height:min(520px,calc(100dvh - var(--wall-tools-bottom) - 96px));overscroll-behavior:contain;scrollbar-gutter:stable}
+.wall-tools-popover>header{position:sticky;top:-18px;z-index:2;background:#1f2424;padding-block:8px}
