@@ -57,6 +57,7 @@ struct AppSettings: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .focusable(false)
                         .accessibilityAddTraits(selection == page ? [.isSelected] : [])
                     }
                 }
