@@ -353,6 +353,7 @@ final class HomeScreen {
         if (searchInput.length() > 0) searchInput.setText("");
         searchInput.setVisibility(View.GONE);
         searchInput.clearFocus();
+        ((android.view.inputmethod.InputMethodManager) activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(searchInput.getWindowToken(), 0);
     }
 
     private void toggleSearch() {

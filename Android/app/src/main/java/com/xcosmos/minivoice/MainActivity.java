@@ -70,6 +70,7 @@ public final class MainActivity extends Activity {
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(ACTION_LOCATE_PLAYING.equals(intent.getAction())){pendingLocatePlaying=true;locatePlayingIfReady();}}
     private void configureSystemBars(){
         Window window=getWindow();window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         window.setStatusBarColor(Color.TRANSPARENT);window.setNavigationBarColor(Color.BLACK);
         if(Build.VERSION.SDK_INT>=29){window.setStatusBarContrastEnforced(false);window.setNavigationBarContrastEnforced(false);}
         View decor=window.getDecorView();decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
@@ -105,6 +106,7 @@ public final class MainActivity extends Activity {
             public void previous(){if(service!=null)service.previous();}
             public void next(){if(service!=null)service.next(true);}
             public void lyrics(){showLyrics();}
+            public void locate(){pendingLocatePlaying=true;locatePlayingIfReady();}
             public void queue(){showQueue();}
             public void seek(int ms){if(service!=null)service.seek(ms);}
             public void playMode(){if(service!=null){service.mode=(service.mode+1)%5;android.widget.Toast.makeText(MainActivity.this,new String[]{"单曲播放","列表播放","随机播放","单曲循环","列表循环"}[service.mode],android.widget.Toast.LENGTH_SHORT).show();}}
