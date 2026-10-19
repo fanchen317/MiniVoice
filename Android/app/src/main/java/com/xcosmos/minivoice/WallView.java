@@ -63,6 +63,7 @@ final class WallView extends View {
     private WallLayout.Instance pressed;
     private boolean cameraReady;
     private ValueAnimator motion;
+    private final WallFocusMotion focusMotion=new WallFocusMotion();
     private WallReflow.Transform reflowFrom=WallReflow.IDENTITY,reflowTo=WallReflow.IDENTITY;
     private long pendingLocate=Long.MIN_VALUE;
     private final OnLayoutChangeListener locateAfterLayout=(view,left,top,right,bottom,oldLeft,oldTop,oldRight,oldBottom)->{
@@ -97,7 +98,10 @@ final class WallView extends View {
         if(getWidth()==0||getHeight()==0){pendingLocate=id;return;}
         if(!cameraReady)centerInitial();
         for(int i=0;i<songs.size();i++)if(songs.get(i).id==id){
-            WallLayout.Instance target=nearestRendered(i);
+            WallLayout.Instance target=null;
+            // Keep the visible focused repeat. Re-selecting a periodic copy can shift the wall again.
+            if(focus!=null&&focus.tile.index==i){RectF visible=frame(focus);if(visible.right>0&&visible.left<getWidth()&&visible.bottom>safeTop&&visible.top<getHeight()-safeBottom)target=focus;}
+            if(target==null)target=nearestRendered(i);
             if(target!=null)focus(target);return;
         }
     }
@@ -118,7 +122,7 @@ final class WallView extends View {
     void setLyrics(long id,List<Lyrics.Line> lines){if(playingId==id){playingLyrics=new ArrayList<>(lines);lyricStatus="暂无歌词";invalidate();}}
     void setLyricsStatus(long id,String message){if(playingId==id){lyricStatus=message;invalidate();}}
     void resetCamera(){if(expanded)setExpanded(false);cancelMotion();focus=null;focusAmount=0;reflowFrom=reflowTo=WallReflow.IDENTITY;cameraReady=false;centerInitial();invalidate();}
-    void zoom(float factor){float old=scale;scale=Math.max(.6f,Math.min(1.2f,scale*factor));cameraX=getWidth()/2f-(getWidth()/2f-cameraX)*scale/old;cameraY=getHeight()/2f-(getHeight()/2f-cameraY)*scale/old;invalidate();}
+    void zoom(float factor){interruptCamera();float old=scale;scale=Math.max(.6f,Math.min(1.2f,scale*factor));cameraX=getWidth()/2f-(getWidth()/2f-cameraX)*scale/old;cameraY=getHeight()/2f-(getHeight()/2f-cameraY)*scale/old;invalidate();}
     float scale(){return scale;}
     @Override protected void onSizeChanged(int w,int h,int oldW,int oldH){super.onSizeChanged(w,h,oldW,oldH);if(!cameraReady)centerInitial();}
     private void centerInitial(){if(scene.tiles.isEmpty()||getWidth()==0||getHeight()==0)return;
@@ -214,10 +218,12 @@ final class WallView extends View {
         animateFocus(reflowTo.apply(baseFrame(instance)),true);
     }
     private void animateFocus(WallReflow.Frame target,boolean newFocus){
-        cancelMotion();float startX=cameraX,startY=cameraY,startAmount=focusAmount;
+        float startX=cameraX,startY=cameraY,startAmount=focusAmount;
         float targetX=getWidth()/2f-target.centerX()*scale,targetY=anchorY()-target.centerY()*scale;
-        if(!newFocus&&focusAmount>=1&&Math.abs(startX-targetX)<.5f&&Math.abs(startY-targetY)<.5f)return;
+        if(!focusMotion.shouldStart(startX,startY,targetX,targetY,focusAmount,newFocus,density))return;
+        cancelMotion();focusMotion.started(targetX,targetY);
         motion=ValueAnimator.ofFloat(0,1);motion.setDuration(newFocus?520:360);
+        motion.addListener(new android.animation.AnimatorListenerAdapter(){@Override public void onAnimationEnd(android.animation.Animator animation){if(animation==motion)focusMotion.clear();}});
         motion.addUpdateListener(animation->{float t=(float)animation.getAnimatedValue(),eased=focusProgress(t);
             cameraX=startX+(targetX-startX)*eased;cameraY=startY+(targetY-startY)*eased;
             focusAmount=startAmount+(1-startAmount)*reflowProgress(t*520);invalidate();
@@ -238,7 +244,7 @@ final class WallView extends View {
             motion.addUpdateListener(animation->{float t=(float)animation.getAnimatedValue();focusAmount=start+(1-start)*(1-(float)Math.pow(1-t,3));invalidate();});motion.start();
         }
     }
-    private void cancelMotion(){if(motion!=null){motion.cancel();motion=null;}}
+    private void cancelMotion(){focusMotion.clear();if(motion!=null){motion.cancel();motion=null;}}
     @Override public boolean onTouchEvent(MotionEvent event){
         int action=event.getActionMasked();
         if(action==MotionEvent.ACTION_DOWN&&card.down(event.getX(),event.getY())){interruptCamera();controlTouch=true;invalidate();return true;}

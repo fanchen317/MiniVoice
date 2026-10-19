@@ -18,3 +18,6 @@ java -cp "$output" com.xcosmos.minivoice.WallReflowTests
 
 javac -d "$output" "$source_root/LyricIndex.java" "$source_root/LyricsLoadState.java" "$source_root/CoverPreviewBudget.java" "$repo_root/Android/tests/com/xcosmos/minivoice/LibraryResourceTests.java"
 java -cp "$output" com.xcosmos.minivoice.LibraryResourceTests
+
+javac -d "$output" "$source_root/WallFocusMotion.java" "$repo_root/Android/tests/com/xcosmos/minivoice/WallFocusMotionTests.java"
+java -cp "$output" com.xcosmos.minivoice.WallFocusMotionTests

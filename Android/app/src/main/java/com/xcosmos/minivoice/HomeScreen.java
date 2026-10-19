@@ -179,7 +179,8 @@ final class HomeScreen {
         drawerScroll.addView(drawer);
         LinearLayout brand = new LinearLayout(activity);
         brand.setGravity(Gravity.CENTER_VERTICAL);
-        drawer.addView(brand, new LinearLayout.LayoutParams(-1, dp(64)));
+        brand.setMinimumHeight(dp(64));
+        drawer.addView(brand, new LinearLayout.LayoutParams(-1, -2));
         ImageView icon = new ImageView(activity);
         icon.setImageResource(R.drawable.minivoice_icon);
         icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -193,8 +194,10 @@ final class HomeScreen {
         TextView name = text("MiniVoice", 19, Color.WHITE);
         name.setTypeface(null, Typeface.BOLD);
         title.addView(name);
-        TextView sub = text("音乐让生活更美...", 11, 0xFF9DA7A4);
-        sub.setSingleLine(true);
+        TextView sub = text("音乐让生活更美好", 11, 0xFF9DA7A4);
+        sub.setSingleLine(false);
+        sub.setEllipsize(null);
+        sub.setPadding(0, dp(3), 0, 0);
         title.addView(sub);
         ImageView closeDrawer = imageButton(R.drawable.icon_close, Color.WHITE, () -> showDrawer(false));
         closeDrawer.setPadding(dp(8), dp(8), dp(8), dp(8));
@@ -221,6 +224,12 @@ final class HomeScreen {
             menu.setLayoutParams(menuParams);
             searchParams.topMargin = top + dp(14);
             searchControl.setLayoutParams(searchParams);
+            // Only floating controls avoid the gesture area; the wall continues underneath it.
+            playerParams.bottomMargin=bottom+dp(14);
+            player.setLayoutParams(playerParams);
+            wallSettingsParams.bottomMargin=bottom+dp(112);
+            wallSettings.setLayoutParams(wallSettingsParams);
+            drawerParams.bottomMargin=bottom+dp(10);
             drawerParams.topMargin = top + dp(12);
             drawerScroll.setLayoutParams(drawerParams);
             boolean keyboard = android.os.Build.VERSION.SDK_INT >= 30 && insets.isVisible(WindowInsets.Type.ime());
