@@ -32,7 +32,10 @@ final class ArtworkCache {
     private static synchronized void prepareSong(Context context,Song song,int previewSize){
         if(song.artworkPrepared)return;
         String key=key(song);song.artworkCacheKey=key;
-        File directory=new File(context.getCacheDir(),"covers"),file=new File(directory,key+".jpg");
+        File directory=LibraryCache.directory(context,"covers"),file=new File(directory,key+".jpg");
+        LibraryCache.migrate(new File(new File(context.getCacheDir(),"covers"),key+".jpg"),file);
+        File missing=new File(directory,key+".none");
+        if(missing.isFile()){song.artworkPrepared=true;return;}
         Bitmap preview=file.isFile()?decode(file,previewSize):null;
         if(preview==null){
             Bitmap image=Artwork.load(context,song,640);
@@ -45,7 +48,7 @@ final class ArtworkCache {
                     if(!temporary.renameTo(file))throw new java.io.IOException("无法保存封面缓存");
                 }catch(Exception ignored){if(temporary!=null)temporary.delete();detail.put(key,scaled);}
                 preview=scale(scaled,previewSize);if(preview!=scaled&&detail.get(key)!=scaled)scaled.recycle();
-            }
+            }else{try{directory.mkdirs();missing.createNewFile();}catch(Exception ignored){}}
         }
         song.artworkPreview=preview;song.artworkFile=file.isFile()?file:null;song.artworkPrepared=true;
     }

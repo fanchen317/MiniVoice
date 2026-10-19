@@ -7,6 +7,8 @@ final class Song {
     final String title, artist, album, path;
     final Uri uri, lyricUri;
     boolean lyricReadFailed;
+    String embeddedLyrics,lyricsRaw="",lyricsError;
+    boolean lyricsEmbedded,lyricsPrepared,embeddedLyricsChecked;
     Uri artworkUri;
     String artworkVersion="";
     volatile android.graphics.Bitmap artworkPreview;

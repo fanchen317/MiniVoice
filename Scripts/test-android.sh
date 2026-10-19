@@ -21,3 +21,6 @@ java -cp "$output" com.xcosmos.minivoice.LibraryResourceTests
 
 javac -d "$output" "$source_root/WallFocusMotion.java" "$repo_root/Android/tests/com/xcosmos/minivoice/WallFocusMotionTests.java"
 java -cp "$output" com.xcosmos.minivoice.WallFocusMotionTests
+
+javac -cp "$android_jar:$output" -d "$output" "$source_root/Song.java" "$source_root/EmbeddedLyrics.java" "$source_root/LibraryCache.java" "$source_root/LyricsRepository.java" "$source_root/ScanProgress.java" "$repo_root/Android/tests/com/xcosmos/minivoice/EmbeddedLyricsTests.java"
+java -cp "$output:$android_jar" com.xcosmos.minivoice.EmbeddedLyricsTests

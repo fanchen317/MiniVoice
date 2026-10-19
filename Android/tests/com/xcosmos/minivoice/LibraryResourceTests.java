@@ -6,7 +6,7 @@ public final class LibraryResourceTests {
         LyricIndex<String> index=new LyricIndex<>();
         index.add("843 - 前田爱 (AiM) - I wish (我希望).lrc","root/lrc/wish");
         check("root/lrc/wish".equals(index.find("843 - 前田爱 (AiM) - I wish (我希望).flac","I wish (我希望)","前田爱 (AiM)")),"numbered sidecar");
-        check("root/lrc/wish".equals(index.find("I wish （我希望）.flac","I wish （我希望）","前田爱 (AiM)")),"normalized title fallback");
+        check(index.find("I wish （我希望）.flac","I wish （我希望）","前田爱 (AiM)")==null,"title alias must not replace original filename");
         index.add("Other artist - I wish (我希望).lrc","other");
         check(index.find("missing.mp3","I wish (我希望)","unknown")==null,"ambiguous title must not select wrong lyrics");
         check("root/lrc/wish".equals(index.find("843 - 前田爱 (AiM) - I wish (我希望).flac","ignored","ignored")),"exact name wins");

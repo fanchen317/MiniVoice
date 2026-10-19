@@ -50,7 +50,7 @@ public final class MainActivity extends Activity {
     private GridLayout wallGrid;
     private HomeScreen home;
     private SettingsPanel settings;
-    private boolean scanning,rescanPending;
+    private boolean scanning,rescanPending,rebuildPending;
     private long lastScanProgress;
     private TextView now,elapsed;
     private SeekBar progress;
@@ -83,8 +83,10 @@ public final class MainActivity extends Activity {
     @Override public void onStop(){invalidateLyricsLoad();if(service!=null)service.removeListener(listener);if(bound){unbindService(connection);bound=false;}service=null;super.onStop();}
     private void requestLibrary(){if(!ids("music_folders").isEmpty()){reload();return;}String permission=Build.VERSION.SDK_INT>=33?Manifest.permission.READ_MEDIA_AUDIO:Manifest.permission.READ_EXTERNAL_STORAGE;if(checkSelfPermission(permission)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{permission},1);else reload();}
     @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results){super.onRequestPermissionsResult(code,permissions,results);if(code==1&&results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED)reload();else new AlertDialog.Builder(this).setMessage("请允许读取本机音频，或在设置中选择音乐文件夹。 ").setPositiveButton("设置",(d,w)->showSettings()).setNegativeButton("稍后",null).show();}
-    private void reload(){
-        if(scanning){rescanPending=true;return;}scanning=true;lastScanProgress=0;if(settings!=null)settings.refresh(library.size(),true);
+    private void reload(){reload(false);}
+    private void rebuildLibrary(){reload(true);}
+    private void reload(boolean rebuild){
+        if(scanning){rescanPending=true;rebuildPending|=rebuild;return;}scanning=true;lastScanProgress=0;if(settings!=null)settings.refresh(library.size(),true);
         if(settings!=null)settings.progress(0,0,"正在查找音乐文件");
         new Thread(()->{
             ScanProgress report=(completed,total,detail)->{
@@ -93,12 +95,12 @@ public final class MainActivity extends Activity {
             };
             Set<String> folders=ids("music_folders");
             List<Song> scanned;String error=null;
-            try{scanned=folders.isEmpty()?Library.load(this,report):FolderLibrary.scan(this,folders,prefs.getBoolean("scan_recursive",true),report);ArtworkCache.prepare(getApplicationContext(),scanned,report);}
+            try{if(rebuild){report.update(0,0,"清理旧缓存…");ArtworkCache.clear();LibraryCache.clear(getApplicationContext());clearCacheFiles(getCacheDir());}scanned=folders.isEmpty()?Library.load(this,report):FolderLibrary.scan(this,folders,prefs.getBoolean("scan_recursive",true),report);LyricsRepository.prepare(getApplicationContext(),scanned,report);ArtworkCache.prepare(getApplicationContext(),scanned,report);}
             catch(Exception failure){scanned=null;error="扫描失败，请检查音乐读取权限后重试";}
             List<Song> found=scanned;String scanError=error;
             runOnUiThread(()->{if(found!=null){library.clear();library.addAll(found);if(service!=null)service.refreshLibrary(library);}if(scanError!=null)android.widget.Toast.makeText(this,scanError,android.widget.Toast.LENGTH_LONG).show();scanning=false;invalidateLyricsLoad();renderRows();refreshWall();refreshPlayer();
                 if(service!=null&&service.current()!=null&&!section.equals("歌手")&&!section.equals("专辑"))home.locateSong(service.current().id);
-                locatePlayingIfReady();if(settings!=null)settings.refresh(library.size(),false);if(rescanPending){rescanPending=false;reload();}});
+                locatePlayingIfReady();if(settings!=null)settings.refresh(library.size(),false);if(rescanPending){boolean queuedRebuild=rebuildPending;rescanPending=false;rebuildPending=false;reload(queuedRebuild);}});
         }).start();
     }
     private int dp(int value){return Math.round(getResources().getDisplayMetrics().density*value);}
@@ -133,7 +135,7 @@ public final class MainActivity extends Activity {
         EditText search=new EditText(this);search.setSingleLine(true);search.setHint("搜索歌曲、歌手或专辑");root.addView(search);
         search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){query=s.toString().toLowerCase(Locale.ROOT);renderRows();}public void afterTextChanged(android.text.Editable e){}});
         LinearLayout actions=new LinearLayout(this);root.addView(actions);
-        actions.addView(button("刷新音乐库",this::reload));actions.addView(button("新建歌单",this::createPlaylist));
+        actions.addView(button("刷新音乐库",this::rebuildLibrary));actions.addView(button("新建歌单",this::createPlaylist));
         ScrollView scroll=new ScrollView(this);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);scroll.addView(rows);
         playerBar=new LinearLayout(this);playerBar.setOrientation(LinearLayout.VERTICAL);playerBar.setPadding(dp(8),dp(8),dp(8),0);playerBar.setBackgroundColor(Color.rgb(225,241,230));root.addView(playerBar);
         now=label("选择一首歌曲",16,Color.rgb(20,70,42));playerBar.addView(now);now.setOnClickListener(v->showLyrics());
@@ -145,9 +147,9 @@ public final class MainActivity extends Activity {
         settings=new SettingsPanel(this,prefs,new SettingsPanel.Actions(){
             public void addFolder(){Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(picker,3);}
             public void removeFolder(String uri){Set<String> selected=ids("music_folders");selected.remove(uri);saveIds("music_folders",selected);reload();settings.refresh(library.size(),scanning);}
-            public void rescan(){reload();}
+            public void rescan(){rebuildLibrary();}
             public void viewCache(){showCache();}
-            public void clearCache(){ArtworkCache.clear();clearCacheFiles(getCacheDir());android.widget.Toast.makeText(MainActivity.this,"缓存已清理",android.widget.Toast.LENGTH_SHORT).show();}
+            public void clearCache(){ArtworkCache.clear();try{LibraryCache.clear(MainActivity.this);}catch(java.io.IOException error){android.widget.Toast.makeText(MainActivity.this,"缓存清理失败，请重试",android.widget.Toast.LENGTH_LONG).show();return;}clearCacheFiles(getCacheDir());android.widget.Toast.makeText(MainActivity.this,"缓存已清理",android.widget.Toast.LENGTH_SHORT).show();}
         });
         home.updateDrawer(section,ids("playlists"));refreshWall();
     }
@@ -156,9 +158,9 @@ public final class MainActivity extends Activity {
         if(!pendingLocatePlaying||service==null||home==null)return;
         Song song=service.current();if(song==null){pendingLocatePlaying=false;return;}
         if(scanning)return;
-        section="歌曲";query="";home.clearSearch();home.updateDrawer(section,ids("playlists"));home.showDrawer(false);root.setVisibility(View.GONE);
-        refreshWall();boolean inLibrary=false;for(Song item:library)if(item.id==song.id){inLibrary=true;break;}
-        if(!inLibrary)home.updateWall(java.util.List.of(song));
+        home.showDrawer(false);root.setVisibility(View.GONE);
+        // A locate action reveals the player in the current section; it must not change navigation.
+        home.ensureSongVisible(song);
         pendingLocatePlaying=false;home.locateSong(song.id);
     }
     private void refreshWall(){if(home==null)return;
@@ -198,7 +200,7 @@ public final class MainActivity extends Activity {
     private void showSearch(){EditText input=new EditText(this);input.setSingleLine(true);input.setHint("搜索歌曲、歌手或专辑");new AlertDialog.Builder(this).setTitle("搜索音乐库").setView(input).setNegativeButton("取消",null).setPositiveButton("搜索",(dialog,which)->{query=input.getText().toString().toLowerCase(Locale.ROOT);selectSection("歌曲");}).show();}
     private void clearCacheFiles(java.io.File folder){java.io.File[] files=folder.listFiles();if(files==null)return;for(java.io.File file:files){if(file.isDirectory())clearCacheFiles(file);file.delete();}}
     private void showCache(){
-        java.io.File folder=new java.io.File(getCacheDir(),"covers");java.io.File[] files=folder.listFiles();
+        java.io.File folder=LibraryCache.directory(this,"covers");java.io.File[] files=folder.listFiles((directory,name)->name.endsWith(".jpg"));
         if(files==null||files.length==0){new AlertDialog.Builder(this).setTitle("本地缓存").setMessage("暂无封面缓存。浏览音乐墙后会生成缩略图。").setPositiveButton("关闭",null).show();return;}
         String[] names=new String[files.length];for(int i=0;i<files.length;i++)names[i]=files[i].getName()+"  ·  "+(files[i].length()/1024)+" KB";
         new AlertDialog.Builder(this).setTitle("封面缓存 · "+files.length+" 个文件").setItems(names,(dialog,index)->{
@@ -250,43 +252,26 @@ public final class MainActivity extends Activity {
         home.setCardState(ids("favorites"),service.mode,(int)song.duration);
         now.setText((service.isPlaying()?"▶ ":"Ⅱ ")+song.title+" · "+song.artist+"  ♪ 歌词");home.setPlayback(song.id,song.title,service.isPlaying(),service.position(),(int)song.duration);loadPlayingLyrics(song);progress.setMax((int)Math.max(1,song.duration));if(!progress.isPressed())progress.setProgress(service.position());elapsed.setText(time(service.position())+" / "+time((int)song.duration));}
     private void invalidateLyricsLoad(){lyricsLoad.reset();}
-    private android.net.Uri findLyricSource(Song song){
-        // The scan owns the newest sidecar mapping; playback may still hold an older Song instance.
-        for(Song item:library)if((item.id==song.id||item.uri.equals(song.uri))&&item.lyricUri!=null)return item.lyricUri;
-        if(song.lyricUri!=null)return song.lyricUri;
-        for(Song item:library)if(item.lyricUri!=null&&item.title.equalsIgnoreCase(song.title)&&item.artist.equalsIgnoreCase(song.artist))return item.lyricUri;
-        return null;
-    }
+    private Song lyricSong(Song song){for(Song item:library)if(item.id==song.id||item.uri.equals(song.uri))return item;return song;}
     private void loadPlayingLyrics(Song song){
-        String manual=prefs.getString("lyrics_"+song.id,"");android.net.Uri source=findLyricSource(song);
-        String sourceKey=manual.isEmpty()?String.valueOf(source):"manual:"+manual;
+        Song resolved=lyricSong(song);String manual=prefs.getString("lyrics_"+song.id,"");
+        String sourceKey=resolved.artworkVersion+":"+resolved.lyricUri+":"+resolved.lyricsRaw.hashCode()+":"+manual;
         int generation=lyricsLoad.begin(song.id,sourceKey,android.os.SystemClock.uptimeMillis());if(generation==0)return;
-        if(!manual.isEmpty()){home.setLyrics(song.id,Lyrics.parse(manual));return;}
-        if(source==null){
-            boolean denied=song.lyricReadFailed;for(Song item:library)if(item.id==song.id||item.uri.equals(song.uri)){denied=item.lyricReadFailed;break;}
-            home.setLyrics(song.id,java.util.List.of());home.setLyricsStatus(song.id,scanning?"正在扫描并匹配歌词…":denied?"无法读取 lrc 文件夹，请重新选择音乐文件夹":"未匹配到歌词，请重新扫描音乐文件夹");return;
-        }
+        if(resolved.lyricsPrepared){displayPlayingLyrics(song.id,resolved,manual,generation);return;}
         home.setLyricsStatus(song.id,"正在加载歌词…");
-        new Thread(()->{List<Lyrics.Line> lines;String error=null;
-            try{lines=Lyrics.parse(Lyrics.read(this,source));if(lines.isEmpty())error="歌词文件内容为空或格式不支持";}
-            catch(Exception failure){lines=java.util.List.of();error="歌词读取失败，请检查文件夹权限";}
-            List<Lyrics.Line> result=lines;String message=error;
-            runOnUiThread(()->{
-                if(!lyricsLoad.current(generation)||isDestroyed())return;
-                // Do not discard a completed load merely because the playback service is reconnecting.
-                home.setLyrics(song.id,result);
-                if(message!=null){home.setLyricsStatus(song.id,message);lyricsLoad.fail(generation,android.os.SystemClock.uptimeMillis());}
-            });
-        },"load-lyrics").start();
+        new Thread(()->{LyricsRepository.prepareSong(getApplicationContext(),resolved);runOnUiThread(()->{if(lyricsLoad.current(generation)&&!isDestroyed())displayPlayingLyrics(song.id,resolved,manual,generation);});},"load-lyrics").start();
+    }
+    private void displayPlayingLyrics(long id,Song resolved,String manual,int generation){
+        String raw=LyricsRepository.select(resolved,manual);List<Lyrics.Line> lines=Lyrics.parse(raw);home.setLyrics(id,lines);
+        if(!lines.isEmpty())return;
+        String error=resolved.lyricsError;
+        home.setLyricsStatus(id,scanning?"正在扫描并匹配歌词…":error!=null?error:resolved.lyricReadFailed?"无法读取 lrc 文件夹，请重新选择音乐文件夹":"无内嵌歌词，且 lrc 中未找到同名文件");
+        if(error!=null){resolved.lyricsPrepared=false;lyricsLoad.fail(generation,android.os.SystemClock.uptimeMillis());}
     }
     private void showLyrics(){if(service!=null&&service.current()!=null)showLyricsFor(service.current());}
     private void showLyricsFor(Song song){
-        String manual=prefs.getString("lyrics_"+song.id,"");
-        android.net.Uri lyricUri=findLyricSource(song);
-        if(!manual.isEmpty()||lyricUri==null){displayLyrics(song,manual);return;}
-        android.net.Uri source=lyricUri;
-        new Thread(()->{String raw;try{raw=Lyrics.read(this,source);}catch(Exception ignored){raw="";}
-            String result=raw;runOnUiThread(()->{if(!isFinishing())displayLyrics(song,result);});}).start();
+        Song resolved=lyricSong(song);String manual=prefs.getString("lyrics_"+song.id,"");
+        new Thread(()->{LyricsRepository.prepareSong(getApplicationContext(),resolved);String raw=LyricsRepository.select(resolved,manual);runOnUiThread(()->{if(!isFinishing())displayLyrics(song,raw);});},"show-lyrics").start();
     }
     private void displayLyrics(Song song,String raw){
         List<Lyrics.Line> lines=Lyrics.parse(raw);

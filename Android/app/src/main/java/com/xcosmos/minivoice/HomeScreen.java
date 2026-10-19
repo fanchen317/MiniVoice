@@ -79,6 +79,7 @@ final class HomeScreen {
     private final EditText searchInput;
     private boolean drawerOpen = false;
     private boolean groupedWall;
+    private List<Song> visibleSongs=new ArrayList<>();
     private long displayedSongId = Long.MIN_VALUE;
     private final int green = Color.rgb(21, 188, 135);
     private final Handler main = new Handler();
@@ -357,16 +358,15 @@ final class HomeScreen {
     }
 
     void updateWall(List<Song> songs, boolean grouped) {
-        groupedWall = grouped;
+        groupedWall = grouped;visibleSongs=new ArrayList<>(songs);
         wall.setSongs(songs);
     }
 
-    private long requestedLocateId=Long.MIN_VALUE;
-    private final Runnable locateRequested=this::performRequestedLocate;
-    private void performRequestedLocate(){long id=requestedLocateId;requestedLocateId=Long.MIN_VALUE;if(id!=Long.MIN_VALUE)wall.locateSong(id);}
-    void locateSong(long songId) {
-        requestedLocateId=songId;wall.removeCallbacks(locateRequested);wall.post(locateRequested);
+    void ensureSongVisible(Song song){
+        if(!groupedWall)for(Song visible:visibleSongs)if(visible.id==song.id)return;
+        List<Song> revealed=groupedWall?new ArrayList<>():new ArrayList<>(visibleSongs);revealed.add(song);updateWall(revealed,false);
     }
+    void locateSong(long songId) {wall.locateSong(songId);}
 
     void clearSearch() {searchControl.clearQuery();}
     boolean closeSearch(){if(!searchControl.isOpen())return false;searchControl.setOpen(false,true);return true;}

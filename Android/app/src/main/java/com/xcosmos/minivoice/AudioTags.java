@@ -12,8 +12,9 @@ import java.util.Arrays;
 
 /** Bounded fallback for ID3 text tags that device media providers often omit. */
 final class AudioTags {
-    String title,artist,album;
+    String title,artist,album,lyrics;
     byte[] picture;
+    boolean lyricsChecked;
     static AudioTags read(Context context,Uri uri,boolean artwork){
         try(InputStream input=context.getContentResolver().openInputStream(uri)){return read(input,artwork);}
         catch(Exception ignored){return new AudioTags();}
@@ -23,8 +24,11 @@ final class AudioTags {
         try{
             if(input==null)return tags;
             DataInputStream stream=new DataInputStream(input);byte[] header=new byte[10];stream.readFully(header);
+            if(header[0]=='f'&&header[1]=='L'&&header[2]=='a'&&header[3]=='C'){
+                tags.lyricsChecked=true;readFlac(new DataInputStream(new java.io.SequenceInputStream(new java.io.ByteArrayInputStream(header,4,6),stream)),tags);return tags;
+            }
             if(header[0]!='I'||header[1]!='D'||header[2]!='3')return tags;
-            int version=header[3];if(version<2||version>4)return tags;
+            tags.lyricsChecked=true;int version=header[3];if(version<2||version>4)return tags;
             int size=synchsafe(header,6);if(size<=0||size>16*1024*1024)return tags;
             byte[] data=new byte[size];stream.readFully(data);
             if((header[5]&128)!=0&&version<4)data=unsync(data);
@@ -42,6 +46,11 @@ final class AudioTags {
                 if(id.equals("TIT2")||id.equals("TT2"))tags.title=text(frame);
                 if(id.equals("TPE1")||id.equals("TP1"))tags.artist=text(frame);
                 if(id.equals("TALB")||id.equals("TAL"))tags.album=text(frame);
+                if(id.equals("USLT")||id.equals("ULT")){
+                    int index=4,step=frame.length>0&&(frame[0]==1||frame[0]==2)?2:1;
+                    while(index+step<=frame.length){boolean end=frame[index]==0&&(step==1||frame[index+1]==0);index+=step;if(end)break;}
+                    if(index<frame.length){byte[] body=new byte[frame.length-index+1];body[0]=frame[0];System.arraycopy(frame,index,body,1,frame.length-index);tags.lyrics=text(body);}
+                }
                 if(artwork&&(id.equals("APIC")||id.equals("PIC"))&&tags.picture==null){
                     int index=id.equals("PIC")?4:1;
                     if(id.equals("APIC")){while(index<frame.length&&frame[index]!=0)index++;index++;}
@@ -54,6 +63,19 @@ final class AudioTags {
             }
         }catch(Exception ignored){}
         return tags;
+    }
+    private static void readFlac(DataInputStream stream,AudioTags tags)throws Exception{
+        int consumed=0;
+        while(consumed<32*1024*1024){int header=stream.readUnsignedByte(),length=(stream.readUnsignedByte()<<16)|(stream.readUnsignedByte()<<8)|stream.readUnsignedByte();consumed+=length+4;
+            if(length>16*1024*1024)return;
+            if((header&127)==4){byte[] data=new byte[length];stream.readFully(data);ByteBuffer comments=ByteBuffer.wrap(data).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+                int vendor=comments.getInt();if(vendor<0||vendor>comments.remaining()-4)return;comments.position(comments.position()+vendor);int count=comments.getInt();
+                for(int i=0;i<count&&comments.remaining()>=4;i++){int size=comments.getInt();if(size<0||size>comments.remaining())break;byte[] entry=new byte[size];comments.get(entry);String value=new String(entry,StandardCharsets.UTF_8);int split=value.indexOf('=');if(split<0)continue;String key=value.substring(0,split).toUpperCase(java.util.Locale.ROOT),body=value.substring(split+1);
+                    switch(key){case "TITLE":tags.title=body;break;case "ARTIST":tags.artist=body;break;case "ALBUM":tags.album=body;break;case "LYRICS":case "UNSYNCEDLYRICS":case "LYRIC":tags.lyrics=body;break;}
+                }
+            }else{int remaining=length;while(remaining>0){int skipped=(int)stream.skip(remaining);if(skipped==0){if(stream.read()==-1)return;skipped=1;}remaining-=skipped;}}
+            if((header&128)!=0)return;
+        }
     }
     private static int integer(byte[] bytes,int i){return ByteBuffer.wrap(bytes,i,4).getInt();}
     private static int synchsafe(byte[] b,int i){return ((b[i]&127)<<21)|((b[i+1]&127)<<14)|((b[i+2]&127)<<7)|(b[i+3]&127);}

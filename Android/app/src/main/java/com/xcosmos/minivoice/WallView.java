@@ -102,7 +102,7 @@ final class WallView extends View {
             // Keep the visible focused repeat. Re-selecting a periodic copy can shift the wall again.
             if(focus!=null&&focus.tile.index==i){RectF visible=frame(focus);if(visible.right>0&&visible.left<getWidth()&&visible.bottom>safeTop&&visible.top<getHeight()-safeBottom)target=focus;}
             if(target==null)target=nearestRendered(i);
-            if(target!=null)focus(target);return;
+            if(target!=null)focusDirectly(target);return;
         }
     }
     private float anchorY(){return (safeTop+80*density+getHeight()-safeBottom-112*density)/2;}
@@ -205,6 +205,17 @@ final class WallView extends View {
         return preview;
     }
     private Hit hit(float x,float y){for(int i=hits.size()-1;i>=0;i--)if(hits.get(i).bounds.contains(x,y))return hits.get(i);return null;}
+    private void focusDirectly(WallLayout.Instance instance){
+        if(focus!=null&&same(instance,focus)&&focusAmount>=.9999f){
+            WallReflow.Frame target=reflowTo.apply(baseFrame(instance));float x=getWidth()/2f-target.centerX()*scale,y=anchorY()-target.centerY()*scale;
+            if(Math.abs(cameraX-x)<=density&&Math.abs(cameraY-y)<=density)return;
+            cancelMotion();cameraX=x;cameraY=y;invalidate();return;
+        }
+        cancelMotion();focus=instance;focusAmount=1;
+        float side=Math.max(180*density,Math.min(520*density,Math.min(getWidth()-24*density,getHeight()-safeTop-safeBottom-180*density)))/scale;
+        reflowFrom=reflowTo=WallReflow.focused(baseFrame(instance),side,5*density);
+        WallReflow.Frame target=reflowTo.apply(baseFrame(instance));cameraX=getWidth()/2f-target.centerX()*scale;cameraY=anchorY()-target.centerY()*scale;cameraReady=true;invalidate();
+    }
     private void focus(WallLayout.Instance instance){
         if(focus!=null&&same(instance,focus)){
             WallReflow.Frame target=reflowTo.apply(baseFrame(instance));

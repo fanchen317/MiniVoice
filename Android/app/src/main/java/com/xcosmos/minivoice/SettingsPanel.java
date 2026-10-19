@@ -87,7 +87,7 @@ final class SettingsPanel {
         scanDetail=text("",13,0xFF555555);scanDetail.setPadding(dp(14),dp(8),dp(14),dp(8));scanDetail.setMaxLines(3);scanDetail.setEllipsize(android.text.TextUtils.TruncateAt.END);scanCard.addView(scanDetail,new LinearLayout.LayoutParams(-1,-2));
         scanBar=new android.widget.ProgressBar(activity,null,android.R.attr.progressBarStyleHorizontal);scanBar.setProgressTintList(android.content.res.ColorStateList.valueOf(green));scanCard.addView(scanBar,new LinearLayout.LayoutParams(-1,dp(8)));updateProgress();
         section("缓存");LinearLayout cacheCard=card();
-        cacheCard.addView(padded("本地缓存文件夹",16,0xFF242424));cacheCard.addView(padded(activity.getCacheDir().getAbsolutePath(),12,0xFF888888));
+        cacheCard.addView(padded("本地缓存文件夹",16,0xFF242424));cacheCard.addView(padded(LibraryCache.root(activity).getAbsolutePath(),12,0xFF888888));
         LinearLayout cacheActions=new LinearLayout(activity);cacheActions.setPadding(dp(12),dp(8),dp(12),dp(12));cacheCard.addView(cacheActions);
         Button open=outlined("查看缓存",actions::viewCache);cacheActions.addView(open,new LinearLayout.LayoutParams(0,dp(44),1));
         Button clear=outlined("清理缓存",actions::clearCache);LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(0,dp(44),1);cp.setMargins(dp(8),0,0,0);cacheActions.addView(clear,cp);

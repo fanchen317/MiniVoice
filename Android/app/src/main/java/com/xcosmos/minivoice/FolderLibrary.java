@@ -37,7 +37,6 @@ final class FolderLibrary {
         Map<String,Uri> lyrics=new HashMap<>(),artworks=new HashMap<>();
         for(Entry entry:entries){String lower=entry.name==null?"":entry.name.toLowerCase(Locale.ROOT);
             Uri item=DocumentsContract.buildDocumentUriUsingTree(tree,entry.id);
-            if(lower.endsWith(".lrc")){lyrics.put(key(entry.name),item);rootLyrics.add(entry.name,item);}
             if(lower.matches(".*\\.(jpg|jpeg|png|webp)$"))artworks.put(lower.replaceFirst("\\.[^.]+$", ""),item);
         }
         for(Entry entry:entries)if(DocumentsContract.Document.MIME_TYPE_DIR.equals(entry.mime)&&"lrc".equalsIgnoreCase(entry.name)){
@@ -69,14 +68,14 @@ final class FolderLibrary {
                         duration=number(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION));
                     }catch(Exception ignored){}finally{try{retriever.release();}catch(Exception ignored){}}
                     long stableId=-(Integer.toUnsignedLong(uri.toString().hashCode())+1);
-                    Uri lyric=lyrics.get(key(name));if(lyric==null)lyric=lyrics.get(key(title));if(lyric==null)lyric=rootLyrics.find(name,title,artist);
+                    Uri lyric=lyrics.get(key(name));if(lyric==null)lyric=rootLyrics.find(name,title,artist);
                     Song song=new Song(stableId,duration,0,title,artist,album,name,uri,lyric);
                     song.artworkUri=artworks.get(strip(name).toLowerCase(Locale.ROOT));
                     if(song.artworkUri==null)for(String cover:new String[]{"cover","folder","front","album"}){song.artworkUri=artworks.get(cover);if(song.artworkUri!=null)break;}
                     song.lyricReadFailed=rootLyrics.readFailed;
                     song.artworkVersion=entry.version;
                     if(song.artworkUri!=null)for(Entry image:entries)if(song.artworkUri.equals(DocumentsContract.buildDocumentUriUsingTree(tree,image.id))){song.artworkVersion+="/"+image.version;break;}
-                    songs.add(song);
+                    song.embeddedLyrics=tags.lyrics;song.embeddedLyricsChecked=tags.lyricsChecked;songs.add(song);
                     progress.update(songs.size(),jobs.size(),name);
                 });
         }

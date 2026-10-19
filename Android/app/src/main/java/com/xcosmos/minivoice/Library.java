@@ -34,7 +34,7 @@ final class Library {
                 Song song=new Song(id,duration,albumId,title,artist,
                     album,clean(cursor.getString(6)),
                     ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,id));
-                song.artworkVersion=cursor.getLong(8)+":"+cursor.getLong(9);songs.add(song);
+                song.artworkVersion=cursor.getLong(8)+":"+cursor.getLong(9);song.embeddedLyrics=tags.lyrics;song.embeddedLyricsChecked=tags.lyricsChecked;songs.add(song);
             }
         }
         songs.sort((a,b)->a.title.compareToIgnoreCase(b.title));
