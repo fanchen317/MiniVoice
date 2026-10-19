@@ -23,9 +23,8 @@ struct TimedCharacter {
     let start: Double
     let end: Double
 }
-func normalize(_ text: String) -> [Character] {
-    let transformed = text.applyingTransform(StringTransform("Traditional-Simplified"), reverse: false) ?? text
-    return Array(transformed.lowercased().filter { $0.unicodeScalars.contains { CharacterSet.alphanumerics.contains($0) } })
+func normalize(_ text: String, language: String = "auto") -> [Character] {
+    LyricLanguage.normalized(text,language:language)
 }
 func execute(_ binary: String, _ arguments: [String], log: URL) throws {
     let process = Process()
@@ -40,22 +39,46 @@ func execute(_ binary: String, _ arguments: [String], log: URL) throws {
     process.waitUntilExit()
     guard process.terminationStatus == 0 else { throw NSError(domain: "LyricsLite", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey:"推理失败，见 \(log.path)"]) }
 }
-func readCharacters(_ url: URL) throws -> [TimedCharacter] {
+func readCharacters(_ url: URL, language: String) throws -> [TimedCharacter] {
     let json=try JSONSerialization.jsonObject(with:Data(contentsOf:url)) as! [String:Any]
-    var characters=[TimedCharacter]()
+    var chunks=[(String,Double,Double)]()
     for segment in json["transcription"] as? [[String:Any]] ?? [] {
         for token in segment["tokens"] as? [[String:Any]] ?? [] {
             let text=token["text"] as? String ?? ""
             guard !text.hasPrefix("[_"), !text.hasPrefix("[<"), let times=token["offsets"] as? [String:Any],
                   let start=times["from"] as? Double, let end=times["to"] as? Double,
                   start>=0,end>start else { continue }
-            for c in normalize(text) { characters.append(TimedCharacter(value:c,start:start/1000,end:end/1000)) }
+            chunks.append((text,start/1000,end/1000))
         }
+    }
+    return charactersFromChunks(chunks,language:language)
+}
+func charactersFromChunks(_ chunks: [(String,Double,Double)], language: String) -> [TimedCharacter] {
+    // Model tokens can split a combining vowel or Hangul syllable. Reassemble
+    // complete Unicode graphemes before matching instead of dropping marks.
+    let text=chunks.map { $0.0 }.joined()
+    var ranges=[(Range<Int>,Double,Double)](),position=0
+    for (chunk,start,end) in chunks {
+        let next=position+chunk.utf8.count
+        ranges.append((position..<next,start,end));position=next
+    }
+    var characters=[TimedCharacter](),offset=0,cursor=0
+    for glyph in text {
+        let next=offset+String(glyph).utf8.count
+        while cursor<ranges.count && ranges[cursor].0.upperBound<=offset { cursor+=1 }
+        var covering=[(Double,Double)](),index=cursor
+        while index<ranges.count && ranges[index].0.lowerBound<next {
+            covering.append((ranges[index].1,ranges[index].2));index+=1
+        }
+        if let start=covering.map(\.0).min(),let end=covering.map(\.1).max() {
+            for value in normalize(String(glyph),language:language) { characters.append(TimedCharacter(value:value,start:start,end:end)) }
+        }
+        offset=next
     }
     return characters
 }
-func match(lines: [String], characters: [TimedCharacter], duration: Double, seedsOnly: Bool = false) -> [Aligned] {
-    let normalized = lines.map(normalize)
+func match(lines: [String], characters: [TimedCharacter], duration: Double, seedsOnly: Bool = false, language: String = "auto") -> [Aligned] {
+    let normalized = lines.map { normalize($0,language:language) }
     let reference = normalized.flatMap { $0 }
     let n = reference.count, m = characters.count
     guard n > 0, m > 0, n <= 15000, m <= 15000 else {
@@ -124,13 +147,35 @@ do {
         try check(missing[0].start==nil,"Unmatched lyric received fabricated timing")
         let separated = [TimedCharacter(value:"你",start:1,end:2),TimedCharacter(value:"好",start:10,end:11)]
         try check(match(lines:["你好"],characters:separated,duration:20)[0].start==nil,"Large timing gap was accepted")
-        try check(normalize("愛，Hello！")==normalize("爱 hello"),"Normalization failed")
+        try check(normalize("愛，Hello！",language:"zh")==normalize("爱 hello",language:"zh"),"Normalization failed")
         try check(match(lines:["你好"],characters:[],duration:20)[0].start==nil,"Empty ASR was accepted")
-        print("5 LyricsLite matching regression checks passed")
+        try check(normalize("愛",language:"ja") != normalize("爱",language:"ja"),"Japanese kanji was rewritten")
+        try check(normalize("ﾊﾞﾀﾌﾗｲ",language:"ja")==normalize("バタフライ",language:"ja"),"Half-width kana mismatch")
+        try check(normalize("cafe\u{301}",language:"fr")==normalize("café",language:"fr"),"Canonical accents mismatch")
+        try check(normalize("é",language:"fr") != normalize("e",language:"fr"),"Accents were erased")
+        try check(normalize("한",language:"ko")==normalize("한",language:"ko"),"Hangul composition mismatch")
+        try check(normalize("ﻻ",language:"ar")==normalize("لا",language:"ar"),"Arabic presentation mismatch")
+        try check(normalize("क",language:"hi") != normalize("कि",language:"hi"),"Indic vowel signs were erased")
+        try check(LyricLanguage.windowLanguage("君の愛を信じて",fallback:"zh")=="ja","Japanese routing failed")
+        try check(LyricLanguage.windowLanguage("너의 사랑을 기억해",fallback:"en")=="ko","Korean routing failed")
+        let hindi=charactersFromChunks([("क",1,2),("ि",2,3)],language:"hi")
+        try check(hindi.count==1 && hindi[0].value=="कि" && hindi[0].start==1 && hindi[0].end==3,"Split vowel token lost its mark")
+        let french=charactersFromChunks([("e",1,2),("\u{301}",2,3)],language:"fr")
+        try check(french.count==1 && french[0].value=="é","Split accent token was erased")
+        try check(LyricLanguage.code("zh-Hant-TW")=="zh","Chinese locale alias failed")
+        try check(LyricLanguage.code("ko_KR")=="ko","Korean locale alias failed")
+        try check(LyricLanguage.code("fr-CA")=="fr","French locale alias failed")
+        try check(LyricLanguage.code(" AUTO ")=="auto","Auto language alias failed")
+        print("20 LyricsLite matching/language regression checks passed")
         exit(0)
     }
     guard CommandLine.arguments.count == 3 else { throw NSError(domain:"LyricsLite",code:1,userInfo:[NSLocalizedDescriptionKey:"Usage: lyrics-lite request.json output.json"]) }
     let request = try JSONDecoder().decode(Request.self,from:Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[1])))
+    guard request.duration.isFinite, request.duration>0, !request.lines.isEmpty,
+          request.lines.count<=2000,
+          request.lines.reduce(0,{ $0+$1.utf8.count })<=100_000 else {
+        throw NSError(domain:"LyricsLite",code:2,userInfo:[NSLocalizedDescriptionKey:"Invalid duration or lyrics size"])
+    }
     let output = URL(fileURLWithPath:CommandLine.arguments[2])
     let work = output.deletingLastPathComponent().appendingPathComponent("lite-"+UUID().uuidString)
     try FileManager.default.createDirectory(at:work,withIntermediateDirectories:true)
@@ -138,56 +183,91 @@ do {
     FileManager.default.createFile(atPath:log.path,contents:Data())
     let began=Date()
     try execute(request.ffmpegPath,["-nostdin","-v","error","-y","-i",request.audioPath,"-map","0:a:0","-vn","-ar","16000","-ac","1","-c:a","pcm_s16le",wav.path],log:log)
-    var arguments=["-m",request.modelPath,"-f",wav.path,"-l",request.language,"-t","4","-ojf","-of",prefix.path,"-dtw","small","-np"]
+    // Known lyrics provide a high-confidence text-language hint. This avoids
+    // brief recordings being misdetected as an unrelated acoustic language.
+    let requestedLanguage=LyricLanguage.code(request.language)
+    let inputLanguage=requestedLanguage=="auto" ? LyricLanguage.windowLanguage(request.lines.joined(separator:" "),fallback:"auto") : requestedLanguage
+    var arguments=["-m",request.modelPath,"-f",wav.path,"-l",inputLanguage,"-t","4","-ojf","-of",prefix.path,"-dtw","small","-np"]
     if request.useLyricsPrompt == true { arguments += ["--prompt",request.lines.joined(separator:" "),"--carry-initial-prompt"] }
     try execute(request.cliPath,arguments,log:log)
-    let characters=try readCharacters(prefix.appendingPathExtension("json"))
-    var aligned=match(lines:request.lines,characters:characters,duration:request.duration)
+    let transcript=try JSONSerialization.jsonObject(with:Data(contentsOf:prefix.appendingPathExtension("json"))) as! [String:Any]
+    let detected=(transcript["result"] as? [String:Any])?["language"] as? String
+    let language=inputLanguage=="auto" ? (detected ?? "en") : inputLanguage
+    let characters=try readCharacters(prefix.appendingPathExtension("json"),language:language)
+    var diagnostics:[String:Any]=["requestedLanguage":request.language,"inputLanguage":inputLanguage,"modelLanguage":detected ?? "unknown","matchingLanguage":language,"mode":request.forceAlignerPath==nil ? "asr" : "forced"]
+    var aligned=match(lines:request.lines,characters:characters,duration:request.duration,language:language)
     if let forcePath=request.forceAlignerPath {
         let independent=work.appendingPathComponent("independent")
-        try execute(request.cliPath,["-m",request.modelPath,"-f",wav.path,"-l",request.language,"-t","4","-ojf","-of",independent.path,"-dtw","small","-np"],log:log)
-        let evidence=match(lines:request.lines,characters:try readCharacters(independent.appendingPathExtension("json")),duration:request.duration,seedsOnly:true)
+        try execute(request.cliPath,["-m",request.modelPath,"-f",wav.path,"-l",language,"-t","4","-ojf","-of",independent.path,"-dtw","small","-np"],log:log)
+        let evidence=match(lines:request.lines,characters:try readCharacters(independent.appendingPathExtension("json"),language:language),duration:request.duration,seedsOnly:true,language:language)
         let raw=work.appendingPathComponent("audio.f32")
         try execute(request.ffmpegPath,["-nostdin","-v","error","-y","-i",wav.path,"-f","f32le",raw.path],log:log)
-        let seeds=match(lines:request.lines,characters:characters,duration:request.duration,seedsOnly:true)
+        let decodedSeconds=Double(try Data(contentsOf:raw).count)/64000
+        guard abs(decodedSeconds-request.duration)<=max(1,request.duration*0.01) else {
+            throw NSError(domain:"LyricsLite",code:3,userInfo:[NSLocalizedDescriptionKey:"Decoded audio duration differs from request; refusing partial alignment"])
+        }
+        let seeds=match(lines:request.lines,characters:characters,duration:request.duration,seedsOnly:true,language:language)
+        let lineLanguages=request.lines.map { LyricLanguage.windowLanguage($0,fallback:language) }
         var windows=[[String:Any]]()
-        func addWindow(_ range: Range<Int>) {
+        var windowKeys=Set<String>()
+        func addWindow(_ range: Range<Int>,padding:Double=4) {
             let starts=range.compactMap { seeds[$0].start }, ends=range.compactMap { seeds[$0].end }
             guard let earliest=starts.min(), let latest=ends.max() else { return }
-            let left=max(0,earliest-4), right=min(request.duration,latest+4)
+            let left=max(0,earliest-padding), right=min(request.duration,latest+padding)
             if right-left>29.5 && range.count>1 {
-                for i in range { addWindow(i..<(i+1)) }
+                for i in range { addWindow(i..<(i+1),padding:padding) }
             } else if right>left && right-left<=29.5 {
-                windows.append(["start":left,"end":right,"firstIndex":range.lowerBound,"lines":range.map { request.lines[$0] }])
+                let windowLanguage=LyricLanguage.windowLanguage(range.map { request.lines[$0] }.joined(separator:" "),fallback:language)
+                let key="\(range.lowerBound):\(range.upperBound):\(left):\(right):\(windowLanguage)"
+                guard windowKeys.insert(key).inserted else { return }
+                windows.append(["start":left,"end":right,"language":windowLanguage,"context":"\(range.lowerBound):\(range.upperBound)","firstIndex":range.lowerBound,"lines":range.map { request.lines[$0] }])
             }
         }
         // Re-align overlapping contexts: a line at a crop boundary must agree
         // with the same line inside neighbouring acoustic windows.
-        for first in 0..<request.lines.count { addWindow(first..<min(first+3,request.lines.count)) }
-        if request.lines.count>=3 { addWindow(0..<1); addWindow(0..<2) }
+        for first in 0..<request.lines.count {
+            var end=first+1
+            while end<min(first+3,request.lines.count) && lineLanguages[end]==lineLanguages[first] { end+=1 }
+            addWindow(first..<end)
+            // Keep mixed-language contexts as well as homogeneous ones. A hard
+            // language boundary otherwise removes evidence around code switches.
+            addWindow(first..<min(first+3,request.lines.count))
+        }
+        if request.lines.count>=3 {
+            addWindow(0..<1)
+            if lineLanguages[0]==lineLanguages[1] { addWindow(0..<2) }
+        }
         let forcedRequest=work.appendingPathComponent("forced-request.json"), forcedOutput=work.appendingPathComponent("forced-output.json")
-        try JSONSerialization.data(withJSONObject:["pcmPath":raw.path,"modelPath":request.modelPath,"language":request.language,"windows":windows],options:.prettyPrinted).write(to:forcedRequest)
+        diagnostics["windowsByLanguage"]=Dictionary(grouping:windows,by: { $0["language"] as? String ?? language }).mapValues(\.count)
+        try JSONSerialization.data(withJSONObject:["pcmPath":raw.path,"modelPath":request.modelPath,"language":language,"windows":windows],options:.prettyPrinted).write(to:forcedRequest)
         try execute(forcePath,[forcedRequest.path,forcedOutput.path],log:log)
         let rows=try JSONSerialization.jsonObject(with:Data(contentsOf:forcedOutput)) as! [[String:Any]]
         aligned=request.lines.map { Aligned(text:$0,start:nil,end:nil,confidence:0) }
-        var candidates=[Int:[(Double,Double,Double)]]()
+        var candidates=[Int:[(Double,Double,Double,String)]]()
         for row in rows {
             guard let i=row["index"] as? Int, aligned.indices.contains(i) else { continue }
             let score=row["confidence"] as? Double ?? 0
-            if let start=row["start"] as? Double,let end=row["end"] as? Double, start>=0, end>start, end<=request.duration {
-                candidates[i,default:[]].append((start,end,score))
+            if let start=row["start"] as? Double,let end=row["end"] as? Double, start.isFinite, end.isFinite, score.isFinite, score>=0, score<=1, start>=0, end>start, end<=request.duration {
+                candidates[i,default:[]].append((start,end,score,row["context"] as? String ?? "unknown"))
             }
         }
         var lastStart = -1.0
         for i in aligned.indices {
             let values=(candidates[i] ?? []).sorted { $0.0 < $1.0 }
             guard !values.isEmpty else { continue }
+            guard evidence[i].confidence>=0.3,let supportedStart=evidence[i].start,let supportedEnd=evidence[i].end else { continue }
             let clusters=values.map { center in values.filter { abs($0.0-center.0)<=0.65 } }
-            let cluster=clusters.max { $0.count < $1.count } ?? []
-            guard cluster.count>=2, evidence[i].confidence>=0.3,
-                  let supportedStart=evidence[i].start, let supportedEnd=evidence[i].end else { continue }
+            let cluster=clusters.max {
+                let a=Set($0.map(\.3)).count,b=Set($1.map(\.3)).count
+                if a != b { return a<b }
+                return abs($0[$0.count/2].0-supportedStart)>abs($1[$1.count/2].0-supportedStart)
+            } ?? []
+            guard Set(cluster.map(\.3)).count>=2 else { continue }
             let middle=cluster[cluster.count/2]
-            if middle.0>lastStart && middle.0>=supportedStart-6 && middle.0<=supportedEnd+2 {
+            // Token probabilities vary by script/tokenization. A low-probability
+            // candidate needs much stronger independent acoustic corroboration.
+            let acousticSupport=middle.2>=0.05 || (middle.2>=0.005 && evidence[i].confidence>=0.8 && abs(middle.0-supportedStart)<=0.75)
+            if acousticSupport && middle.0>lastStart && middle.0>=supportedStart-2 && middle.0<=supportedEnd+2 {
                 aligned[i]=Aligned(text:request.lines[i],start:middle.0,end:middle.1,confidence:middle.2)
                 lastStart=middle.0
             }
@@ -195,6 +275,8 @@ do {
     }
     try JSONEncoder().encode(aligned).write(to:output,options:.atomic)
     let matched=aligned.filter { $0.start != nil }.count
+    diagnostics["matched"]=matched;diagnostics["lines"]=aligned.count
+    try JSONSerialization.data(withJSONObject:diagnostics,options:[.prettyPrinted,.sortedKeys]).write(to:output.deletingPathExtension().appendingPathExtension("diagnostics.json"),options:.atomic)
     print("LyricsLite: \(matched)/\(aligned.count) lines, \(String(format:"%.2f",Date().timeIntervalSince(began))) seconds; artifacts: \(work.path)")
 } catch {
     fputs("\(error.localizedDescription)\n",stderr)

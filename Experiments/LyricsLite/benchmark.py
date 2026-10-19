@@ -10,7 +10,7 @@ import statistics
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-WORK = ROOT / ('.build/lyrics-lite/full-benchmark' if '--full' in sys.argv else '.build/lyrics-lite/benchmark')
+WORK = Path(os.environ.get('MINIVOICE_LITE_BENCHMARK_DIR',str(ROOT / ('.build/lyrics-lite/full-benchmark' if '--full' in sys.argv else '.build/lyrics-lite/benchmark'))))
 WORK.mkdir(parents=True, exist_ok=True)
 MUSIC = Path(os.environ.get('MINIVOICE_LITE_MUSIC', str(Path.home()/'Downloads/01通用格式歌曲(完整)')))
 FFMPEG = shutil.which('ffmpeg')

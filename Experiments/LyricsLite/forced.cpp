@@ -33,8 +33,12 @@ int main(int argc,char **argv) {
         json req;std::ifstream(argv[1])>>req;
         std::ifstream input(req.at("pcmPath").get<std::string>(),std::ios::binary|std::ios::ate);
         if(!input) throw std::runtime_error("Missing PCM input");
-        size_t bytes=input.tellg();input.seekg(0);
+        auto length=input.tellg();
+        if(length<=0 || length%sizeof(float)!=0) throw std::runtime_error("Invalid or truncated PCM input");
+        size_t bytes=size_t(length);input.seekg(0);
         std::vector<float> pcm(bytes/sizeof(float));input.read(reinterpret_cast<char *>(pcm.data()),bytes);
+        if(!input || !std::all_of(pcm.begin(),pcm.end(),[](float x){return std::isfinite(x);}))
+            throw std::runtime_error("Unreadable or non-finite PCM samples");
         auto contextParams=whisper_context_default_params();
         contextParams.use_gpu=true;contextParams.flash_attn=false;
         contextParams.dtw_token_timestamps=true;
@@ -45,8 +49,12 @@ int main(int argc,char **argv) {
         json output=json::array();
         auto language=req.at("language").get<std::string>();
         for(auto &window:req.at("windows")) {
+            auto windowLanguage=window.value("language",language);
+            int languageID=whisper_lang_id(windowLanguage.c_str());
+            if(languageID<0 || whisper_token_lang(ctx,languageID)>=whisper_token_translate(ctx))
+                throw std::runtime_error("Window language unsupported by this model: "+windowLanguage);
             double left=window.at("start"),right=window.at("end");
-            if(left<0 || right<=left || right-left>29.5 || right*16000>pcm.size()+16)
+            if(!std::isfinite(left) || !std::isfinite(right) || left<0 || right<=left || right-left>29.5 || right*16000>pcm.size()+16)
                 throw std::runtime_error("Invalid acoustic window");
             Forced forced;
             std::vector<int> lineForToken;
@@ -60,7 +68,7 @@ int main(int argc,char **argv) {
             }
             if(forced.tokens.size()>200) throw std::runtime_error("Window text too long");
             auto params=whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
-            params.n_threads=4;params.language=language.c_str();
+            params.n_threads=4;params.language=windowLanguage.c_str();
             params.no_context=true;params.no_timestamps=true;params.single_segment=true;
             params.token_timestamps=true;params.print_progress=false;params.print_realtime=false;
             params.print_timestamps=false;params.suppress_blank=false;
@@ -72,7 +80,7 @@ int main(int argc,char **argv) {
             double energy=0;
             for(int k=begin;k<begin+size;k++) energy+=double(pcm[k])*pcm[k];
             if(energy/std::max(1,size)<1e-10) {
-                for(size_t line=0;line<lines.size();line++) output.push_back({{"index",int(window.at("firstIndex"))+int(line)},{"start",nullptr},{"end",nullptr},{"confidence",0}});
+                for(size_t line=0;line<lines.size();line++) output.push_back({{"index",int(window.at("firstIndex"))+int(line)},{"context",window.value("context",std::string("unknown"))},{"start",nullptr},{"end",nullptr},{"confidence",0}});
                 continue;
             }
             if(whisper_full(ctx,params,pcm.data()+begin,size)!=0) throw std::runtime_error("Forced decoding failed");
@@ -99,8 +107,11 @@ int main(int argc,char **argv) {
             for(size_t line=0;line<lines.size();line++) {
                 double confidence=counts[line] ? std::exp(sums[line]/counts[line]) : 0;
                 // Low-likelihood forced text must not be treated as an actual match.
-                bool valid=starts[line]>=left && ends[line]>starts[line] && confidence>=0.05;
+                // Return weak candidates for the language-independent evidence
+                // gate in Swift, rather than imposing an English-biased cutoff.
+                bool valid=pos==forced.tokens.size() && counts[line]>0 && std::isfinite(confidence) && starts[line]>=left && ends[line]>starts[line] && confidence>=0.005;
                 output.push_back({{"index",int(window.at("firstIndex"))+int(line)},
+                    {"context",window.value("context",std::string("unknown"))},
                     {"start",valid?json(starts[line]):json(nullptr)},
                     {"end",valid?json(std::min(right,ends[line]+0.1)):json(nullptr)},
                     {"confidence",confidence}});

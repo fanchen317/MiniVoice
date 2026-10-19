@@ -16,7 +16,7 @@ CMAKE="${CMAKE_BIN:-$ROOT/.build/lyrics-lite-tools/bin/cmake}"
 "$CMAKE" -S "$SOURCE" -B "$DEST/build" -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DGGML_METAL=ON -DGGML_NATIVE=OFF
 "$CMAKE" --build "$DEST/build" --config Release --target whisper-cli -j 4
 mkdir -p "$DEST/bin" "$DEST/package/bin" "$DEST/package/models"
-swiftc -O "$ROOT/Experiments/LyricsLite/main.swift" -o "$DEST/bin/lyrics-lite"
+swiftc -O "$ROOT/Experiments/LyricsLite/main.swift" "$ROOT/Experiments/LyricsLite/LanguageSupport.swift" -o "$DEST/bin/lyrics-lite"
 clang++ -std=c++17 -O3 -Wno-deprecated-literal-operator \
   "$ROOT/Experiments/LyricsLite/forced.cpp" \
   -I"$SOURCE/include" -I"$SOURCE/ggml/include" -I"$SOURCE/examples" \
