@@ -11,6 +11,7 @@ let package = Package(
             name: "MiniVoice",
             dependencies: [.product(name: "Yams", package: "Yams")],
             path: "Sources/MiniVoice",
+            exclude: ["Resources/__pycache__"],
             resources: [.copy("Resources/align_lyrics.py")],
             linkerSettings: [
                 .linkedFramework("SwiftUI"),

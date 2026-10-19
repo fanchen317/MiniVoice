@@ -1,2 +1,4 @@
 Vendor/LyricsAI/arm64/*.tar.gz filter=lfs diff=lfs merge=lfs -text
 Vendor/LyricsAI/arm64/*.pt filter=lfs diff=lfs merge=lfs -text
+Vendor/Electron/arm64/*.zip filter=lfs diff=lfs merge=lfs -text
+Vendor/NodeDependencies/*.tar.gz filter=lfs diff=lfs merge=lfs -text

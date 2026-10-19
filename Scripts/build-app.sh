@@ -3,12 +3,27 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIGURATION="${1:-release}"
 source "$ROOT/Scripts/desktop-common.sh"
+# The ZIP extraction dependency can exit with unfinished streams on Node 26.
+# Prefer an installed LTS runtime for this build without changing the user's shell.
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
+if [[ "$NODE_MAJOR" -ge 26 || "$NODE_MAJOR" -lt 20 ]]; then
+  for NODE_CANDIDATE in "${NVM_DIR:-$HOME/.nvm}"/versions/node/v{24,22,20}.*/bin/node; do
+    if [[ -x "$NODE_CANDIDATE" ]]; then
+      export PATH="$(dirname "$NODE_CANDIDATE"):$PATH"
+      echo "==> 构建使用 Node $(node --version) LTS（避免当前 Node $NODE_MAJOR 的打包兼容问题）"
+      break
+    fi
+  done
+  NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
+  if [[ "$NODE_MAJOR" -ge 26 || "$NODE_MAJOR" -lt 20 ]]; then
+    echo 'error: 请安装 Node 20/22/24 LTS 后再构建；当前 Node 版本与打包工具不兼容' >&2
+    exit 1
+  fi
+fi
 # Build the existing Swift audio backend and its bundled FFmpeg/lyrics runtime.
 "$ROOT/Scripts/build-native-engine.sh" "$CONFIGURATION"
 cd "$ROOT"
-if [[ ! -d Desktop/node_modules ]]; then
-  npm --prefix Desktop --cache "$ROOT/.build/npm-cache" ci
-fi
+node Desktop/electron/prepare-dependencies.mjs
 node Desktop/electron/prepare-runtime.mjs
 swift Desktop/electron/export-symbols.swift Desktop/public/symbols
 npm --prefix Desktop run build

@@ -17,13 +17,13 @@ Scripts/build-app.sh release
 开发流程：
 
 ```sh
-npm --prefix Desktop --cache .build/npm-cache ci
+node Desktop/electron/prepare-dependencies.mjs
 node Desktop/electron/prepare-runtime.mjs
 npm --prefix Desktop run build
 MINIVOICE_ENGINE=/absolute/path/to/MiniVoice npm --prefix Desktop start
 ```
 
-Electron 分发包按 npm 官方包中的 SHA-256 校验。GitHub 下载失败时可从区域镜像取得相同字节，不关闭校验。`package-lock.json` 固定依赖版本。
+Electron 分发包保存在 `Vendor/Electron/arm64`，npm 离线依赖缓存保存在 `Vendor/NodeDependencies`，均使用 Git LFS。首次检出后执行 `git lfs pull`；部署只使用本地资源，不再自动下载。Electron 按 npm 官方包的 SHA-256 校验；npm 缓存同时校验归档和 `package-lock.json` 的哈希，安装使用 `npm ci --offline` 并校验锁文件中的包完整性。Node 20/22/24 LTS 和 Xcode 命令行工具仍需预先安装。Swift 首次解析 Yams 或 DMG 首次安装 Python 工具仍可能联网，此处固定的是 Electron 和前端部署依赖。
 
 ## 本轮迁移范围
 
