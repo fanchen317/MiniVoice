@@ -13,12 +13,10 @@ import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
-import android.media.MediaMetadataRetriever;
 import android.media.session.MediaSession;
 import android.media.MediaMetadata;
 import android.media.session.PlaybackState;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.os.Binder;
 import android.os.Build;
 import android.os.IBinder;
@@ -67,6 +65,11 @@ public final class PlaybackService extends Service {
     void setQueue(List<Song> songs,int selected){
         queue.clear(); queue.addAll(songs); index=selected; playCurrent();
     }
+    void refreshLibrary(List<Song> songs){
+        java.util.Map<String,Song> updated=new java.util.HashMap<>();for(Song song:songs)updated.put(song.uri.toString(),song);
+        for(int i=0;i<queue.size();i++){Song song=updated.get(queue.get(i).uri.toString());if(song!=null)queue.set(i,song);}
+        Song song=current();if(song!=null){artworkSongId=song.id;loadArtwork(song,++artworkGeneration);publish();}
+    }
     void select(int selected){if(selected>=0&&selected<queue.size()){index=selected;playCurrent();}}
     Song current(){return index>=0 && index<queue.size()?queue.get(index):null;}
     boolean isPlaying(){return player!=null && player.isPlaying();}
@@ -100,14 +103,7 @@ public final class PlaybackService extends Service {
     }
     private void loadArtwork(Song song,int generation){
         artworkLoader.execute(()->{
-            Bitmap cover=null;
-            MediaMetadataRetriever retriever=new MediaMetadataRetriever();
-            try {retriever.setDataSource(this,song.uri);byte[] bytes=retriever.getEmbeddedPicture();
-                if(bytes!=null){BitmapFactory.Options options=new BitmapFactory.Options();options.inJustDecodeBounds=true;BitmapFactory.decodeByteArray(bytes,0,bytes.length,options);
-                    int size=Math.max(options.outWidth,options.outHeight);options.inSampleSize=1;while(size/options.inSampleSize>512)options.inSampleSize*=2;
-                    options.inJustDecodeBounds=false;cover=BitmapFactory.decodeByteArray(bytes,0,bytes.length,options);}
-            }catch(Exception ignored){}finally{try{retriever.release();}catch(Exception ignored){}}
-            Bitmap result=cover;
+            Bitmap result=Artwork.load(this,song,512);
             new android.os.Handler(getMainLooper()).post(()->{if(artworkGeneration==generation && artworkSongId==song.id && current()==song){artwork=result;publish();}});
         });
     }

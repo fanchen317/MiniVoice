@@ -6,6 +6,7 @@ final class Song {
     final long id, duration, albumId;
     final String title, artist, album, path;
     final Uri uri, lyricUri;
+    Uri artworkUri;
     Song(long id, long duration, long albumId, String title, String artist, String album, String path, Uri uri) {
         this(id,duration,albumId,title,artist,album,path,uri,null);
     }

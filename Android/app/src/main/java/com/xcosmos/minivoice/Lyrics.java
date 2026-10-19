@@ -31,19 +31,25 @@ final class Lyrics {
     }
     static final class Line { final long ms; final String text; Line(long ms,String text){this.ms=ms;this.text=text;} }
     private static final Pattern STAMP=Pattern.compile("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?\\]");
+    private static final Pattern WORD=Pattern.compile("<(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?>");
+    private static final Pattern OFFSET=Pattern.compile("(?im)^\\s*\\[offset:([+-]?\\d{1,9})\\]\\s*$");
+    private static long time(Matcher match){
+        String fraction=match.group(3);
+        return Long.parseLong(match.group(1))*60000+Long.parseLong(match.group(2))*1000+
+            (fraction==null?0:Long.parseLong((fraction+"000").substring(0,3)));
+    }
     static List<Line> parse(String raw) {
         List<Line> result=new ArrayList<>();
         if(raw==null) return result;
-        for(String row:raw.split("\\R")) {
-            Matcher matcher=STAMP.matcher(row); int end=0; List<Long> times=new ArrayList<>();
-            while(matcher.find()) {
-                long fraction=0;
-                if(matcher.group(3)!=null) fraction=Long.parseLong((matcher.group(3)+"000").substring(0,3));
-                times.add(Long.parseLong(matcher.group(1))*60000+Long.parseLong(matcher.group(2))*1000+fraction);
-                end=matcher.end();
-            }
-            String text=row.substring(end).trim();
-            if(!text.isEmpty()) for(Long time:times) result.add(new Line(time,text));
+        Matcher offsetMatch=OFFSET.matcher(raw);long offset=offsetMatch.find()?Long.parseLong(offsetMatch.group(1)):0;
+        for(String row:raw.replace("\uFEFF", "").split("\\R")) {
+            Matcher matcher=STAMP.matcher(row); List<Long> times=new ArrayList<>();
+            while(matcher.find()) if(Integer.parseInt(matcher.group(2))<60)times.add(time(matcher));
+            String body=STAMP.matcher(row).replaceAll("");
+            Matcher word=WORD.matcher(body);
+            if(times.isEmpty()&&word.find()&&Integer.parseInt(word.group(2))<60)times.add(time(word));
+            String text=WORD.matcher(body).replaceAll("").trim();
+            if(!text.isEmpty()) for(Long timestamp:times) result.add(new Line(Math.max(0,timestamp+offset),text));
         }
         result.sort(Comparator.comparingLong(line->line.ms)); return result;
     }

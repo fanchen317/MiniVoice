@@ -24,6 +24,15 @@ final class SettingsPanel {
     interface Actions { void addFolder(); void removeFolder(String uri); void rescan(); void viewCache(); void clearCache(); }
     private final Activity activity;private final SharedPreferences prefs;private final Actions actions;
     private Dialog dialog;private LinearLayout body;private int songCount;private boolean scanning;
+    private TextView scanDetail;
+    private android.widget.ProgressBar scanBar;
+    private int scanCompleted,scanTotal;
+    private String scanMessage="正在查找音乐文件";
+    void progress(int completed,int total,String message){scanCompleted=completed;scanTotal=total;scanMessage=message;updateProgress();}
+    private void updateProgress(){
+        if(scanDetail!=null){scanDetail.setText(scanning?scanMessage+(scanTotal>0?"\n"+scanCompleted+" / "+scanTotal+" 首 · "+(scanCompleted*100/scanTotal)+"%":""):"扫描完成 · "+songCount+" 首歌曲");scanDetail.setVisibility(scanning?View.VISIBLE:View.GONE);}
+        if(scanBar!=null){scanBar.setVisibility(scanning?View.VISIBLE:View.GONE);scanBar.setIndeterminate(scanTotal<=0);scanBar.setMax(Math.max(1,scanTotal));scanBar.setProgress(scanCompleted);}
+    }
     private final int green=0xFF118D69;
     SettingsPanel(Activity activity,SharedPreferences prefs,Actions actions){this.activity=activity;this.prefs=prefs;this.actions=actions;}
     void show(int count,boolean busy){songCount=count;scanning=busy;dialog=new Dialog(activity);dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);build();dialog.show();Window window=dialog.getWindow();if(window!=null){window.setLayout(-1,-1);window.setBackgroundDrawableResource(android.R.color.transparent);window.setStatusBarColor(0xFFF0F0F0);window.setNavigationBarColor(Color.BLACK);window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);if(android.os.Build.VERSION.SDK_INT>=29)window.setStatusBarContrastEnforced(false);}}
@@ -70,11 +79,13 @@ final class SettingsPanel {
         section("扫描");LinearLayout scanCard=card();
         LinearLayout recursive=new LinearLayout(activity);recursive.setGravity(Gravity.CENTER_VERTICAL);recursive.setPadding(dp(14),0,dp(14),0);scanCard.addView(recursive,new LinearLayout.LayoutParams(-1,dp(75)));
         TextView recursiveLabel=text("包含子文件夹\n同时读取所选文件夹内的音乐",15,0xFF242424);recursive.addView(recursiveLabel,new LinearLayout.LayoutParams(0,-1,1));
-        Switch toggle=new Switch(activity);toggle.setChecked(prefs.getBoolean("scan_recursive",true));toggle.setOnCheckedChangeListener((button,checked)->prefs.edit().putBoolean("scan_recursive",checked).apply());recursive.addView(toggle);
+        Switch toggle=new Switch(activity);toggle.setChecked(prefs.getBoolean("scan_recursive",true));toggle.setOnCheckedChangeListener((button,checked)->{prefs.edit().putBoolean("scan_recursive",checked).apply();actions.rescan();});recursive.addView(toggle);
         View divider=new View(activity);divider.setBackgroundColor(0xFFE5E5E5);scanCard.addView(divider,new LinearLayout.LayoutParams(-1,dp(1)));
         LinearLayout status=new LinearLayout(activity);status.setGravity(Gravity.CENTER_VERTICAL);status.setPadding(dp(14),0,dp(14),0);scanCard.addView(status,new LinearLayout.LayoutParams(-1,dp(78)));
         TextView statusText=text("音乐库状态\n"+(scanning?"正在扫描…":"歌单已载入："+songCount+" 首歌曲"),15,0xFF242424);status.addView(statusText,new LinearLayout.LayoutParams(0,-1,1));
         Button refresh=outlined("重新扫描",actions::rescan);refresh.setEnabled(!scanning);status.addView(refresh,new LinearLayout.LayoutParams(dp(102),dp(42)));
+        scanDetail=text("",13,0xFF555555);scanDetail.setPadding(dp(14),dp(8),dp(14),dp(8));scanDetail.setMaxLines(3);scanDetail.setEllipsize(android.text.TextUtils.TruncateAt.END);scanCard.addView(scanDetail,new LinearLayout.LayoutParams(-1,-2));
+        scanBar=new android.widget.ProgressBar(activity,null,android.R.attr.progressBarStyleHorizontal);scanBar.setProgressTintList(android.content.res.ColorStateList.valueOf(green));scanCard.addView(scanBar,new LinearLayout.LayoutParams(-1,dp(8)));updateProgress();
         section("缓存");LinearLayout cacheCard=card();
         cacheCard.addView(padded("本地缓存文件夹",16,0xFF242424));cacheCard.addView(padded(activity.getCacheDir().getAbsolutePath(),12,0xFF888888));
         LinearLayout cacheActions=new LinearLayout(activity);cacheActions.setPadding(dp(12),dp(8),dp(12),dp(12));cacheCard.addView(cacheActions);

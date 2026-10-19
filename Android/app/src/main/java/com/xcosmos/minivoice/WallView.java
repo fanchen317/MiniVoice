@@ -11,7 +11,6 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Shader;
-import android.media.MediaMetadataRetriever;
 import android.os.Handler;
 import android.util.LruCache;
 import android.view.GestureDetector;
@@ -32,7 +31,6 @@ import java.util.concurrent.Executors;
 final class WallView extends View {
     interface OnPlay { void play(Song song); }
     private static final class Hit { final RectF bounds;final WallLayout.Instance instance;Hit(RectF bounds,WallLayout.Instance instance){this.bounds=bounds;this.instance=instance;} }
-    private static final class LyricHit { final RectF bounds;final int ms;LyricHit(RectF bounds,int ms){this.bounds=bounds;this.ms=ms;} }
     private final OnPlay onPlay;
     private final Runnable onToggle;
     private final IntConsumer onSeek;
@@ -44,7 +42,19 @@ final class WallView extends View {
     private final LruCache<Long,Bitmap> bitmaps=new LruCache<Long,Bitmap>(48*1024*1024){@Override protected int sizeOf(Long key,Bitmap value){return value.getByteCount();}};
     private final Set<Long> requested=new HashSet<>();
     private final List<Hit> hits=new ArrayList<>();
-    private final List<LyricHit> lyricHits=new ArrayList<>();
+    interface CardActions {void previous();void next();void favorite(Song song);void mode();void immersive(boolean expanded);}
+    private CardActions cardActions;
+    private final FocusCardRenderer card;
+    private Set<String> favorites=new HashSet<>();
+    private int playbackMode=1,playbackDuration;
+    private boolean expanded,controlTouch;
+    private int safeTop,safeBottom;
+    void setCardActions(CardActions actions){cardActions=actions;}
+    void setCardState(Set<String> favorites,int mode,int duration){this.favorites=new HashSet<>(favorites);playbackMode=mode;playbackDuration=duration;invalidate();}
+    void setSafeInsets(int top,int bottom){safeTop=top;safeBottom=bottom;invalidate();}
+    boolean collapse(){if(!expanded)return false;setExpanded(false);return true;}
+    private void setExpanded(boolean value){expanded=value;card.clear();if(cardActions!=null)cardActions.immersive(value);invalidate();}
+
     private List<Song> songs=new ArrayList<>();
     private WallLayout scene;
     private float cameraX,cameraY,scale=1,focusAmount,focusSide;
@@ -58,25 +68,24 @@ final class WallView extends View {
     private ValueAnimator motion;
     private final float density;
     WallView(Context context,OnPlay onPlay,Runnable onToggle,IntConsumer onSeek){
-        super(context);this.onPlay=onPlay;this.onToggle=onToggle;this.onSeek=onSeek;density=getResources().getDisplayMetrics().density;setLayerType(View.LAYER_TYPE_HARDWARE,null);
+        super(context);this.onPlay=onPlay;this.onToggle=onToggle;this.onSeek=onSeek;density=getResources().getDisplayMetrics().density;card=new FocusCardRenderer(density);setLayerType(View.LAYER_TYPE_HARDWARE,null);
         scene=new WallLayout(0,density);
         gestures=new GestureDetector(context,new GestureDetector.SimpleOnGestureListener(){
-            @Override public boolean onDown(MotionEvent event){cancelMotion();return true;}
-            @Override public boolean onScroll(MotionEvent start,MotionEvent end,float dx,float dy){if(scaleDetector.isInProgress())return false;cameraX-=dx;cameraY-=dy;invalidate();return true;}
-            @Override public boolean onFling(MotionEvent start,MotionEvent end,float vx,float vy){animateCamera(cameraX+vx*.20f,cameraY+vy*.20f,420);return true;}
-            @Override public boolean onSingleTapConfirmed(MotionEvent event){if(seekLyric(event.getX(),event.getY()))return true;Hit hit=hit(event.getX(),event.getY());if(hit!=null){
-                if(focus!=null&&same(hit.instance,focus)&&focusAmount>.65f)playOrToggle(hit.instance);
-                else focus(hit.instance);
+            @Override public boolean onDown(MotionEvent event){cancelMotion();if(focus!=null&&focusAmount>0&&focusAmount<1){focusAmount=1;invalidate();}return true;}
+            @Override public boolean onScroll(MotionEvent start,MotionEvent end,float dx,float dy){if(expanded||scaleDetector.isInProgress())return false;cameraX-=dx;cameraY-=dy;invalidate();return true;}
+            @Override public boolean onFling(MotionEvent start,MotionEvent end,float vx,float vy){if(expanded)return false;animateCamera(cameraX+vx*.20f,cameraY+vy*.20f,420);return true;}
+            @Override public boolean onSingleTapConfirmed(MotionEvent event){if(card.seekLyric(event.getX(),event.getY()))return true;Hit hit=hit(event.getX(),event.getY());if(hit!=null){
+                if(focus==null||!same(hit.instance,focus))focus(hit.instance);
             }return hit!=null;}
-            @Override public boolean onDoubleTap(MotionEvent event){if(seekLyric(event.getX(),event.getY()))return true;Hit hit=hit(event.getX(),event.getY());if(hit!=null&&hit.instance.tile.index<songs.size())playOrToggle(hit.instance);return hit!=null;}
+            @Override public boolean onDoubleTap(MotionEvent event){if(card.seekLyric(event.getX(),event.getY()))return true;Hit hit=hit(event.getX(),event.getY());if(hit!=null&&hit.instance.tile.index<songs.size()&&(focus==null||!same(hit.instance,focus)))playOrToggle(hit.instance);return hit!=null;}
         });
         scaleDetector=new ScaleGestureDetector(context,new ScaleGestureDetector.SimpleOnScaleGestureListener(){
-            @Override public boolean onScaleBegin(ScaleGestureDetector detector){cancelMotion();return true;}
+            @Override public boolean onScaleBegin(ScaleGestureDetector detector){if(expanded)return false;cancelMotion();return true;}
             @Override public boolean onScale(ScaleGestureDetector detector){float old=scale;scale=Math.max(.6f,Math.min(1.2f,scale*detector.getScaleFactor()));
                 float fx=detector.getFocusX(),fy=detector.getFocusY();cameraX=fx-(fx-cameraX)*scale/old;cameraY=fy-(fy-cameraY)*scale/old;invalidate();return true;}
         });
     }
-    void setSongs(List<Song> value){cancelMotion();songs=new ArrayList<>(value);scene=new WallLayout(songs.size(),density);focus=null;pressed=null;focusAmount=0;cameraReady=false;invalidate();}
+    void setSongs(List<Song> value){if(expanded)setExpanded(false);card.clear();requested.clear();cancelMotion();songs=new ArrayList<>(value);scene=new WallLayout(songs.size(),density);focus=null;pressed=null;focusAmount=0;cameraReady=false;invalidate();}
     void locateSong(long id){
         if(getWidth()==0||getHeight()==0){addOnLayoutChangeListener(new OnLayoutChangeListener(){
             @Override public void onLayoutChange(View view,int left,int top,int right,int bottom,int oldLeft,int oldTop,int oldRight,int oldBottom){
@@ -91,22 +100,24 @@ final class WallView extends View {
     private void playOrToggle(WallLayout.Instance instance){Song song=songs.get(instance.tile.index);if(song.id==playingId)onToggle.run();else onPlay.play(song);}
     void setPlayback(long id,boolean playing,int position){if(playingId!=id)playingLyrics=new ArrayList<>();playingId=id;playbackPlaying=playing;playbackPosition=position;invalidate();}
     void setLyrics(long id,List<Lyrics.Line> lines){if(playingId==id){playingLyrics=new ArrayList<>(lines);invalidate();}}
-    void resetCamera(){cancelMotion();focus=null;focusAmount=0;cameraReady=false;centerInitial();invalidate();}
+    void resetCamera(){if(expanded)setExpanded(false);cancelMotion();focus=null;focusAmount=0;cameraReady=false;centerInitial();invalidate();}
     void zoom(float factor){float old=scale;scale=Math.max(.6f,Math.min(1.2f,scale*factor));cameraX=getWidth()/2f-(getWidth()/2f-cameraX)*scale/old;cameraY=getHeight()/2f-(getHeight()/2f-cameraY)*scale/old;invalidate();}
     float scale(){return scale;}
     @Override protected void onSizeChanged(int w,int h,int oldW,int oldH){super.onSizeChanged(w,h,oldW,oldH);if(!cameraReady)centerInitial();}
     private void centerInitial(){if(scene.tiles.isEmpty()||getWidth()==0||getHeight()==0)return;
         scale=1;cameraX=12*density;cameraY=80*density;cameraReady=true;}
-    @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);canvas.drawColor(Color.BLACK);hits.clear();lyricHits.clear();if(scene.tiles.isEmpty()){
+    @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);canvas.drawColor(Color.BLACK);hits.clear();card.clear();if(scene.tiles.isEmpty()){
         paint.setShader(null);paint.setColor(0xFF9DA8A1);paint.setTextSize(18*density);String message="添加音乐文件夹，开始浏览音乐墙";canvas.drawText(message,Math.max(20,(getWidth()-paint.measureText(message))/2),getHeight()/2f,paint);return;}
         if(!cameraReady)centerInitial();
         List<WallLayout.Instance> visible=scene.visible(cameraX,cameraY,scale,getWidth(),getHeight(),(focus==null?400:1100)*density);
         WallLayout.Instance focusedInstance=null;
         for(WallLayout.Instance instance:visible){if(focus!=null&&same(instance,focus)){focusedInstance=instance;continue;}drawTile(canvas,instance,false);}
-        if(focusedInstance!=null)drawTile(canvas,focusedInstance,true);
+        if(expanded&&focus!=null){paint.setColor(0xBF000000);canvas.drawRect(0,0,getWidth(),getHeight(),paint);drawTile(canvas,focus,true);}
+        else if(focusedInstance!=null)drawTile(canvas,focusedInstance,true);
     }
     private boolean same(WallLayout.Instance a,WallLayout.Instance b){return a.tile.index==b.tile.index&&a.column==b.column&&a.row==b.row;}
     private RectF frame(WallLayout.Instance instance){
+        if(expanded&&focus!=null&&same(instance,focus))return new RectF(12*density,safeTop+12*density,getWidth()-12*density,getHeight()-safeBottom-12*density);
         float x=instance.x,y=instance.y,w=instance.tile.width,h=instance.tile.height;
         if(focus!=null&&focusAmount>0){float gap=5*density;
             float nx=coordinate(x,focus.x,focus.x+focus.tile.width+gap,focusSide+gap);
@@ -133,18 +144,18 @@ final class WallView extends View {
             Rect src=new Rect((image.getWidth()-srcWidth)/2,(image.getHeight()-srcHeight)/2,(image.getWidth()+srcWidth)/2,(image.getHeight()+srcHeight)/2);
             paint.setColor(Color.WHITE);canvas.drawBitmap(image,src,rect,paint);
         }else{paint.setColor(0x66FFFFFF);paint.setTextSize(Math.min(rect.width(),rect.height())*.25f);canvas.drawText("♫",rect.centerX()-paint.measureText("♫")/2,rect.centerY(),paint);}
-        if(selected){paint.setShader(new LinearGradient(0,rect.top,0,rect.bottom,new int[]{0x1F000000,0x33000000,0xE0000000},null,Shader.TileMode.CLAMP));canvas.drawRect(rect,paint);paint.setShader(null);
-            paint.setColor(0x99000000);canvas.drawRect(rect.left,rect.top,rect.left+rect.width()*.55f,rect.bottom,paint);
+        if(selected){
+            // Full-width, continuous shade: no hard vertical edge across the artwork.
+            paint.setShader(new LinearGradient(0,rect.top,0,rect.bottom,new int[]{0x69000000,0x73000000,0xE6000000},new float[]{0,.55f,1},Shader.TileMode.CLAMP));canvas.drawRect(rect,paint);paint.setShader(null);
         }else{paint.setShader(new LinearGradient(0,rect.top,0,rect.bottom,new int[]{0x47000000,0x47000000,0xD4000000},null,Shader.TileMode.CLAMP));canvas.drawRect(rect,paint);paint.setShader(null);
             if(playingId!=Long.MIN_VALUE&&song.id!=playingId){paint.setColor(0x1F000000);canvas.drawRect(rect,paint);}}
         float inset=Math.min(14*density,Math.max(8*density,instance.tile.width*.06f*scale));
-        if(rect.width()>95*density){
+        if(!selected&&rect.width()>95*density){
             float titleSize=Math.min(30*density,Math.max(18*density,instance.tile.width*.105f*scale));
             float artistSize=Math.min(13*density,Math.max(10*density,instance.tile.width*.045f*scale));
             paint.setTypeface(android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.BOLD));paint.setTextSize(titleSize);
             float titleY=rect.bottom-inset-3*density-artistSize-7*density;
-            if(selected)titleY=rect.bottom-inset-artistSize-30*density;
-            float textWidth=rect.width()-2*inset-(selected?56*density:0);
+            float textWidth=rect.width()-2*inset;
             paint.setColor(0xE6FFFFFF);canvas.drawText(shorten(song.title,textWidth),rect.left+inset,titleY,paint);
             paint.setTypeface(android.graphics.Typeface.DEFAULT);paint.setTextSize(artistSize);paint.setColor(0xA6FFFFFF);
             canvas.drawText(shorten(song.artist,textWidth),rect.left+inset,titleY+artistSize+5*density,paint);
@@ -152,56 +163,42 @@ final class WallView extends View {
                 String number=String.format(java.util.Locale.ROOT,"%03d",instance.tile.index+1);float pad=6*density*scale,numberWidth=paint.measureText(number);
                 paint.setColor(0x73000000);canvas.drawRect(rect.left+10*density*scale,rect.top+10*density*scale,rect.left+10*density*scale+numberWidth+2*pad,rect.top+32*density*scale,paint);
                 paint.setColor(0xCCFFFFFF);canvas.drawText(number,rect.left+10*density*scale+pad,rect.top+25*density*scale,paint);}
-            else {float radius=Math.min(24*density,rect.width()*.09f);float cx=rect.right-inset-radius,cy=rect.bottom-inset-radius;
-                paint.setColor(0xF0FFFFFF);canvas.drawCircle(cx,cy,radius,paint);paint.setColor(0xFF222222);paint.setTextSize(radius*.95f);paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-                String play=song.id==playingId&&playbackPlaying?"Ⅱ":"▶";canvas.drawText(play,cx-paint.measureText(play)/2,cy+radius*.35f,paint);}
         }
-        if(selected&&song.id==playingId&&focusAmount>.8f){
-            paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);paint.setTextSize(12*density);paint.setColor(0xFF21C994);
-            String state=playbackPlaying?"♫  正在播放":"Ⅱ  已暂停";float badgeWidth=paint.measureText(state)+22*density;
-            paint.setColor(0xC91D302A);canvas.drawRoundRect(rect.left+inset,rect.top+inset,rect.left+inset+badgeWidth,rect.top+inset+29*density,14*density,14*density,paint);
-            paint.setColor(0xFF35D8A6);canvas.drawText(state,rect.left+inset+11*density,rect.top+inset+19*density,paint);
-            drawLyrics(canvas,rect,inset);
+        if(selected&&focusAmount>.8f){
+            card.draw(canvas,rect,song,song.id==playingId,playbackPlaying,playbackPosition,playbackDuration,playingLyrics,favorites.contains(Long.toString(song.id)),playbackMode,expanded,new FocusCardRenderer.Actions(){
+                public void previous(){if(cardActions!=null)cardActions.previous();}
+                public void toggle(){onToggle.run();}
+                public void next(){if(cardActions!=null)cardActions.next();}
+                public void favorite(){if(cardActions!=null)cardActions.favorite(song);}
+                public void mode(){if(cardActions!=null)cardActions.mode();}
+                public void expand(){setExpanded(!expanded);}
+                public void seek(int ms){onSeek.accept(ms);}
+                public void play(){onPlay.play(song);}
+            });
         }
-        if(song.id==playingId&&(focus==null||selected)){paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(3*density);paint.setColor(0xD91BBC87);canvas.drawRect(rect,paint);paint.setStyle(Paint.Style.FILL);}
+        if(selected||song.id==playingId&&focus==null){paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(3*density);paint.setColor(0xD91BBC87);canvas.drawRect(rect,paint);paint.setStyle(Paint.Style.FILL);}
         canvas.restoreToCount(save);hits.add(new Hit(rect,instance));
-    }
-    private void drawLyrics(Canvas canvas,RectF rect,float inset){
-        float centerY=rect.top+rect.height()*.46f;
-        paint.setTypeface(android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.BOLD));
-        if(playingLyrics.isEmpty()){paint.setTextSize(16*density);paint.setColor(0xA6FFFFFF);canvas.drawText("暂无歌词",rect.left+inset,centerY,paint);return;}
-        int active=0;for(int i=0;i<playingLyrics.size();i++){if(playingLyrics.get(i).ms>playbackPosition)break;active=i;}
-        float row=Math.max(33*density,Math.min(48*density,rect.height()*.13f));
-        for(int relative=-2;relative<=2;relative++){int index=active+relative;if(index<0||index>=playingLyrics.size())continue;
-            float y=centerY+relative*row;if(y<rect.top+30*density||y>rect.bottom-90*density)continue;
-            paint.setTextSize(relative==0?Math.min(24*density,rect.width()*.068f):Math.min(19*density,rect.width()*.055f));
-            paint.setColor(relative==0?Color.WHITE:Math.abs(relative)==1?0x88FFFFFF:0x55FFFFFF);
-            canvas.drawText(shorten(playingLyrics.get(index).text,rect.width()-2*inset),rect.left+inset,y,paint);
-            lyricHits.add(new LyricHit(new RectF(rect.left+inset,y-row*.55f,rect.right-inset,y+row*.45f),(int)Math.min(Integer.MAX_VALUE,playingLyrics.get(index).ms)));
-        }
     }
     private String shorten(String value,float width){if(value==null)return "";if(paint.measureText(value)<=width)return value;String result=value;while(result.length()>1&&paint.measureText(result+"…")>width)result=result.substring(0,result.length()-1);return result+"…";}
     private Bitmap cover(Song song){Bitmap cached=bitmaps.get(song.id);if(cached!=null)return cached;
         if(requested.add(song.id))covers.submit(()->{
             File folder=new File(getContext().getCacheDir(),"covers"),file=new File(folder,song.id+".jpg");
             Bitmap bitmap=file.isFile()?BitmapFactory.decodeFile(file.getAbsolutePath()):null;
-            if(bitmap==null){MediaMetadataRetriever retriever=new MediaMetadataRetriever();try{retriever.setDataSource(getContext(),song.uri);byte[] bytes=retriever.getEmbeddedPicture();
-                if(bytes!=null){BitmapFactory.Options options=new BitmapFactory.Options();options.inJustDecodeBounds=true;BitmapFactory.decodeByteArray(bytes,0,bytes.length,options);
-                    int longest=Math.max(options.outWidth,options.outHeight);options.inSampleSize=1;while(longest/options.inSampleSize>1280)options.inSampleSize*=2;options.inJustDecodeBounds=false;
-                    Bitmap raw=BitmapFactory.decodeByteArray(bytes,0,bytes.length,options);if(raw!=null){float ratio=Math.min(1,640f/Math.max(raw.getWidth(),raw.getHeight()));
-                    bitmap=Bitmap.createScaledBitmap(raw,Math.max(1,Math.round(raw.getWidth()*ratio)),Math.max(1,Math.round(raw.getHeight()*ratio)),true);
+            if(bitmap==null){
+                bitmap=Artwork.load(getContext(),song,640);
+                if(bitmap!=null){Bitmap raw=bitmap;float ratio=Math.min(1,640f/Math.max(raw.getWidth(),raw.getHeight()));
+                    bitmap=Bitmap.createScaledBitmap(raw,Math.max(1,Math.round(raw.getWidth()*ratio)),Math.max(1,Math.round(raw.getHeight()*ratio)),true);if(bitmap!=raw)raw.recycle();
                     folder.mkdirs();try(FileOutputStream out=new FileOutputStream(file)){bitmap.compress(Bitmap.CompressFormat.JPEG,85,out);}catch(Exception ignored){}
-                }}
-            }catch(Exception ignored){}finally{try{retriever.release();}catch(Exception ignored){}}}
-            Bitmap result=bitmap;if(result!=null)main.post(()->{bitmaps.put(song.id,result);invalidate();});
+                }
+            }
+            Bitmap result=bitmap;if(result!=null)main.post(()->{requested.remove(song.id);bitmaps.put(song.id,result);invalidate();});
         });
         return null;
     }
     private Hit hit(float x,float y){for(int i=hits.size()-1;i>=0;i--)if(hits.get(i).bounds.contains(x,y))return hits.get(i);return null;}
-    private boolean seekLyric(float x,float y){for(LyricHit lyric:lyricHits)if(lyric.bounds.contains(x,y)){onSeek.accept(lyric.ms);return true;}return false;}
     private void focus(WallLayout.Instance instance){focus=instance;focusAmount=0;
         float preferred=Math.min(520*density,Math.max(320*density,(getHeight()-150*density)*.85f));
-        focusSide=Math.max(180*density,Math.min(preferred,Math.min(getWidth()-40*density,getHeight()-150*density)));
+        focusSide=Math.max(180*density,Math.min(preferred,Math.min(getWidth()-24*density,getHeight()-safeTop-safeBottom-180*density)))/scale;
         cancelMotion();float startX=cameraX,startY=cameraY,targetX=getWidth()/2f-(instance.x+instance.tile.width/2)*scale,targetY=getHeight()/2f-(instance.y+instance.tile.height/2)*scale;
         motion=ValueAnimator.ofFloat(0,1);motion.setDuration(520);motion.addUpdateListener(animation->{float t=(float)animation.getAnimatedValue();float eased=focusProgress(t);cameraX=startX+(targetX-startX)*eased;cameraY=startY+(targetY-startY)*eased;focusAmount=reflowProgress(t*520);invalidate();});motion.start();
     }
@@ -215,6 +212,14 @@ final class WallView extends View {
     }
     private void cancelMotion(){if(motion!=null){motion.cancel();motion=null;}}
     @Override public boolean onTouchEvent(MotionEvent event){
+        int action=event.getActionMasked();
+        if(action==MotionEvent.ACTION_DOWN&&card.down(event.getX(),event.getY())){cancelMotion();controlTouch=true;invalidate();return true;}
+        if(controlTouch){
+            if(action==MotionEvent.ACTION_MOVE)card.move(event.getX());
+            if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL||action==MotionEvent.ACTION_POINTER_DOWN){card.up(event.getX(),event.getY(),action!=MotionEvent.ACTION_UP);controlTouch=false;}
+            invalidate();return true;
+        }
+
         if(event.getActionMasked()==MotionEvent.ACTION_DOWN){Hit target=hit(event.getX(),event.getY());pressed=target==null?null:target.instance;invalidate();}
         else if(event.getActionMasked()==MotionEvent.ACTION_UP||event.getActionMasked()==MotionEvent.ACTION_CANCEL||event.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN){pressed=null;invalidate();}
         scaleDetector.onTouchEvent(event);gestures.onTouchEvent(event);return true;

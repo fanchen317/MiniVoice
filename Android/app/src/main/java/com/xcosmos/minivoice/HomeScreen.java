@@ -58,6 +58,8 @@ final class HomeScreen {
         void seek(int ms);
 
         void playMode();
+
+        void favorite(Song song);
     }
 
     private final Activity activity;
@@ -66,6 +68,8 @@ final class HomeScreen {
     private final ScrollView drawerScroll;
     private final LinearLayout player;
     private final ImageView wallSettings;
+    private ImageView menuButton,searchButton;
+    private boolean immersive,restoreSearch;
     private final LinearLayout drawerRows;
     private final WallView wall;
     private final TextView current;
@@ -88,11 +92,11 @@ final class HomeScreen {
         ImageView menu = roundImage(R.drawable.icon_wall_sidebar, () -> showDrawer(true));
         FrameLayout.LayoutParams menuParams = new FrameLayout.LayoutParams(dp(52), dp(52), Gravity.TOP | Gravity.LEFT);
         menuParams.setMargins(dp(14), dp(14), 0, 0);
-        frame.addView(menu, menuParams);
+        frame.addView(menu, menuParams);menuButton=menu;
         ImageView search = roundImage(R.drawable.icon_wall_search, this::toggleSearch);
         FrameLayout.LayoutParams searchParams = new FrameLayout.LayoutParams(dp(52), dp(52), Gravity.TOP | Gravity.RIGHT);
         searchParams.setMargins(0, dp(14), dp(14), 0);
-        frame.addView(search, searchParams);
+        frame.addView(search, searchParams);searchButton=search;
         searchInput = new EditText(activity);
         searchInput.setSingleLine(true);
         searchInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
@@ -223,6 +227,8 @@ final class HomeScreen {
         drawerLayer.setVisibility(View.GONE);
         frame.setOnApplyWindowInsetsListener((view, insets) -> {
             int top = android.os.Build.VERSION.SDK_INT >= 30 ? insets.getInsets(WindowInsets.Type.statusBars()).top : insets.getSystemWindowInsetTop();
+            int bottom=android.os.Build.VERSION.SDK_INT>=30?insets.getInsets(WindowInsets.Type.navigationBars()).bottom:insets.getSystemWindowInsetBottom();
+            wall.setSafeInsets(top,bottom);
             menuParams.topMargin = top + dp(14);
             menu.setLayoutParams(menuParams);
             searchParams.topMargin = top + dp(14);
@@ -232,9 +238,16 @@ final class HomeScreen {
             drawerParams.topMargin = top + dp(12);
             drawerScroll.setLayoutParams(drawerParams);
             boolean keyboard = android.os.Build.VERSION.SDK_INT >= 30 && insets.isVisible(WindowInsets.Type.ime());
-            player.setVisibility(keyboard ? View.GONE : View.VISIBLE);
-            wallSettings.setVisibility(keyboard ? View.GONE : View.VISIBLE);
+            player.setVisibility(keyboard || immersive ? View.GONE : View.VISIBLE);
+            wallSettings.setVisibility(keyboard || immersive ? View.GONE : View.VISIBLE);
             return insets;
+        });
+        wall.setCardActions(new WallView.CardActions(){
+            public void previous(){actions.previous();}
+            public void next(){actions.next();}
+            public void favorite(Song song){actions.favorite(song);}
+            public void mode(){actions.playMode();}
+            public void immersive(boolean expanded){setImmersive(expanded);}
         });
         frame.post(frame::requestApplyInsets);
     }
@@ -275,6 +288,16 @@ final class HomeScreen {
         if (!seek.isPressed()) seek.setProgress(position);
         wall.setPlayback(id, playing, position);
         if (changed && !groupedWall) locateSong(id);
+    }
+
+    void setCardState(Set<String> favorites,int mode,int duration){wall.setCardState(favorites,mode,duration);}
+    boolean collapsePlayer(){return wall.collapse();}
+    private void setImmersive(boolean expanded){
+        immersive=expanded;
+        if(expanded){restoreSearch=searchInput.getVisibility()==View.VISIBLE;showDrawer(false);searchInput.clearFocus();((android.view.inputmethod.InputMethodManager)activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(searchInput.getWindowToken(),0);}
+        menuButton.setVisibility(expanded?View.GONE:View.VISIBLE);searchButton.setVisibility(expanded?View.GONE:View.VISIBLE);
+        player.setVisibility(expanded?View.GONE:View.VISIBLE);wallSettings.setVisibility(expanded?View.GONE:View.VISIBLE);
+        searchInput.setVisibility(!expanded&&restoreSearch?View.VISIBLE:View.GONE);
     }
 
     void setLyrics(long id, List<Lyrics.Line> lines) {

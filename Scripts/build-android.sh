@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-sdk_root="${ANDROID_HOME:-/opt/homebrew/share/android-commandlinetools}"
-build_tools="$sdk_root/build-tools/35.0.0"
+source "$repo_root/Scripts/android-sdk.sh"
+sdk_root="$(minivoice_find_sdk build)"
+build_tools="$(minivoice_find_build_tools "$sdk_root")"
 android_jar="$sdk_root/platforms/android-35/android.jar"
+printf 'Android SDK: %s\nBuild Tools: %s\n' "$sdk_root" "$build_tools"
 output="$repo_root/.build/Android"
 mkdir -p "$output/classes" "$output/dex" "$output/generated"
 rm -f "$output/MiniVoice-unsigned.apk" "$output/MiniVoice-unaligned.apk" "$output/MiniVoice-debug.apk"
