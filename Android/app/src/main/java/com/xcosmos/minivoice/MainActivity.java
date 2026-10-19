@@ -224,8 +224,11 @@ public final class MainActivity extends Activity {
     private void showLyrics(){if(service!=null&&service.current()!=null)showLyricsFor(service.current());}
     private void showLyricsFor(Song song){
         String manual=prefs.getString("lyrics_"+song.id,"");
-        if(!manual.isEmpty()||song.lyricUri==null){displayLyrics(song,manual);return;}
-        new Thread(()->{String raw;try{raw=Lyrics.read(this,song.lyricUri);}catch(Exception ignored){raw="";}
+        android.net.Uri lyricUri=song.lyricUri;
+        if(lyricUri==null)for(Song item:library)if(item.lyricUri!=null&&item.title.equalsIgnoreCase(song.title)&&item.artist.equalsIgnoreCase(song.artist)){lyricUri=item.lyricUri;break;}
+        if(!manual.isEmpty()||lyricUri==null){displayLyrics(song,manual);return;}
+        android.net.Uri source=lyricUri;
+        new Thread(()->{String raw;try{raw=Lyrics.read(this,source);}catch(Exception ignored){raw="";}
             String result=raw;runOnUiThread(()->{if(!isFinishing())displayLyrics(song,result);});}).start();
     }
     private void displayLyrics(Song song,String raw){
