@@ -61,3 +61,11 @@ body:has(.app.style-wall) .custom-liquid-glass:not(.sidebar):not(.player):not(.w
 .browse-card-detail .songs-panel{outline:0;box-shadow:none}
 .simple-hero h1{overflow-wrap:anywhere}
 .app.style-wall .sidebar.custom-liquid-glass::before{backdrop-filter:var(--glass-lens) blur(14px) saturate(1.16) brightness(1.02);-webkit-backdrop-filter:var(--glass-lens) blur(14px) saturate(1.16) brightness(1.02)}
+
+/* Keep metadata mounted across breakpoints so it can fade and move. */
+.native-columns[data-album=false] .track-row>.row-album,
+.native-columns[data-duration=false] .track-row>.row-duration,
+.native-columns[data-edit=false] .track-row>.row-edit{display:block;opacity:0;pointer-events:none}
+.native-columns[data-edit=false] .track-row>.row-edit{display:grid}
+.native-columns .track-row>.row-artist{line-height:20px}
+.native-columns .track-row>.row-title,.native-columns .track-row>.row-artist,.native-columns .track-row>.row-album,.native-columns .track-row>.row-duration{contain:layout style}

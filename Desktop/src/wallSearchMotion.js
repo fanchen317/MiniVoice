@@ -1,5 +1,5 @@
-// Own one cancellable sequence: grow circle -> expand field -> collapse field
-// -> shrink circle. Re-entering during collapse must not run a stale close.
+// Grow before opening; collapse the field and shrink the lens together.
+// Re-entering during collapse must not run a stale close.
 export function createWallSearchMotion(onPhase,{schedule=setTimeout,cancel=clearTimeout,reduced=()=>false}={}){
   let phase='closed',timer;
   function clear(){cancel(timer);timer=undefined;}
@@ -18,8 +18,8 @@ export function createWallSearchMotion(onPhase,{schedule=setTimeout,cancel=clear
       if(reduced()){set('closed');return;}
       if(phase==='closed')return;
       if(phase==='expanded'||phase==='collapsing'){
-        set('collapsing');later('shrinking',360,()=>later('closed',320));
-      }else{set('shrinking');later('closed',320);}
+        set('collapsing');later('closed',360);
+      }else{set('collapsing');later('closed',360);}
     },
     reset(){clear();set('closed');},
     dispose:clear,

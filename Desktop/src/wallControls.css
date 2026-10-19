@@ -25,15 +25,14 @@
 .reduce-motion .wall-search-button:active>.wall-search-symbol{scale:1}
 .reduce-motion .app.style-wall .player.compact .dock-queue-slot>.icon-button:hover,.reduce-motion .app.style-wall .player.compact .dock-queue-slot>.icon-button:active{transform:none}
 
-/* Grow the complete glass circle first; expand only after growth. On exit,
-   keep that scale until width has returned to the circular footprint. */
+/* Grow before opening. Width and scale return together when closing. */
 .app.style-wall .wall-search-field{
   transform-origin:calc(100% - 19px) 50%;transform:scale(1);translate:0 0;
   transition-property:transform,translate,opacity,padding;
-  transition-duration:320ms,320ms,320ms,360ms;
-  transition-timing-function:var(--float-hover),var(--float-hover),ease,var(--search-spring);
+  transition-duration:360ms,360ms,240ms,360ms;
+  transition-timing-function:var(--search-spring),var(--search-spring),ease,var(--search-spring);
 }
-.app.style-wall .wall-search-field:is([data-phase=growing],[data-phase=expanded],[data-phase=collapsing]){transform:scale(1.16);translate:0 -2px}
+.app.style-wall .wall-search-field:is([data-phase=growing],[data-phase=expanded]){transform:scale(1.16);translate:0 -2px}
 .app.style-wall .wall-search-field input{transition:width 360ms var(--search-spring),opacity 180ms ease}
 .app.style-wall .wall-search-symbol{animation:none;scale:1;transition:color .18s}
 .app.style-wall .wall-search-button:active>.wall-search-symbol{scale:1}
@@ -61,3 +60,15 @@
   display:block;-webkit-line-clamp:unset;max-height:none;overflow:visible;flex-shrink:0;
   white-space:pre-wrap;overflow-wrap:break-word;word-break:normal;
 }
+
+
+/* Position changes keep moving through sidebar and dock layout breakpoints,
+   including live resizing. Hover/press transforms stay on the inner button. */
+.app.style-wall .window-tools,:root.is-resizing .app.style-wall .window-tools{
+  transition:left 360ms var(--chrome-spring),opacity 320ms ease,translate 360ms var(--chrome-spring);
+}
+.app.style-wall .wall-settings,:root.is-resizing .app.style-wall .wall-settings{
+  transition:bottom 360ms var(--chrome-spring),opacity 320ms ease,translate 360ms var(--chrome-spring),transform 320ms var(--float-hover),color 180ms ease;
+}
+.reduce-motion .app.style-wall .window-tools,.reduce-motion .app.style-wall .wall-settings,.reduce-motion .app.style-wall .wall-search-field,.reduce-motion .app.style-wall .wall-search-field input{transition:none!important}
+@media(prefers-reduced-motion:reduce){.app.style-wall .window-tools,.app.style-wall .wall-settings{transition:none}}

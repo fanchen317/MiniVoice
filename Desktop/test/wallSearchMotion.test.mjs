@@ -9,11 +9,11 @@ function fixture(reduced=false){
   function advance(ms){const target=now+ms;for(;;){const next=[...timers].sort((a,b)=>a[1].at-b[1].at)[0];if(!next||next[1].at>target)break;now=next[1].at;timers.delete(next[0]);next[1].fn();}now=target;}
   return {motion,phases,advance};
 }
-test('search grows before expansion, collapses before shrinking',()=>{
+test('search grows before expansion and closes width and scale together',()=>{
   const {motion,phases,advance}=fixture();motion.open();assert.deepEqual(phases,['growing']);
   advance(239);assert.equal(phases.at(-1),'growing');advance(1);assert.equal(phases.at(-1),'expanded');
   motion.close();advance(359);assert.equal(phases.at(-1),'collapsing');
-  advance(1);assert.equal(phases.at(-1),'shrinking');advance(320);assert.equal(phases.at(-1),'closed');
+  advance(1);assert.equal(phases.at(-1),'closed');assert.ok(!phases.includes('shrinking'));
 });
 test('re-entering and early exit cancel stale search phases',()=>{
   const {motion,phases,advance}=fixture();motion.open();advance(80);motion.close();advance(500);
