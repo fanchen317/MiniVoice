@@ -39,6 +39,7 @@ import java.util.Locale;
 import java.util.Set;
 
 public final class MainActivity extends Activity {
+    static final String ACTION_LOCATE_PLAYING="com.xcosmos.minivoice.LOCATE_PLAYING";
     private final List<Song> library=new ArrayList<>();
     private final Handler handler=new Handler();
     private PlaybackService service;
@@ -56,13 +57,15 @@ public final class MainActivity extends Activity {
     private boolean drawerOpen=true;
     private Song pendingLyricSong;
     private Song pendingPlay;
+    private boolean pendingLocatePlaying;
     private long lastRecentId=Long.MIN_VALUE;
     private final PlaybackService.Listener listener=()->runOnUiThread(this::refreshPlayer);
     private final ServiceConnection connection=new ServiceConnection(){
-        @Override public void onServiceConnected(ComponentName name,IBinder binder){service=((PlaybackService.LocalBinder)binder).get();service.addListener(listener);refreshPlayer();if(pendingPlay!=null){Song song=pendingPlay;pendingPlay=null;play(song);}}
+        @Override public void onServiceConnected(ComponentName name,IBinder binder){service=((PlaybackService.LocalBinder)binder).get();service.addListener(listener);refreshPlayer();if(pendingPlay!=null){Song song=pendingPlay;pendingPlay=null;play(song);}locatePlayingIfReady();}
         @Override public void onServiceDisconnected(ComponentName name){service=null;}
     };
-    @Override public void onCreate(Bundle state){super.onCreate(state);configureSystemBars();prefs=getSharedPreferences("library",MODE_PRIVATE);buildUi();requestLibrary();handler.postDelayed(new Runnable(){@Override public void run(){refreshPlayer();handler.postDelayed(this,500);}},500);}
+    @Override public void onCreate(Bundle state){super.onCreate(state);configureSystemBars();pendingLocatePlaying=ACTION_LOCATE_PLAYING.equals(getIntent().getAction());prefs=getSharedPreferences("library",MODE_PRIVATE);buildUi();requestLibrary();handler.postDelayed(new Runnable(){@Override public void run(){refreshPlayer();handler.postDelayed(this,500);}},500);}
+    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(ACTION_LOCATE_PLAYING.equals(intent.getAction())){pendingLocatePlaying=true;locatePlayingIfReady();}}
     private void configureSystemBars(){
         Window window=getWindow();window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
         window.setStatusBarColor(Color.TRANSPARENT);window.setNavigationBarColor(Color.BLACK);
@@ -79,7 +82,7 @@ public final class MainActivity extends Activity {
         new Thread(()->{
             Set<String> folders=ids("music_folders");
             List<Song> found=folders.isEmpty()?Library.load(this):FolderLibrary.scan(this,folders,prefs.getBoolean("scan_recursive",true));
-            runOnUiThread(()->{library.clear();library.addAll(found);scanning=false;renderRows();refreshWall();if(settings!=null)settings.refresh(library.size(),false);});
+            runOnUiThread(()->{library.clear();library.addAll(found);scanning=false;renderRows();refreshWall();locatePlayingIfReady();if(settings!=null)settings.refresh(library.size(),false);});
         }).start();
     }
     private int dp(int value){return Math.round(getResources().getDisplayMetrics().density*value);}
@@ -131,6 +134,13 @@ public final class MainActivity extends Activity {
         home.updateDrawer(section,ids("playlists"));refreshWall();
     }
     private void selectSection(String name){section=name;home.updateDrawer(section,ids("playlists"));root.setVisibility(View.GONE);refreshWall();}
+    private void locatePlayingIfReady(){
+        if(!pendingLocatePlaying||service==null||home==null)return;
+        Song song=service.current();if(song==null){pendingLocatePlaying=false;return;}
+        if(scanning)return;
+        section="歌曲";query="";home.clearSearch();home.updateDrawer(section,ids("playlists"));home.showDrawer(false);root.setVisibility(View.GONE);
+        refreshWall();pendingLocatePlaying=false;home.locateSong(song.id);
+    }
     private void refreshWall(){if(home==null)return;
         List<Song> visible=new ArrayList<>();Set<String> favorites=ids("favorites"),recent=ids("recent");
         for(Song song:library){if(!matches(song))continue;

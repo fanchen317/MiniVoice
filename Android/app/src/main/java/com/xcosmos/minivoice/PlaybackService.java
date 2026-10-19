@@ -130,7 +130,8 @@ public final class PlaybackService extends Service {
         session.setMetadata(metadata.build());
         session.setPlaybackState(new PlaybackState.Builder().setActions(PlaybackState.ACTION_PLAY|PlaybackState.ACTION_PAUSE|PlaybackState.ACTION_PLAY_PAUSE|PlaybackState.ACTION_SKIP_TO_NEXT|PlaybackState.ACTION_SKIP_TO_PREVIOUS|PlaybackState.ACTION_SEEK_TO)
             .setState(isPlaying()?PlaybackState.STATE_PLAYING:active?PlaybackState.STATE_PAUSED:PlaybackState.STATE_STOPPED,position(),isPlaying()?1f:0f,android.os.SystemClock.elapsedRealtime()).build());
-        Intent open=new Intent(this,MainActivity.class);
+        Intent open=new Intent(this,MainActivity.class).setAction(MainActivity.ACTION_LOCATE_PLAYING)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP|Intent.FLAG_ACTIVITY_CLEAR_TOP);
         Notification notification=new Notification.Builder(this,CHANNEL).setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(song.title).setContentText(song.artist).setContentIntent(PendingIntent.getActivity(this,0,open,PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT))
             .setLargeIcon(artwork).setVisibility(Notification.VISIBILITY_PUBLIC).setCategory(Notification.CATEGORY_TRANSPORT).setOngoing(isPlaying())
