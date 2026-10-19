@@ -11,3 +11,7 @@ __pycache__/
 # Electron renderer and dependencies
 Desktop/node_modules/
 Desktop/dist/
+Android/.gradle/
+Android/.idea/
+Android/local.properties
+Android/app/build/
