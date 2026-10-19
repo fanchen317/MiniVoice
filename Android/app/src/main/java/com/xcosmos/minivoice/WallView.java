@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.IntConsumer;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -31,8 +32,10 @@ import java.util.concurrent.Executors;
 final class WallView extends View {
     interface OnPlay { void play(Song song); }
     private static final class Hit { final RectF bounds;final WallLayout.Instance instance;Hit(RectF bounds,WallLayout.Instance instance){this.bounds=bounds;this.instance=instance;} }
+    private static final class LyricHit { final RectF bounds;final int ms;LyricHit(RectF bounds,int ms){this.bounds=bounds;this.ms=ms;} }
     private final OnPlay onPlay;
     private final Runnable onToggle;
+    private final IntConsumer onSeek;
     private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
     private final GestureDetector gestures;
     private final ScaleGestureDetector scaleDetector;
@@ -41,6 +44,7 @@ final class WallView extends View {
     private final LruCache<Long,Bitmap> bitmaps=new LruCache<Long,Bitmap>(48*1024*1024){@Override protected int sizeOf(Long key,Bitmap value){return value.getByteCount();}};
     private final Set<Long> requested=new HashSet<>();
     private final List<Hit> hits=new ArrayList<>();
+    private final List<LyricHit> lyricHits=new ArrayList<>();
     private List<Song> songs=new ArrayList<>();
     private WallLayout scene;
     private float cameraX,cameraY,scale=1,focusAmount,focusSide;
@@ -53,18 +57,18 @@ final class WallView extends View {
     private boolean cameraReady;
     private ValueAnimator motion;
     private final float density;
-    WallView(Context context,OnPlay onPlay,Runnable onToggle){
-        super(context);this.onPlay=onPlay;this.onToggle=onToggle;density=getResources().getDisplayMetrics().density;setLayerType(View.LAYER_TYPE_HARDWARE,null);
+    WallView(Context context,OnPlay onPlay,Runnable onToggle,IntConsumer onSeek){
+        super(context);this.onPlay=onPlay;this.onToggle=onToggle;this.onSeek=onSeek;density=getResources().getDisplayMetrics().density;setLayerType(View.LAYER_TYPE_HARDWARE,null);
         scene=new WallLayout(0,density);
         gestures=new GestureDetector(context,new GestureDetector.SimpleOnGestureListener(){
             @Override public boolean onDown(MotionEvent event){cancelMotion();return true;}
             @Override public boolean onScroll(MotionEvent start,MotionEvent end,float dx,float dy){if(scaleDetector.isInProgress())return false;cameraX-=dx;cameraY-=dy;invalidate();return true;}
             @Override public boolean onFling(MotionEvent start,MotionEvent end,float vx,float vy){animateCamera(cameraX+vx*.20f,cameraY+vy*.20f,420);return true;}
-            @Override public boolean onSingleTapConfirmed(MotionEvent event){Hit hit=hit(event.getX(),event.getY());if(hit!=null){
+            @Override public boolean onSingleTapConfirmed(MotionEvent event){if(seekLyric(event.getX(),event.getY()))return true;Hit hit=hit(event.getX(),event.getY());if(hit!=null){
                 if(focus!=null&&same(hit.instance,focus)&&focusAmount>.65f)playOrToggle(hit.instance);
                 else focus(hit.instance);
             }return hit!=null;}
-            @Override public boolean onDoubleTap(MotionEvent event){Hit hit=hit(event.getX(),event.getY());if(hit!=null&&hit.instance.tile.index<songs.size())playOrToggle(hit.instance);return hit!=null;}
+            @Override public boolean onDoubleTap(MotionEvent event){if(seekLyric(event.getX(),event.getY()))return true;Hit hit=hit(event.getX(),event.getY());if(hit!=null&&hit.instance.tile.index<songs.size())playOrToggle(hit.instance);return hit!=null;}
         });
         scaleDetector=new ScaleGestureDetector(context,new ScaleGestureDetector.SimpleOnScaleGestureListener(){
             @Override public boolean onScaleBegin(ScaleGestureDetector detector){cancelMotion();return true;}
@@ -92,9 +96,9 @@ final class WallView extends View {
     @Override protected void onSizeChanged(int w,int h,int oldW,int oldH){super.onSizeChanged(w,h,oldW,oldH);if(!cameraReady)centerInitial();}
     private void centerInitial(){if(scene.tiles.isEmpty()||getWidth()==0||getHeight()==0)return;
         scale=1;cameraX=12*density;cameraY=80*density;cameraReady=true;}
-    @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);canvas.drawColor(Color.BLACK);if(scene.tiles.isEmpty()){
+    @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);canvas.drawColor(Color.BLACK);hits.clear();lyricHits.clear();if(scene.tiles.isEmpty()){
         paint.setShader(null);paint.setColor(0xFF9DA8A1);paint.setTextSize(18*density);String message="添加音乐文件夹，开始浏览音乐墙";canvas.drawText(message,Math.max(20,(getWidth()-paint.measureText(message))/2),getHeight()/2f,paint);return;}
-        if(!cameraReady)centerInitial();hits.clear();
+        if(!cameraReady)centerInitial();
         List<WallLayout.Instance> visible=scene.visible(cameraX,cameraY,scale,getWidth(),getHeight(),(focus==null?400:1100)*density);
         WallLayout.Instance focusedInstance=null;
         for(WallLayout.Instance instance:visible){if(focus!=null&&same(instance,focus)){focusedInstance=instance;continue;}drawTile(canvas,instance,false);}
@@ -166,6 +170,7 @@ final class WallView extends View {
             paint.setTextSize(relative==0?Math.min(24*density,rect.width()*.068f):Math.min(19*density,rect.width()*.055f));
             paint.setColor(relative==0?Color.WHITE:Math.abs(relative)==1?0x88FFFFFF:0x55FFFFFF);
             canvas.drawText(shorten(playingLyrics.get(index).text,rect.width()-2*inset),rect.left+inset,y,paint);
+            lyricHits.add(new LyricHit(new RectF(rect.left+inset,y-row*.55f,rect.right-inset,y+row*.45f),(int)Math.min(Integer.MAX_VALUE,playingLyrics.get(index).ms)));
         }
     }
     private String shorten(String value,float width){if(value==null)return "";if(paint.measureText(value)<=width)return value;String result=value;while(result.length()>1&&paint.measureText(result+"…")>width)result=result.substring(0,result.length()-1);return result+"…";}
@@ -186,6 +191,7 @@ final class WallView extends View {
         return null;
     }
     private Hit hit(float x,float y){for(int i=hits.size()-1;i>=0;i--)if(hits.get(i).bounds.contains(x,y))return hits.get(i);return null;}
+    private boolean seekLyric(float x,float y){for(LyricHit lyric:lyricHits)if(lyric.bounds.contains(x,y)){onSeek.accept(lyric.ms);return true;}return false;}
     private void focus(WallLayout.Instance instance){focus=instance;focusAmount=0;
         float preferred=Math.min(520*density,Math.max(320*density,(getHeight()-150*density)*.85f));
         focusSide=Math.max(180*density,Math.min(preferred,Math.min(getWidth()-40*density,getHeight()-150*density)));

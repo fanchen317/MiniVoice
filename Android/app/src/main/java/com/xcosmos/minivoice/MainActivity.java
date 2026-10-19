@@ -169,9 +169,17 @@ public final class MainActivity extends Activity {
         play(song);
     }
     private void showSettings(){settings.show(library.size(),scanning);}
-    private void showQueue(){if(service==null||service.queue.isEmpty()){new AlertDialog.Builder(this).setTitle("播放队列").setMessage("暂无播放队列").setPositiveButton("关闭",null).show();return;}
-        String[] songs=new String[service.queue.size()];for(int i=0;i<songs.length;i++){Song song=service.queue.get(i);songs[i]=(i==service.index?"▶  ":"")+song.title+" · "+song.artist;}
-        new AlertDialog.Builder(this).setTitle("播放队列 · "+songs.length+" 首").setItems(songs,(dialog,index)->service.select(index)).setPositiveButton("关闭",null).show();}
+    private void showQueue(){if(service==null)return;
+        List<Song> queue=new ArrayList<>(service.queue);int selected=service.index;
+        final android.app.Dialog[] sheet={null};sheet[0]=BottomSheet.show(this,"播放队列 · "+queue.size()+" 首",body->{
+            if(queue.isEmpty()){BottomSheet.action(this,body,"暂无播放队列",()->{});return;}
+            for(int i=0;i<queue.size();i++){Song song=queue.get(i);int index=i;
+                TextView row=BottomSheet.action(this,body,(i==selected?"▸  ":"    ")+song.title+"  ·  "+song.artist,()->{if(service!=null)service.select(index);if(sheet[0]!=null)sheet[0].dismiss();});
+                row.setSingleLine(true);row.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                if(i==selected)row.setTextColor(0xFF20C796);
+            }
+        });
+    }
     private void showSearch(){EditText input=new EditText(this);input.setSingleLine(true);input.setHint("搜索歌曲、歌手或专辑");new AlertDialog.Builder(this).setTitle("搜索音乐库").setView(input).setNegativeButton("取消",null).setPositiveButton("搜索",(dialog,which)->{query=input.getText().toString().toLowerCase(Locale.ROOT);selectSection("歌曲");}).show();}
     private void clearCacheFiles(java.io.File folder){java.io.File[] files=folder.listFiles();if(files==null)return;for(java.io.File file:files){if(file.isDirectory())clearCacheFiles(file);file.delete();}}
     private void showCache(){
