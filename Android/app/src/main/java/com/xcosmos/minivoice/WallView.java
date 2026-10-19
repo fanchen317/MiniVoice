@@ -93,6 +93,7 @@ final class WallView extends View {
     void setLyrics(long id,List<Lyrics.Line> lines){if(playingId==id){playingLyrics=new ArrayList<>(lines);invalidate();}}
     void resetCamera(){cancelMotion();focus=null;focusAmount=0;cameraReady=false;centerInitial();invalidate();}
     void zoom(float factor){float old=scale;scale=Math.max(.6f,Math.min(1.2f,scale*factor));cameraX=getWidth()/2f-(getWidth()/2f-cameraX)*scale/old;cameraY=getHeight()/2f-(getHeight()/2f-cameraY)*scale/old;invalidate();}
+    float scale(){return scale;}
     @Override protected void onSizeChanged(int w,int h,int oldW,int oldH){super.onSizeChanged(w,h,oldW,oldH);if(!cameraReady)centerInitial();}
     private void centerInitial(){if(scene.tiles.isEmpty()||getWidth()==0||getHeight()==0)return;
         scale=1;cameraX=12*density;cameraY=80*density;cameraReady=true;}
@@ -155,8 +156,14 @@ final class WallView extends View {
                 paint.setColor(0xF0FFFFFF);canvas.drawCircle(cx,cy,radius,paint);paint.setColor(0xFF222222);paint.setTextSize(radius*.95f);paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
                 String play=song.id==playingId&&playbackPlaying?"Ⅱ":"▶";canvas.drawText(play,cx-paint.measureText(play)/2,cy+radius*.35f,paint);}
         }
-        if(selected&&song.id==playingId&&focusAmount>.8f)drawLyrics(canvas,rect,inset);
-        if(song.id==playingId){paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(3*density);paint.setColor(0xD91BBC87);canvas.drawRect(rect,paint);paint.setStyle(Paint.Style.FILL);}
+        if(selected&&song.id==playingId&&focusAmount>.8f){
+            paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);paint.setTextSize(12*density);paint.setColor(0xFF21C994);
+            String state=playbackPlaying?"♫  正在播放":"Ⅱ  已暂停";float badgeWidth=paint.measureText(state)+22*density;
+            paint.setColor(0xC91D302A);canvas.drawRoundRect(rect.left+inset,rect.top+inset,rect.left+inset+badgeWidth,rect.top+inset+29*density,14*density,14*density,paint);
+            paint.setColor(0xFF35D8A6);canvas.drawText(state,rect.left+inset+11*density,rect.top+inset+19*density,paint);
+            drawLyrics(canvas,rect,inset);
+        }
+        if(song.id==playingId&&(focus==null||selected)){paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(3*density);paint.setColor(0xD91BBC87);canvas.drawRect(rect,paint);paint.setStyle(Paint.Style.FILL);}
         canvas.restoreToCount(save);hits.add(new Hit(rect,instance));
     }
     private void drawLyrics(Canvas canvas,RectF rect,float inset){

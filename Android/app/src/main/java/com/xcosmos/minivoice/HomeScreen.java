@@ -51,6 +51,8 @@ final class HomeScreen {
 
         void lyrics();
 
+        void locate();
+
         void queue();
 
         void seek(int ms);
@@ -142,7 +144,8 @@ final class HomeScreen {
         current.setGravity(Gravity.CENTER);
         current.setSingleLine(true);
         current.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        current.setOnClickListener(v -> actions.lyrics());
+        current.setOnClickListener(v -> actions.locate());
+        current.setOnLongClickListener(v -> {actions.lyrics();return true;});
         middleTop.addView(current, new LinearLayout.LayoutParams(0, -1, 1));
         ImageView next = imageButton(R.drawable.icon_transport_next_track, Color.WHITE, actions::next);
         next.setPadding(dp(5), dp(5), dp(5), dp(5));
@@ -175,37 +178,39 @@ final class HomeScreen {
         View outside = new View(activity);
         drawerLayer.addView(outside, new FrameLayout.LayoutParams(-1, -1));
         outside.setOnClickListener(v -> showDrawer(false));
-        ScrollView drawerScroll = new ScrollView(activity);
+        drawerScroll = new ScrollView(activity);
         drawerScroll.setFillViewport(true);
         drawerScroll.setVerticalScrollBarEnabled(false);
-        FrameLayout.LayoutParams drawerParams = new FrameLayout.LayoutParams(Math.min(dp(310), activity.getResources().getDisplayMetrics().widthPixels - dp(58)), -1, Gravity.LEFT);
-        drawerParams.setMargins(dp(15), dp(20), 0, dp(16));
+        FrameLayout.LayoutParams drawerParams = new FrameLayout.LayoutParams(Math.min(dp(268), Math.round(activity.getResources().getDisplayMetrics().widthPixels * .72f)), -1, Gravity.LEFT);
+        drawerParams.setMargins(dp(10), dp(12), 0, dp(10));
         drawerLayer.addView(drawerScroll, drawerParams);
         LinearLayout drawer = new LinearLayout(activity);
         drawer.setOrientation(LinearLayout.VERTICAL);
-        drawer.setPadding(dp(16), dp(18), dp(16), dp(18));
-        drawer.setBackground(round(0xE9171C1B, 24, 0x77FFFFFF, 1));
+        drawer.setPadding(dp(12), dp(14), dp(12), dp(14));
+        drawer.setBackground(round(0xF21B211F, 22, 0x55FFFFFF, 1));
         drawerScroll.addView(drawer);
         LinearLayout brand = new LinearLayout(activity);
         brand.setGravity(Gravity.CENTER_VERTICAL);
-        drawer.addView(brand, new LinearLayout.LayoutParams(-1, dp(72)));
+        drawer.addView(brand, new LinearLayout.LayoutParams(-1, dp(64)));
         ImageView icon = new ImageView(activity);
         icon.setImageResource(R.drawable.minivoice_icon);
         icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        icon.setBackground(round(0xFF3ED766, 15, 0, 0));
+        icon.setBackground(round(0xFF3ED766, 14, 0, 0));
         icon.setClipToOutline(true);
-        brand.addView(icon, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        brand.addView(icon, new LinearLayout.LayoutParams(dp(48), dp(48)));
         LinearLayout title = new LinearLayout(activity);
         title.setOrientation(LinearLayout.VERTICAL);
         title.setPadding(dp(12), 0, 0, 0);
         brand.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView name = text("MiniVoice", 22, Color.WHITE);
+        TextView name = text("MiniVoice", 19, Color.WHITE);
         name.setTypeface(null, Typeface.BOLD);
         title.addView(name);
-        TextView sub = text("音乐让生活更美...", 13, 0xFF9DA7A4);
+        TextView sub = text("音乐让生活更美...", 11, 0xFF9DA7A4);
+        sub.setSingleLine(true);
         title.addView(sub);
-        brand.addView(imageButton(R.drawable.icon_info, green, actions::settings), new LinearLayout.LayoutParams(dp(38), dp(46)));
-        brand.addView(imageButton(R.drawable.icon_close, Color.WHITE, () -> showDrawer(false)), new LinearLayout.LayoutParams(dp(38), dp(46)));
+        ImageView closeDrawer = imageButton(R.drawable.icon_close, Color.WHITE, () -> showDrawer(false));
+        closeDrawer.setPadding(dp(8), dp(8), dp(8), dp(8));
+        brand.addView(closeDrawer, new LinearLayout.LayoutParams(dp(34), dp(42)));
         drawerRows = new LinearLayout(activity);
         drawerRows.setOrientation(LinearLayout.VERTICAL);
         drawerRows.setPadding(0, dp(12), 0, 0);
@@ -219,16 +224,20 @@ final class HomeScreen {
         LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(dp(48), dp(48));
         settingsParams.setMargins(dp(4), dp(4), 0, 0);
         drawer.addView(settings, settingsParams);
+        drawerLayer.setVisibility(View.GONE);
         frame.setOnApplyWindowInsetsListener((view, insets) -> {
             int top = android.os.Build.VERSION.SDK_INT >= 30 ? insets.getInsets(WindowInsets.Type.statusBars()).top : insets.getSystemWindowInsetTop();
-            menuParams.topMargin = top + dp(16);
+            menuParams.topMargin = top + dp(14);
             menu.setLayoutParams(menuParams);
-            searchParams.topMargin = top + dp(16);
+            searchParams.topMargin = top + dp(14);
             search.setLayoutParams(searchParams);
-            searchInputParams.topMargin = top + dp(19);
+            searchInputParams.topMargin = top + dp(78);
             searchInput.setLayoutParams(searchInputParams);
-            drawerParams.topMargin = top + dp(20);
+            drawerParams.topMargin = top + dp(12);
             drawerScroll.setLayoutParams(drawerParams);
+            boolean keyboard = android.os.Build.VERSION.SDK_INT >= 30 && insets.isVisible(WindowInsets.Type.ime());
+            player.setVisibility(keyboard ? View.GONE : View.VISIBLE);
+            wallSettings.setVisibility(keyboard ? View.GONE : View.VISIBLE);
             return insets;
         });
         frame.post(frame::requestApplyInsets);
@@ -243,8 +252,22 @@ final class HomeScreen {
     }
 
     void showDrawer(boolean open) {
+        if (drawerOpen == open) return;
         drawerOpen = open;
-        drawerLayer.setVisibility(open ? View.VISIBLE : View.GONE);
+        drawerScroll.animate().cancel();
+        drawerLayer.animate().cancel();
+        if (open) {
+            drawerLayer.setVisibility(View.VISIBLE);
+            drawerLayer.setAlpha(0);
+            drawerScroll.setTranslationX(-drawerScroll.getLayoutParams().width - dp(20));
+            drawerLayer.animate().alpha(1).setDuration(220).start();
+            drawerScroll.animate().translationX(0).setDuration(260).start();
+        } else {
+            drawerScroll.animate().translationX(-drawerScroll.getLayoutParams().width - dp(20)).setDuration(230).start();
+            drawerLayer.animate().alpha(0).setDuration(230).withEndAction(() -> {
+                if (!drawerOpen) drawerLayer.setVisibility(View.GONE);
+            }).start();
+        }
     }
 
     void setPlayback(long id, String title, boolean playing, int position, int duration) {
@@ -269,8 +292,8 @@ final class HomeScreen {
         nav("♡", "收藏", selected.equals("收藏"), () -> actions.section("收藏"));
         nav("♙", "歌手", selected.equals("歌手"), () -> actions.section("歌手"));
         nav("◎", "专辑", selected.equals("专辑"), () -> actions.section("专辑"));
-        TextView heading = text("我的歌单", 15, 0xFFB8BEBA);
-        heading.setPadding(dp(28), dp(22), 0, dp(10));
+        TextView heading = text("我的歌单", 13, 0xFFB8BEBA);
+        heading.setPadding(dp(20), dp(18), 0, dp(8));
         drawerRows.addView(heading);
         for (String name : new java.util.TreeSet<>(playlists)) {
             int count = activity.getSharedPreferences("library", Activity.MODE_PRIVATE).getStringSet("playlist_" + name, Set.of()).size();
@@ -286,25 +309,25 @@ final class HomeScreen {
     private void nav(String symbol, String label, boolean selected, Runnable action, String badge) {
         LinearLayout row = new LinearLayout(activity);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(18), 0, dp(10), 0);
-        if (selected) row.setBackground(round(0x55468C74, 15, 0, 0));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(60));
-        lp.setMargins(0, dp(3), 0, dp(3));
+        row.setPadding(dp(14), 0, dp(8), 0);
+        if (selected) row.setBackground(round(0x55468C74, 13, 0, 0));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(51));
+        lp.setMargins(0, dp(2), 0, dp(2));
         drawerRows.addView(row, lp);
         int resource = iconFor(label);
         if (resource != 0)
-            row.addView(imageButton(resource, selected ? green : 0xFFE6EBE8, () -> row.performClick()), new LinearLayout.LayoutParams(dp(35), dp(35)));
+            row.addView(imageButton(resource, selected ? green : 0xFFE6EBE8, () -> row.performClick()), new LinearLayout.LayoutParams(dp(30), dp(30)));
         else {
-            TextView icon = text(symbol, 27, selected ? green : 0xFFE6EBE8);
+            TextView icon = text(symbol, 22, selected ? green : 0xFFE6EBE8);
             icon.setGravity(Gravity.CENTER);
-            row.addView(icon, new LinearLayout.LayoutParams(dp(35), -1));
+            row.addView(icon, new LinearLayout.LayoutParams(dp(30), -1));
         }
-        TextView title = text(label, 18, selected ? green : Color.WHITE);
+        TextView title = text(label, 15, selected ? green : Color.WHITE);
         title.setTypeface(null, Typeface.BOLD);
         title.setPadding(dp(8), 0, 0, 0);
         row.addView(title, new LinearLayout.LayoutParams(0, -1, 1));
         if (badge != null) {
-            TextView count = text(badge, 13, 0xFFB6BDB8);
+            TextView count = text(badge, 12, 0xFFB6BDB8);
             row.addView(count);
         }
         row.setOnClickListener(v -> {
@@ -334,37 +357,53 @@ final class HomeScreen {
 
     private void toggleSearch() {
         boolean opening = searchInput.getVisibility() != View.VISIBLE;
-        searchInput.setVisibility(opening ? View.VISIBLE : View.GONE);
         if (opening) {
+            searchInput.setAlpha(0);
+            searchInput.setTranslationY(-dp(8));
+            searchInput.setVisibility(View.VISIBLE);
+            searchInput.animate().alpha(1).translationY(0).setDuration(180).start();
             searchInput.requestFocus();
-            ((android.view.inputmethod.InputMethodManager) activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).showSoftInput(searchInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+            searchInput.post(() -> ((android.view.inputmethod.InputMethodManager) activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).showSoftInput(searchInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT));
         } else {
             searchInput.setText("");
             searchInput.clearFocus();
             ((android.view.inputmethod.InputMethodManager) activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(searchInput.getWindowToken(), 0);
+            searchInput.setVisibility(View.GONE);
         }
     }
 
     private void showWallOptions() {
-        String[] choices = {"播放模式", "放大音乐墙", "缩小音乐墙", "回到起始位置", "设置"};
-        new AlertDialog.Builder(activity).setTitle("音乐墙").setItems(choices, (dialog, index) -> {
-            switch (index) {
-                case 0:
-                    actions.playMode();
-                    break;
-                case 1:
-                    wall.zoom(1.2f);
-                    break;
-                case 2:
-                    wall.zoom(1 / 1.2f);
-                    break;
-                case 3:
-                    wall.resetCamera();
-                    break;
-                default:
-                    actions.settings();
-            }
-        }).show();
+        final android.app.Dialog[] sheet = {null};
+        sheet[0] = BottomSheet.show(activity, "音乐墙", body -> {
+            TextView ratio = text("显示比例  ·  " + Math.round(wall.scale() * 100) + "%", 15, 0xFFE6F3ED);
+            ratio.setPadding(dp(14), dp(12), 0, dp(4));
+            body.addView(ratio);
+            SeekBar zoom = new SeekBar(activity);
+            styleSeekBar(zoom);
+            zoom.setMax(60);
+            zoom.setProgress(Math.round(wall.scale() * 100) - 60);
+            body.addView(zoom, new LinearLayout.LayoutParams(-1, dp(48)));
+            zoom.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                public void onProgressChanged(SeekBar bar, int progress, boolean user) {
+                    if (user) {wall.zoom((progress + 60) / 100f / wall.scale());ratio.setText("显示比例  ·  " + Math.round(wall.scale() * 100) + "%");}
+                }
+                public void onStartTrackingTouch(SeekBar bar) {}
+                public void onStopTrackingTouch(SeekBar bar) {}
+            });
+            BottomSheet.action(activity, body, "恢复 100%", () -> {wall.zoom(1f / wall.scale());zoom.setProgress(40);ratio.setText("显示比例  ·  100%");});
+            BottomSheet.action(activity, body, "播放模式", actions::playMode);
+            BottomSheet.action(activity, body, "回到起始位置", () -> {wall.resetCamera();sheet[0].dismiss();});
+            BottomSheet.action(activity, body, "应用设置", () -> {sheet[0].dismiss();actions.settings();});
+        });
+    }
+
+    private void styleSeekBar(SeekBar bar) {
+        GradientDrawable track = new GradientDrawable();track.setColor(0x66FFFFFF);track.setCornerRadius(dp(4));track.setSize(1, dp(6));
+        GradientDrawable fill = new GradientDrawable();fill.setColor(0xFF18BD91);fill.setCornerRadius(dp(4));fill.setSize(1, dp(6));
+        LayerDrawable layers = new LayerDrawable(new android.graphics.drawable.Drawable[]{track, new ClipDrawable(fill, Gravity.LEFT, ClipDrawable.HORIZONTAL)});
+        layers.setId(0, android.R.id.background);layers.setId(1, android.R.id.progress);bar.setProgressDrawable(layers);
+        GradientDrawable thumb = new GradientDrawable();thumb.setShape(GradientDrawable.OVAL);thumb.setColor(0xFF22C999);thumb.setSize(dp(18), dp(18));
+        bar.setThumb(thumb);bar.setThumbOffset(dp(9));bar.setPadding(dp(10), dp(5), dp(10), dp(5));bar.setSplitTrack(false);
     }
 
     private TextView text(String value, int size, int color) {
@@ -421,8 +460,8 @@ final class HomeScreen {
 
     private ImageView roundImage(int resource, Runnable action) {
         ImageView view = imageButton(resource, Color.WHITE, action);
-        view.setPadding(dp(13), dp(13), dp(13), dp(13));
-        view.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x66FFFFFF), round(0x9952574F, 28, 0x88FFFFFF, 1), round(Color.WHITE, 28, 0, 0)));
+        view.setPadding(dp(10), dp(10), dp(10), dp(10));
+        view.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x66FFFFFF), round(0xB5353C38, 28, 0x99FFFFFF, 1), round(Color.WHITE, 28, 0, 0)));
         return view;
     }
 
