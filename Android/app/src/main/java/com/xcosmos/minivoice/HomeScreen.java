@@ -37,12 +37,14 @@ final class HomeScreen {
     private final SeekBar seek;
     private final EditText searchInput;
     private boolean drawerOpen=true;
+    private boolean groupedWall;
+    private long displayedSongId=Long.MIN_VALUE;
     private final int green=Color.rgb(21,188,135);
     private final Handler main=new Handler();
     HomeScreen(Activity activity,Actions actions){
         this.activity=activity;this.actions=actions;
         frame=new FrameLayout(activity);frame.setBackgroundColor(Color.rgb(7,12,13));
-        wall=new WallView(activity,actions::play);frame.addView(wall,new FrameLayout.LayoutParams(-1,-1));
+        wall=new WallView(activity,actions::play,actions::toggle);frame.addView(wall,new FrameLayout.LayoutParams(-1,-1));
         ImageView menu=roundImage(R.drawable.icon_wall_sidebar,()->showDrawer(true));FrameLayout.LayoutParams menuParams=new FrameLayout.LayoutParams(dp(54),dp(54),Gravity.TOP|Gravity.LEFT);menuParams.setMargins(dp(14),dp(16),0,0);frame.addView(menu,menuParams);
         ImageView search=roundImage(R.drawable.icon_wall_search,this::toggleSearch);FrameLayout.LayoutParams searchParams=new FrameLayout.LayoutParams(dp(56),dp(56),Gravity.TOP|Gravity.RIGHT);searchParams.setMargins(0,dp(16),dp(14),0);frame.addView(search,searchParams);
         searchInput=new EditText(activity);searchInput.setSingleLine(true);searchInput.setTextColor(Color.WHITE);searchInput.setHintTextColor(0xFFB9C5BE);searchInput.setHint("搜索歌曲、歌手或专辑");searchInput.setTextSize(15);searchInput.setPadding(dp(14),0,dp(14),0);searchInput.setBackground(round(0xEE232725,16,0x77FFFFFF,1));searchInput.setVisibility(View.GONE);
@@ -89,7 +91,8 @@ final class HomeScreen {
     View view(){return frame;}
     boolean isDrawerOpen(){return drawerOpen;}
     void showDrawer(boolean open){drawerOpen=open;drawerLayer.setVisibility(open?View.VISIBLE:View.GONE);}
-    void setPlayback(long id,String title,boolean playing,int position,int duration){current.setText(title);playButton.setImageResource(playing?R.drawable.icon_transport_pause:R.drawable.icon_transport_play);seek.setMax(Math.max(1,duration));if(!seek.isPressed())seek.setProgress(position);wall.setPlayingId(id);}
+    void setPlayback(long id,String title,boolean playing,int position,int duration){boolean changed=displayedSongId!=id;displayedSongId=id;current.setText(title);playButton.setImageResource(playing?R.drawable.icon_transport_pause:R.drawable.icon_transport_play);seek.setMax(Math.max(1,duration));if(!seek.isPressed())seek.setProgress(position);wall.setPlayback(id,playing,position);if(changed&&!groupedWall)locateSong(id);}
+    void setLyrics(long id,List<Lyrics.Line> lines){wall.setLyrics(id,lines);}
     void updateDrawer(String selected,Set<String> playlists){
         drawerRows.removeAllViews();
         nav("♫","音乐库",selected.equals("歌曲"),()->actions.section("歌曲"));
@@ -117,7 +120,8 @@ final class HomeScreen {
         if(badge!=null){TextView count=text(badge,13,0xFFB6BDB8);row.addView(count);}
         row.setOnClickListener(v->{action.run();if(!label.equals("新建歌单"))showDrawer(false);});
     }
-    void updateWall(List<Song> songs){wall.setSongs(songs);}
+    void updateWall(List<Song> songs){updateWall(songs,false);}
+    void updateWall(List<Song> songs,boolean grouped){groupedWall=grouped;wall.setSongs(songs);}
     void locateSong(long songId){wall.post(()->wall.locateSong(songId));}
     void clearSearch(){if(searchInput.length()>0)searchInput.setText("");searchInput.setVisibility(View.GONE);searchInput.clearFocus();}
     private void toggleSearch(){boolean opening=searchInput.getVisibility()!=View.VISIBLE;searchInput.setVisibility(opening?View.VISIBLE:View.GONE);if(opening){searchInput.requestFocus();((android.view.inputmethod.InputMethodManager)activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).showSoftInput(searchInput,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);}else{searchInput.setText("");searchInput.clearFocus();((android.view.inputmethod.InputMethodManager)activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(searchInput.getWindowToken(),0);}}
