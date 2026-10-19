@@ -223,10 +223,16 @@ public final class MainActivity extends Activity {
         now.setText((service.isPlaying()?"▶ ":"Ⅱ ")+song.title+" · "+song.artist+"  ♪ 歌词");home.setPlayback(song.id,song.title,service.isPlaying(),service.position(),(int)song.duration);progress.setMax((int)Math.max(1,song.duration));if(!progress.isPressed())progress.setProgress(service.position());elapsed.setText(time(service.position())+" / "+time((int)song.duration));}
     private void showLyrics(){if(service!=null&&service.current()!=null)showLyricsFor(service.current());}
     private void showLyricsFor(Song song){
-        String raw=prefs.getString("lyrics_"+song.id,"");List<Lyrics.Line> lines=Lyrics.parse(raw);
+        String manual=prefs.getString("lyrics_"+song.id,"");
+        if(!manual.isEmpty()||song.lyricUri==null){displayLyrics(song,manual);return;}
+        new Thread(()->{String raw;try{raw=Lyrics.read(this,song.lyricUri);}catch(Exception ignored){raw="";}
+            String result=raw;runOnUiThread(()->{if(!isFinishing())displayLyrics(song,result);});}).start();
+    }
+    private void displayLyrics(Song song,String raw){
+        List<Lyrics.Line> lines=Lyrics.parse(raw);
         StringBuilder body=new StringBuilder();for(Lyrics.Line line:lines)body.append(time((int)line.ms)).append("  ").append(line.text).append("\n\n");
         new AlertDialog.Builder(this).setTitle(song.title+" · 歌词")
-            .setMessage(body.length()==0?"暂无歌词，可导入 LRC 文件。":body.toString())
+            .setMessage(body.length()==0?"暂无歌词。可在歌曲目录的 lrc 文件夹放入同名 .lrc，或手动导入。":body.toString())
             .setNeutralButton("导入 LRC",(d,w)->{pendingLyricSong=song;Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT);picker.setType("*/*");picker.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(picker,2);})
             .setPositiveButton("关闭",null).show();
     }
@@ -238,10 +244,7 @@ public final class MainActivity extends Activity {
         }
         if(request!=2||result!=RESULT_OK||data==null||pendingLyricSong==null)return;
         Song song=pendingLyricSong;pendingLyricSong=null;
-        try(java.io.InputStream stream=getContentResolver().openInputStream(data.getData())){
-            byte[] bytes=new byte[1024*1024];int length=stream.read(bytes);if(length<0)return;
-            String raw=new String(bytes,0,length,java.nio.charset.StandardCharsets.UTF_8);
-            prefs.edit().putString("lyrics_"+song.id,raw).apply();showLyricsFor(song);
-        }catch(Exception e){new AlertDialog.Builder(this).setMessage("无法读取歌词文件："+e.getMessage()).setPositiveButton("确定",null).show();}
+        new Thread(()->{try{String raw=Lyrics.read(this,data.getData());prefs.edit().putString("lyrics_"+song.id,raw).apply();runOnUiThread(()->{if(!isFinishing())showLyricsFor(song);});}
+            catch(Exception e){runOnUiThread(()->{if(!isFinishing())new AlertDialog.Builder(this).setMessage("无法读取歌词文件："+e.getMessage()).setPositiveButton("确定",null).show();});}}).start();
     }
 }
