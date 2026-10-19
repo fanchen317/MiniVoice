@@ -12,7 +12,7 @@ final class Library {
         List<Song> songs = new ArrayList<>();
         String[] columns = {MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.ALBUM_ID, MediaStore.Audio.Media.DURATION,
-            MediaStore.Audio.Media.RELATIVE_PATH,MediaStore.Audio.Media.DISPLAY_NAME};
+            MediaStore.Audio.Media.RELATIVE_PATH,MediaStore.Audio.Media.DISPLAY_NAME,MediaStore.Audio.Media.DATE_MODIFIED,MediaStore.Audio.Media.SIZE};
         try (Cursor cursor = context.getContentResolver().query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 columns, MediaStore.Audio.Media.IS_MUSIC + " != 0", null, MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC")) {
             if (cursor == null) throw new IllegalStateException("无法读取系统音乐库");
@@ -31,9 +31,10 @@ final class Library {
                     artist=AudioTags.choose(tags.artist,AudioTags.choose(retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST),artist));
                     album=AudioTags.choose(tags.album,AudioTags.choose(retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM),album));
                 }catch(Exception ignored){}finally{try{retriever.release();}catch(Exception ignored){}}
-                songs.add(new Song(id,duration,albumId,title,artist,
+                Song song=new Song(id,duration,albumId,title,artist,
                     album,clean(cursor.getString(6)),
-                    ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,id)));
+                    ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,id));
+                song.artworkVersion=cursor.getLong(8)+":"+cursor.getLong(9);songs.add(song);
             }
         }
         songs.sort((a,b)->a.title.compareToIgnoreCase(b.title));

@@ -31,6 +31,7 @@ public final class ParsingTests {
             equal(real.isEmpty(),false);equal(real.get(0).text,"星晴 - 周杰伦 (Jay Chou)");
             for(Lyrics.Line line:real)if(line.text.matches(".*<\\d+:.*"))throw new AssertionError("Unparsed word timestamp: "+line.text);
         }
+        if(args.length>2){List<Lyrics.Line> wish=Lyrics.parse(java.nio.file.Files.readString(java.nio.file.Path.of(args[2])));equal(wish.isEmpty(),false);equal(wish.get(0).text.startsWith("I wish"),true);equal(wish.get(0).ms,0L);}
         System.out.println("PASS: lyric timing/offset, ID3 UTF-16, metadata precedence, filename fallback, malformed tags");
     }
 }

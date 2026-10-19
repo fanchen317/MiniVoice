@@ -6,7 +6,9 @@ final class Song {
     final long id, duration, albumId;
     final String title, artist, album, path;
     final Uri uri, lyricUri;
+    boolean lyricReadFailed;
     Uri artworkUri;
+    String artworkVersion="";
     volatile android.graphics.Bitmap artworkPreview;
     volatile java.io.File artworkFile;
     volatile String artworkCacheKey;

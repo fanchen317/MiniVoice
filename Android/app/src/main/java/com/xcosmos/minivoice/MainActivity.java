@@ -172,7 +172,7 @@ public final class MainActivity extends Activity {
             java.util.LinkedHashMap<String,Song> representatives=new java.util.LinkedHashMap<>();java.util.Map<String,Integer> counts=new java.util.HashMap<>();
             for(Song song:visible){String key=section.equals("歌手")?song.artist:song.album;representatives.putIfAbsent(key,song);counts.put(key,counts.getOrDefault(key,0)+1);}
             List<Song> groups=new ArrayList<>();for(java.util.Map.Entry<String,Song> entry:representatives.entrySet()){
-                Song sample=entry.getValue();Song group=new Song(sample.id,0,sample.albumId,entry.getKey(),counts.get(entry.getKey())+" 首歌曲",sample.album,sample.path,sample.uri);group.artworkUri=sample.artworkUri;group.artworkPreview=sample.artworkPreview;group.artworkFile=sample.artworkFile;group.artworkCacheKey=sample.artworkCacheKey;group.artworkPrepared=sample.artworkPrepared;groups.add(group);
+                Song sample=entry.getValue();Song group=new Song(sample.id,0,sample.albumId,entry.getKey(),counts.get(entry.getKey())+" 首歌曲",sample.album,sample.path,sample.uri);group.artworkUri=sample.artworkUri;group.artworkVersion=sample.artworkVersion;group.artworkPreview=sample.artworkPreview;group.artworkFile=sample.artworkFile;group.artworkCacheKey=sample.artworkCacheKey;group.artworkPrepared=sample.artworkPrepared;groups.add(group);
             }
             home.updateWall(groups,true);
         }else home.updateWall(visible);
@@ -260,7 +260,10 @@ public final class MainActivity extends Activity {
         String sourceKey=manual.isEmpty()?String.valueOf(source):"manual:"+manual;
         int generation=lyricsLoad.begin(song.id,sourceKey,android.os.SystemClock.uptimeMillis());if(generation==0)return;
         if(!manual.isEmpty()){home.setLyrics(song.id,Lyrics.parse(manual));return;}
-        if(source==null){home.setLyrics(song.id,java.util.List.of());home.setLyricsStatus(song.id,scanning?"正在扫描并匹配歌词…":"未匹配到歌词，请重新扫描音乐文件夹");return;}
+        if(source==null){
+            boolean denied=song.lyricReadFailed;for(Song item:library)if(item.id==song.id||item.uri.equals(song.uri)){denied=item.lyricReadFailed;break;}
+            home.setLyrics(song.id,java.util.List.of());home.setLyricsStatus(song.id,scanning?"正在扫描并匹配歌词…":denied?"无法读取 lrc 文件夹，请重新选择音乐文件夹":"未匹配到歌词，请重新扫描音乐文件夹");return;
+        }
         home.setLyricsStatus(song.id,"正在加载歌词…");
         new Thread(()->{List<Lyrics.Line> lines;String error=null;
             try{lines=Lyrics.parse(Lyrics.read(this,source));if(lines.isEmpty())error="歌词文件内容为空或格式不支持";}

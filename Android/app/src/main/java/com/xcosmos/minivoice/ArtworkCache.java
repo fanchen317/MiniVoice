@@ -16,7 +16,7 @@ final class ArtworkCache {
         @Override protected int sizeOf(String key,Bitmap value){return value.getByteCount();}
     };
     private static String key(Song song){
-        String source=song.uri.toString()+"\n"+song.artworkUri;
+        String source=song.uri.toString()+"\n"+song.artworkUri+"\n"+song.artworkVersion;
         try{byte[] hash=MessageDigest.getInstance("SHA-256").digest(source.getBytes(StandardCharsets.UTF_8));StringBuilder out=new StringBuilder("v2-");for(byte b:hash)out.append(String.format(java.util.Locale.ROOT,"%02x",b&255));return out.toString();}
         catch(Exception impossible){throw new IllegalStateException(impossible);}
     }

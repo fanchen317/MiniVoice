@@ -5,6 +5,7 @@ import java.util.*;
 
 /** Exact names win; normalized aliases are accepted only if unambiguous. */
 final class LyricIndex<T> {
+    boolean readFailed;
     private final Map<String,Set<T>> names=new HashMap<>();
     void add(String filename,T value){
         for(String alias:aliases(filename))names.computeIfAbsent(alias,key->new HashSet<>()).add(value);

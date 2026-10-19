@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.Locale;
 
 final class FolderLibrary {
-    private static final class Entry { final String id,name,mime;Entry(String id,String name,String mime){this.id=id;this.name=name;this.mime=mime;} }
+    private static final class Entry { final String id,name,mime,version;Entry(String id,String name,String mime,long modified,long size){this.id=id;this.name=name;this.mime=mime;this.version=modified+":"+size;} }
     static List<Song> scan(Context context,Set<String> folders,boolean recursive,ScanProgress progress){
         List<Song> songs=new ArrayList<>();
         Set<String> seen=new HashSet<>();
@@ -28,11 +28,11 @@ final class FolderLibrary {
         if(!seen.add("dir:"+tree.getAuthority()+":"+documentId))return;
         progress.update(0,0,"正在查找音乐文件（已发现 "+jobs.size()+" 首）");
         Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(tree,documentId);
-        String[] projection={DocumentsContract.Document.COLUMN_DOCUMENT_ID,DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_MIME_TYPE};
+        String[] projection={DocumentsContract.Document.COLUMN_DOCUMENT_ID,DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_MIME_TYPE,DocumentsContract.Document.COLUMN_LAST_MODIFIED,DocumentsContract.Document.COLUMN_SIZE};
         List<Entry> entries=new ArrayList<>();
         try(Cursor cursor=context.getContentResolver().query(children,projection,null,null,null)){
             if(cursor==null)throw new IllegalStateException("无法读取音乐文件夹");
-            while(cursor.moveToNext())entries.add(new Entry(cursor.getString(0),cursor.getString(1),cursor.getString(2)));
+            while(cursor.moveToNext())entries.add(new Entry(cursor.getString(0),cursor.getString(1),cursor.getString(2),cursor.getLong(3),cursor.getLong(4)));
         }catch(Exception failure){throw new IllegalStateException("无法读取音乐文件夹",failure);}
         Map<String,Uri> lyrics=new HashMap<>(),artworks=new HashMap<>();
         for(Entry entry:entries){String lower=entry.name==null?"":entry.name.toLowerCase(Locale.ROOT);
@@ -43,13 +43,14 @@ final class FolderLibrary {
         for(Entry entry:entries)if(DocumentsContract.Document.MIME_TYPE_DIR.equals(entry.mime)&&"lrc".equalsIgnoreCase(entry.name)){
             Uri lrcChildren=DocumentsContract.buildChildDocumentsUriUsingTree(tree,entry.id);
             try(Cursor cursor=context.getContentResolver().query(lrcChildren,projection,null,null,null)){
+                if(cursor==null)rootLyrics.readFailed=true;
                 if(cursor!=null)while(cursor.moveToNext()){
                     String name=cursor.getString(1),mime=cursor.getString(2);
                     if(name!=null&&name.toLowerCase(Locale.ROOT).endsWith(".lrc")&&!DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)){
                         Uri lyric=DocumentsContract.buildDocumentUriUsingTree(tree,cursor.getString(0));lyrics.putIfAbsent(key(name),lyric);rootLyrics.add(name,lyric);
                     }
                 }
-            }catch(Exception ignored){}
+            }catch(Exception ignored){rootLyrics.readFailed=true;}
         }
         for(Entry entry:entries){
                 String id=entry.id,name=entry.name,mime=entry.mime;
@@ -72,6 +73,9 @@ final class FolderLibrary {
                     Song song=new Song(stableId,duration,0,title,artist,album,name,uri,lyric);
                     song.artworkUri=artworks.get(strip(name).toLowerCase(Locale.ROOT));
                     if(song.artworkUri==null)for(String cover:new String[]{"cover","folder","front","album"}){song.artworkUri=artworks.get(cover);if(song.artworkUri!=null)break;}
+                    song.lyricReadFailed=rootLyrics.readFailed;
+                    song.artworkVersion=entry.version;
+                    if(song.artworkUri!=null)for(Entry image:entries)if(song.artworkUri.equals(DocumentsContract.buildDocumentUriUsingTree(tree,image.id))){song.artworkVersion+="/"+image.version;break;}
                     songs.add(song);
                     progress.update(songs.size(),jobs.size(),name);
                 });
