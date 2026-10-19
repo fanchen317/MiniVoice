@@ -19,12 +19,12 @@ final class FolderLibrary {
         List<Song> songs=new ArrayList<>();
         Set<String> seen=new HashSet<>();
         List<Runnable> jobs=new ArrayList<>();
-        for(String value:folders){Uri tree=Uri.parse(value);walk(context,tree,DocumentsContract.getTreeDocumentId(tree),recursive,songs,seen,jobs,progress);}
+        for(String value:folders){Uri tree=Uri.parse(value);walk(context,tree,DocumentsContract.getTreeDocumentId(tree),recursive,songs,seen,jobs,progress,new LyricIndex<Uri>());}
         for(int i=0;i<jobs.size();i++){progress.update(i,jobs.size(),"读取歌曲信息与封面");jobs.get(i).run();}
         progress.update(jobs.size(),jobs.size(),"扫描完成");
         songs.sort((left,right)->left.title.compareToIgnoreCase(right.title));return songs;
     }
-    private static void walk(Context context,Uri tree,String documentId,boolean recursive,List<Song> songs,Set<String> seen,List<Runnable> jobs,ScanProgress progress){
+    private static void walk(Context context,Uri tree,String documentId,boolean recursive,List<Song> songs,Set<String> seen,List<Runnable> jobs,ScanProgress progress,LyricIndex<Uri> rootLyrics){
         if(!seen.add("dir:"+tree.getAuthority()+":"+documentId))return;
         progress.update(0,0,"正在查找音乐文件（已发现 "+jobs.size()+" 首）");
         Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(tree,documentId);
@@ -37,7 +37,7 @@ final class FolderLibrary {
         Map<String,Uri> lyrics=new HashMap<>(),artworks=new HashMap<>();
         for(Entry entry:entries){String lower=entry.name==null?"":entry.name.toLowerCase(Locale.ROOT);
             Uri item=DocumentsContract.buildDocumentUriUsingTree(tree,entry.id);
-            if(lower.endsWith(".lrc"))lyrics.put(key(entry.name),item);
+            if(lower.endsWith(".lrc")){lyrics.put(key(entry.name),item);rootLyrics.add(entry.name,item);}
             if(lower.matches(".*\\.(jpg|jpeg|png|webp)$"))artworks.put(lower.replaceFirst("\\.[^.]+$", ""),item);
         }
         for(Entry entry:entries)if(DocumentsContract.Document.MIME_TYPE_DIR.equals(entry.mime)&&"lrc".equalsIgnoreCase(entry.name)){
@@ -45,14 +45,15 @@ final class FolderLibrary {
             try(Cursor cursor=context.getContentResolver().query(lrcChildren,projection,null,null,null)){
                 if(cursor!=null)while(cursor.moveToNext()){
                     String name=cursor.getString(1),mime=cursor.getString(2);
-                    if(name!=null&&name.toLowerCase(Locale.ROOT).endsWith(".lrc")&&!DocumentsContract.Document.MIME_TYPE_DIR.equals(mime))
-                        lyrics.putIfAbsent(key(name),DocumentsContract.buildDocumentUriUsingTree(tree,cursor.getString(0)));
+                    if(name!=null&&name.toLowerCase(Locale.ROOT).endsWith(".lrc")&&!DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)){
+                        Uri lyric=DocumentsContract.buildDocumentUriUsingTree(tree,cursor.getString(0));lyrics.putIfAbsent(key(name),lyric);rootLyrics.add(name,lyric);
+                    }
                 }
             }catch(Exception ignored){}
         }
         for(Entry entry:entries){
                 String id=entry.id,name=entry.name,mime=entry.mime;
-                if(DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)){if(recursive&& !"lrc".equalsIgnoreCase(name))walk(context,tree,id,true,songs,seen,jobs,progress);continue;}
+                if(DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)){if(recursive&& !"lrc".equalsIgnoreCase(name))walk(context,tree,id,true,songs,seen,jobs,progress,rootLyrics);continue;}
                 if(!isAudio(name,mime))continue;
                 Uri uri=DocumentsContract.buildDocumentUriUsingTree(tree,id);
                 if(!seen.add(tree.getAuthority()+":"+id))continue;
@@ -67,7 +68,7 @@ final class FolderLibrary {
                         duration=number(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION));
                     }catch(Exception ignored){}finally{try{retriever.release();}catch(Exception ignored){}}
                     long stableId=-(Integer.toUnsignedLong(uri.toString().hashCode())+1);
-                    Uri lyric=lyrics.get(key(name));if(lyric==null)lyric=lyrics.get(key(title));
+                    Uri lyric=lyrics.get(key(name));if(lyric==null)lyric=lyrics.get(key(title));if(lyric==null)lyric=rootLyrics.find(name,title,artist);
                     Song song=new Song(stableId,duration,0,title,artist,album,name,uri,lyric);
                     song.artworkUri=artworks.get(strip(name).toLowerCase(Locale.ROOT));
                     if(song.artworkUri==null)for(String cover:new String[]{"cover","folder","front","album"}){song.artworkUri=artworks.get(cover);if(song.artworkUri!=null)break;}

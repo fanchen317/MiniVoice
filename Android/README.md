@@ -32,3 +32,16 @@ ANDROID_HOME="/你的/Android/sdk" ./Scripts/build-android.sh
 执行 `Scripts/test-android.sh` 运行 JVM 解析回归测试；需要 Android SDK 35，可通过 `ANDROID_HOME` 指定 SDK。可额外传入测试样本“026 - 许嵩 - 安琪.mp3”的路径，验证真实文件的 UTF-16 标签及内嵌图片读取。
 
 聚焦卡片沿用 Mac 的上下布局：全宽连续遮罩，顶部歌曲信息，播放状态胶囊，中部自动换行的同步歌词，底部上一首、播放/暂停、下一首、收藏、播放模式、展开/收起、时间与白色细进度条。预览未播放歌曲时只显示信息和播放按钮；点击卡片空白处不会切换播放。窄屏时间独立成行，控制按钮保留 44 dp 触控区域；进度条支持点按和拖动，拖动时不会移动音乐墙。展开后隐藏浮动工具和底部播放条，返回键或收起按钮恢复。
+
+
+安装提示“与已安装应用签名不同”时，需要使用旧版的原始签名密钥构建更新包。旧脚本的密钥位于旧电脑/旧项目的 `.build/Android/debug.keystore`，Android Studio 的默认密钥通常位于 `~/.android/debug.keystore`。仅复制旧 APK 无法恢复私钥。找回旧密钥并复制到本机后，显式指定：
+
+```bash
+MINIVOICE_KEYSTORE="/旧密钥的本机绝对路径/debug.keystore" ./Scripts/build-android.sh
+```
+
+可通过 `MINIVOICE_KEY_ALIAS`、`MINIVOICE_STORE_PASSWORD` 和 `MINIVOICE_KEY_PASSWORD` 指定非默认别名与密码；默认对应原调试密钥。脚本和 Gradle 都支持这些变量。未显式指定时，脚本使用 `Android/signing/debug.keystore`，首次会优先迁移本项目 `.build/Android/debug.keystore`，其次迁移 Android Studio 调试密钥，均不存在才创建新密钥；这些操作仅在执行构建脚本时发生。密钥不纳入 Git，请保留备份，以后持续使用相同密钥。
+
+音乐墙搜索按钮改为右上角原位展开：圆形镜片先略微放大，再向左展开成胶囊搜索框，输入区渐显，图标转为薄荷绿；关闭时沿原位收回。展开完成后才唤起键盘，支持清空、搜索键收起键盘和返回键收起搜索框。
+
+定位正在播放的歌曲时，同一歌曲列表会保留镜头、缩放及已展开的卡片；重复定位仅平滑居中，不再收缩后重新展开。快速切换焦点从当前可见布局继续回流，重复墙的目标按回流后的距离选择。多个待执行定位会合并，初次定位在视图尺寸就绪后执行，居中位置避让顶部工具与底部播放条。

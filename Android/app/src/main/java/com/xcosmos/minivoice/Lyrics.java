@@ -39,7 +39,7 @@ final class Lyrics {
             (fraction==null?0:Long.parseLong((fraction+"000").substring(0,3)));
     }
     static List<Line> parse(String raw) {
-        List<Line> result=new ArrayList<>();
+        List<Line> result=new ArrayList<>();List<Line> plain=new ArrayList<>();
         if(raw==null) return result;
         Matcher offsetMatch=OFFSET.matcher(raw);long offset=offsetMatch.find()?Long.parseLong(offsetMatch.group(1)):0;
         for(String row:raw.replace("\uFEFF", "").split("\\R")) {
@@ -49,8 +49,9 @@ final class Lyrics {
             Matcher word=WORD.matcher(body);
             if(times.isEmpty()&&word.find()&&Integer.parseInt(word.group(2))<60)times.add(time(word));
             String text=WORD.matcher(body).replaceAll("").trim();
+            if(times.isEmpty()&&!text.isEmpty()&&!row.trim().startsWith("[")&&!row.trim().startsWith("<"))plain.add(new Line(-1,text));
             if(!text.isEmpty()) for(Long timestamp:times) result.add(new Line(Math.max(0,timestamp+offset),text));
         }
-        result.sort(Comparator.comparingLong(line->line.ms)); return result;
+        result.sort(Comparator.comparingLong(line->line.ms)); return result.isEmpty()?plain:result;
     }
 }

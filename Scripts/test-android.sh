@@ -12,3 +12,9 @@ java -cp "$output:$android_jar" com.xcosmos.minivoice.ParsingTests "$@"
 
 javac -d "$output" "$source_root/FocusCardMetrics.java" "$repo_root/Android/tests/com/xcosmos/minivoice/FocusCardTests.java"
 java -cp "$output" com.xcosmos.minivoice.FocusCardTests
+
+javac -d "$output" "$source_root/WallReflow.java" "$repo_root/Android/tests/com/xcosmos/minivoice/WallReflowTests.java"
+java -cp "$output" com.xcosmos.minivoice.WallReflowTests
+
+javac -d "$output" "$source_root/LyricIndex.java" "$source_root/LyricsLoadState.java" "$source_root/CoverPreviewBudget.java" "$repo_root/Android/tests/com/xcosmos/minivoice/LibraryResourceTests.java"
+java -cp "$output" com.xcosmos.minivoice.LibraryResourceTests

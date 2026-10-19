@@ -103,7 +103,7 @@ public final class PlaybackService extends Service {
     }
     private void loadArtwork(Song song,int generation){
         artworkLoader.execute(()->{
-            Bitmap result=Artwork.load(this,song,512);
+            Bitmap result=ArtworkCache.load(this,song);
             new android.os.Handler(getMainLooper()).post(()->{if(artworkGeneration==generation && artworkSongId==song.id && current()==song){artwork=result;publish();}});
         });
     }

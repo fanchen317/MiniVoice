@@ -3,5 +3,19 @@ android {
     namespace 'com.xcosmos.minivoice'
     compileSdk 35
     defaultConfig { applicationId 'com.xcosmos.minivoice'; minSdk 29; targetSdk 34; versionCode 1; versionName '1.0.0' }
+    def configuredKey = System.getenv('MINIVOICE_KEYSTORE')
+    def stableKey = rootProject.file('signing/debug.keystore')
+    def legacyKey = rootProject.file('../.build/Android/debug.keystore')
+    def localKey = configuredKey ? file(configuredKey) : (stableKey.exists() ? stableKey : (legacyKey.exists() ? legacyKey : null))
+    if (localKey != null) {
+        signingConfigs {
+            debug {
+                storeFile localKey
+                storePassword System.getenv('MINIVOICE_STORE_PASSWORD') ?: 'android'
+                keyAlias System.getenv('MINIVOICE_KEY_ALIAS') ?: 'androiddebugkey'
+                keyPassword System.getenv('MINIVOICE_KEY_PASSWORD') ?: (System.getenv('MINIVOICE_STORE_PASSWORD') ?: 'android')
+            }
+        }
+    }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }

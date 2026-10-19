@@ -59,13 +59,12 @@ public final class MainActivity extends Activity {
     private Song pendingLyricSong;
     private Song pendingPlay;
     private boolean pendingLocatePlaying;
-    private long lyricsLoadId=Long.MIN_VALUE;
-    private int lyricsLoadGeneration;
+    private final LyricsLoadState lyricsLoad=new LyricsLoadState();
     private long lastRecentId=Long.MIN_VALUE;
     private final PlaybackService.Listener listener=()->runOnUiThread(this::refreshPlayer);
     private final ServiceConnection connection=new ServiceConnection(){
         @Override public void onServiceConnected(ComponentName name,IBinder binder){service=((PlaybackService.LocalBinder)binder).get();service.addListener(listener);refreshPlayer();if(pendingPlay!=null){Song song=pendingPlay;pendingPlay=null;play(song);}locatePlayingIfReady();}
-        @Override public void onServiceDisconnected(ComponentName name){service=null;}
+        @Override public void onServiceDisconnected(ComponentName name){service=null;invalidateLyricsLoad();}
     };
     @Override public void onCreate(Bundle state){super.onCreate(state);configureSystemBars();pendingLocatePlaying=ACTION_LOCATE_PLAYING.equals(getIntent().getAction());prefs=getSharedPreferences("library",MODE_PRIVATE);buildUi();requestLibrary();handler.postDelayed(new Runnable(){@Override public void run(){refreshPlayer();handler.postDelayed(this,500);}},500);}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(ACTION_LOCATE_PLAYING.equals(intent.getAction())){pendingLocatePlaying=true;locatePlayingIfReady();}}
@@ -79,7 +78,7 @@ public final class MainActivity extends Activity {
     }
     @Override public void onStart(){super.onStart();bound=bindService(new Intent(this,PlaybackService.class),connection,BIND_AUTO_CREATE);}
     @Override public void onDestroy(){handler.removeCallbacksAndMessages(null);super.onDestroy();}
-    @Override public void onStop(){if(service!=null)service.removeListener(listener);if(bound){unbindService(connection);bound=false;}service=null;super.onStop();}
+    @Override public void onStop(){invalidateLyricsLoad();if(service!=null)service.removeListener(listener);if(bound){unbindService(connection);bound=false;}service=null;super.onStop();}
     private void requestLibrary(){if(!ids("music_folders").isEmpty()){reload();return;}String permission=Build.VERSION.SDK_INT>=33?Manifest.permission.READ_MEDIA_AUDIO:Manifest.permission.READ_EXTERNAL_STORAGE;if(checkSelfPermission(permission)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{permission},1);else reload();}
     @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results){super.onRequestPermissionsResult(code,permissions,results);if(code==1&&results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED)reload();else new AlertDialog.Builder(this).setMessage("请允许读取本机音频，或在设置中选择音乐文件夹。 ").setPositiveButton("设置",(d,w)->showSettings()).setNegativeButton("稍后",null).show();}
     private void reload(){
@@ -92,10 +91,10 @@ public final class MainActivity extends Activity {
             };
             Set<String> folders=ids("music_folders");
             List<Song> scanned;String error=null;
-            try{scanned=folders.isEmpty()?Library.load(this,report):FolderLibrary.scan(this,folders,prefs.getBoolean("scan_recursive",true),report);}
+            try{scanned=folders.isEmpty()?Library.load(this,report):FolderLibrary.scan(this,folders,prefs.getBoolean("scan_recursive",true),report);ArtworkCache.prepare(getApplicationContext(),scanned,report);}
             catch(Exception failure){scanned=null;error="扫描失败，请检查音乐读取权限后重试";}
             List<Song> found=scanned;String scanError=error;
-            runOnUiThread(()->{if(found!=null){library.clear();library.addAll(found);if(service!=null)service.refreshLibrary(library);}if(scanError!=null)android.widget.Toast.makeText(this,scanError,android.widget.Toast.LENGTH_LONG).show();scanning=false;lyricsLoadId=Long.MIN_VALUE;renderRows();refreshWall();refreshPlayer();
+            runOnUiThread(()->{if(found!=null){library.clear();library.addAll(found);if(service!=null)service.refreshLibrary(library);}if(scanError!=null)android.widget.Toast.makeText(this,scanError,android.widget.Toast.LENGTH_LONG).show();scanning=false;invalidateLyricsLoad();renderRows();refreshWall();refreshPlayer();
                 if(service!=null&&service.current()!=null&&!section.equals("歌手")&&!section.equals("专辑"))home.locateSong(service.current().id);
                 locatePlayingIfReady();if(settings!=null)settings.refresh(library.size(),false);if(rescanPending){rescanPending=false;reload();}});
         }).start();
@@ -146,7 +145,7 @@ public final class MainActivity extends Activity {
             public void removeFolder(String uri){Set<String> selected=ids("music_folders");selected.remove(uri);saveIds("music_folders",selected);reload();settings.refresh(library.size(),scanning);}
             public void rescan(){reload();}
             public void viewCache(){showCache();}
-            public void clearCache(){clearCacheFiles(getCacheDir());android.widget.Toast.makeText(MainActivity.this,"缓存已清理",android.widget.Toast.LENGTH_SHORT).show();}
+            public void clearCache(){ArtworkCache.clear();clearCacheFiles(getCacheDir());android.widget.Toast.makeText(MainActivity.this,"缓存已清理",android.widget.Toast.LENGTH_SHORT).show();}
         });
         home.updateDrawer(section,ids("playlists"));refreshWall();
     }
@@ -173,7 +172,7 @@ public final class MainActivity extends Activity {
             java.util.LinkedHashMap<String,Song> representatives=new java.util.LinkedHashMap<>();java.util.Map<String,Integer> counts=new java.util.HashMap<>();
             for(Song song:visible){String key=section.equals("歌手")?song.artist:song.album;representatives.putIfAbsent(key,song);counts.put(key,counts.getOrDefault(key,0)+1);}
             List<Song> groups=new ArrayList<>();for(java.util.Map.Entry<String,Song> entry:representatives.entrySet()){
-                Song sample=entry.getValue();Song group=new Song(sample.id,0,sample.albumId,entry.getKey(),counts.get(entry.getKey())+" 首歌曲",sample.album,sample.path,sample.uri);group.artworkUri=sample.artworkUri;groups.add(group);
+                Song sample=entry.getValue();Song group=new Song(sample.id,0,sample.albumId,entry.getKey(),counts.get(entry.getKey())+" 首歌曲",sample.album,sample.path,sample.uri);group.artworkUri=sample.artworkUri;group.artworkPreview=sample.artworkPreview;group.artworkFile=sample.artworkFile;group.artworkCacheKey=sample.artworkCacheKey;group.artworkPrepared=sample.artworkPrepared;groups.add(group);
             }
             home.updateWall(groups,true);
         }else home.updateWall(visible);
@@ -205,7 +204,7 @@ public final class MainActivity extends Activity {
             new AlertDialog.Builder(this).setTitle(files[index].getName()).setView(preview).setPositiveButton("关闭",null).show();
         }).setPositiveButton("关闭",null).show();
     }
-    @Override public void onBackPressed(){if(home!=null&&home.collapsePlayer())return;if(root!=null&&root.getVisibility()==View.VISIBLE){root.setVisibility(View.GONE);return;}if(home!=null&&home.isDrawerOpen()){home.showDrawer(false);return;}super.onBackPressed();}
+    @Override public void onBackPressed(){if(home!=null&&home.collapsePlayer())return;if(home!=null&&home.closeSearch())return;if(root!=null&&root.getVisibility()==View.VISIBLE){root.setVisibility(View.GONE);return;}if(home!=null&&home.isDrawerOpen()){home.showDrawer(false);return;}super.onBackPressed();}
     private boolean matches(Song song){return song.title.toLowerCase(Locale.ROOT).contains(query)||song.artist.toLowerCase(Locale.ROOT).contains(query)||song.album.toLowerCase(Locale.ROOT).contains(query);}
     private Set<String> ids(String key){return new HashSet<>(prefs.getStringSet(key,new HashSet<>()));}
     private void saveIds(String key,Set<String> values){prefs.edit().putStringSet(key,values).apply();}
@@ -248,21 +247,37 @@ public final class MainActivity extends Activity {
         if(song.id!=lastRecentId){lastRecentId=song.id;Set<String> recent=ids("recent");recent.add(Long.toString(song.id));saveIds("recent",recent);}
         home.setCardState(ids("favorites"),service.mode,(int)song.duration);
         now.setText((service.isPlaying()?"▶ ":"Ⅱ ")+song.title+" · "+song.artist+"  ♪ 歌词");home.setPlayback(song.id,song.title,service.isPlaying(),service.position(),(int)song.duration);loadPlayingLyrics(song);progress.setMax((int)Math.max(1,song.duration));if(!progress.isPressed())progress.setProgress(service.position());elapsed.setText(time(service.position())+" / "+time((int)song.duration));}
+    private void invalidateLyricsLoad(){lyricsLoad.reset();}
+    private android.net.Uri findLyricSource(Song song){
+        // The scan owns the newest sidecar mapping; playback may still hold an older Song instance.
+        for(Song item:library)if((item.id==song.id||item.uri.equals(song.uri))&&item.lyricUri!=null)return item.lyricUri;
+        if(song.lyricUri!=null)return song.lyricUri;
+        for(Song item:library)if(item.lyricUri!=null&&item.title.equalsIgnoreCase(song.title)&&item.artist.equalsIgnoreCase(song.artist))return item.lyricUri;
+        return null;
+    }
     private void loadPlayingLyrics(Song song){
-        if(lyricsLoadId==song.id)return;lyricsLoadId=song.id;int generation=++lyricsLoadGeneration;
-        String manual=prefs.getString("lyrics_"+song.id,"");if(!manual.isEmpty()){home.setLyrics(song.id,Lyrics.parse(manual));return;}
-        android.net.Uri source=song.lyricUri;
-        if(source==null)for(Song item:library)if(item.lyricUri!=null&&item.title.equalsIgnoreCase(song.title)&&item.artist.equalsIgnoreCase(song.artist)){source=item.lyricUri;break;}
-        if(source==null){home.setLyrics(song.id,java.util.List.of());return;}
-        android.net.Uri lyricSource=source;
-        new Thread(()->{List<Lyrics.Line> lines;try{lines=Lyrics.parse(Lyrics.read(this,lyricSource));}catch(Exception ignored){lines=java.util.List.of();}
-            List<Lyrics.Line> result=lines;runOnUiThread(()->{if(generation==lyricsLoadGeneration&&service!=null&&service.current()!=null&&service.current().id==song.id)home.setLyrics(song.id,result);});}).start();
+        String manual=prefs.getString("lyrics_"+song.id,"");android.net.Uri source=findLyricSource(song);
+        String sourceKey=manual.isEmpty()?String.valueOf(source):"manual:"+manual;
+        int generation=lyricsLoad.begin(song.id,sourceKey,android.os.SystemClock.uptimeMillis());if(generation==0)return;
+        if(!manual.isEmpty()){home.setLyrics(song.id,Lyrics.parse(manual));return;}
+        if(source==null){home.setLyrics(song.id,java.util.List.of());home.setLyricsStatus(song.id,scanning?"正在扫描并匹配歌词…":"未匹配到歌词，请重新扫描音乐文件夹");return;}
+        home.setLyricsStatus(song.id,"正在加载歌词…");
+        new Thread(()->{List<Lyrics.Line> lines;String error=null;
+            try{lines=Lyrics.parse(Lyrics.read(this,source));if(lines.isEmpty())error="歌词文件内容为空或格式不支持";}
+            catch(Exception failure){lines=java.util.List.of();error="歌词读取失败，请检查文件夹权限";}
+            List<Lyrics.Line> result=lines;String message=error;
+            runOnUiThread(()->{
+                if(!lyricsLoad.current(generation)||isDestroyed())return;
+                // Do not discard a completed load merely because the playback service is reconnecting.
+                home.setLyrics(song.id,result);
+                if(message!=null){home.setLyricsStatus(song.id,message);lyricsLoad.fail(generation,android.os.SystemClock.uptimeMillis());}
+            });
+        },"load-lyrics").start();
     }
     private void showLyrics(){if(service!=null&&service.current()!=null)showLyricsFor(service.current());}
     private void showLyricsFor(Song song){
         String manual=prefs.getString("lyrics_"+song.id,"");
-        android.net.Uri lyricUri=song.lyricUri;
-        if(lyricUri==null)for(Song item:library)if(item.lyricUri!=null&&item.title.equalsIgnoreCase(song.title)&&item.artist.equalsIgnoreCase(song.artist)){lyricUri=item.lyricUri;break;}
+        android.net.Uri lyricUri=findLyricSource(song);
         if(!manual.isEmpty()||lyricUri==null){displayLyrics(song,manual);return;}
         android.net.Uri source=lyricUri;
         new Thread(()->{String raw;try{raw=Lyrics.read(this,source);}catch(Exception ignored){raw="";}
@@ -284,7 +299,7 @@ public final class MainActivity extends Activity {
         }
         if(request!=2||result!=RESULT_OK||data==null||pendingLyricSong==null)return;
         Song song=pendingLyricSong;pendingLyricSong=null;
-        new Thread(()->{try{String raw=Lyrics.read(this,data.getData());prefs.edit().putString("lyrics_"+song.id,raw).apply();runOnUiThread(()->{lyricsLoadId=Long.MIN_VALUE;refreshPlayer();if(!isFinishing())showLyricsFor(song);});}
+        new Thread(()->{try{String raw=Lyrics.read(this,data.getData());prefs.edit().putString("lyrics_"+song.id,raw).apply();runOnUiThread(()->{invalidateLyricsLoad();refreshPlayer();if(!isFinishing())showLyricsFor(song);});}
             catch(Exception e){runOnUiThread(()->{if(!isFinishing())new AlertDialog.Builder(this).setMessage("无法读取歌词文件："+e.getMessage()).setPositiveButton("确定",null).show();});}}).start();
     }
 }

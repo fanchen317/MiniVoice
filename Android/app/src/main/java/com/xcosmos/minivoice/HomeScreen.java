@@ -68,7 +68,8 @@ final class HomeScreen {
     private final ScrollView drawerScroll;
     private final LinearLayout player;
     private final ImageView wallSettings;
-    private ImageView menuButton,searchButton;
+    private ImageView menuButton;
+    private final WallSearchControl searchControl;
     private boolean immersive,restoreSearch;
     private final LinearLayout drawerRows;
     private final WallView wall;
@@ -93,23 +94,10 @@ final class HomeScreen {
         FrameLayout.LayoutParams menuParams = new FrameLayout.LayoutParams(dp(52), dp(52), Gravity.TOP | Gravity.LEFT);
         menuParams.setMargins(dp(14), dp(14), 0, 0);
         frame.addView(menu, menuParams);menuButton=menu;
-        ImageView search = roundImage(R.drawable.icon_wall_search, this::toggleSearch);
-        FrameLayout.LayoutParams searchParams = new FrameLayout.LayoutParams(dp(52), dp(52), Gravity.TOP | Gravity.RIGHT);
-        searchParams.setMargins(0, dp(14), dp(14), 0);
-        frame.addView(search, searchParams);searchButton=search;
-        searchInput = new EditText(activity);
-        searchInput.setSingleLine(true);
-        searchInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
-        searchInput.setTextColor(Color.WHITE);
-        searchInput.setHintTextColor(0xFFB9C5BE);
-        searchInput.setHint("搜索歌曲、歌手或专辑");
-        searchInput.setTextSize(14);
-        searchInput.setPadding(dp(16), 0, dp(16), 0);
-        searchInput.setBackground(round(0xF0222826, 16, 0x66FFFFFF, 1));
-        searchInput.setVisibility(View.GONE);
-        FrameLayout.LayoutParams searchInputParams = new FrameLayout.LayoutParams(-1, dp(48), Gravity.TOP);
-        searchInputParams.setMargins(dp(16), dp(78), dp(16), 0);
-        frame.addView(searchInput, searchInputParams);
+        searchControl=new WallSearchControl(activity);
+        FrameLayout.LayoutParams searchParams=new FrameLayout.LayoutParams(dp(52),dp(52),Gravity.TOP|Gravity.RIGHT);
+        searchParams.setMargins(0,dp(14),dp(14),0);frame.addView(searchControl,searchParams);
+        searchInput=searchControl.input;
         searchInput.addTextChangedListener(new android.text.TextWatcher() {
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
             }
@@ -232,9 +220,7 @@ final class HomeScreen {
             menuParams.topMargin = top + dp(14);
             menu.setLayoutParams(menuParams);
             searchParams.topMargin = top + dp(14);
-            search.setLayoutParams(searchParams);
-            searchInputParams.topMargin = top + dp(78);
-            searchInput.setLayoutParams(searchInputParams);
+            searchControl.setLayoutParams(searchParams);
             drawerParams.topMargin = top + dp(12);
             drawerScroll.setLayoutParams(drawerParams);
             boolean keyboard = android.os.Build.VERSION.SDK_INT >= 30 && insets.isVisible(WindowInsets.Type.ime());
@@ -294,11 +280,13 @@ final class HomeScreen {
     boolean collapsePlayer(){return wall.collapse();}
     private void setImmersive(boolean expanded){
         immersive=expanded;
-        if(expanded){restoreSearch=searchInput.getVisibility()==View.VISIBLE;showDrawer(false);searchInput.clearFocus();((android.view.inputmethod.InputMethodManager)activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(searchInput.getWindowToken(),0);}
-        menuButton.setVisibility(expanded?View.GONE:View.VISIBLE);searchButton.setVisibility(expanded?View.GONE:View.VISIBLE);
+        if(expanded){restoreSearch=searchControl.isOpen();searchControl.setOpen(false,false);showDrawer(false);searchInput.clearFocus();((android.view.inputmethod.InputMethodManager)activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(searchInput.getWindowToken(),0);}
+        menuButton.setVisibility(expanded?View.GONE:View.VISIBLE);searchControl.setVisibility(expanded?View.GONE:View.VISIBLE);
         player.setVisibility(expanded?View.GONE:View.VISIBLE);wallSettings.setVisibility(expanded?View.GONE:View.VISIBLE);
-        searchInput.setVisibility(!expanded&&restoreSearch?View.VISIBLE:View.GONE);
+        if(!expanded&&restoreSearch)searchControl.setOpen(true,false);
     }
+
+    void setLyricsStatus(long id,String message){wall.setLyricsStatus(id,message);}
 
     void setLyrics(long id, List<Lyrics.Line> lines) {
         wall.setLyrics(id, lines);
@@ -364,33 +352,15 @@ final class HomeScreen {
         wall.setSongs(songs);
     }
 
+    private long requestedLocateId=Long.MIN_VALUE;
+    private final Runnable locateRequested=this::performRequestedLocate;
+    private void performRequestedLocate(){long id=requestedLocateId;requestedLocateId=Long.MIN_VALUE;if(id!=Long.MIN_VALUE)wall.locateSong(id);}
     void locateSong(long songId) {
-        wall.post(() -> wall.locateSong(songId));
+        requestedLocateId=songId;wall.removeCallbacks(locateRequested);wall.post(locateRequested);
     }
 
-    void clearSearch() {
-        if (searchInput.length() > 0) searchInput.setText("");
-        searchInput.setVisibility(View.GONE);
-        searchInput.clearFocus();
-        ((android.view.inputmethod.InputMethodManager) activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(searchInput.getWindowToken(), 0);
-    }
-
-    private void toggleSearch() {
-        boolean opening = searchInput.getVisibility() != View.VISIBLE;
-        if (opening) {
-            searchInput.setAlpha(0);
-            searchInput.setTranslationY(-dp(8));
-            searchInput.setVisibility(View.VISIBLE);
-            searchInput.animate().alpha(1).translationY(0).setDuration(180).start();
-            searchInput.requestFocus();
-            searchInput.post(() -> ((android.view.inputmethod.InputMethodManager) activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).showSoftInput(searchInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT));
-        } else {
-            searchInput.setText("");
-            searchInput.clearFocus();
-            ((android.view.inputmethod.InputMethodManager) activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(searchInput.getWindowToken(), 0);
-            searchInput.setVisibility(View.GONE);
-        }
-    }
+    void clearSearch() {searchControl.clearQuery();}
+    boolean closeSearch(){if(!searchControl.isOpen())return false;searchControl.setOpen(false,true);return true;}
 
     private void showWallOptions() {
         final android.app.Dialog[] sheet = {null};

@@ -15,3 +15,8 @@ Android/.gradle/
 Android/.idea/
 Android/local.properties
 Android/app/build/
+
+# Local Android signing keys
+Android/signing/
+*.keystore
+*.jks

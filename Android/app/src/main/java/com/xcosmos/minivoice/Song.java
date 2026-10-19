@@ -7,6 +7,10 @@ final class Song {
     final String title, artist, album, path;
     final Uri uri, lyricUri;
     Uri artworkUri;
+    volatile android.graphics.Bitmap artworkPreview;
+    volatile java.io.File artworkFile;
+    volatile String artworkCacheKey;
+    volatile boolean artworkPrepared;
     Song(long id, long duration, long albumId, String title, String artist, String album, String path, Uri uri) {
         this(id,duration,albumId,title,artist,album,path,uri,null);
     }

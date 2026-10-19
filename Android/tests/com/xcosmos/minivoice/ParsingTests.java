@@ -12,6 +12,7 @@ public final class ParsingTests {
         equal(lines.size(),4);equal(lines.get(0).text,"星晴");equal(lines.get(0).ms,0L);equal(lines.get(1).text,"词");equal(lines.get(1).ms,2740L);equal(lines.get(3).ms,7900L);
         equal(Lyrics.parse("<00:03.20>你好<00:04.0>").get(0).ms,3200L);
         equal(Lyrics.parse("[00:99.0]invalid\n[ar:artist]").size(),0);
+        equal(Lyrics.parse("[ti:歌名]\n第一句\n第二句").get(0).text,"第一句");
         equal(AudioTags.filename("026 - 许嵩 - 安琪.mp3")[0],"安琪");equal(AudioTags.filename("026 - 许嵩 - 安琪.mp3")[1],"许嵩");
         equal(AudioTags.filename("2002.flac")[0],"2002");
         equal(AudioTags.choose("安琪","026 - 许嵩 - 安琪"),"安琪");equal(AudioTags.choose("<unknown>","安琪"),"安琪");

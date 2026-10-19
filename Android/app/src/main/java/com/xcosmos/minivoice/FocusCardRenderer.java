@@ -24,7 +24,7 @@ final class FocusCardRenderer {
     private Actions actions;
     FocusCardRenderer(float density){d=density;p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);}
     void clear(){buttons.clear();lyrics.clear();track=null;}
-    void draw(Canvas canvas,RectF rect,Song song,boolean current,boolean playing,int position,int playbackDuration,List<Lyrics.Line> lines,boolean favorite,int mode,boolean expanded,Actions actions){
+    void draw(Canvas canvas,RectF rect,Song song,boolean current,boolean playing,int position,int playbackDuration,List<Lyrics.Line> lines,String lyricStatus,boolean favorite,int mode,boolean expanded,Actions actions){
         clear();this.actions=actions;duration=Math.max(0,playbackDuration>0?playbackDuration:(int)Math.min(Integer.MAX_VALUE,song.duration));
         FocusCardMetrics m=new FocusCardMetrics(rect.width(),rect.height(),d);float left=rect.left+m.padding,right=rect.right-m.padding;
         float top=rect.top+m.padding;
@@ -38,7 +38,7 @@ final class FocusCardRenderer {
         label(canvas,song.title,left,top+m.title,m.title,Color.WHITE,true,right-left);
         label(canvas,song.artist,left,top+m.title+8*d+m.artist,m.artist,0xBFFFFFFF,false,right-left);
         if(current){
-            drawLyrics(canvas,new RectF(left,rect.top+m.lyricsTop,right,rect.top+m.lyricsBottom),lines,position);
+            drawLyrics(canvas,new RectF(left,rect.top+m.lyricsTop,right,rect.top+m.lyricsBottom),lines,position,lyricStatus);
             String[] icons={"previous",playing?"pause":"play","next",favorite?"heartFill":"heart",mode==2?"shuffle":mode==3?"repeatOne":mode==0?"single":mode==1?"list":"repeat",expanded?"collapse":"expand"};
             Runnable[] commands={actions::previous,actions::toggle,actions::next,actions::favorite,actions::mode,actions::expand};
             for(int i=0;i<6;i++){float x=rect.left+m.buttonLeft(i,rect.width());RectF hit=new RectF(x,rect.top+m.controlsTop,x+m.button,rect.top+m.controlsTop+m.button);
@@ -59,10 +59,10 @@ final class FocusCardRenderer {
         text.setTypeface(bold?Typeface.DEFAULT_BOLD:Typeface.DEFAULT);text.setTextSize(size);text.setColor(color);
         c.drawText(android.text.TextUtils.ellipsize(value,text,Math.max(1,width),android.text.TextUtils.TruncateAt.END).toString(),x,baseline,text);
     }
-    private void drawLyrics(Canvas c,RectF area,List<Lyrics.Line> lines,int position){
+    private void drawLyrics(Canvas c,RectF area,List<Lyrics.Line> lines,int position,String status){
         if(area.height()<30*d)return;
-        if(lines.isEmpty()){label(c,"暂无歌词",area.left,area.centerY(),15*d,0x99FFFFFF,false,area.width());return;}
-        int active=0;for(int i=0;i<lines.size();i++){if(lines.get(i).ms>position)break;active=i;}
+        if(lines.isEmpty()){label(c,status,area.left,area.centerY(),15*d,0x99FFFFFF,false,area.width());return;}
+        int active=0;for(int i=0;i<lines.size();i++){if(lines.get(i).ms<0)continue;if(lines.get(i).ms>position)break;active=i;}
         int first=Math.max(0,active-3),last=Math.min(lines.size()-1,active+3);List<StaticLayout> layouts=new ArrayList<>();
         for(int i=first;i<=last;i++){
             TextPaint ink=new TextPaint(Paint.ANTI_ALIAS_FLAG);ink.setTypeface(Typeface.DEFAULT_BOLD);ink.setTextSize(Math.min(21*d,area.width()*.063f));
@@ -74,7 +74,7 @@ final class FocusCardRenderer {
         int save=c.save();c.clipRect(area);
         for(int i=0;i<layouts.size();i++){StaticLayout layout=layouts.get(i);float bottom=y+layout.getHeight();
             if(bottom>area.top&&y<area.bottom){int lineIndex=first+i;int saveLine=c.save();c.translate(area.left,y);layout.draw(c);c.restoreToCount(saveLine);
-                lyrics.add(new Button(new RectF(area.left,Math.max(y-6*d,area.top),area.right,Math.min(bottom+6*d,area.bottom)),()->actions.seek((int)Math.min(Integer.MAX_VALUE,lines.get(lineIndex).ms))));}
+                if(lines.get(lineIndex).ms>=0)lyrics.add(new Button(new RectF(area.left,Math.max(y-6*d,area.top),area.right,Math.min(bottom+6*d,area.bottom)),()->actions.seek((int)Math.min(Integer.MAX_VALUE,lines.get(lineIndex).ms))));}
             y=bottom+18*d;
         }
         c.restoreToCount(save);
