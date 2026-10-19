@@ -139,7 +139,9 @@ public final class MainActivity extends Activity {
         Song song=service.current();if(song==null){pendingLocatePlaying=false;return;}
         if(scanning)return;
         section="歌曲";query="";home.clearSearch();home.updateDrawer(section,ids("playlists"));home.showDrawer(false);root.setVisibility(View.GONE);
-        refreshWall();pendingLocatePlaying=false;home.locateSong(song.id);
+        refreshWall();boolean inLibrary=false;for(Song item:library)if(item.id==song.id){inLibrary=true;break;}
+        if(!inLibrary)home.updateWall(java.util.List.of(song));
+        pendingLocatePlaying=false;home.locateSong(song.id);
     }
     private void refreshWall(){if(home==null)return;
         List<Song> visible=new ArrayList<>();Set<String> favorites=ids("favorites"),recent=ids("recent");

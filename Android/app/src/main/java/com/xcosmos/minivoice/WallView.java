@@ -45,6 +45,7 @@ final class WallView extends View {
     private float cameraX,cameraY,scale=1,focusAmount,focusSide;
     private long playingId=Long.MIN_VALUE;
     private WallLayout.Instance focus;
+    private WallLayout.Instance pressed;
     private boolean cameraReady;
     private ValueAnimator motion;
     private final float density;
@@ -67,7 +68,14 @@ final class WallView extends View {
                 float fx=detector.getFocusX(),fy=detector.getFocusY();cameraX=fx-(fx-cameraX)*scale/old;cameraY=fy-(fy-cameraY)*scale/old;invalidate();return true;}
         });
     }
-    void setSongs(List<Song> value){songs=new ArrayList<>(value);scene=new WallLayout(songs.size(),density);focus=null;focusAmount=0;cameraReady=false;invalidate();}
+    void setSongs(List<Song> value){cancelMotion();songs=new ArrayList<>(value);scene=new WallLayout(songs.size(),density);focus=null;pressed=null;focusAmount=0;cameraReady=false;invalidate();}
+    void locateSong(long id){
+        if(getWidth()==0||getHeight()==0){post(()->locateSong(id));return;}
+        for(int i=0;i<songs.size();i++)if(songs.get(i).id==id){
+            WallLayout.Instance target=scene.nearest(i,cameraX,cameraY,scale,getWidth(),getHeight());
+            if(target!=null)focus(target);return;
+        }
+    }
     void setPlayingId(long id){playingId=id;invalidate();}
     void resetCamera(){cancelMotion();focus=null;focusAmount=0;cameraReady=false;centerInitial();invalidate();}
     void zoom(float factor){float old=scale;scale=Math.max(.6f,Math.min(1.2f,scale*factor));cameraX=getWidth()/2f-(getWidth()/2f-cameraX)*scale/old;cameraY=getHeight()/2f-(getHeight()/2f-cameraY)*scale/old;invalidate();}
@@ -100,6 +108,7 @@ final class WallView extends View {
     }
     private void drawTile(Canvas canvas,WallLayout.Instance instance,boolean selected){
         RectF rect=frame(instance);if(rect.right<0||rect.left>getWidth()||rect.bottom<0||rect.top>getHeight())return;
+        if(pressed!=null&&same(pressed,instance)&&!selected)rect.inset(rect.width()*.02f,rect.height()*.02f);
         Song song=songs.get(instance.tile.index);
         int save=canvas.save();canvas.clipRect(rect);
         paint.setShader(new LinearGradient(rect.left,rect.top,rect.right,rect.bottom,new int[]{0xFF33443D,0xFF151A20,0xFF49382E},null,Shader.TileMode.CLAMP));
@@ -168,6 +177,10 @@ final class WallView extends View {
         double t=elapsed/1000.0,w=Math.sqrt(11);return (float)Math.min(1,Math.max(0,1-Math.exp(-17*t)*(Math.cos(w*t)+17/w*Math.sin(w*t))));
     }
     private void cancelMotion(){if(motion!=null){motion.cancel();motion=null;}}
-    @Override public boolean onTouchEvent(MotionEvent event){scaleDetector.onTouchEvent(event);gestures.onTouchEvent(event);return true;}
+    @Override public boolean onTouchEvent(MotionEvent event){
+        if(event.getActionMasked()==MotionEvent.ACTION_DOWN){Hit target=hit(event.getX(),event.getY());pressed=target==null?null:target.instance;invalidate();}
+        else if(event.getActionMasked()==MotionEvent.ACTION_UP||event.getActionMasked()==MotionEvent.ACTION_CANCEL||event.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN){pressed=null;invalidate();}
+        scaleDetector.onTouchEvent(event);gestures.onTouchEvent(event);return true;
+    }
     @Override protected void onDetachedFromWindow(){covers.shutdownNow();super.onDetachedFromWindow();}
 }

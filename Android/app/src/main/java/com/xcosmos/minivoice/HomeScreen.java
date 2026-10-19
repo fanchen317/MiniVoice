@@ -50,7 +50,7 @@ final class HomeScreen {
         searchInput.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int start,int count,int after){}public void onTextChanged(CharSequence s,int start,int before,int count){actions.search(s.toString());}public void afterTextChanged(android.text.Editable e){}});
         LinearLayout player=new LinearLayout(activity);player.setGravity(Gravity.CENTER_VERTICAL);player.setPadding(dp(12),0,dp(8),0);player.setBackground(round(0xD4212221,34,0x55FFFFFF,1));
         FrameLayout.LayoutParams playerParams=new FrameLayout.LayoutParams(-1,dp(70),Gravity.BOTTOM);playerParams.setMargins(dp(18),0,dp(18),dp(18));frame.addView(player,playerParams);
-        playButton=imageButton(R.drawable.icon_transport_play,0xFF222222,actions::toggle);playButton.setPadding(dp(12),dp(12),dp(12),dp(12));playButton.setBackground(round(0xFFF3F3F3,30,0,0));player.addView(playButton,new LinearLayout.LayoutParams(dp(52),dp(52)));
+        playButton=imageButton(R.drawable.icon_transport_play,0xFF222222,actions::toggle);playButton.setPadding(dp(12),dp(12),dp(12),dp(12));playButton.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x55000000),round(0xFFF3F3F3,30,0,0),round(Color.WHITE,30,0,0)));player.addView(playButton,new LinearLayout.LayoutParams(dp(52),dp(52)));
         LinearLayout middle=new LinearLayout(activity);middle.setOrientation(LinearLayout.VERTICAL);LinearLayout.LayoutParams middleParams=new LinearLayout.LayoutParams(0,dp(60),1);middleParams.setMargins(dp(10),0,dp(2),0);player.addView(middle,middleParams);
         LinearLayout middleTop=new LinearLayout(activity);middleTop.setGravity(Gravity.CENTER_VERTICAL);middle.addView(middleTop,new LinearLayout.LayoutParams(-1,dp(34)));
         middleTop.addView(imageButton(R.drawable.icon_transport_previous_track,Color.WHITE,actions::previous),new LinearLayout.LayoutParams(dp(30),-1));
@@ -74,7 +74,7 @@ final class HomeScreen {
         brand.addView(imageButton(R.drawable.icon_close,Color.WHITE,()->showDrawer(false)),new LinearLayout.LayoutParams(dp(38),dp(46)));
         drawerRows=new LinearLayout(activity);drawerRows.setOrientation(LinearLayout.VERTICAL);drawerRows.setPadding(0,dp(12),0,0);drawer.addView(drawerRows);
         View spacer=new View(activity);drawer.addView(spacer,new LinearLayout.LayoutParams(1,0,1));
-        ImageView settings=imageButton(R.drawable.icon_settings_gear,Color.WHITE,actions::settings);settings.setContentDescription("设置");settings.setPadding(dp(12),dp(12),dp(12),dp(12));settings.setBackground(round(0x55373F3D,14,0x44FFFFFF,1));
+        ImageView settings=imageButton(R.drawable.icon_settings_gear,Color.WHITE,actions::settings);settings.setContentDescription("设置");settings.setPadding(dp(12),dp(12),dp(12),dp(12));settings.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x66FFFFFF),round(0x55373F3D,14,0x44FFFFFF,1),round(Color.WHITE,14,0,0)));
         LinearLayout.LayoutParams settingsParams=new LinearLayout.LayoutParams(dp(48),dp(48));settingsParams.setMargins(dp(4),dp(4),0,0);drawer.addView(settings,settingsParams);
         frame.setOnApplyWindowInsetsListener((view,insets)->{
             int top=android.os.Build.VERSION.SDK_INT>=30?insets.getInsets(WindowInsets.Type.statusBars()).top:insets.getSystemWindowInsetTop();
