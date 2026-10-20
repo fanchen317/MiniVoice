@@ -73,7 +73,7 @@ public final class MainActivity extends Activity {
         return super.dispatchTouchEvent(event);
     }
     @Override public void onConfigurationChanged(android.content.res.Configuration configuration){
-        super.onConfigurationChanged(configuration);configureSystemBars();if(home!=null)home.orientationChanged();
+        super.onConfigurationChanged(configuration);configureSystemBars();if(home!=null){home.orientationChanged();home.applyAppearance();}if(settings!=null)settings.appearanceChanged();
     }
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)configureSystemBars();}
     private void configureSystemBars(){
@@ -85,6 +85,7 @@ public final class MainActivity extends Activity {
         if(Build.VERSION.SDK_INT>=29){window.setStatusBarContrastEnforced(false);window.setNavigationBarContrastEnforced(false);}
         View decor=window.getDecorView();boolean landscape=getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE;
         int flags=View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_STABLE;
+        SharedPreferences appearancePrefs=getSharedPreferences("library",MODE_PRIVATE);if(!AppAppearance.style(appearancePrefs).equals("wall")&&!AppAppearance.dark(this,appearancePrefs))flags|=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
         if(landscape)flags|=View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
         decor.setSystemUiVisibility(flags);
         if(Build.VERSION.SDK_INT>=30){android.view.WindowInsetsController controller=window.getInsetsController();if(controller!=null){controller.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);if(landscape)controller.hide(android.view.WindowInsets.Type.systemBars());else controller.show(android.view.WindowInsets.Type.systemBars());}}
@@ -93,13 +94,14 @@ public final class MainActivity extends Activity {
     @Override public void onStart(){super.onStart();bound=bindService(new Intent(this,PlaybackService.class),connection,BIND_AUTO_CREATE);}
     @Override public void onDestroy(){handler.removeCallbacksAndMessages(null);super.onDestroy();}
     @Override public void onStop(){invalidateLyricsLoad();if(service!=null)service.removeListener(listener);if(bound){unbindService(connection);bound=false;}service=null;super.onStop();}
-    private void requestLibrary(){if(!ids("music_folders").isEmpty()){reload();return;}String permission=Build.VERSION.SDK_INT>=33?Manifest.permission.READ_MEDIA_AUDIO:Manifest.permission.READ_EXTERNAL_STORAGE;if(checkSelfPermission(permission)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{permission},1);else reload();}
-    @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results){super.onRequestPermissionsResult(code,permissions,results);if(code==1&&results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED)reload();else new AlertDialog.Builder(this).setMessage("请允许读取本机音频，或在设置中选择音乐文件夹。 ").setPositiveButton("设置",(d,w)->showSettings()).setNegativeButton("稍后",null).show();}
+    private void requestLibrary(){if(!ids("music_folders").isEmpty()){reload(false,true);return;}String permission=Build.VERSION.SDK_INT>=33?Manifest.permission.READ_MEDIA_AUDIO:Manifest.permission.READ_EXTERNAL_STORAGE;if(checkSelfPermission(permission)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{permission},1);else reload(false,true);}
+    @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results){super.onRequestPermissionsResult(code,permissions,results);if(code==1&&results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED)reload(false,true);else new AlertDialog.Builder(this).setMessage("请允许读取本机音频，或在设置中选择音乐文件夹。 ").setPositiveButton("设置",(d,w)->showSettings()).setNegativeButton("稍后",null).show();}
     private void reload(){reload(false);}
     private void rebuildLibrary(){reload(true);}
-    private void reload(boolean rebuild){
+    private void reload(boolean rebuild){reload(rebuild,false);}
+    private void reload(boolean rebuild,boolean restore){
         if(scanning){rescanPending=true;rebuildPending|=rebuild;return;}scanning=true;if(home!=null)home.setScanning(true);lastScanProgress=0;if(settings!=null)settings.refresh(library.size(),true);
-        if(settings!=null)settings.progress(0,0,"正在查找音乐文件");
+        if(settings!=null)settings.progress(0,0,restore?"正在恢复音乐库缓存":"正在查找音乐文件");
         new Thread(()->{
             ScanProgress report=(completed,total,detail)->{
                 long now=android.os.SystemClock.uptimeMillis();if(!(total>0&&completed==total)&&now-lastScanProgress<100)return;lastScanProgress=now;
@@ -107,7 +109,7 @@ public final class MainActivity extends Activity {
             };
             Set<String> folders=ids("music_folders");
             List<Song> scanned;String error=null;
-            try{if(rebuild){report.update(0,0,"清理旧缓存…");ArtworkCache.clear();LibraryCache.clear(getApplicationContext());clearCacheFiles(getCacheDir());}scanned=folders.isEmpty()?Library.load(this,report):FolderLibrary.scan(this,folders,prefs.getBoolean("scan_recursive",true),report);LyricsRepository.prepare(getApplicationContext(),scanned,report);ArtworkCache.prepare(getApplicationContext(),scanned,report);}
+            try{if(rebuild){report.update(0,0,"清理旧缓存…");ArtworkCache.clear();LibraryCache.clear(getApplicationContext());clearCacheFiles(getCacheDir());}String source=LibrarySnapshot.source(folders,prefs.getBoolean("scan_recursive",true));scanned=restore&&!rebuild?LibrarySnapshot.read(this,source):null;boolean cached=scanned!=null;if(!cached)scanned=folders.isEmpty()?Library.load(this,report):FolderLibrary.scan(this,folders,prefs.getBoolean("scan_recursive",true),report);LyricsRepository.prepare(getApplicationContext(),scanned,report);ArtworkCache.prepare(getApplicationContext(),scanned,report);if(!cached){try{LibrarySnapshot.write(this,source,scanned);}catch(Exception ignored){android.util.Log.w("MiniVoice","无法保存音乐库索引");}ArtworkCache.prune(this,scanned);}}
             catch(Exception failure){scanned=null;error="扫描失败，请检查音乐读取权限后重试";}
             List<Song> found=scanned;String scanError=error;
             runOnUiThread(()->{if(found!=null){library.clear();library.addAll(found);if(service!=null)service.refreshLibrary(library);}if(scanError!=null)android.widget.Toast.makeText(this,scanError,android.widget.Toast.LENGTH_LONG).show();scanning=false;home.setScanning(false);invalidateLyricsLoad();renderRows();refreshWall();refreshPlayer();
@@ -161,11 +163,12 @@ public final class MainActivity extends Activity {
         settings=new SettingsPanel(this,prefs,new SettingsPanel.Actions(){
             public void addFolder(){Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(picker,3);}
             public void removeFolder(String uri){Set<String> selected=ids("music_folders");selected.remove(uri);saveIds("music_folders",selected);reload();settings.refresh(library.size(),scanning);}
-            public void rescan(){rebuildLibrary();}
+            public void rescan(){reload();}
+            public void appearanceChanged(){home.applyAppearance();configureSystemBars();}
             public void viewCache(){showCache();}
-            public void clearCache(){ArtworkCache.clear();try{LibraryCache.clear(MainActivity.this);}catch(java.io.IOException error){android.widget.Toast.makeText(MainActivity.this,"缓存清理失败，请重试",android.widget.Toast.LENGTH_LONG).show();return;}clearCacheFiles(getCacheDir());android.widget.Toast.makeText(MainActivity.this,"缓存已清理",android.widget.Toast.LENGTH_SHORT).show();}
+            public void clearCache(){rebuildLibrary();}
         });
-        home.updateDrawer(section,ids("playlists"));refreshWall();
+        home.updateDrawer(section,ids("playlists"));refreshWall();home.applyAppearance();
     }
     private void selectSection(String name){section=name;home.updateDrawer(section,ids("playlists"));root.setVisibility(View.GONE);refreshWall();}
     private void locatePlayingIfReady(){
@@ -264,7 +267,7 @@ public final class MainActivity extends Activity {
     private String time(int ms){return String.format(Locale.ROOT,"%d:%02d",ms/60000,(ms/1000)%60);}
     private void refreshPlayer(){if(service==null||now==null)return;Song song=service.current();if(song==null)return;
         if(song.id!=lastRecentId){lastRecentId=song.id;Set<String> recent=ids("recent");recent.add(Long.toString(song.id));saveIds("recent",recent);}
-        home.setCardState(ids("favorites"),service.mode,(int)song.duration);
+        home.setNowPlaying(song);home.setCardState(ids("favorites"),service.mode,(int)song.duration);
         now.setText((service.isPlaying()?"▶ ":"Ⅱ ")+song.title+" · "+song.artist+"  ♪ 歌词");home.setPlayback(song.id,song.title,service.isPlaying(),service.position(),(int)song.duration);loadPlayingLyrics(song);progress.setMax((int)Math.max(1,song.duration));if(!progress.isPressed())progress.setProgress(service.position());elapsed.setText(time(service.position())+" / "+time((int)song.duration));}
     private void invalidateLyricsLoad(){lyricsLoad.reset();}
     private Song lyricSong(Song song){for(Song item:library)if(item.id==song.id||item.uri.equals(song.uri))return item;return song;}

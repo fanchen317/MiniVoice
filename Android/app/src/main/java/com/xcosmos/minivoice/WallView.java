@@ -85,6 +85,7 @@ final class WallView extends View {
     private List<Lyrics.Line> playingLyrics=new ArrayList<>();
     private String lyricStatus="正在加载歌词…";
     private int playbackPosition;
+    private long playbackSampledAt;
     private boolean playbackPlaying;
     private WallLayout.Instance focus;
     private WallLayout.Instance pressed;
@@ -145,10 +146,11 @@ final class WallView extends View {
         return best;
     }
     private void playOrToggle(WallLayout.Instance instance){Song song=songs.get(instance.tile.index);if(song.id==playingId)onToggle.run();else onPlay.play(song);}
-    void setPlayback(long id,boolean playing,int position){if(playingId!=id){playingLyrics=new ArrayList<>();lyricStatus="正在加载歌词…";}playingId=id;playbackPlaying=playing;playbackPosition=position;invalidate();}
+    void setPlayback(long id,boolean playing,int position){if(playingId!=id){playingLyrics=new ArrayList<>();lyricStatus="正在加载歌词…";}playingId=id;playbackPlaying=playing;playbackPosition=position;playbackSampledAt=android.os.SystemClock.elapsedRealtime();invalidate();}
     void setLyrics(long id,List<Lyrics.Line> lines){if(playingId==id){playingLyrics=new ArrayList<>(lines);lyricStatus="暂无歌词";invalidate();}}
     void setLyricsStatus(long id,String message){if(playingId==id){lyricStatus=message;invalidate();}}
     void resetCamera(){resetExpansion();cancelMotion();focus=null;focusAmount=0;reflowFrom=reflowTo=WallReflow.IDENTITY;cameraReady=false;scale=1;centerInitial();scaleListener.run();invalidate();}
+    void zoomTo(float value){interruptCamera();setScaleAt(value,getWidth()/2f,getHeight()/2f);}
     void zoom(float factor){interruptCamera();setScaleAt(scale*factor,getWidth()/2f,getHeight()/2f);}
     private void setScaleAt(float value,float x,float y){float old=scale;scale=WallZoom.clamp(value);cameraX=x-(x-cameraX)*scale/old;cameraY=y-(y-cameraY)*scale/old;scaleListener.run();invalidate();}
     float scale(){return scale;}
@@ -163,6 +165,7 @@ final class WallView extends View {
         for(WallLayout.Instance instance:visible){if(focus!=null&&same(instance,focus)){focusedInstance=instance;continue;}drawTile(canvas,instance,false);}
         if((expanded||expansionAmount>0)&&focus!=null){paint.setColor(((int)(191*expansionAmount))<<24);canvas.drawRect(0,0,getWidth(),getHeight(),paint);drawTile(canvas,focus,true);}
         else if(focusedInstance!=null)drawTile(canvas,focusedInstance,true);
+        if(playbackPlaying&&focus!=null)postInvalidateDelayed(33);
     }
     private boolean same(WallLayout.Instance a,WallLayout.Instance b){return a.tile.index==b.tile.index&&a.column==b.column&&a.row==b.row;}
     private RectF normalFrame(WallLayout.Instance instance){WallReflow.Frame frame=worldFrame(instance);return new RectF(cameraX+frame.x*scale,cameraY+frame.y*scale,cameraX+(frame.x+frame.width)*scale,cameraY+(frame.y+frame.height)*scale);}
@@ -187,7 +190,7 @@ final class WallView extends View {
         int save=canvas.save();canvas.clipRect(rect);
         paint.setShader(new LinearGradient(rect.left,rect.top,rect.right,rect.bottom,new int[]{0xFF33443D,0xFF151A20,0xFF49382E},null,Shader.TileMode.CLAMP));
         canvas.drawRect(rect,paint);paint.setShader(null);
-        Bitmap image=cover(song);if(image!=null){float ratio=Math.max(rect.width()/image.getWidth(),rect.height()/image.getHeight());
+        Bitmap image=cover(song,selected);if(image!=null){float ratio=Math.max(rect.width()/image.getWidth(),rect.height()/image.getHeight());
             int srcWidth=Math.min(image.getWidth(),Math.round(rect.width()/ratio)),srcHeight=Math.min(image.getHeight(),Math.round(rect.height()/ratio));
             Rect src=new Rect((image.getWidth()-srcWidth)/2,(image.getHeight()-srcHeight)/2,(image.getWidth()+srcWidth)/2,(image.getHeight()+srcHeight)/2);
             paint.setColor(Color.WHITE);canvas.drawBitmap(image,src,rect,paint);
@@ -213,7 +216,7 @@ final class WallView extends View {
                 paint.setColor(0xCCFFFFFF);canvas.drawText(number,rect.left+10*density*scale+pad,rect.top+25*density*scale,paint);}
         }
         if(selected&&focusAmount>.8f){
-            card.draw(canvas,playerContent(instance),song,song.id==playingId,playbackPlaying,playbackPosition,playbackDuration,playingLyrics,lyricStatus,favorites.contains(Long.toString(song.id)),expanded||expansionAmount>0,scale,new FocusCardRenderer.Actions(){
+            card.draw(canvas,playerContent(instance),song,song.id==playingId,playbackPlaying,Math.min(playbackDuration,playbackPosition+(playbackPlaying?(int)Math.min(750,android.os.SystemClock.elapsedRealtime()-playbackSampledAt):0)),playbackDuration,playingLyrics,lyricStatus,favorites.contains(Long.toString(song.id)),expanded||expansionAmount>0,scale,new FocusCardRenderer.Actions(){
                 public void previous(){if(cardActions!=null)cardActions.previous();}
                 public void toggle(){onToggle.run();}
                 public void next(){if(cardActions!=null)cardActions.next();}
@@ -227,13 +230,14 @@ final class WallView extends View {
         canvas.restoreToCount(save);hits.add(new Hit(rect,instance));
     }
     private String shorten(String value,float width){if(value==null)return "";if(paint.measureText(value)<=width)return value;String result=value;while(result.length()>1&&paint.measureText(result+"…")>width)result=result.substring(0,result.length()-1);return result+"…";}
-    private Bitmap cover(Song song){
-        Bitmap cached=ArtworkCache.peek(song);if(cached!=null)return cached;
+    private Bitmap cover(Song song,boolean selected){
+        int detailSize=selected?1600:640;
+        Bitmap cached=ArtworkCache.peek(song,detailSize);if(cached!=null)return cached;
         // Every scanned song keeps a small preview: LRU eviction only changes detail, never the cover itself.
         Bitmap preview=song.artworkPreview;
         if(song.artworkPrepared&&song.artworkFile==null)return preview;
         if(!failedCovers.contains(song.id)&&requested.add(song.id))covers.submit(()->{
-            Bitmap result=ArtworkCache.load(getContext().getApplicationContext(),song);
+            Bitmap result=ArtworkCache.load(getContext().getApplicationContext(),song,detailSize);
             main.post(()->{requested.remove(song.id);if(ArtworkCache.peek(song)==null)failedCovers.add(song.id);invalidate();});
         });
         return preview;

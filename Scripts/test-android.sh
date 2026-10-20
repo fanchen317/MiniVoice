@@ -7,7 +7,7 @@ android_jar="$sdk_root/platforms/android-35/android.jar"
 output="$repo_root/.build/Android/tests"
 source_root="$repo_root/Android/app/src/main/java/com/xcosmos/minivoice"
 mkdir -p "$output"
-javac -cp "$android_jar" -d "$output" "$source_root/Lyrics.java" "$source_root/AudioTags.java" "$repo_root/Android/tests/com/xcosmos/minivoice/ParsingTests.java"
+javac -cp "$android_jar" -d "$output" "$source_root/Lyrics.java" "$source_root/LyricSweep.java" "$source_root/AudioTags.java" "$repo_root/Android/tests/com/xcosmos/minivoice/ParsingTests.java"
 java -cp "$output:$android_jar" com.xcosmos.minivoice.ParsingTests "$@"
 
 javac -d "$output" "$source_root/FocusCardPresentation.java" "$source_root/PlaybackModes.java" "$source_root/FocusCardMetrics.java" "$repo_root/Android/tests/com/xcosmos/minivoice/FocusCardTests.java"

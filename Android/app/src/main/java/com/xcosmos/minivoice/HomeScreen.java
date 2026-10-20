@@ -78,6 +78,8 @@ final class HomeScreen {
     void setScanning(boolean value){wall.setScanning(value);}
     private final LinearLayout drawerRows;
     private final WallView wall;
+    private final PlayerStylePage stylePage;
+    private String playerStyle="wall";
     private final TextView current;
     private final TransportButton playButton;
     private final SeekBar seek;
@@ -96,6 +98,7 @@ final class HomeScreen {
         frame.setBackgroundColor(Color.rgb(7, 12, 13));
         wall = new WallView(activity, actions::play, actions::toggle, actions::seek);
         frame.addView(wall, new FrameLayout.LayoutParams(-1, -1));
+        stylePage=new PlayerStylePage(activity,actions::play,actions::seek,actions::lyrics);frame.addView(stylePage,new FrameLayout.LayoutParams(-1,-1));
         ImageView menu = roundImage(R.drawable.icon_wall_sidebar, () -> showDrawer(true));
         FrameLayout.LayoutParams menuParams = new FrameLayout.LayoutParams(dp(WallToolStyle.SIDE), dp(WallToolStyle.SIDE), Gravity.TOP | Gravity.LEFT);
         menuParams.setMargins(dp(14), dp(14), 0, 0);
@@ -297,10 +300,18 @@ final class HomeScreen {
         playButton.setPlaying(playing);
         seek.setMax(Math.max(1, duration));
         if (!seek.isPressed()) seek.setProgress(position);
-        wall.setPlayback(id, playing, position);
+        wall.setPlayback(id, playing, position);stylePage.setPosition(position);
         if (changed && !groupedWall) locateSong(id);
     }
 
+    void setNowPlaying(Song song){stylePage.setSong(song);}
+    boolean isWallStyle(){return playerStyle.equals("wall");}
+    void applyAppearance(){
+        android.content.SharedPreferences prefs=activity.getSharedPreferences("library",Activity.MODE_PRIVATE);playerStyle=AppAppearance.style(prefs);
+        wall.collapse();wall.setVisibility(isWallStyle()?View.VISIBLE:View.GONE);
+        stylePage.configure(playerStyle,AppAppearance.palette(activity,prefs));stylePage.setSongs(visibleSongs);
+        if(!isWallStyle())wallSettings.setVisibility(View.GONE);else if(!chromeHidden&&!keyboardVisible)wallSettings.setVisibility(View.VISIBLE);
+    }
     void setCardState(Set<String> favorites,int mode,int duration){wall.setCardState(favorites,mode,duration);}
     boolean collapsePlayer(){return wall.collapse();}
     private void setImmersive(boolean expanded){
@@ -319,7 +330,7 @@ final class HomeScreen {
     }
     private void applyChromeVisibility(boolean hidden,boolean animate){
         if(chromeHidden==hidden)return;chromeHidden=hidden;
-        View[] controls={menuButton,searchControl,wallSettings};
+        View[] controls=isWallStyle()?new View[]{menuButton,searchControl,wallSettings}:new View[]{menuButton,searchControl};
         for(int i=0;i<controls.length;i++){View control=controls[i];control.animate().cancel();control.setVisibility(View.VISIBLE);control.setEnabled(!hidden);
             if(control==searchControl)for(int child=0;child<searchControl.getChildCount();child++)searchControl.getChildAt(child).setEnabled(!hidden);
             control.setImportantForAccessibility(hidden?View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS:View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
@@ -342,13 +353,14 @@ final class HomeScreen {
         wall.setSafeInsets(safeTop,safeBottom);wall.setViewport(viewport);applyChromeVisibility(landscape||immersive,true);
         player.setVisibility(keyboardVisible||immersive&&!landscape?View.GONE:View.VISIBLE);
         if(landscape||!immersive){player.animate().cancel();player.setAlpha(1);player.setTranslationY(0);}
-        if(!chromeHidden)wallSettings.setVisibility(keyboardVisible?View.GONE:View.VISIBLE);
+        if(!chromeHidden)wallSettings.setVisibility(keyboardVisible||!isWallStyle()?View.GONE:View.VISIBLE);
+        stylePage.setInsets(safeLeft,safeTop,safeRight,safeBottom);
     }
 
     void setLyricsStatus(long id,String message){wall.setLyricsStatus(id,message);}
 
     void setLyrics(long id, List<Lyrics.Line> lines) {
-        wall.setLyrics(id, lines);
+        wall.setLyrics(id, lines);if(displayedSongId==id)stylePage.setLyrics(lines);
     }
 
     void updateDrawer(String selected, Set<String> playlists) {
@@ -409,14 +421,14 @@ final class HomeScreen {
 
     void updateWall(List<Song> songs, boolean grouped) {
         groupedWall = grouped;visibleSongs=new ArrayList<>(songs);
-        wall.setSongs(songs);
+        wall.setSongs(songs);stylePage.setSongs(songs);
     }
 
     void ensureSongVisible(Song song){
         if(!groupedWall)for(Song visible:visibleSongs)if(visible.id==song.id)return;
         List<Song> revealed=groupedWall?new ArrayList<>():new ArrayList<>(visibleSongs);revealed.add(song);updateWall(revealed,false);
     }
-    void locateSong(long songId) {wall.locateSong(songId);}
+    void locateSong(long songId) {if(playerStyle.equals("wall"))wall.locateSong(songId);else stylePage.locate(songId);}
 
     void clearSearch() {searchControl.clearQuery();}
     boolean closeSearch(){if(!searchControl.isOpen())return false;searchControl.setOpen(false,true);return true;}
@@ -425,7 +437,7 @@ final class HomeScreen {
     private SeekBar zoomSlider;
     private void refreshZoomControls(){
         int percent=WallZoom.percent(wall.scale());if(zoomLabel!=null)zoomLabel.setText("显示比例  ·  "+percent+"%");
-        if(zoomSlider!=null&&!zoomSlider.isPressed())zoomSlider.setProgress(percent);
+        if(zoomSlider!=null&&!zoomSlider.isPressed())zoomSlider.setProgress(WallZoom.sliderProgress(wall.scale()));
     }
     void dismissEmptySearchOutside(float screenX,float screenY){
         if(!searchControl.isOpen()||searchInput.length()!=0)return;
@@ -440,17 +452,17 @@ final class HomeScreen {
             body.addView(ratio);
             SeekBar zoom = new SeekBar(activity);
             styleSeekBar(zoom);
-            zoom.setMin(WallZoom.MIN);zoom.setMax(WallZoom.MAX);
-            zoom.setProgress(WallZoom.percent(wall.scale()));zoomLabel=ratio;zoomSlider=zoom;
+            zoom.setMax(WallZoom.MAX-WallZoom.MIN);
+            zoom.setProgress(WallZoom.sliderProgress(wall.scale()));zoomLabel=ratio;zoomSlider=zoom;
             body.addView(zoom, new LinearLayout.LayoutParams(-1, dp(48)));
             zoom.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
                 public void onProgressChanged(SeekBar bar, int progress, boolean user) {
-                    if (user) {wall.zoom(WallZoom.scale(progress)/wall.scale());refreshZoomControls();}
+                    if (user) {wall.zoomTo(WallZoom.sliderScale(progress));refreshZoomControls();}
                 }
                 public void onStartTrackingTouch(SeekBar bar) {}
                 public void onStopTrackingTouch(SeekBar bar) {}
             });
-            BottomSheet.action(activity, body, "恢复 100%", () -> {wall.zoom(1f / wall.scale());refreshZoomControls();});
+            BottomSheet.action(activity, body, "恢复 100%", () -> {wall.zoomTo(1f);refreshZoomControls();});
             addPlaybackModes(body);
             BottomSheet.action(activity, body, "回到起始位置", () -> {wall.resetCamera();sheet[0].dismiss();});
             BottomSheet.action(activity, body, "应用设置", () -> {sheet[0].dismiss();actions.settings();});

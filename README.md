@@ -4,11 +4,11 @@
 
 - `MacOS/`：macOS 应用的 Electron 界面、Swift 后台、测试、资源和 Swift Package。
 - `Android/`：Android 应用及 Gradle 配置。
-- `iOS/`：预留 iOS 应用目录，目前尚无实现。
+- `iOS/`：原生 SwiftUI iPhone/iPad 应用与 Xcode 工程，构建说明见 [iOS/README.md](iOS/README.md)。
 - `Scripts/`：从仓库根目录调用的构建和维护脚本。
 
 
-macOS 本地音乐播放器，当前发行架构为 Electron / React 主窗口 + Swift 原生播放与音乐库后台；设置、歌曲编辑和桌面歌词继续使用原生窗口。macOS 13 及以上，目前打包支持 Apple silicon（arm64）。
+MiniVoice 是本地音乐播放器，包含 macOS、Android 和 iOS 三个独立应用。macOS 发行架构为 Electron / React 主窗口 + Swift 原生播放与音乐库后台；设置、歌曲编辑和桌面歌词继续使用原生窗口。macOS 13 及以上，目前打包支持 Apple silicon（arm64）。Android 和 iOS 的功能与构建方式分别见 [Android/README.md](Android/README.md) 和 [iOS/README.md](iOS/README.md)。
 
 ## 已实现
 

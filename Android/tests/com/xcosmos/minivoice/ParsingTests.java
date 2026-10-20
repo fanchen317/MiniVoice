@@ -9,6 +9,9 @@ public final class ParsingTests {
     private static void equal(Object actual,Object expected){if(!expected.equals(actual))throw new AssertionError(actual+" != "+expected);}
     public static void main(String[] args)throws Exception{
         List<Lyrics.Line> lines=Lyrics.parse("[offset:-100]\n[ti:星晴]\n[00:00.000]<00:00.000>星<00:00.202><00:00.202>晴<00:00.404>\n[00:02.840]<00:02.840>词<00:03.408>\n[00:05.680][00:08.00]曲");
+        equal(lines.get(0).words.size(),2);equal(lines.get(0).words.get(1).ms,102L);
+        if(LyricSweep.characters(lines.get(0),2740,10000,50)<=0)throw new AssertionError("word sweep must progress");
+        Lyrics.Line estimated=new Lyrics.Line(1000,"测试歌词");if(Math.abs(LyricSweep.characters(estimated,5000,9000,3000)-2)>0.01f)throw new AssertionError("line timing fallback");
         equal(lines.size(),4);equal(lines.get(0).text,"星晴");equal(lines.get(0).ms,0L);equal(lines.get(1).text,"词");equal(lines.get(1).ms,2740L);equal(lines.get(3).ms,7900L);
         equal(Lyrics.parse("<00:03.20>你好<00:04.0>").get(0).ms,3200L);
         equal(Lyrics.parse("[00:99.0]invalid\n[ar:artist]").size(),0);

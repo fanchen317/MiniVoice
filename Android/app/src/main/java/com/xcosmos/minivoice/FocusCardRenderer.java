@@ -23,6 +23,7 @@ final class FocusCardRenderer {
     private boolean scrubbing;
     private Actions actions;
     private final Runnable invalidate;
+    private List<Lyrics.Line> lastLines;private int lastActive=-1;private float lastHeight,lyricOffset;private long lyricMotionAt;
     private android.animation.ValueAnimator feedback;
     private RectF feedbackBounds;
     private float feedbackAmount;
@@ -82,14 +83,27 @@ final class FocusCardRenderer {
         int first=Math.max(0,active-3),last=Math.min(lines.size()-1,active+3);List<StaticLayout> layouts=new ArrayList<>();
         for(int i=first;i<=last;i++){
             TextPaint ink=new TextPaint(Paint.ANTI_ALIAS_FLAG);ink.setTypeface(Typeface.DEFAULT_BOLD);ink.setTextSize(Math.min(21*d,area.width()*.063f));
-            ink.setColor(i==active?Color.WHITE:Math.abs(i-active)==1?0x88FFFFFF:0x50FFFFFF);
+            ink.setColor(i==active?0x66FFFFFF:Math.abs(i-active)==1?0x88FFFFFF:0x50FFFFFF);
             layouts.add(StaticLayout.Builder.obtain(lines.get(i).text,0,lines.get(i).text.length(),ink,Math.max(1,(int)area.width())).setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).setLineSpacing(2*d,1).build());
         }
-        StaticLayout selected=layouts.get(active-first);float y=area.centerY()-selected.getHeight()/2f;
+        StaticLayout selected=layouts.get(active-first);
+        long now=android.os.SystemClock.uptimeMillis();
+        if(lastLines!=lines){lastLines=lines;lastActive=active;lyricOffset=0;}
+        else if(lastActive!=active){lyricOffset=Math.abs(active-lastActive)==1?(active>lastActive?1:-1)*(lastHeight/2f+selected.getHeight()/2f+18*d):0;lyricMotionAt=now;lastActive=active;}
+        lastHeight=selected.getHeight();float motion=Math.min(1,(now-lyricMotionAt)/420f);float offset=lyricOffset*(float)Math.pow(1-motion,3);
+        if(Math.abs(offset)>.2f)invalidate.run();float y=area.centerY()-selected.getHeight()/2f+offset;
         for(int i=active-first-1;i>=0;i--)y-=layouts.get(i).getHeight()+18*d;
         int save=c.save();c.clipRect(area);
         for(int i=0;i<layouts.size();i++){StaticLayout layout=layouts.get(i);float bottom=y+layout.getHeight();
-            if(bottom>area.top&&y<area.bottom){int lineIndex=first+i;int saveLine=c.save();c.translate(area.left,y);layout.draw(c);c.restoreToCount(saveLine);
+            if(bottom>area.top&&y<area.bottom){int lineIndex=first+i;int saveLine=c.save();c.translate(area.left,y);layout.draw(c);
+                if(lineIndex==active){Lyrics.Line source=lines.get(lineIndex);long next=lineIndex+1<lines.size()?lines.get(lineIndex+1).ms:duration;
+                    float chars=LyricSweep.characters(source,next,duration,position);int whole=Math.min(source.text.length(),(int)chars);float amount=chars-whole;
+                    layout.getPaint().setColor(Color.WHITE);
+                    for(int row=0;row<layout.getLineCount();row++){int start=layout.getLineStart(row),end=layout.getLineEnd(row);if(chars<=start)break;
+                        int offset=Math.min(end,whole);float x=layout.getPrimaryHorizontal(offset);if(amount>0&&offset<end)x+=(layout.getPrimaryHorizontal(offset+1)-x)*amount;
+                        int inkSave=c.save();c.clipRect(layout.getLineLeft(row),layout.getLineTop(row),chars>=end?layout.getLineRight(row):x,layout.getLineBottom(row));layout.draw(c);c.restoreToCount(inkSave);
+                    }
+                }c.restoreToCount(saveLine);
                 if(lines.get(lineIndex).ms>=0)lyrics.add(new Button(new RectF(area.left,Math.max(y-6*d,area.top),area.right,Math.min(bottom+6*d,area.bottom)),()->actions.seek((int)Math.min(Integer.MAX_VALUE,lines.get(lineIndex).ms))));}
             y=bottom+18*d;
         }

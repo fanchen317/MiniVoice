@@ -29,7 +29,8 @@ final class Lyrics {
             catch(CharacterCodingException ignored){return new String(bytes,Charset.forName("GB18030"));}
         }
     }
-    static final class Line { final long ms; final String text; Line(long ms,String text){this.ms=ms;this.text=text;} }
+    static final class Word {final long ms;final String text;Word(long ms,String text){this.ms=ms;this.text=text;}}
+    static final class Line { final long ms; final String text;final List<Word> words;Line(long ms,String text){this(ms,text,new ArrayList<>());}Line(long ms,String text,List<Word> words){this.ms=ms;this.text=text;this.words=words;} }
     private static final Pattern STAMP=Pattern.compile("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?\\]");
     private static final Pattern WORD=Pattern.compile("<(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?>");
     private static final Pattern OFFSET=Pattern.compile("(?im)^\\s*\\[offset:([+-]?\\d{1,9})\\]\\s*$");
@@ -48,9 +49,12 @@ final class Lyrics {
             String body=STAMP.matcher(row).replaceAll("");
             Matcher word=WORD.matcher(body);
             if(times.isEmpty()&&word.find()&&Integer.parseInt(word.group(2))<60)times.add(time(word));
+            List<Word> words=new ArrayList<>();Matcher tags=WORD.matcher(body);long previous=-1;int from=0;
+            while(tags.find()){String part=body.substring(from,tags.start());if(previous>=0&&!part.isEmpty())words.add(new Word(Math.max(0,previous+offset),part));previous=time(tags);from=tags.end();}
+            String tail=body.substring(from);if(previous>=0&&!tail.isEmpty())words.add(new Word(Math.max(0,previous+offset),tail));
             String text=WORD.matcher(body).replaceAll("").trim();
             if(times.isEmpty()&&!text.isEmpty()&&!row.trim().startsWith("[")&&!row.trim().startsWith("<"))plain.add(new Line(-1,text));
-            if(!text.isEmpty()) for(Long timestamp:times) result.add(new Line(Math.max(0,timestamp+offset),text));
+            if(!text.isEmpty()) for(Long timestamp:times){List<Word> shifted=new ArrayList<>();for(Word item:words)shifted.add(new Word(Math.max(0,item.ms+timestamp-times.get(0)),item.text));result.add(new Line(Math.max(0,timestamp+offset),text,shifted));}
         }
         result.sort(Comparator.comparingLong(line->line.ms)); return result.isEmpty()?plain:result;
     }
