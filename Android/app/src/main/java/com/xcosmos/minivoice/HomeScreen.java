@@ -272,6 +272,8 @@ final class HomeScreen {
         sub.setEllipsize(null);
         sub.setPadding(0, dp(3), 0, 0);
         title.addView(sub);drawerSubtitle=sub;
+        ImageView settings=imageButton(R.drawable.icon_info,Color.WHITE,actions::settings);drawerSettings=settings;settings.setContentDescription("设置");settings.setTooltipText("设置");settings.setPadding(dp(10),dp(10),dp(10),dp(10));
+        brand.addView(settings,new LinearLayout.LayoutParams(dp(44),dp(44)));
         ImageView closeDrawer = imageButton(R.drawable.icon_close, Color.WHITE, () -> showDrawer(false));
         drawerClose=closeDrawer;
         closeDrawer.setPadding(dp(8), dp(8), dp(8), dp(8));
@@ -282,13 +284,6 @@ final class HomeScreen {
         drawer.addView(drawerRows);
         View spacer = new View(activity);
         drawer.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1));
-        ImageView settings = imageButton(R.drawable.icon_settings_gear, Color.WHITE, actions::settings);
-        drawerSettings=settings;settings.setContentDescription("设置");
-        settings.setPadding(dp(16), dp(16), dp(16), dp(16));
-        settings.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x16FFFFFF), glass().surface(settings,28,false), WallToolStyle.glass(activity)));
-        LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(dp(56), dp(56));
-        settingsParams.setMargins(dp(4), dp(4), 0, 0);
-        drawer.addView(settings, settingsParams);
         buildSimpleDrawer();
         View drawerEdge=new View(activity);
         drawerEdge.setContentDescription("向左滑动关闭侧栏");
@@ -716,7 +711,7 @@ final class HomeScreen {
         if(simple&&drawerOpen)drawerPanel.setBackground(new GlassBackdrop(stylePage,false,28).surface(drawerPanel,24,true,!palette.dark));
         else drawerPanel.setBackground(isWallStyle()?new GlassBackdrop(wall,false).surface(drawerPanel,24,true):round(palette.surface,24,palette.line,1));
         drawerName.setTextColor(palette.text);drawerSubtitle.setTextColor(palette.secondary);
-        drawerClose.setColorFilter(palette.text);drawerSettings.setColorFilter(palette.text);drawerSettings.setBackground(chromeBackground(drawerSettings));
+        drawerClose.setColorFilter(palette.text);drawerSettings.setColorFilter(palette.text);drawerSettings.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(palette.dark?0x22FFFFFF:0x16000000),null,null));
     }
     private void applyControlsAppearance(){
         AppAppearance.Palette palette=chromePalette();menuButton.setColorFilter(palette.text);menuButton.setBackground(chromeBackground(menuButton));

@@ -78,3 +78,6 @@ java -cp "$output" com.xcosmos.minivoice.StyleFragmentMotionTests
 
 javac -d "$output" "$source_root/CoverAtmosphereColors.java" "$repo_root/Android/tests/com/xcosmos/minivoice/CoverAtmosphereTests.java"
 java -cp "$output" com.xcosmos.minivoice.CoverAtmosphereTests
+
+javac -d "$output" "$source_root/ScanRequestQueue.java" "$source_root/ScanStatusText.java" "$repo_root/Android/tests/com/xcosmos/minivoice/ScanServiceTests.java"
+java -cp "$output" com.xcosmos.minivoice.ScanServiceTests
