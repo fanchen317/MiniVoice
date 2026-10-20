@@ -1,7 +1,6 @@
 package com.xcosmos.minivoice;
 
 import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.InsetDrawable;
 import android.view.View;
 import android.widget.AbsListView;
 
@@ -13,10 +12,9 @@ final class ListScrollStyle {
         view.setVerticalScrollBarEnabled(true);view.setScrollBarSize(dp(view,8));view.setScrollBarDefaultDelayBeforeFade(1800);view.setScrollBarFadeDuration(350);
         view.setVerticalScrollbarThumbDrawable(pill(view,0xCC51BFA0,8,48));view.setVerticalScrollbarTrackDrawable(pill(view,0x18708078,8,48));
     }
+    static android.content.Context context(android.content.Context base){return new android.view.ContextThemeWrapper(base,R.style.LargeFastScroll);}
     static void fast(AbsListView list){
         apply(list);list.setFastScrollEnabled(true);list.setFastScrollAlwaysVisible(true);
-        // The visible 10 dp pill sits inside a 32 dp-wide drawable used for hit testing.
-        list.setFastScrollThumbDrawable(new InsetDrawable(pill(list,0xEE51BFA0,10,56),dp(list,11),0,dp(list,11),0));
-        list.setFastScrollTrackDrawable(new InsetDrawable(pill(list,0x22708078,4,56),dp(list,14),0,dp(list,14),0));
+        list.setVerticalScrollBarEnabled(false);
     }
 }

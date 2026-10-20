@@ -1,0 +1,1 @@
+<resources><style name="LargeFastScroll"><item name="android:fastScrollThumbDrawable">@drawable/scroll_handle</item><item name="android:fastScrollTrackDrawable">@drawable/scroll_track</item></style></resources>
