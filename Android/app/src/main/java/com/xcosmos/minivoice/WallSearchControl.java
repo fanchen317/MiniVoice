@@ -22,9 +22,11 @@ final class WallSearchControl extends FrameLayout {
     private ValueAnimator animator;
     private boolean open;
     private float amount;
+    private boolean simpleStyle;
+    private final android.graphics.Paint surfacePaint=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
     private AppAppearance.Palette colors=new AppAppearance.Palette(true);
     WallSearchControl(Activity activity){
-        super(activity);this.activity=activity;setClipChildren(true);setClipToPadding(true);
+        super(activity);this.activity=activity;setWillNotDraw(false);setClipChildren(true);setClipToPadding(true);
         setBackground(WallToolStyle.glass(activity));
         lens=new ImageView(activity);lens.setImageDrawable(new WallToolStyle.Glyph(WallToolStyle.Glyph.SEARCH));lens.setScaleType(ImageView.ScaleType.FIT_CENTER);int inset=dp((WallToolStyle.SIDE-WallToolStyle.ICON)/2f);lens.setPadding(inset,inset,inset,inset);lens.setContentDescription("搜索音乐");
         lens.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x44FFFFFF),null,null));addView(lens,new LayoutParams(dp(WallToolStyle.SIDE),dp(WallToolStyle.SIDE),Gravity.LEFT));
@@ -39,11 +41,24 @@ final class WallSearchControl extends FrameLayout {
         addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{if(getParent() instanceof View&&((View)getParent()).getWidth()>0&&r-l!=Math.round(targetWidth()))apply(amount);});
     }
     private int dp(float value){return Math.round(value*getResources().getDisplayMetrics().density);}
-    private float targetWidth(){int parent=getParent() instanceof View?((View)getParent()).getWidth():getResources().getDisplayMetrics().widthPixels;return dp(WallToolStyle.SIDE)+(Math.min(dp(320),Math.max(dp(WallToolStyle.SIDE),parent-dp(100)))-dp(WallToolStyle.SIDE))*amount;}
+    private float targetWidth(){int parent=getParent() instanceof View?((View)getParent()).getWidth():getResources().getDisplayMetrics().widthPixels;return dp(WallToolStyle.SIDE)+(Math.min(dp(320),Math.max(dp(WallToolStyle.SIDE),availableWidth(parent)))-dp(WallToolStyle.SIDE))*amount;}
+    private int availableWidth(int parent){FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)getLayoutParams();return params==null?parent-dp(100):parent-params.leftMargin-params.rightMargin;}
     private void apply(float value){amount=value;FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)getLayoutParams();if(params!=null){int width=Math.round(targetWidth());if(params.width!=width){params.width=width;setLayoutParams(params);}}
-        input.setAlpha(Math.max(0,(value-.25f)/.75f));lens.setColorFilter(value>0?colors.accent:colors.text);clear.setAlpha(value);
+        input.setAlpha(Math.max(0,(value-.25f)/.75f));lens.setColorFilter(value>0?colors.accent:colors.text);clear.setAlpha(value);invalidate();
     }
     void configure(AppAppearance.Palette palette){colors=palette;input.setTextColor(colors.text);input.setHintTextColor(colors.secondary);clear.setTextColor(colors.secondary);lens.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(colors.dark?0x44FFFFFF:0x18000000),null,null));apply(amount);}
+    void simpleStyle(boolean value){simpleStyle=value;invalidate();}
+    @Override protected void onDraw(android.graphics.Canvas canvas){
+        super.onDraw(canvas);
+        if(simpleStyle&&amount>0){
+            surfacePaint.setStyle(android.graphics.Paint.Style.FILL);
+            surfacePaint.setColor(colors.line);
+            surfacePaint.setAlpha(Math.round(android.graphics.Color.alpha(colors.line)*amount));
+            canvas.drawRoundRect(0,0,getWidth(),getHeight(),dp(28),dp(28),surfacePaint);
+            surfacePaint.setStyle(android.graphics.Paint.Style.STROKE);surfacePaint.setStrokeWidth(dp(1));surfacePaint.setColor(colors.line);surfacePaint.setAlpha(Math.round(android.graphics.Color.alpha(colors.line)*amount));
+            canvas.drawRoundRect(dp(.5f),dp(.5f),getWidth()-dp(.5f),getHeight()-dp(.5f),dp(28),dp(28),surfacePaint);
+        }
+    }
     boolean isOpen(){return open;}
     void setOpen(boolean value,boolean animate){
         open=value;if(animator!=null){animator.removeAllListeners();animator.cancel();}

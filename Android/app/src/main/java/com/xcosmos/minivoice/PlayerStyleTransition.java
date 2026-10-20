@@ -25,6 +25,7 @@ final class PlayerStyleTransition {
         });
         root.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{if(r-l!=or-ol||b-t!=ob-ot)cancel();});
     }
+    boolean isRunning(){return busy;}
     void run(View icon,Runnable change){
         if(busy){queued=queued==null?()->run(icon,change):null;return;}
         int width=root.getWidth(),height=root.getHeight();

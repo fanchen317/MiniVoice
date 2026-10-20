@@ -171,7 +171,7 @@ public final class MainActivity extends Activity {
         search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){query=s.toString().toLowerCase(Locale.ROOT);renderRows();}public void afterTextChanged(android.text.Editable e){}});
         LinearLayout actions=new LinearLayout(this);root.addView(actions);
         actions.addView(button("刷新音乐库",this::rebuildLibrary));actions.addView(button("新建歌单",this::createPlaylist));
-        ScrollView scroll=new ScrollView(this);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);scroll.addView(rows);
+        ScrollView scroll=new ScrollView(this);ListScrollStyle.apply(scroll);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);scroll.addView(rows);
         playerBar=new LinearLayout(this);playerBar.setOrientation(LinearLayout.VERTICAL);playerBar.setPadding(dp(8),dp(8),dp(8),0);playerBar.setBackgroundColor(Color.rgb(225,241,230));root.addView(playerBar);
         now=label("选择一首歌曲",16,Color.rgb(20,70,42));playerBar.addView(now);now.setOnClickListener(v->showLyrics());
         progress=new SeekBar(this);playerBar.addView(progress);progress.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar s,int p,boolean fromUser){}public void onStartTrackingTouch(SeekBar s){}public void onStopTrackingTouch(SeekBar s){if(service!=null)service.seek(s.getProgress());}});
@@ -232,7 +232,7 @@ public final class MainActivity extends Activity {
     }
     private void playFromWall(Song song){if(groupRoot()){openGroup(song.title);return;}play(song);home.songSelected();}
     private void showSettings(){settings.show(library.size(),scanning);}
-    private void showPlaybackModeDialog(){int selected=service==null?prefs.getInt("playback_mode",1):service.mode;new AlertDialog.Builder(this).setTitle("播放模式").setSingleChoiceItems(PlaybackModes.NAMES,PlaybackModes.valid(selected),(dialog,which)->{prefs.edit().putInt("playback_mode",which).apply();if(service!=null)service.setMode(which);dialog.dismiss();}).setNegativeButton("关闭",null).show();}
+    private void showPlaybackModeDialog(){int current=service==null?prefs.getInt("playback_mode",1):service.mode;int next=(PlaybackModes.valid(current)+1)%PlaybackModes.NAMES.length;prefs.edit().putInt("playback_mode",next).apply();if(service!=null)service.setMode(next);refreshPlayer();}
     private void showQueue(){if(service==null)return;
         List<Song> queue=new ArrayList<>(service.queue);int selected=service.index;
         final android.app.Dialog[] sheet={null};sheet[0]=BottomSheet.show(this,"播放队列 · "+queue.size()+" 首",body->{
@@ -282,14 +282,31 @@ public final class MainActivity extends Activity {
         boolean favorite=ids("favorites").contains(Long.toString(song.id));
         List<String> options=new ArrayList<>(java.util.Arrays.asList("播放","查看歌词",favorite?"取消收藏":"收藏歌曲","加入歌单…"));
         if(section.startsWith("歌单:"))options.add("从此歌单移除");
-        new AlertDialog.Builder(this).setTitle(song.title).setItems(options.toArray(new String[0]),(dialog,index)->{
-            if(index==0)play(song);
-            else if(index==1)showLyricsFor(song);
-            else if(index==2){Set<String> saved=ids("favorites");String id=Long.toString(song.id);if(!saved.add(id))saved.remove(id);saveIds("favorites",saved);refreshWall();home.setCardState(saved,service==null?1:service.mode,service==null||service.current()==null?0:(int)service.current().duration);}
-            else if(index==3)addToPlaylist(song);
-            else{String key="playlist_"+section.substring(3);Set<String> saved=ids(key);saved.remove(Long.toString(song.id));saveIds(key,saved);refreshWall();home.updateDrawer(section,ids("playlists"));}
-        }).show();
+        final android.app.Dialog[] sheet={null};
+        sheet[0]=BottomSheet.show(this,"歌曲操作",body->{
+            LinearLayout info=new LinearLayout(this);info.setGravity(Gravity.CENTER_VERTICAL);info.setPadding(dp(14),dp(4),dp(14),dp(18));
+            android.widget.ImageView cover=new android.widget.ImageView(this);cover.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+            android.graphics.Bitmap artwork=ArtworkCache.peek(song,256);cover.setImageBitmap(artwork!=null?artwork:song.artworkPreview);
+            android.graphics.drawable.GradientDrawable background=new android.graphics.drawable.GradientDrawable();background.setColor(0xFF30433C);background.setCornerRadius(dp(12));cover.setBackground(background);cover.setClipToOutline(true);
+            info.addView(cover,new LinearLayout.LayoutParams(dp(64),dp(64)));
+            LinearLayout metadata=new LinearLayout(this);metadata.setOrientation(LinearLayout.VERTICAL);metadata.setPadding(dp(14),0,0,0);
+            TextView title=label(song.title,18,Color.WHITE);title.setTypeface(null,android.graphics.Typeface.BOLD);title.setMaxLines(2);title.setEllipsize(android.text.TextUtils.TruncateAt.END);metadata.addView(title);
+            TextView subtitle=label(song.artist+" · "+song.album,13,0xFFB9C8C0);subtitle.setMaxLines(2);subtitle.setEllipsize(android.text.TextUtils.TruncateAt.END);metadata.addView(subtitle);
+            info.addView(metadata,new LinearLayout.LayoutParams(0,-2,1));body.addView(info);
+            for(int i=0;i<options.size();i++){final int index=i;
+                TextView row=BottomSheet.action(this,body,options.get(i),()->{
+                    sheet[0].dismiss();
+                    if(index==0)play(song);
+                    else if(index==1)showLyricsFor(song);
+                    else if(index==2){Set<String> saved=ids("favorites");String id=Long.toString(song.id);if(!saved.add(id))saved.remove(id);saveIds("favorites",saved);refreshWall();home.setCardState(saved,service==null?prefs.getInt("playback_mode",1):service.mode,service==null||service.current()==null?0:(int)service.current().duration);}
+                    else if(index==3)addToPlaylist(song);
+                    else{String key="playlist_"+section.substring(3);Set<String> saved=ids(key);saved.remove(Long.toString(song.id));saveIds(key,saved);refreshWall();home.updateDrawer(section,ids("playlists"));}
+                });
+                if(index==4)row.setTextColor(0xFFFF9292);
+            }
+        });
     }
+
     private void favoriteSongs(List<Song> songs,boolean value){
         if(songs.isEmpty())return;Set<String> saved=ids("favorites");for(Song song:songs){String id=Long.toString(song.id);if(value)saved.add(id);else saved.remove(id);}saveIds("favorites",saved);refreshWall();
     }

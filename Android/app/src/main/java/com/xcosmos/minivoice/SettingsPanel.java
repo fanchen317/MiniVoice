@@ -134,7 +134,7 @@ final class SettingsPanel {
         title.setTypeface(null, Typeface.BOLD);
         title.setPadding(dp(8), 0, 0, 0);
         toolbar.addView(title);
-        scroll = new ScrollView(activity);
+        scroll = new ScrollView(activity);ListScrollStyle.apply(scroll);
         scroll.setFillViewport(false);
         scroll.setClipToPadding(false);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));

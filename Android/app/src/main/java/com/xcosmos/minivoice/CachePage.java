@@ -135,7 +135,7 @@ final class CachePage extends Dialog {
         LinearLayout.LayoutParams deleteParams = new LinearLayout.LayoutParams(-2, dp(44));
         deleteParams.leftMargin = dp(8);
         actions.addView(delete, deleteParams);
-        list = new ListView(activity);
+        list = new ListView(activity);ListScrollStyle.fast(list);
         list.setBackgroundColor(colors.background);
         list.setDivider(new android.graphics.drawable.ColorDrawable(colors.line));
         list.setDividerHeight(dp(1));
