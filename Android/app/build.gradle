@@ -4,18 +4,31 @@ android {
     compileSdk 35
     defaultConfig { applicationId 'com.xcosmos.minivoice'; minSdk 29; targetSdk 34; versionCode 1; versionName '1.0.0' }
     def configuredKey = System.getenv('MINIVOICE_KEYSTORE')
-    def stableKey = rootProject.file('signing/debug.keystore')
-    def legacyKey = rootProject.file('../.build/Android/debug.keystore')
-    def localKey = configuredKey ? file(configuredKey) : (stableKey.exists() ? stableKey : (legacyKey.exists() ? legacyKey : null))
-    if (localKey != null) {
-        signingConfigs {
-            debug {
-                storeFile localKey
-                storePassword System.getenv('MINIVOICE_STORE_PASSWORD') ?: 'android'
-                keyAlias System.getenv('MINIVOICE_KEY_ALIAS') ?: 'androiddebugkey'
-                keyPassword System.getenv('MINIVOICE_KEY_PASSWORD') ?: (System.getenv('MINIVOICE_STORE_PASSWORD') ?: 'android')
-            }
+    def localKey = configuredKey ? file(configuredKey) : rootProject.file('signing/debug.keystore')
+    def fingerprintFile = rootProject.file('signing-certificate.sha256')
+    signingConfigs {
+        debug {
+            storeFile localKey
+            storePassword System.getenv('MINIVOICE_STORE_PASSWORD') ?: 'android'
+            keyAlias System.getenv('MINIVOICE_KEY_ALIAS') ?: 'androiddebugkey'
+            keyPassword System.getenv('MINIVOICE_KEY_PASSWORD') ?: (System.getenv('MINIVOICE_STORE_PASSWORD') ?: 'android')
         }
+    }
+    def verifyIdentity = tasks.register('verifyMiniVoiceSigning') {
+        doLast {
+            if (!localKey.isFile() || !fingerprintFile.isFile()) {
+                throw new GradleException('缺少统一签名，请先运行 Scripts/import-android-signing.sh 导入旧 Mac 原始密钥。')
+            }
+            def config = signingConfigs.debug
+            def store = java.security.KeyStore.getInstance(localKey, config.storePassword.toCharArray())
+            if (!store.isKeyEntry(config.keyAlias)) throw new GradleException('签名文件中没有对应私钥。')
+            def cert = store.getCertificate(config.keyAlias)
+            def actual = java.security.MessageDigest.getInstance('SHA-256').digest(cert.encoded).encodeHex().toString()
+            if (actual != fingerprintFile.text.trim()) throw new GradleException('签名证书与项目固定指纹不一致，拒绝打包。')
+        }
+    }
+    tasks.configureEach { task ->
+        if (task.name == 'preBuild') task.dependsOn(verifyIdentity)
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }

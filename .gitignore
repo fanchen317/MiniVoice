@@ -16,7 +16,8 @@ Android/.idea/
 Android/local.properties
 Android/app/build/
 
-# Local Android signing keys
-Android/signing/
+# Ignore private signing keys, except the shared development identity.
 *.keystore
 *.jks
+Android/signing/*
+!Android/signing/debug.keystore

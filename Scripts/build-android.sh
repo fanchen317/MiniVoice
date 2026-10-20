@@ -7,27 +7,9 @@ build_tools="$(minivoice_find_build_tools "$sdk_root")"
 android_jar="$sdk_root/platforms/android-35/android.jar"
 printf 'Android SDK: %s\nBuild Tools: %s\n' "$sdk_root" "$build_tools"
 output="$repo_root/.build/Android"
-# Keep signing identity outside disposable build output. An explicit old key wins.
-keystore="${MINIVOICE_KEYSTORE:-$repo_root/Android/signing/debug.keystore}"
-key_alias="${MINIVOICE_KEY_ALIAS:-androiddebugkey}"
-export MINIVOICE_STORE_PASSWORD="${MINIVOICE_STORE_PASSWORD:-android}"
-export MINIVOICE_KEY_PASSWORD="${MINIVOICE_KEY_PASSWORD:-$MINIVOICE_STORE_PASSWORD}"
-if [[ ! -f "$keystore" ]]; then
-  if [[ -n "${MINIVOICE_KEYSTORE:-}" ]]; then
-    printf '指定的签名密钥不存在：%s\n' "$keystore" >&2
-    exit 1
-  fi
-  mkdir -p "$(dirname "$keystore")"
-  if [[ -f "$output/debug.keystore" ]]; then
-    cp -p "$output/debug.keystore" "$keystore"
-  elif [[ -f "$HOME/.android/debug.keystore" ]]; then
-    cp -p "$HOME/.android/debug.keystore" "$keystore"
-  else
-    keytool -genkeypair -keystore "$keystore" -storepass:env MINIVOICE_STORE_PASSWORD -keypass:env MINIVOICE_KEY_PASSWORD -alias "$key_alias" -dname 'CN=MiniVoice Debug,O=MiniVoice,C=CN' -keyalg RSA -keysize 2048 -validity 10000 >/dev/null 2>&1
-  fi
-fi
-printf 'Signing key: %s\n' "$keystore"
-keytool -list -keystore "$keystore" -storepass:env MINIVOICE_STORE_PASSWORD -alias "$key_alias" >/dev/null
+source "$repo_root/Scripts/android-signing.sh"
+minivoice_check_signing "$repo_root"
+printf 'Signing key: %s\nCertificate SHA-256: %s\n' "$keystore" "$signing_fingerprint"
 mkdir -p "$output/classes" "$output/dex" "$output/generated"
 rm -f "$output/MiniVoice-unsigned.apk" "$output/MiniVoice-unaligned.apk" "$output/MiniVoice-debug.apk"
 "$build_tools/aapt2" compile --dir "$repo_root/Android/app/src/main/res" -o "$output/resources.zip"

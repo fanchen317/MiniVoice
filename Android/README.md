@@ -34,13 +34,33 @@ ANDROID_HOME="/你的/Android/sdk" ./Scripts/build-android.sh
 聚焦卡片沿用 Mac 的上下布局：全宽连续遮罩，顶部歌曲信息，播放状态胶囊，中部自动换行的同步歌词，底部上一首、播放/暂停、下一首、收藏、展开/收起、时间与白色细进度条。预览未播放歌曲时只显示信息和播放按钮；点击卡片空白处不会切换播放。窄屏时间独立成行，控制按钮保留 44 dp 触控区域；进度条支持点按和拖动，拖动时不会移动音乐墙。展开后隐藏浮动工具和底部播放条，返回键或收起按钮恢复。
 
 
-安装提示“与已安装应用签名不同”时，需要使用旧版的原始签名密钥构建更新包。旧脚本的密钥位于旧电脑/旧项目的 `.build/Android/debug.keystore`，Android Studio 的默认密钥通常位于 `~/.android/debug.keystore`。仅复制旧 APK 无法恢复私钥。找回旧密钥并复制到本机后，显式指定：
+## 两台 Mac 共用开发签名
 
-```bash
-MINIVOICE_KEYSTORE="/旧密钥的本机绝对路径/debug.keystore" ./Scripts/build-android.sh
+项目包含固定开发密钥 `Android/signing/debug.keystore` 及公开证书指纹 `Android/signing-certificate.sha256`，两者均纳入 Git。两台 Mac 拉取相同提交后直接使用原打包脚本或 Android Studio 即可，默认别名 `androiddebugkey`、密码 `android`。无需各自生成或手动复制密钥。此密钥用于开发测试；正式对外发行应使用独立保密的发行密钥。
+
+脚本与 Gradle 都验证固定证书指纹；缺失或不一致则停止，不会自动生成密钥或回退到本机 `~/.android/debug.keystore`。请不要在两台 Mac 设置不同的 `MINIVOICE_KEYSTORE` 等签名环境变量；默认使用仓库内开发密钥。
+
+当前统一证书 SHA-256：
+
+```text
+d014c3673246e0a038e1e0c36fc1a8990f4fa313c713160a13eda5d10bd01223
 ```
 
-可通过 `MINIVOICE_KEY_ALIAS`、`MINIVOICE_STORE_PASSWORD` 和 `MINIVOICE_KEY_PASSWORD` 指定非默认别名与密码；默认对应原调试密钥。脚本和 Gradle 都支持这些变量。未显式指定时，脚本使用 `Android/signing/debug.keystore`，首次会优先迁移本项目 `.build/Android/debug.keystore`，其次迁移 Android Studio 调试密钥，均不存在才创建新密钥；这些操作仅在执行构建脚本时发生。密钥不纳入 Git，请保留备份，以后持续使用相同密钥。
+### 已安装旧版的兼容
+
+统一仓库签名能避免后续两台 Mac 再次产生不同签名，但当前手机上的旧版必须与上述证书相同才能直接覆盖。先在旧 Mac 使用 Android SDK 的 `apksigner verify --print-certs /旧版.apk` 比较 `Signer #1 certificate SHA-256 digest`。**暂时不要卸载手机应用。**
+
+若旧版证书不同，应以旧 Mac 实际打包所用的原始私钥作为统一开发密钥。检查旧项目的 `Android/signing/debug.keystore`、`.build/Android/debug.keystore` 或 `~/.android/debug.keystore`。确认原始私钥后，手动移走项目的 `Android/signing-certificate.sha256`（这是一次有意更换统一身份的操作），再执行：
+
+```bash
+bash Scripts/import-android-signing.sh /旧Mac原始密钥的绝对路径/debug.keystore
+```
+
+将更新后的密钥和证书指纹一起提交、同步到两台 Mac。导入脚本会备份已有本地密钥，备份不会进入 Git。非默认别名/密码需要通过 `MINIVOICE_KEY_ALIAS`、`MINIVOICE_STORE_PASSWORD`、`MINIVOICE_KEY_PASSWORD` 在两台 Mac 同样配置。
+
+只有原始私钥才能签出可覆盖旧版的 APK；旧 APK 无法恢复私钥，修改版本号或指纹也不能绕过系统校验。原私钥彻底丢失时只能重装，卸载会删除应用私有缓存、收藏和歌单。
+
+
 
 音乐墙搜索按钮改为右上角原位展开：圆形镜片先略微放大，再向左展开成胶囊搜索框，输入区渐显，图标转为薄荷绿；关闭时沿原位收回。展开完成后才唤起键盘，支持清空、搜索键收起键盘和返回键收起搜索框。
 
