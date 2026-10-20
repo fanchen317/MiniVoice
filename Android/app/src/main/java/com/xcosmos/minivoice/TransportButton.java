@@ -18,6 +18,7 @@ final class TransportButton extends View {
     private boolean playing;
     TransportButton(Context context,Glyph glyph,Runnable action){super(context);this.glyph=glyph;density=getResources().getDisplayMetrics().density;
         setClickable(true);setOnClickListener(view->action.run());setBackground(new RippleDrawable(ColorStateList.valueOf(0x55FFFFFF),null,null));
+        ButtonFeedback.install(this);
         setContentDescription(glyph==Glyph.PREVIOUS?"上一首":glyph==Glyph.NEXT?"下一首":glyph==Glyph.QUEUE?"播放队列":"播放");
     }
     void setPlaying(boolean value){playing=value;setContentDescription(value?"暂停":"播放");invalidate();}

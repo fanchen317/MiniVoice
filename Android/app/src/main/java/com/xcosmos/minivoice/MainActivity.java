@@ -68,6 +68,14 @@ public final class MainActivity extends Activity {
     };
     @Override public void onCreate(Bundle state){super.onCreate(state);configureSystemBars();pendingLocatePlaying=ACTION_LOCATE_PLAYING.equals(getIntent().getAction());prefs=getSharedPreferences("library",MODE_PRIVATE);buildUi();requestLibrary();handler.postDelayed(new Runnable(){@Override public void run(){refreshPlayer();handler.postDelayed(this,500);}},500);}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(ACTION_LOCATE_PLAYING.equals(intent.getAction())){pendingLocatePlaying=true;locatePlayingIfReady();}}
+    @Override public boolean dispatchTouchEvent(android.view.MotionEvent event){
+        if(event.getActionMasked()==android.view.MotionEvent.ACTION_DOWN&&home!=null)home.dismissEmptySearchOutside(event.getRawX(),event.getRawY());
+        return super.dispatchTouchEvent(event);
+    }
+    @Override public void onConfigurationChanged(android.content.res.Configuration configuration){
+        super.onConfigurationChanged(configuration);configureSystemBars();if(home!=null)home.orientationChanged();
+    }
+    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)configureSystemBars();}
     private void configureSystemBars(){
         Window window=getWindow();window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
@@ -75,7 +83,11 @@ public final class MainActivity extends Activity {
         window.setNavigationBarDividerColor(Color.TRANSPARENT);
         if(Build.VERSION.SDK_INT>=30)window.setDecorFitsSystemWindows(false);
         if(Build.VERSION.SDK_INT>=29){window.setStatusBarContrastEnforced(false);window.setNavigationBarContrastEnforced(false);}
-        View decor=window.getDecorView();decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        View decor=window.getDecorView();boolean landscape=getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+        int flags=View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_STABLE;
+        if(landscape)flags|=View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
+        decor.setSystemUiVisibility(flags);
+        if(Build.VERSION.SDK_INT>=30){android.view.WindowInsetsController controller=window.getInsetsController();if(controller!=null){controller.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);if(landscape)controller.hide(android.view.WindowInsets.Type.systemBars());else controller.show(android.view.WindowInsets.Type.systemBars());}}
         if(Build.VERSION.SDK_INT>=28){WindowManager.LayoutParams attributes=window.getAttributes();attributes.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;window.setAttributes(attributes);}
     }
     @Override public void onStart(){super.onStart();bound=bindService(new Intent(this,PlaybackService.class),connection,BIND_AUTO_CREATE);}
@@ -86,7 +98,7 @@ public final class MainActivity extends Activity {
     private void reload(){reload(false);}
     private void rebuildLibrary(){reload(true);}
     private void reload(boolean rebuild){
-        if(scanning){rescanPending=true;rebuildPending|=rebuild;return;}scanning=true;lastScanProgress=0;if(settings!=null)settings.refresh(library.size(),true);
+        if(scanning){rescanPending=true;rebuildPending|=rebuild;return;}scanning=true;if(home!=null)home.setScanning(true);lastScanProgress=0;if(settings!=null)settings.refresh(library.size(),true);
         if(settings!=null)settings.progress(0,0,"正在查找音乐文件");
         new Thread(()->{
             ScanProgress report=(completed,total,detail)->{
@@ -98,14 +110,14 @@ public final class MainActivity extends Activity {
             try{if(rebuild){report.update(0,0,"清理旧缓存…");ArtworkCache.clear();LibraryCache.clear(getApplicationContext());clearCacheFiles(getCacheDir());}scanned=folders.isEmpty()?Library.load(this,report):FolderLibrary.scan(this,folders,prefs.getBoolean("scan_recursive",true),report);LyricsRepository.prepare(getApplicationContext(),scanned,report);ArtworkCache.prepare(getApplicationContext(),scanned,report);}
             catch(Exception failure){scanned=null;error="扫描失败，请检查音乐读取权限后重试";}
             List<Song> found=scanned;String scanError=error;
-            runOnUiThread(()->{if(found!=null){library.clear();library.addAll(found);if(service!=null)service.refreshLibrary(library);}if(scanError!=null)android.widget.Toast.makeText(this,scanError,android.widget.Toast.LENGTH_LONG).show();scanning=false;invalidateLyricsLoad();renderRows();refreshWall();refreshPlayer();
+            runOnUiThread(()->{if(found!=null){library.clear();library.addAll(found);if(service!=null)service.refreshLibrary(library);}if(scanError!=null)android.widget.Toast.makeText(this,scanError,android.widget.Toast.LENGTH_LONG).show();scanning=false;home.setScanning(false);invalidateLyricsLoad();renderRows();refreshWall();refreshPlayer();
                 if(service!=null&&service.current()!=null&&!section.equals("歌手")&&!section.equals("专辑"))home.locateSong(service.current().id);
                 locatePlayingIfReady();if(settings!=null)settings.refresh(library.size(),false);if(rescanPending){boolean queuedRebuild=rebuildPending;rescanPending=false;rebuildPending=false;reload(queuedRebuild);}});
         }).start();
     }
     private int dp(int value){return Math.round(getResources().getDisplayMetrics().density*value);}
     private TextView label(String text,int size,int color){TextView view=new TextView(this);view.setText(text);view.setTextSize(size);view.setTextColor(color);view.setGravity(Gravity.CENTER_VERTICAL);return view;}
-    private Button button(String text,Runnable action){Button b=new Button(this);b.setText(text);b.setAllCaps(false);b.setOnClickListener(v->action.run());return b;}
+    private Button button(String text,Runnable action){Button b=new Button(this);b.setText(text);b.setAllCaps(false);b.setOnClickListener(v->action.run());ButtonFeedback.install(b);return b;}
     private void buildUi(){
         shell=new FrameLayout(this);setContentView(shell);
         home=new HomeScreen(this,new HomeScreen.Actions(){
@@ -123,7 +135,9 @@ public final class MainActivity extends Activity {
             public void locate(){pendingLocatePlaying=true;locatePlayingIfReady();}
             public void queue(){showQueue();}
             public void seek(int ms){if(service!=null)service.seek(ms);}
-            public void playMode(){if(service!=null){service.mode=(service.mode+1)%5;android.widget.Toast.makeText(MainActivity.this,new String[]{"单曲播放","列表播放","随机播放","单曲循环","列表循环"}[service.mode],android.widget.Toast.LENGTH_SHORT).show();}}
+            public int playbackMode(){return service==null?prefs.getInt("playback_mode",1):service.mode;}
+            public void selectPlaybackMode(int mode){int selected=PlaybackModes.valid(mode);prefs.edit().putInt("playback_mode",selected).apply();if(service!=null)service.setMode(selected);refreshPlayer();}
+
         });
         shell.addView(home.view(),new FrameLayout.LayoutParams(-1,-1));
         root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(Color.rgb(246,249,247));root.setPadding(dp(12),dp(12),dp(12),dp(8));root.setVisibility(View.GONE);shell.addView(root,new FrameLayout.LayoutParams(-1,-1));
@@ -142,7 +156,7 @@ public final class MainActivity extends Activity {
         progress=new SeekBar(this);playerBar.addView(progress);progress.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar s,int p,boolean fromUser){}public void onStartTrackingTouch(SeekBar s){}public void onStopTrackingTouch(SeekBar s){if(service!=null)service.seek(s.getProgress());}});
         LinearLayout controls=new LinearLayout(this);controls.setGravity(Gravity.CENTER);playerBar.addView(controls);
         controls.addView(button("⏮",()->{if(service!=null)service.previous();}));controls.addView(button("播放/暂停",()->{if(service!=null)service.toggle();}));controls.addView(button("⏭",()->{if(service!=null)service.next(true);}));
-        controls.addView(button("模式",()->{if(service!=null){service.mode=(service.mode+1)%5;android.widget.Toast.makeText(this,new String[]{"单曲播放","列表播放","随机播放","单曲循环","列表循环"}[service.mode],android.widget.Toast.LENGTH_SHORT).show();}}));
+        controls.addView(button("模式",this::showPlaybackModeDialog));
         elapsed=label("0:00",12,Color.DKGRAY);playerBar.addView(elapsed);renderRows();
         settings=new SettingsPanel(this,prefs,new SettingsPanel.Actions(){
             public void addFolder(){Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(picker,3);}
@@ -186,6 +200,7 @@ public final class MainActivity extends Activity {
         play(song);
     }
     private void showSettings(){settings.show(library.size(),scanning);}
+    private void showPlaybackModeDialog(){int selected=service==null?prefs.getInt("playback_mode",1):service.mode;new AlertDialog.Builder(this).setTitle("播放模式").setSingleChoiceItems(PlaybackModes.NAMES,PlaybackModes.valid(selected),(dialog,which)->{prefs.edit().putInt("playback_mode",which).apply();if(service!=null)service.setMode(which);dialog.dismiss();}).setNegativeButton("关闭",null).show();}
     private void showQueue(){if(service==null)return;
         List<Song> queue=new ArrayList<>(service.queue);int selected=service.index;
         final android.app.Dialog[] sheet={null};sheet[0]=BottomSheet.show(this,"播放队列 · "+queue.size()+" 首",body->{

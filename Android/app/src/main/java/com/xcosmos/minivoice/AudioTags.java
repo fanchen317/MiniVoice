@@ -46,6 +46,7 @@ final class AudioTags {
                 if(id.equals("TIT2")||id.equals("TT2"))tags.title=text(frame);
                 if(id.equals("TPE1")||id.equals("TP1"))tags.artist=text(frame);
                 if(id.equals("TALB")||id.equals("TAL"))tags.album=text(frame);
+                if((id.equals("SYLT")||id.equals("SLT"))&&tags.lyrics==null)tags.lyrics=syncedLyrics(frame);
                 if(id.equals("USLT")||id.equals("ULT")){
                     int index=4,step=frame.length>0&&(frame[0]==1||frame[0]==2)?2:1;
                     while(index+step<=frame.length){boolean end=frame[index]==0&&(step==1||frame[index+1]==0);index+=step;if(end)break;}
@@ -63,6 +64,15 @@ final class AudioTags {
             }
         }catch(Exception ignored){}
         return tags;
+    }
+    private static int textEnd(byte[] data,int start,int step){for(int i=start;i+step<=data.length;i+=step)if(data[i]==0&&(step==1||data[i+1]==0))return i;return data.length;}
+    private static String encodedText(byte[] data,int start,int end){byte[] value=new byte[Math.max(0,end-start)+1];value[0]=data[0];if(end>start)System.arraycopy(data,start,value,1,end-start);return text(value);}
+    private static String syncedLyrics(byte[] data){
+        if(data.length<7||data[4]!=2)return null;
+        int step=data[0]==1||data[0]==2?2:1,index=textEnd(data,6,step)+step;StringBuilder result=new StringBuilder();
+        while(index<data.length){int end=textEnd(data,index,step);if(end+step+4>data.length)break;String lyric=encodedText(data,index,end);index=end+step;long ms=Integer.toUnsignedLong(integer(data,index));index+=4;
+            if(lyric!=null&&!lyric.isBlank())result.append(String.format(java.util.Locale.ROOT,"[%02d:%02d.%03d]",ms/60000,(ms/1000)%60,ms%1000)).append(lyric.replace('\n',' ')).append('\n');
+        }return result.length()==0?null:result.toString();
     }
     private static void readFlac(DataInputStream stream,AudioTags tags)throws Exception{
         int consumed=0;

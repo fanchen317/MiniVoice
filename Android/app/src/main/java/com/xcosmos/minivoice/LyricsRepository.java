@@ -12,6 +12,7 @@ final class LyricsRepository {
     }
     static synchronized void prepareSong(Context context,Song song){
         if(song.lyricsPrepared)return;
+        song.lyricsError=null;
         File directory=LibraryCache.directory(context,"lyrics");String key=LibraryCache.key(song.uri+"\n"+song.artworkVersion+"\n"+song.lyricUri);
         File file=new File(directory,key+".txt");
         try{if(file.isFile()){

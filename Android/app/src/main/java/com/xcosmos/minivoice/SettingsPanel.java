@@ -40,12 +40,12 @@ final class SettingsPanel {
     private int dp(int value){return Math.round(value*activity.getResources().getDisplayMetrics().density);}
     private TextView text(String value,int size,int color){TextView view=new TextView(activity);view.setText(value);view.setTextSize(size);view.setTextColor(color);view.setGravity(Gravity.CENTER_VERTICAL);return view;}
     private GradientDrawable rounded(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
-    private Button button(String value,Runnable action){Button b=new Button(activity);b.setText(value);b.setAllCaps(false);b.setTextColor(Color.WHITE);b.setBackground(rounded(green,11));b.setOnClickListener(v->action.run());return b;}
-    private Button outlined(String value,Runnable action){Button b=new Button(activity);b.setText(value);b.setAllCaps(false);b.setTextColor(0xFF2B2B2B);GradientDrawable background=rounded(Color.WHITE,10);background.setStroke(dp(1),0xFFD5D5D5);b.setBackground(background);b.setOnClickListener(v->action.run());return b;}
+    private Button button(String value,Runnable action){Button b=new Button(activity);b.setText(value);b.setAllCaps(false);b.setTextColor(Color.WHITE);b.setBackground(rounded(green,11));b.setOnClickListener(v->action.run());ButtonFeedback.install(b);return b;}
+    private Button outlined(String value,Runnable action){Button b=new Button(activity);b.setText(value);b.setAllCaps(false);b.setTextColor(0xFF2B2B2B);GradientDrawable background=rounded(Color.WHITE,10);background.setStroke(dp(1),0xFFD5D5D5);b.setBackground(background);b.setOnClickListener(v->action.run());ButtonFeedback.install(b);return b;}
     private void build(){
         LinearLayout root=new LinearLayout(activity);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(0xFFF0F0F0);dialog.setContentView(root);
         LinearLayout top=new LinearLayout(activity);top.setGravity(Gravity.CENTER_VERTICAL);top.setPadding(dp(18),dp(10),dp(18),dp(10));root.addView(top,new LinearLayout.LayoutParams(-1,dp(62)));
-        TextView back=text("‹",34,0xFF333333);top.addView(back,new LinearLayout.LayoutParams(dp(42),-1));back.setOnClickListener(v->dialog.dismiss());
+        TextView back=text("‹",34,0xFF333333);top.addView(back,new LinearLayout.LayoutParams(dp(42),-1));back.setOnClickListener(v->dialog.dismiss());ButtonFeedback.install(back);
         TextView title=text("设置",21,0xFF252525);title.setTypeface(null,Typeface.BOLD);top.addView(title);
         boolean wide=activity.getResources().getConfiguration().screenWidthDp>=600;
         LinearLayout content=new LinearLayout(activity);content.setOrientation(LinearLayout.HORIZONTAL);root.addView(content,new LinearLayout.LayoutParams(-1,0,1));

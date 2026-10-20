@@ -15,6 +15,9 @@ public final class EmbeddedLyricsTests {
         ByteArrayOutputStream frames=new ByteArrayOutputStream();DataOutputStream writer=new DataOutputStream(frames);writer.writeBytes("USLT");writer.writeInt(body.size());writer.writeShort(0);writer.write(body.toByteArray());
         int size=frames.size();byte[] id3=join(new byte[]{'I','D','3',3,0,0,(byte)(size>>21),(byte)((size>>14)&127),(byte)((size>>7)&127),(byte)(size&127)},frames.toByteArray());
         check(lyric.equals(EmbeddedLyrics.read(new ByteArrayInputStream(id3))),"ID3 UTF-16 USLT");
+        ByteArrayOutputStream sylt=new ByteArrayOutputStream();DataOutputStream sy=new DataOutputStream(sylt);sy.write(new byte[]{3,'e','n','g',2,1,0});sy.write("第一句".getBytes(StandardCharsets.UTF_8));sy.writeByte(0);sy.writeInt(2500);
+        ByteArrayOutputStream sf=new ByteArrayOutputStream();DataOutputStream sw=new DataOutputStream(sf);sw.writeBytes("SYLT");sw.writeInt(sylt.size());sw.writeShort(0);sw.write(sylt.toByteArray());int sl=sf.size();byte[] synced=join(new byte[]{'I','D','3',3,0,0,0,0,(byte)(sl>>7),(byte)(sl&127)},sf.toByteArray());
+        check("[00:02.500]第一句\n".equals(EmbeddedLyrics.read(new ByteArrayInputStream(synced))),"ID3 SYLT timestamp");
         ByteArrayOutputStream comments=new ByteArrayOutputStream();DataOutputStream c=new DataOutputStream(comments);little(c,0);little(c,2);
         for(String value:new String[]{"TITLE=内嵌歌曲","LYRICS="+lyric}){byte[] text=value.getBytes(StandardCharsets.UTF_8);little(c,text.length);c.write(text);}
         int length=comments.size();byte[] flac=join(new byte[]{'f','L','a','C',(byte)132,(byte)(length>>16),(byte)(length>>8),(byte)length},comments.toByteArray());
@@ -28,7 +31,7 @@ public final class EmbeddedLyricsTests {
         File directory=java.nio.file.Files.createTempDirectory("minivoice-cache-test").toFile();File old=new File(directory,"legacy.jpg"),next=new File(directory,"persistent/cover.jpg");
         try(FileOutputStream out=new FileOutputStream(old)){out.write(new byte[]{1,2,3});}LibraryCache.migrate(old,next);
         check(Arrays.equals(java.nio.file.Files.readAllBytes(next.toPath()),new byte[]{1,2,3}),"migrate existing cache on upgrade");
-        try(FileOutputStream out=new FileOutputStream(old)){out.write(9);}LibraryCache.migrate(old,next);check(next.length()==3,"reuse rather than overwrite persistent cache");next.delete();next.getParentFile().delete();old.delete();directory.delete();
-        System.out.println("PASS: MP3/FLAC/M4A embedded lyrics, embedded precedence, missing lyrics, upgrade cache migration and reuse");
+        try(FileOutputStream out=new FileOutputStream(old)){out.write(9);}LibraryCache.migrate(old,next);check(next.length()==3,"reuse rather than overwrite persistent cache");LibraryCache.clearRoot(next.getParentFile());check(!next.exists()&&old.exists(),"rebuild removes only derived cache and preserves original inputs");old.delete();directory.delete();
+        System.out.println("PASS: MP3 USLT/SYLT, FLAC/M4A lyrics, embedded precedence, cache migration/reuse and explicit rebuild");
     }
 }

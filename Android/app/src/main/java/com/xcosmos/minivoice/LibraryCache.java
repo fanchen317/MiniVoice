@@ -16,6 +16,7 @@ final class LibraryCache {
             if(!temporary.renameTo(destination))temporary.delete();
         }catch(Exception ignored){if(temporary!=null)temporary.delete();}
     }
-    static void clear(Context context)throws java.io.IOException{remove(root(context));}
+    static void clear(Context context)throws java.io.IOException{clearRoot(root(context));}
+    static void clearRoot(File root)throws java.io.IOException{remove(root);}
     private static void remove(File file)throws java.io.IOException{if(!file.exists())return;if(file.isDirectory()){File[] children=file.listFiles();if(children==null)throw new java.io.IOException("无法读取缓存目录");for(File child:children)remove(child);}if(!file.delete())throw new java.io.IOException("无法清理缓存："+file.getName());}
 }

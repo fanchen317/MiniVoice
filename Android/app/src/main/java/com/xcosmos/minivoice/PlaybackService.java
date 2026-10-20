@@ -45,7 +45,7 @@ public final class PlaybackService extends Service {
     public class LocalBinder extends Binder { PlaybackService get(){return PlaybackService.this;} }
     @Override public IBinder onBind(Intent intent){return binder;}
     @Override public void onCreate(){
-        super.onCreate();
+        super.onCreate();mode=PlaybackModes.valid(getSharedPreferences("library",MODE_PRIVATE).getInt("playback_mode",1));
         ((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(new NotificationChannel(CHANNEL,"音乐播放",NotificationManager.IMPORTANCE_LOW));
         session=new MediaSession(this,"MiniVoice");session.setCallback(new MediaSession.Callback(){
             @Override public void onPlay(){if(!isPlaying())toggle();}
@@ -62,6 +62,7 @@ public final class PlaybackService extends Service {
         }
         return START_NOT_STICKY;
     }
+    void setMode(int value){mode=PlaybackModes.valid(value);getSharedPreferences("library",MODE_PRIVATE).edit().putInt("playback_mode",mode).apply();publish();}
     void setQueue(List<Song> songs,int selected){
         queue.clear(); queue.addAll(songs); index=selected; playCurrent();
     }
