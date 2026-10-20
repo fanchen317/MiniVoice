@@ -9,20 +9,23 @@ final class GlassBackdrop {
     private Bitmap bitmap;
     private final View source;
     private final boolean live;
+    private final float blurDp;
     private long captured;
     private final boolean hardware=android.os.Build.VERSION.SDK_INT>=31;
     private final int[] origin=new int[2];
-    GlassBackdrop(View source,boolean live){this.source=source;this.live=live;if(!live)capture();}
+    GlassBackdrop(View source,boolean live){this(source,live,0);}
+    GlassBackdrop(View source,boolean live,float blurDp){this.source=source;this.live=live;this.blurDp=blurDp;if(!live)capture();}
     void capture(){
         if(source.getWidth()==0||source.getHeight()==0)return;
-        int width=Math.max(1,source.getWidth()/12),height=Math.max(1,source.getHeight()/12);
+        int sample=blurDp>0?Math.max(1,Math.round(blurDp*source.getResources().getDisplayMetrics().density/2)):12;
+        int width=Math.max(1,source.getWidth()/sample),height=Math.max(1,source.getHeight()/sample);
         Bitmap image=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888);
         Canvas canvas=new Canvas(image);canvas.scale(width/(float)source.getWidth(),height/(float)source.getHeight());source.draw(canvas);
         source.getLocationOnScreen(origin);
         int[] pixels=new int[width*height],temp=new int[pixels.length];image.getPixels(pixels,0,width,0,0,width,height);
         // Separable Gaussian kernel, with clamped edges to avoid black borders.
         int[] kernel={1,4,6,4,1};
-        for(int pass=0;pass<3;pass++){
+        for(int pass=0;pass<(blurDp>0?4:3);pass++){
             for(int axis=0;axis<2;axis++){
                 for(int y=0;y<height;y++)for(int x=0;x<width;x++){
                     int r=0,g=0,b=0;
@@ -34,7 +37,8 @@ final class GlassBackdrop {
         }
         image.setPixels(pixels,0,width,0,0,width,height);bitmap=image;captured=android.os.SystemClock.uptimeMillis();
     }
-    Drawable surface(View host,float radius,boolean panel){return new Drawable(){
+    Drawable surface(View host,float radius,boolean panel){return surface(host,radius,panel,false);}
+    Drawable surface(View host,float radius,boolean panel,boolean light){return new Drawable(){
         final Paint paint=new Paint(3);final int[] location=new int[2];
         android.graphics.RenderNode tile;int previousX=Integer.MIN_VALUE,previousY,previousWidth,previousHeight;
         public void draw(Canvas canvas){
@@ -47,9 +51,11 @@ final class GlassBackdrop {
             }
             RectF bounds=new RectF(getBounds());Path clip=new Path();float r=radius*host.getResources().getDisplayMetrics().density;
             clip.addRoundRect(bounds,r,r,Path.Direction.CW);int save=canvas.save();canvas.clipPath(clip);
+            // An opaque blurred backing prevents sharp, live lyrics bleeding through.
+            if(blurDp>0){paint.setColor(light?0xFFE1E8E8:0xFF252A29);canvas.drawRect(bounds,paint);}
             if(live&&hardware&&tile!=null&&canvas.isHardwareAccelerated()){int layer=canvas.save();canvas.scale(bounds.width()/tile.getWidth(),bounds.height()/tile.getHeight());canvas.drawRenderNode(tile);canvas.restoreToCount(layer);}
             if(!live&&bitmap!=null){host.getLocationOnScreen(location);float sx=source.getWidth()/(float)bitmap.getWidth(),sy=source.getHeight()/(float)bitmap.getHeight();RectF destination=new RectF(origin[0]-location[0],origin[1]-location[1],origin[0]-location[0]+bitmap.getWidth()*sx,origin[1]-location[1]+bitmap.getHeight()*sy);paint.setShader(null);paint.setColor(Color.WHITE);canvas.drawBitmap(bitmap,null,destination,paint);}
-            paint.setShader(new LinearGradient(0,0,0,bounds.height(),panel?new int[]{0xDE25292C,0xEB101317}:new int[]{0x805E6562,0xB51C2220},null,Shader.TileMode.CLAMP));canvas.drawRect(bounds,paint);paint.setShader(null);canvas.restoreToCount(save);
+            paint.setShader(new LinearGradient(0,0,0,bounds.height(),light?new int[]{0xBDE9EFF0,0xCCDCE6E8}:panel?new int[]{0xDE25292C,0xEB101317}:new int[]{0x805E6562,0xB51C2220},null,Shader.TileMode.CLAMP));canvas.drawRect(bounds,paint);paint.setShader(null);canvas.restoreToCount(save);
             paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(host.getResources().getDisplayMetrics().density);paint.setShader(new LinearGradient(0,0,0,bounds.height(),0x99FFFFFF,0x22FFFFFF,Shader.TileMode.CLAMP));bounds.inset(.7f,.7f);canvas.drawRoundRect(bounds,r,r,paint);paint.setShader(null);paint.setStyle(Paint.Style.FILL);
         }
         public void setAlpha(int alpha){}public void setColorFilter(ColorFilter filter){}public int getOpacity(){return PixelFormat.TRANSLUCENT;}

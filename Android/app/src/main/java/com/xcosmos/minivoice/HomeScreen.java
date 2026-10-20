@@ -22,6 +22,7 @@ import android.widget.SeekBar;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -42,6 +43,7 @@ final class HomeScreen {
         void newPlaylist();
 
         void settings();
+        void refreshLibrary();
 
         void search(String query);
 
@@ -77,6 +79,10 @@ final class HomeScreen {
     private final ScrollView drawerScroll;
     private final FrameLayout drawerPanel;
     private GlassBackdrop wallGlass;
+    private LinearLayout drawerContent,drawerBrand,simpleDrawerRoot;
+    private PlayerStylePage sidebarPage;
+    private EditText drawerSearch;
+    private TextView simpleLibraryTab,simpleRecentTab;
     private final LinearLayout player;
     private IdlePlaybackDock idleDock;
     private StandardPlaybackBar standardBar;
@@ -86,11 +92,14 @@ final class HomeScreen {
     private String drawerSelected="歌曲";
     private Set<String> drawerPlaylists=Set.of();
     private int styleTransitionEpoch;
+    private final PlayerStyleTransition fragmentTransition;
+    private boolean fragmentSwitch;
     private final WallSearchControl searchControl;
     private boolean immersive,restoreSearch,landscape,chromeHidden,awaitingRotationLayout,keyboardVisible;
     private int safeLeft,safeTop,safeRight,safeBottom,portraitDockWidth;
     private FrameLayout.LayoutParams dockParams,toolsParams;
-    void setScanning(boolean value){wall.setScanning(value);}
+    private boolean libraryScanning;
+    void setScanning(boolean value){libraryScanning=value;wall.setScanning(value);if(sidebarPage!=null)sidebarPage.setScanning(value);}
     private final LinearLayout drawerRows;
     private final WallView wall;
     private final PlayerStylePage stylePage;
@@ -115,6 +124,7 @@ final class HomeScreen {
         this.activity = activity;
         this.actions = actions;
         frame = new FrameLayout(activity);
+        fragmentTransition=new PlayerStyleTransition(activity,frame);
         frame.setBackgroundColor(Color.rgb(7, 12, 13));
         wall = new WallView(activity, actions::play, actions::toggle, actions::seek);
         wall.setSongMenu(actions::songMenu);
@@ -141,6 +151,7 @@ final class HomeScreen {
             }
 
             public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if(drawerSearch!=null&&!s.toString().contentEquals(drawerSearch.getText()))drawerSearch.setText(s);
                 actions.search(s.toString());
             }
 
@@ -224,12 +235,12 @@ final class HomeScreen {
         drawerPanel.setBackground(glass().surface(drawerPanel,24,true));
         drawerLayer.addView(drawerPanel, drawerParams);
         drawerPanel.addView(drawerScroll, new FrameLayout.LayoutParams(-1,-1));
-        LinearLayout drawer = new LinearLayout(activity);
+        LinearLayout drawer = new LinearLayout(activity);drawerContent=drawer;
         drawer.setOrientation(LinearLayout.VERTICAL);
         drawer.setPadding(dp(12), dp(14), dp(12), dp(14));
         drawer.setBackgroundColor(Color.TRANSPARENT);
         drawerScroll.addView(drawer);
-        LinearLayout brand = new LinearLayout(activity);
+        LinearLayout brand = new LinearLayout(activity);drawerBrand=brand;
         brand.setGravity(Gravity.CENTER_VERTICAL);
         brand.setMinimumHeight(dp(64));
         drawer.addView(brand, new LinearLayout.LayoutParams(-1, -2));
@@ -240,12 +251,15 @@ final class HomeScreen {
         icon.setClipToOutline(true);
         brand.addView(icon, new LinearLayout.LayoutParams(dp(48), dp(48)));
         icon.setContentDescription("切换播放器样式：简易、音乐库、音乐墙");
-        icon.setOnClickListener(v->{
+        icon.setOnClickListener(v->fragmentTransition.run(icon,()->{
+            fragmentSwitch=true;stylePage.setSnapshotTransition(true);
+            try{
             String nextStyle=playerStyle.equals("simple")?"library":playerStyle.equals("library")?"wall":"simple";
             activity.getSharedPreferences("library",Activity.MODE_PRIVATE).edit().putString("player_style",nextStyle).apply();
             searchInput.setText("");actions.section("歌曲");applyAppearance();if(playerStyle.equals("simple"))stylePage.showPlayer();updateViewport();
             icon.announceForAccessibility(nextStyle.equals("simple")?"简易样式":nextStyle.equals("library")?"音乐库样式":"音乐墙样式");
-        });
+            }finally{fragmentSwitch=false;stylePage.setSnapshotTransition(false);}
+        }));
         LinearLayout title = new LinearLayout(activity);
         title.setOrientation(LinearLayout.VERTICAL);
         title.setPadding(dp(12), 0, 0, 0);
@@ -275,9 +289,10 @@ final class HomeScreen {
         LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(dp(56), dp(56));
         settingsParams.setMargins(dp(4), dp(4), 0, 0);
         drawer.addView(settings, settingsParams);
+        buildSimpleDrawer();
         View drawerEdge=new View(activity);
         drawerEdge.setContentDescription("向左滑动关闭侧栏");
-        drawerPanel.addView(drawerEdge,new FrameLayout.LayoutParams(dp(24),-1,Gravity.RIGHT));
+        drawerPanel.addView(drawerEdge,new FrameLayout.LayoutParams(dp(12),-1,Gravity.RIGHT));
         drawerEdge.setOnTouchListener(new View.OnTouchListener(){
             float start;android.view.VelocityTracker velocity;
             public boolean onTouch(View view,android.view.MotionEvent event){
@@ -332,11 +347,13 @@ final class HomeScreen {
             drawerLayer.bringToFront();
             applyDrawerAppearance();
             drawerLayer.setVisibility(View.VISIBLE);
+            if(playerStyle.equals("simple"))sidebarPage.refreshVisibleArtwork();
             drawerLayer.setAlpha(0);
             drawerPanel.setTranslationX(-drawerPanel.getLayoutParams().width - dp(20));
             drawerLayer.animate().alpha(1).setDuration(220).start();
             drawerPanel.animate().translationX(0).setDuration(260).start();
         } else {
+            drawerSearch.clearFocus();((InputMethodManager)activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(drawerSearch.getWindowToken(),0);
             drawerPanel.animate().translationX(-drawerPanel.getLayoutParams().width - dp(20)).setDuration(230).start();
             drawerLayer.animate().alpha(0).setDuration(230).withEndAction(() -> {
                 if (!drawerOpen) drawerLayer.setVisibility(View.GONE);
@@ -351,21 +368,21 @@ final class HomeScreen {
         playButton.setPlaying(playing);idleDock.setPlaying(playing);standardBar.state(playing,position,duration);
         seek.setMax(Math.max(1, duration));
         if (!seek.isPressed()) seek.setProgress(position);
-        wall.setPlayback(id, playing, position);stylePage.setPlayback(position,duration,playing);
+        wall.setPlayback(id, playing, position);stylePage.setPlayback(position,duration,playing);sidebarPage.setPlayback(position,duration,playing);
         if (changed && !groupedWall) locateSong(id);
     }
 
     private void browseSimpleSongs(){actions.section("歌曲");stylePage.showCatalog();}
     void songSelected(){if(playerStyle.equals("simple"))stylePage.showPlayer();}
     void navigationChanged(){if(playerStyle.equals("simple"))stylePage.showCatalog();}
-    void setNowPlaying(Song song){stylePage.setSong(song);standardBar.song(song);}
+    void setNowPlaying(Song song){sidebarPage.setSong(song);stylePage.setSong(song);standardBar.song(song);}
     boolean isWallStyle(){return playerStyle.equals("wall");}
     void applyAppearance(){
         android.content.SharedPreferences prefs=activity.getSharedPreferences("library",Activity.MODE_PRIVATE);
         String nextStyle=AppAppearance.style(prefs);boolean changed=!playerStyle.equals(nextStyle);int epoch=++styleTransitionEpoch;
         wall.collapse();playerStyle=nextStyle;wall.animate().cancel();stylePage.animate().cancel();
         stylePage.configure(playerStyle,AppAppearance.palette(activity,prefs));stylePage.setSongs(visibleSongs);
-        if(changed&&android.animation.ValueAnimator.areAnimatorsEnabled()){
+        if(changed&&!fragmentSwitch&&android.animation.ValueAnimator.areAnimatorsEnabled()){
             if(isWallStyle()){
                 wall.setVisibility(View.VISIBLE);wall.setAlpha(0);wall.animate().alpha(1).setDuration(300).start();
                 stylePage.setVisibility(View.VISIBLE);stylePage.animate().cancel();stylePage.setAlpha(1);stylePage.animate().alpha(0).setDuration(220).withEndAction(()->{if(epoch==styleTransitionEpoch&&isWallStyle()){stylePage.setVisibility(View.GONE);stylePage.setAlpha(1);}}).start();
@@ -373,15 +390,15 @@ final class HomeScreen {
                 wall.setVisibility(View.VISIBLE);wall.setAlpha(1);wall.animate().alpha(0).setDuration(220).withEndAction(()->{if(epoch==styleTransitionEpoch&&!isWallStyle()){wall.setVisibility(View.GONE);wall.setAlpha(1);}}).start();
             }
         }else{wall.setVisibility(isWallStyle()?View.VISIBLE:View.GONE);wall.setAlpha(1);stylePage.setAlpha(1);}
-        if(changed&&!isWallStyle()&&android.animation.ValueAnimator.areAnimatorsEnabled()){standardBar.animate().cancel();standardBar.setAlpha(0);standardBar.setTranslationY(dp(14));standardBar.animate().alpha(1).translationY(0).setDuration(280).start();}
-        standardBar.configure(AppAppearance.palette(activity,prefs),frame.getWidth()-safeLeft-safeRight>=dp(620));updatePlaybackBarVisibility();
-        applyControlsAppearance();
+        if(changed&&!fragmentSwitch&&!isWallStyle()&&android.animation.ValueAnimator.areAnimatorsEnabled()){standardBar.animate().cancel();standardBar.setAlpha(0);standardBar.setTranslationY(dp(14));standardBar.animate().alpha(1).translationY(0).setDuration(280).start();}
+        standardBar.configure(AppAppearance.palette(activity,prefs),frame.getWidth()-safeLeft-safeRight>=dp(620),playerStyle.equals("simple"));updatePlaybackBarVisibility();
+        updateViewport();applyControlsAppearance();
         boolean light=!isWallStyle()&&!AppAppearance.dark(activity,prefs);int flags=activity.getWindow().getDecorView().getSystemUiVisibility();int lightFlags=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;activity.getWindow().getDecorView().setSystemUiVisibility(light?flags|lightFlags:flags&~lightFlags);
         browseHeading.setVisibility(isWallStyle()&&browseGroup!=null&&!chromeHidden?View.VISIBLE:View.GONE);
         if(idleDock!=null)idleDock.configure(Math.max(dp(56),Math.round(portraitDockWidth)),idleEligible());
         if(!isWallStyle())wallSettings.setVisibility(View.GONE);else if(!chromeHidden&&!keyboardVisible)wallSettings.setVisibility(View.VISIBLE);
     }
-    void setCardState(Set<String> favorites,int mode,int duration){wall.setCardState(favorites,mode,duration);stylePage.setFavorites(favorites);standardBar.mode(mode);}
+    void setCardState(Set<String> favorites,int mode,int duration){wall.setCardState(favorites,mode,duration);stylePage.setFavorites(favorites);sidebarPage.setFavorites(favorites);standardBar.mode(mode);}
     boolean collapsePlayer(){return isWallStyle()?wall.collapse():stylePage.collapse();}
     private void setImmersive(boolean expanded){
         immersive=expanded;
@@ -393,6 +410,7 @@ final class HomeScreen {
         if(!expanded&&!landscape&&restoreSearch)searchControl.setOpen(true,false);
     }
     void orientationChanged(){
+        fragmentTransition.cancel();
         boolean next=activity.getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE;
         if(next){showDrawer(false);searchControl.setOpen(false,false);}landscape=next;awaitingRotationLayout=true;
         applyChromeVisibility((landscape&&isWallStyle())||immersive,true);frame.requestApplyInsets();frame.post(this::updateViewport);
@@ -423,8 +441,8 @@ final class HomeScreen {
         updatePlaybackBarVisibility();
         if(!immersive){idleDock.animate().cancel();idleDock.setAlpha(1);idleDock.setTranslationY(0);}
         if(!chromeHidden)wallSettings.setVisibility(keyboardVisible||!isWallStyle()?View.GONE:View.VISIBLE);
-        boolean standardWide=frame.getWidth()-safeLeft-safeRight>=dp(620);standardBar.configure(AppAppearance.palette(activity,activity.getSharedPreferences("library",0)),standardWide);
-        FrameLayout.LayoutParams standardParams=(FrameLayout.LayoutParams)standardBar.getLayoutParams();standardParams.width=frame.getWidth()-safeLeft-safeRight-dp(28);standardParams.height=dp(standardWide?88:104);standardParams.leftMargin=safeLeft+dp(14);standardParams.rightMargin=safeRight+dp(14);standardParams.bottomMargin=safeBottom+dp(8);standardBar.setLayoutParams(standardParams);
+        boolean standardWide=frame.getWidth()-safeLeft-safeRight>=dp(620);standardBar.configure(AppAppearance.palette(activity,activity.getSharedPreferences("library",0)),standardWide,playerStyle.equals("simple"));
+        FrameLayout.LayoutParams standardParams=(FrameLayout.LayoutParams)standardBar.getLayoutParams();standardParams.width=frame.getWidth()-safeLeft-safeRight-dp(28);standardParams.height=dp(playerStyle.equals("simple")?(standardWide?144:208):(standardWide?88:104));standardParams.leftMargin=safeLeft+dp(14);standardParams.rightMargin=safeRight+dp(14);standardParams.bottomMargin=safeBottom+dp(8);standardBar.setLayoutParams(standardParams);
         stylePage.setInsets(safeLeft,safeTop,safeRight,safeBottom);
         FrameLayout.LayoutParams heading=(FrameLayout.LayoutParams)browseHeading.getLayoutParams();heading.topMargin=safeTop+dp(20);heading.leftMargin=safeLeft+dp(76);browseHeading.setLayoutParams(heading);browseHeading.setMaxWidth(Math.max(dp(120),frame.getWidth()-safeLeft-safeRight-dp(158)));browseHeading.setVisibility(browseGroup!=null&&isWallStyle()&&!chromeHidden&&!searchControl.isOpen()?View.VISIBLE:View.GONE);
     }
@@ -444,6 +462,7 @@ final class HomeScreen {
     void updateDrawer(String selected, Set<String> playlists) {
         drawerSelected=selected;drawerPlaylists=new java.util.HashSet<>(playlists);
         stylePage.setSection(selected);
+        if(sidebarPage!=null){sidebarPage.preparePage(selected);sidebarPage.setSection(selected);updateSimpleTabs();}
         drawerRows.removeAllViews();
         nav("♫", "音乐库", selected.equals("歌曲"), () -> actions.section("歌曲"));
         nav("◷", "最近播放", selected.equals("最近播放"), () -> actions.section("最近播放"));
@@ -501,14 +520,14 @@ final class HomeScreen {
     void setPageKey(String key){if(key.equals(pageKey))return;stylePage.preparePage(key);if(pageKey!=null)pageCameras.put(pageKey,wall.cameraState());pageKey=key;pendingCamera=pageCameras.get(key);restoringWallState=true;wall.resetCamera();wall.zoomTo(WallZoom.scale(activity.getSharedPreferences("library",0).getInt("wall_zoom_"+key,100)));restoringWallState=false;refreshZoomControls();}
     private void zoomChanged(){refreshZoomControls();if(pageKey!=null&&!restoringWallState)activity.getSharedPreferences("library",0).edit().putInt("wall_zoom_"+pageKey,WallZoom.percent(wall.scale())).apply();}
     void setBrowseContext(String group,String section){browseGroup=group;browseSection=section;browseHeading.setText("‹  "+section+" / "+(group==null?"":group));browseHeading.setVisibility(group!=null&&isWallStyle()&&!chromeHidden&&!searchControl.isOpen()?View.VISIBLE:View.GONE);stylePage.setBrowseContext(group,section);}
-    void setSorting(String field,boolean ascending){sortingField=field;sortingAscending=ascending;stylePage.setSorting(field,ascending);}
+    void setSorting(String field,boolean ascending){sortingField=field;sortingAscending=ascending;stylePage.setSorting(field,ascending);sidebarPage.setSorting(field,ascending);}
     void updateWall(List<Song> songs) {
         updateWall(songs, false);
     }
 
     void updateWall(List<Song> songs, boolean grouped) {
         groupedWall = grouped;visibleSongs=new ArrayList<>(songs);
-        wall.setGrouped(grouped);wall.setSongs(songs);stylePage.setSongs(songs);if(pendingCamera!=null){wall.restoreCamera(pendingCamera);pendingCamera=null;}
+        wall.setGrouped(grouped);wall.setSongs(songs);stylePage.setSongs(songs);sidebarPage.setSongs(grouped?java.util.Collections.emptyList():songs);if(pendingCamera!=null){wall.restoreCamera(pendingCamera);pendingCamera=null;}
     }
 
     void ensureSongVisible(Song song){
@@ -659,14 +678,43 @@ final class HomeScreen {
         return view;
     }
 
+    private void focusSidebarSong(){
+        if(sidebarPage.focusCurrentSong())return;
+        if(displayedSongId==Long.MIN_VALUE)return;
+        drawerSearch.setText("");actions.section("歌曲");stylePage.showPlayer();sidebarPage.post(()->sidebarPage.focusCurrentSong());
+    }
+    private void buildSimpleDrawer(){
+        simpleDrawerRoot=new LinearLayout(activity);simpleDrawerRoot.setOrientation(LinearLayout.VERTICAL);simpleDrawerRoot.setPadding(dp(14),dp(14),dp(14),dp(10));simpleDrawerRoot.setVisibility(View.GONE);
+        drawerPanel.addView(simpleDrawerRoot,new FrameLayout.LayoutParams(-1,-1));
+        drawerSearch=new EditText(activity);drawerSearch.setSingleLine(true);drawerSearch.setTextSize(14);drawerSearch.setHint("搜索歌曲、歌手或专辑");drawerSearch.setPadding(dp(14),0,dp(12),0);drawerSearch.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        LinearLayout.LayoutParams searchParams=new LinearLayout.LayoutParams(-1,dp(48));searchParams.setMargins(0,dp(12),0,dp(12));simpleDrawerRoot.addView(drawerSearch,searchParams);
+        drawerSearch.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int start,int count,int after){}public void onTextChanged(CharSequence s,int start,int before,int count){if(!s.toString().contentEquals(searchInput.getText()))searchInput.setText(s);}public void afterTextChanged(android.text.Editable value){}});
+        drawerSearch.setOnEditorActionListener((v,action,event)->{if(action==EditorInfo.IME_ACTION_SEARCH){((InputMethodManager)activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(v.getWindowToken(),0);drawerSearch.clearFocus();return true;}return false;});
+        simpleLibraryTab=simpleTab("音乐库",R.drawable.icon_navigation_all,()->actions.section("歌曲"));simpleRecentTab=simpleTab("最近播放",R.drawable.icon_navigation_recent,()->actions.section("最近播放"));
+        sidebarPage=new PlayerStylePage(activity,actions::play,actions::seek,actions::lyrics,()->{});sidebarPage.useSidebarCatalog();sidebarPage.setSidebarTools(this::focusSidebarSong,actions::refreshLibrary);sidebarPage.setScanning(libraryScanning);sidebarPage.setSongMenu(actions::songMenu);sidebarPage.setTools(()->{},this::showWallOptions,actions::queue,actions::favorite);sidebarPage.setSortAction(actions::sort);
+        sidebarPage.setBatchActions(new PlayerStylePage.BatchActions(){public void favorite(List<Song> songs,boolean value){actions.favoriteSongs(songs,value);}public void playlist(List<Song> songs){actions.playlistSongs(songs);}public void removeFromPlaylist(List<Song> songs){actions.removePlaylistSongs(songs);}public void clearRecent(){actions.clearRecent();}});
+        simpleDrawerRoot.addView(sidebarPage,new LinearLayout.LayoutParams(-1,0,1));
+    }
+    private TextView simpleTab(String caption,int resource,Runnable action){TextView tab=text(caption,17,green);android.graphics.drawable.Drawable icon=activity.getDrawable(resource).mutate();icon.setBounds(0,0,dp(24),dp(24));tab.setCompoundDrawables(icon,null,null,null);tab.setCompoundDrawablePadding(dp(16));tab.setGravity(Gravity.CENTER_VERTICAL);tab.setPadding(dp(18),0,dp(12),0);tab.setOnClickListener(v->{drawerSearch.setText("");action.run();stylePage.showPlayer();});ButtonFeedback.install(tab);simpleDrawerRoot.addView(tab,new LinearLayout.LayoutParams(-1,dp(52)));return tab;}
+    private void updateSimpleTabs(){if(simpleLibraryTab==null)return;AppAppearance.Palette palette=chromePalette();boolean recent=drawerSelected.equals("最近播放");simpleLibraryTab.setBackground(round(recent?Color.TRANSPARENT:palette.dark?0x334FCDA6:0x220A8763,14,0,0));simpleRecentTab.setBackground(round(recent?(palette.dark?0x334FCDA6:0x220A8763):Color.TRANSPARENT,14,0,0));simpleLibraryTab.setTextColor(recent?palette.text:palette.accent);simpleRecentTab.setTextColor(recent?palette.accent:palette.text);simpleLibraryTab.getCompoundDrawables()[0].setTint(recent?palette.text:palette.accent);simpleRecentTab.getCompoundDrawables()[0].setTint(recent?palette.accent:palette.text);}
+
     private AppAppearance.Palette chromePalette(){return new AppAppearance.Palette(isWallStyle()||AppAppearance.dark(activity,activity.getSharedPreferences("library",0)));}
     private android.graphics.drawable.Drawable chromeBackground(View view){
         AppAppearance.Palette palette=chromePalette();
-        return isWallStyle()?glass().surface(view,28,false):new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(palette.dark?0x22FFFFFF:0x16000000),round(palette.surface,28,palette.line,1),round(Color.WHITE,28,0,0));
+        return isWallStyle()?glass().surface(view,28,false):new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(palette.dark?0x22FFFFFF:0x16000000),round(playerStyle.equals("simple")?Color.TRANSPARENT:palette.surface,28,playerStyle.equals("simple")?0:palette.line,1),round(Color.WHITE,28,0,0));
     }
     private void applyDrawerAppearance(){
         AppAppearance.Palette palette=chromePalette();
-        drawerPanel.setBackground(isWallStyle()?new GlassBackdrop(wall,false).surface(drawerPanel,24,true):round(palette.surface,24,palette.line,1));
+        boolean simple=playerStyle.equals("simple");
+        LinearLayout parent=simple?simpleDrawerRoot:drawerContent;
+        if(drawerBrand.getParent()!=parent){((android.view.ViewGroup)drawerBrand.getParent()).removeView(drawerBrand);parent.addView(drawerBrand,0,new LinearLayout.LayoutParams(-1,-2));}
+        drawerScroll.setVisibility(simple?View.GONE:View.VISIBLE);simpleDrawerRoot.setVisibility(simple?View.VISIBLE:View.GONE);
+        drawerLayer.setBackgroundColor(simple?0x44000000:0x99000000);
+        sidebarPage.configure("library",palette);
+        drawerSearch.setTextColor(palette.text);drawerSearch.setHintTextColor(palette.secondary);drawerSearch.setBackground(round(palette.dark?0x553F4945:0x99FFFFFF,14,0,0));
+        simpleLibraryTab.setTextColor(palette.text);simpleRecentTab.setTextColor(palette.text);updateSimpleTabs();
+        if(simple&&drawerOpen)drawerPanel.setBackground(new GlassBackdrop(stylePage,false,28).surface(drawerPanel,24,true,!palette.dark));
+        else drawerPanel.setBackground(isWallStyle()?new GlassBackdrop(wall,false).surface(drawerPanel,24,true):round(palette.surface,24,palette.line,1));
         drawerName.setTextColor(palette.text);drawerSubtitle.setTextColor(palette.secondary);
         drawerClose.setColorFilter(palette.text);drawerSettings.setColorFilter(palette.text);drawerSettings.setBackground(chromeBackground(drawerSettings));
     }

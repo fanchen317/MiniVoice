@@ -150,6 +150,7 @@ public final class MainActivity extends Activity {
             public void playlist(String name){selectSection("歌单:"+name);}
             public void newPlaylist(){createPlaylist();}
             public void settings(){showSettings();}
+            public void refreshLibrary(){rebuildLibrary();}
             public void search(String value){query=value.toLowerCase(Locale.ROOT);refreshWall();}
             public void play(Song song){MainActivity.this.playFromWall(song);}
             public void toggle(){if(service!=null)service.toggle();}
