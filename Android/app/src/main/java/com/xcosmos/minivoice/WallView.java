@@ -35,13 +35,20 @@ final class WallView extends View {
     private final ScaleGestureDetector scaleDetector;
     private final Handler main=new Handler();
     private final ExecutorService covers=Executors.newFixedThreadPool(2);
-    private final Set<String> requested=new HashSet<>();
+    private final java.util.Map<String,Long> requested=new java.util.HashMap<>();
+    private long requestSerial;private java.util.concurrent.Future<?> focusTask;private String focusTaskKey;
     private final ExecutorService focusCovers=Executors.newSingleThreadExecutor();
-    private Bitmap focusedCover;private String focusedCoverKey;
+    private final CoverWorkingSet<Bitmap> visibleCovers=new CoverWorkingSet<>(Math.max(24L*1024*1024,Math.min(64L*1024*1024,Runtime.getRuntime().maxMemory()/4)));
+    private final Set<String> visibleCoverSources=new HashSet<>();
+    private final java.util.Map<String,java.util.concurrent.Future<?>> normalTasks=new java.util.HashMap<>();
+    private int dataGeneration;
+    private RectF faceCropFrom,faceCropTo;private String faceCropKey;private long faceCropAt;
+    private ArtworkFraming.Plan cachedFacePlan;private ArtworkFraming.Face[] cachedFaces;private String cachedFacePlanKey;
+    private List<WallLayout.Instance> visibleTiles;private WallLayout visibleScene;private float visibleX,visibleY,visibleScale;private int visibleWidth,visibleHeight;private boolean visibleFocused;
+    private boolean renderingActive=true;
+    private final Runnable frameTick=()->{if(renderingActive&&isShown()&&hasWindowFocus())invalidate();};
     private final android.graphics.RenderNode wallNode=new android.graphics.RenderNode("MiniVoice wall scene");
     private boolean sceneRecorded,manualGesture,focusInterrupted;
-    private final android.graphics.RenderNode expandedBackdrop=new android.graphics.RenderNode("Expanded cover backdrop");
-    private Bitmap expandedBackdropImage;private int expandedBackdropWidth,expandedBackdropHeight;
     private WallLayout.Instance tapCandidate;
     private final java.util.Map<String,Long> coverRetryUntil=new java.util.HashMap<>();
     private final List<Hit> hits=new ArrayList<>();
@@ -56,17 +63,17 @@ final class WallView extends View {
     private int safeTop,safeBottom;
     private WallViewport viewport;
     private boolean scanning;
-    void setScanning(boolean value){scanning=value;invalidate();}
+    void setScanning(boolean value){if(scanning==value)return;scanning=value;invalidate();}
     void setViewport(WallViewport value){
         boolean changed=viewport==null||viewport.width!=value.width||viewport.height!=value.height||viewport.focusX!=value.focusX||viewport.focusY!=value.focusY||viewport.focusSide!=value.focusSide;
-        viewport=value;if(changed&&focus!=null){cancelMotion();layoutFocusedCard(focus);}invalidate();
+        viewport=value;if(changed){if(focus!=null){cancelMotion();layoutFocusedCard(focus);}invalidate();}
     }
     private float anchorX(){return viewport==null?getWidth()/2f:viewport.focusX;}
     private float preferredSide(){return viewport==null?Math.max(180*density,Math.min(520*density,Math.min(getWidth()-24*density,getHeight()-safeTop-safeBottom-180*density))):viewport.focusSide;}
 
     void setCardActions(CardActions actions){cardActions=actions;}
-    void setCardState(Set<String> favorites,int mode,int duration){this.favorites=new HashSet<>(favorites);playbackDuration=duration;invalidate();}
-    void setSafeInsets(int top,int bottom){safeTop=top;safeBottom=bottom;invalidate();}
+    void setCardState(Set<String> favorites,int mode,int duration){if(this.favorites.equals(favorites)&&playbackDuration==duration)return;this.favorites=new HashSet<>(favorites);playbackDuration=duration;invalidate();}
+    void setSafeInsets(int top,int bottom){if(safeTop==top&&safeBottom==bottom)return;safeTop=top;safeBottom=bottom;invalidate();}
     boolean collapse(){if(!expanded&&expansionAmount<=0)return false;setExpanded(false);return true;}
     private void setExpanded(boolean value){
         if(focus==null||expanded==value&&expansionAnimator!=null&&expansionAnimator.isRunning())return;
@@ -141,7 +148,7 @@ final class WallView extends View {
         if(sameOrder)for(int i=0;i<songs.size();i++)if(songs.get(i).id!=value.get(i).id){sameOrder=false;break;}
         if(sameOrder){coverRetryUntil.clear();songs=new ArrayList<>(value);invalidate();return;}
         long focusedId=!grouped&&focus!=null?songs.get(focus.tile.index).id:Long.MIN_VALUE;
-        resetExpansion();card.clear();requested.clear();cancelMotion();songs=new ArrayList<>(value);scene=new WallLayout(songs.size(),density);focus=null;pressed=null;focusAmount=0;reflowFrom=reflowTo=WallReflow.IDENTITY;cameraReady=false;
+        dataGeneration++;for(java.util.concurrent.Future<?> task:normalTasks.values())task.cancel(false);normalTasks.clear();resetExpansion();card.clear();requested.clear();if(focusTask!=null)focusTask.cancel(false);focusTask=null;focusTaskKey=null;cancelMotion();if(value.isEmpty())visibleCovers.clear();songs=new ArrayList<>(value);scene=new WallLayout(songs.size(),density);focus=null;pressed=null;focusAmount=0;reflowFrom=reflowTo=WallReflow.IDENTITY;cameraReady=false;
         if(focusedId!=Long.MIN_VALUE)locateSongDirectly(focusedId);scaleListener.run();invalidate();
     }
     void locateSongDirectly(long id){locateSong(id,false);}
@@ -170,7 +177,7 @@ final class WallView extends View {
         return best;
     }
     private void playOrToggle(WallLayout.Instance instance){Song song=songs.get(instance.tile.index);if(grouped){onPlay.play(song);return;}if(song.id==playingId)onToggle.run();else onPlay.play(song);}
-    void setPlayback(long id,boolean playing,int position){if(playingId!=id){playingLyrics=new ArrayList<>();lyricStatus="正在加载歌词…";}playingId=id;playbackPlaying=playing;playbackPosition=position;playbackSampledAt=android.os.SystemClock.elapsedRealtime();invalidate();}
+    void setPlayback(long id,boolean playing,int position){if(playingId==id&&playbackPlaying==playing&&playbackPosition==position)return;if(playingId!=id){playingLyrics=new ArrayList<>();lyricStatus="正在加载歌词…";}playingId=id;playbackPlaying=playing;playbackPosition=position;playbackSampledAt=android.os.SystemClock.elapsedRealtime();invalidate();}
     void setLyrics(long id,List<Lyrics.Line> lines){if(playingId==id){playingLyrics=new ArrayList<>(lines);lyricStatus="暂无歌词";invalidate();}}
     void setLyricsStatus(long id,String message){if(playingId==id){lyricStatus=message;invalidate();}}
     void resetCamera(){resetExpansion();cancelMotion();focus=null;focusAmount=0;reflowFrom=reflowTo=WallReflow.IDENTITY;cameraReady=false;scale=1;centerInitial();scaleListener.run();invalidate();}
@@ -187,16 +194,19 @@ final class WallView extends View {
         }else drawScene(canvas);
     }
     boolean drawBackdrop(Canvas canvas){if(!sceneRecorded||!canvas.isHardwareAccelerated())return false;canvas.drawRenderNode(wallNode);return true;}
-    private void drawScene(Canvas canvas){canvas.drawColor(Color.BLACK);hits.clear();card.clear();if(scene.tiles.isEmpty()){
+    private void drawScene(Canvas canvas){visibleCovers.beginFrame();visibleCoverSources.clear();canvas.drawColor(Color.BLACK);hits.clear();card.clear();if(scene.tiles.isEmpty()){
         paint.setShader(null);paint.setColor(0xFF9DA8A1);paint.setTextSize(18*density);String message=scanning?"正在载入音乐库…":"添加音乐文件夹，开始浏览音乐墙";canvas.drawText(message,Math.max(20,(getWidth()-paint.measureText(message))/2),getHeight()/2f,paint);return;}
         if(!cameraReady)centerInitial();
-        List<WallLayout.Instance> visible=scene.visible(cameraX,cameraY,scale,getWidth(),getHeight(),(focus==null?400:1100)*density);
+        List<WallLayout.Instance> visible=visibleTiles();
         WallLayout.Instance focusedInstance=null;
         for(WallLayout.Instance instance:visible){if(focus!=null&&same(instance,focus)){focusedInstance=instance;continue;}drawTile(canvas,instance,false);}
         if((expanded||expansionAmount>0)&&focus!=null){paint.setColor(((int)(191*expansionAmount))<<24);canvas.drawRect(0,0,getWidth(),getHeight(),paint);drawTile(canvas,focus,true);}
         else if(focusedInstance!=null)drawTile(canvas,focusedInstance,true);
-        if(playbackPlaying&&focus!=null)postInvalidateDelayed(33);
+        String focusKey=focus==null?null:coverSource(songs.get(focus.tile.index));visibleCovers.trim(android.os.SystemClock.uptimeMillis(),focusKey);
+        java.util.Iterator<java.util.Map.Entry<String,java.util.concurrent.Future<?>>> tasks=normalTasks.entrySet().iterator();while(tasks.hasNext()){java.util.Map.Entry<String,java.util.concurrent.Future<?>> task=tasks.next();String source=task.getKey().substring(0,task.getKey().lastIndexOf("\n"));if(!visibleCoverSources.contains(source)){task.getValue().cancel(false);requested.remove(task.getKey());tasks.remove();}}
+        removeCallbacks(frameTick);if(renderingActive&&hasWindowFocus()&&playbackPlaying&&focus!=null&&songs.get(focus.tile.index).id==playingId)postDelayed(frameTick,50);
     }
+    private List<WallLayout.Instance> visibleTiles(){boolean focused=focus!=null;if(visibleTiles==null||visibleScene!=scene||visibleX!=cameraX||visibleY!=cameraY||visibleScale!=scale||visibleWidth!=getWidth()||visibleHeight!=getHeight()||visibleFocused!=focused){visibleTiles=scene.visible(cameraX,cameraY,scale,getWidth(),getHeight(),(focused?1100:400)*density);visibleScene=scene;visibleX=cameraX;visibleY=cameraY;visibleScale=scale;visibleWidth=getWidth();visibleHeight=getHeight();visibleFocused=focused;}return visibleTiles;}
     private boolean same(WallLayout.Instance a,WallLayout.Instance b){return a.tile.index==b.tile.index&&a.column==b.column&&a.row==b.row;}
     private RectF normalFrame(WallLayout.Instance instance){WallReflow.Frame frame=worldFrame(instance);return new RectF(cameraX+frame.x*scale,cameraY+frame.y*scale,cameraX+(frame.x+frame.width)*scale,cameraY+(frame.y+frame.height)*scale);}
     private RectF blend(RectF from,RectF to){return new RectF(PlayerExpansion.mix(from.left,to.left,expansionAmount),PlayerExpansion.mix(from.top,to.top,expansionAmount),PlayerExpansion.mix(from.right,to.right,expansionAmount),PlayerExpansion.mix(from.bottom,to.bottom,expansionAmount));}
@@ -206,7 +216,6 @@ final class WallView extends View {
     }
     private RectF playerContent(WallLayout.Instance instance){
         float left=viewport==null?0:viewport.safeLeft,right=viewport==null?0:viewport.safeRight;
-        if(viewport!=null&&viewport.landscape)left=ArtworkFraming.landscapeSplit(getWidth(),left,right)+12*density;
         WallReflow.Frame safe=PlayerExpansion.content(getWidth(),getHeight(),left,safeTop,right,safeBottom);
         return blend(normalFrame(instance),new RectF(safe.x,safe.y,safe.x+safe.width,safe.y+safe.height));
     }
@@ -260,34 +269,37 @@ final class WallView extends View {
     private RectF crop(Bitmap image,RectF destination){float ratio=Math.max(destination.width()/image.getWidth(),destination.height()/image.getHeight());float w=destination.width()/ratio,h=destination.height()/ratio;return new RectF((image.getWidth()-w)/2,(image.getHeight()-h)/2,(image.getWidth()+w)/2,(image.getHeight()+h)/2);}
     private void drawCover(Canvas canvas,Bitmap image,RectF destination){RectF source=crop(image,destination);paint.setColor(Color.WHITE);canvas.drawBitmap(image,new Rect(Math.round(source.left),Math.round(source.top),Math.round(source.right),Math.round(source.bottom)),destination,paint);}
     private void drawExpandedArtwork(Canvas canvas,RectF rect,RectF normal,Bitmap image,Song song){
-        int backdrop=canvas.saveLayerAlpha(rect,Math.round(255*expansionAmount));
-        if(android.os.Build.VERSION.SDK_INT>=31&&canvas.isHardwareAccelerated()){
-            if(expandedBackdropImage!=image||expandedBackdropWidth!=getWidth()||expandedBackdropHeight!=getHeight()){
-                int w=Math.max(1,getWidth()/4),h=Math.max(1,getHeight()/4);expandedBackdrop.setPosition(0,0,w,h);Canvas recording=expandedBackdrop.beginRecording(w,h);recording.scale(w/(float)getWidth(),h/(float)getHeight());drawCover(recording,image,new RectF(0,0,getWidth(),getHeight()));expandedBackdrop.endRecording();expandedBackdrop.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(4*density,4*density,Shader.TileMode.CLAMP));expandedBackdropImage=image;expandedBackdropWidth=getWidth();expandedBackdropHeight=getHeight();
-            }int layer=canvas.save();canvas.scale(getWidth()/(float)expandedBackdrop.getWidth(),getHeight()/(float)expandedBackdrop.getHeight());canvas.drawRenderNode(expandedBackdrop);canvas.restoreToCount(layer);
-        }else drawCover(canvas,song.artworkPreview==null?image:song.artworkPreview,new RectF(0,0,getWidth(),getHeight()));
-        paint.setColor(0x66000000);canvas.drawRect(rect,paint);canvas.restoreToCount(backdrop);
-        float left=viewport==null?0:viewport.safeLeft,right=viewport==null?0:viewport.safeRight;
-        float artworkRight=viewport!=null&&viewport.landscape?ArtworkFraming.landscapeSplit(getWidth(),left,right):getWidth()-right;
-        ArtworkFraming.Plan plan=ArtworkFraming.plan(image.getWidth(),image.getHeight(),left,0,artworkRight-left,getHeight());
-        RectF from=crop(image,normal);RectF source=blend(from,new RectF(plan.sourceX,plan.sourceY,plan.sourceX+plan.sourceWidth,plan.sourceY+plan.sourceHeight));
-        RectF destination=blend(normal,new RectF(plan.x,plan.y,plan.x+plan.width,plan.y+plan.height));paint.setColor(Color.WHITE);canvas.drawBitmap(image,new Rect(Math.round(source.left),Math.round(source.top),Math.round(source.right),Math.round(source.bottom)),destination,paint);
+        ArtworkFaces.request(getContext().getApplicationContext(),song,image,this::postInvalidateOnAnimation);
+        ArtworkFraming.Face[] faces=ArtworkFaces.peek(song);String key=coverSource(song)+":"+getWidth()+":"+getHeight(),planKey=key+":"+image.getWidth()+":"+image.getHeight();
+        if(cachedFacePlan==null||!planKey.equals(cachedFacePlanKey)||faces!=cachedFaces){cachedFacePlan=ArtworkFraming.plan(image.getWidth(),image.getHeight(),0,0,getWidth(),getHeight(),faces);cachedFacePlanKey=planKey;cachedFaces=faces;}
+        ArtworkFraming.Plan plan=cachedFacePlan;RectF desired=new RectF(plan.sourceX/image.getWidth(),plan.sourceY/image.getHeight(),(plan.sourceX+plan.sourceWidth)/image.getWidth(),(plan.sourceY+plan.sourceHeight)/image.getHeight());long now=android.os.SystemClock.uptimeMillis();
+        if(!key.equals(faceCropKey)){faceCropKey=key;faceCropFrom=faceCropTo=desired;faceCropAt=now;}
+        else if(Math.abs(desired.left-faceCropTo.left)+Math.abs(desired.top-faceCropTo.top)+Math.abs(desired.right-faceCropTo.right)+Math.abs(desired.bottom-faceCropTo.bottom)>.001f){faceCropFrom=currentFaceCrop(now);faceCropTo=desired;faceCropAt=now;}
+        RectF normalized=currentFaceCrop(now);RectF source=blend(crop(image,normal),new RectF(normalized.left*image.getWidth(),normalized.top*image.getHeight(),normalized.right*image.getWidth(),normalized.bottom*image.getHeight()));paint.setColor(Color.WHITE);canvas.drawBitmap(image,new Rect(Math.round(source.left),Math.round(source.top),Math.round(source.right),Math.round(source.bottom)),rect,paint);
+        if(now-faceCropAt<280&&!faceCropFrom.equals(faceCropTo))postInvalidateDelayed(33);
     }
+    private RectF currentFaceCrop(long now){float t=Math.min(1,(now-faceCropAt)/280f);t=1-(float)Math.pow(1-t,3);return new RectF(PlayerExpansion.mix(faceCropFrom.left,faceCropTo.left,t),PlayerExpansion.mix(faceCropFrom.top,faceCropTo.top,t),PlayerExpansion.mix(faceCropFrom.right,faceCropTo.right,t),PlayerExpansion.mix(faceCropFrom.bottom,faceCropTo.bottom,t));}
     private String shorten(String value,float width){if(value==null)return "";if(paint.measureText(value)<=width)return value;String result=value;while(result.length()>1&&paint.measureText(result+"…")>width)result=result.substring(0,result.length()-1);return result+"…";}
+    private String coverSource(Song song){return song.uri+"\n"+song.artworkVersion+"|"+song.artworkUri;}
     private Bitmap cover(Song song,boolean selected,RectF rect){
-        int detailSize=CoverQuality.side(Math.max(rect.width(),rect.height()),selected);
-        String key=CoverQuality.request(song.uri.toString(),song.artworkVersion,detailSize);
-        if(selected&&key.equals(focusedCoverKey)&&focusedCover!=null)return focusedCover;
-        Bitmap cached=ArtworkCache.peek(song,detailSize);if(cached!=null){if(selected){focusedCover=cached;focusedCoverKey=key;}return cached;}
-        Bitmap preview=song.artworkPreview;
-        if(song.artworkPrepared&&song.artworkFile==null)return preview;
-        if(android.os.SystemClock.uptimeMillis()>=coverRetryUntil.getOrDefault(key,0L)&&requested.add(key)){
-            (selected?focusCovers:covers).submit(()->{
-                Bitmap result=ArtworkCache.load(getContext().getApplicationContext(),song,detailSize);
-                main.post(()->{if(!isAttachedToWindow())return;requested.remove(key);if(result!=null&&result!=song.artworkPreview&&selected&&focus!=null&&songs.get(focus.tile.index).uri.equals(song.uri)){focusedCover=result;focusedCoverKey=key;}if(result==null||result==song.artworkPreview)coverRetryUntil.put(key,android.os.SystemClock.uptimeMillis()+3000);else coverRetryUntil.remove(key);invalidate();});
-            });
+        int detailSize=CoverQuality.side(Math.max(rect.width(),rect.height()),selected);String source=coverSource(song),key=source+"\n"+detailSize;long now=android.os.SystemClock.uptimeMillis();
+        visibleCoverSources.add(source);visibleCovers.visible(source,now);CoverWorkingSet.Image<Bitmap> resident=visibleCovers.get(source);
+        if(resident!=null&&resident.quality>=detailSize){if(selected)ArtworkFaces.request(getContext().getApplicationContext(),song,resident.value,this::postInvalidateOnAnimation);return resident.value;}
+        Bitmap cached=ArtworkCache.peek(song,detailSize);if(cached!=null){visibleCovers.offer(source,cached,detailSize,cached.getAllocationByteCount(),now);if(selected)ArtworkFaces.request(getContext().getApplicationContext(),song,cached,this::postInvalidateOnAnimation);return cached;}
+        Bitmap fallback=resident!=null?resident.value:song.artworkPreview;
+        if(song.artworkPrepared&&song.artworkFile==null)return fallback;
+        if(now>=coverRetryUntil.getOrDefault(key,0L)&&(selected||normalTasks.size()<4)&&!requested.containsKey(key)){
+            if(selected&&focusTaskKey!=null&&!focusTaskKey.equals(key)&&focusTask!=null&&!focusTask.isDone()){focusTask.cancel(false);requested.remove(focusTaskKey);}
+            final long ticket=++requestSerial;requested.put(key,ticket);
+            final int generation=dataGeneration;
+            java.util.concurrent.Future<?> task=(selected?focusCovers:covers).submit(()->{
+                Bitmap loaded=null;try{loaded=ArtworkCache.load(getContext().getApplicationContext(),song,detailSize);}catch(RuntimeException|OutOfMemoryError failure){android.util.Log.w("MiniVoice","Cover detail decoding failed; keeping current image",failure);}final Bitmap result=loaded;
+                main.post(()->{if(!isAttachedToWindow()||!java.util.Objects.equals(requested.get(key),ticket))return;requested.remove(key);normalTasks.remove(key);if(generation!=dataGeneration)return;
+                    if(result!=null&&result!=song.artworkPreview){visibleCovers.offer(source,result,detailSize,result.getAllocationByteCount(),android.os.SystemClock.uptimeMillis());coverRetryUntil.remove(key);}else coverRetryUntil.put(key,android.os.SystemClock.uptimeMillis()+15000);invalidate();
+                });
+            });if(!selected)normalTasks.put(key,task);else{focusTask=task;focusTaskKey=key;}
         }
-        return preview;
+        return fallback;
     }
     private Hit hit(float x,float y){for(int i=hits.size()-1;i>=0;i--)if(hits.get(i).bounds.contains(x,y))return hits.get(i);return null;}
     private void focusDirectly(WallLayout.Instance instance){
@@ -352,5 +364,7 @@ final class WallView extends View {
         else if(event.getActionMasked()==MotionEvent.ACTION_UP||event.getActionMasked()==MotionEvent.ACTION_CANCEL||event.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN){pressed=null;invalidate();}
         scaleDetector.onTouchEvent(event);gestures.onTouchEvent(event);return true;
     }
-    @Override protected void onDetachedFromWindow(){if(expansionAnimator!=null){expansionAnimator.removeAllListeners();expansionAnimator.cancel();}card.dispose();covers.shutdownNow();focusCovers.shutdownNow();main.removeCallbacksAndMessages(null);wallNode.discardDisplayList();expandedBackdrop.discardDisplayList();expandedBackdropImage=null;super.onDetachedFromWindow();}
+    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);renderingActive=focused;removeCallbacks(frameTick);if(focused)invalidate();}
+    @Override protected void onWindowVisibilityChanged(int visibility){super.onWindowVisibilityChanged(visibility);if(visibility!=VISIBLE)removeCallbacks(frameTick);}
+    @Override protected void onDetachedFromWindow(){if(expansionAnimator!=null){expansionAnimator.removeAllListeners();expansionAnimator.cancel();}card.dispose();covers.shutdownNow();focusCovers.shutdownNow();main.removeCallbacksAndMessages(null);wallNode.discardDisplayList();visibleCovers.clear();removeCallbacks(frameTick);super.onDetachedFromWindow();}
 }

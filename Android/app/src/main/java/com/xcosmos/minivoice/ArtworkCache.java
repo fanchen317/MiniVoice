@@ -12,10 +12,10 @@ import java.util.List;
 
 /** Scan prepares disk artwork and a resident preview for every song; drawing never reads audio. */
 final class ArtworkCache {
-    private static final LruCache<String,Bitmap> detail=new LruCache<String,Bitmap>(32*1024*1024){
+    private static final LruCache<String,Bitmap> detail=new LruCache<String,Bitmap>((int)Math.max(8L*1024*1024,Math.min(24L*1024*1024,Runtime.getRuntime().maxMemory()/12))){
         @Override protected int sizeOf(String key,Bitmap value){return value.getByteCount();}
     };
-    private static final LruCache<String,Bitmap> focusDetail=new LruCache<String,Bitmap>(24*1024*1024){@Override protected int sizeOf(String key,Bitmap value){return value.getByteCount();}};
+    private static final LruCache<String,Bitmap> focusDetail=new LruCache<String,Bitmap>((int)Math.max(8L*1024*1024,Math.min(20L*1024*1024,Runtime.getRuntime().maxMemory()/12))){@Override protected int sizeOf(String key,Bitmap value){return value.getByteCount();}};
     private static String key(Song song){
         String source=song.uri.toString();
         try{byte[] hash=MessageDigest.getInstance("SHA-256").digest(source.getBytes(StandardCharsets.UTF_8));StringBuilder out=new StringBuilder("v3-");for(byte b:hash)out.append(String.format(java.util.Locale.ROOT,"%02x",b&255));return out.toString();}
@@ -39,7 +39,7 @@ final class ArtworkCache {
         try{String previous=stamp.isFile()?new String(java.nio.file.Files.readAllBytes(stamp.toPath()),StandardCharsets.UTF_8):"";
             boolean same=previous.equals(version)||previous.equals(version+"\nquality-v2");
             boolean repairSmall=file.isFile()&&CoverQuality.repairSmall(imageSide(file),previous.endsWith("\nquality-v2"));
-            if(!same||repairSmall){file.delete();new File(directory,key+".none").delete();detail.remove(key+":640");focusDetail.remove(key+":1600");}
+            if(!same||repairSmall){file.delete();new File(directory,key+".none").delete();for(String item:detail.snapshot().keySet())if(item.startsWith(key+":"))detail.remove(item);for(String item:focusDetail.snapshot().keySet())if(item.startsWith(key+":"))focusDetail.remove(item);}
         }catch(Exception ignored){file.delete();}
         File missing=new File(directory,key+".none");
         if(missing.isFile()){song.artworkPrepared=true;return;}
@@ -61,7 +61,7 @@ final class ArtworkCache {
         song.artworkPreview=preview;song.artworkFile=file.isFile()?file:null;song.artworkPrepared=true;
     }
     static Bitmap peek(Song song){Bitmap high=peek(song,1600);return high!=null?high:peek(song,640);}
-    static Bitmap peek(Song song,int side){if(song.artworkCacheKey==null)return null;Bitmap result=(side>640?focusDetail:detail).get(song.artworkCacheKey+":"+side);if(result==null&&side<=640)result=focusDetail.get(song.artworkCacheKey+":1600");return result;}
+    static Bitmap peek(Song song,int side){if(song.artworkCacheKey==null)return null;Bitmap result=(side>640?focusDetail:detail).get(song.artworkCacheKey+":"+side);if(result==null&&side<512)result=detail.get(song.artworkCacheKey+":512");if(result==null&&side<640)result=detail.get(song.artworkCacheKey+":640");if(result==null&&side<=640)result=focusDetail.get(song.artworkCacheKey+":1600");return result;}
     static Bitmap load(Context context,Song song){return load(context,song,1600);}
     static Bitmap load(Context context,Song song,int side){
         if(!song.artworkPrepared)prepareSong(context,song,96);
@@ -78,13 +78,13 @@ final class ArtworkCache {
     private static Bitmap decode(File file,int size){
         BitmapFactory.Options options=new BitmapFactory.Options();options.inJustDecodeBounds=true;BitmapFactory.decodeFile(file.getAbsolutePath(),options);
         if(options.outWidth<=0||options.outHeight<=0)return null;
-        options.inSampleSize=1;while(Math.max(options.outWidth,options.outHeight)/options.inSampleSize>size*2)options.inSampleSize*=2;options.inJustDecodeBounds=false;
+        options.inSampleSize=1;while(Math.max(options.outWidth,options.outHeight)/options.inSampleSize>size*1.5f)options.inSampleSize*=2;options.inJustDecodeBounds=false;
         Bitmap raw=BitmapFactory.decodeFile(file.getAbsolutePath(),options);if(raw==null)return null;
         Bitmap result=scale(raw,size);if(result!=raw)raw.recycle();return result;
     }
     private static Bitmap scale(Bitmap bitmap,int side){float ratio=Math.min(1,side/(float)Math.max(bitmap.getWidth(),bitmap.getHeight()));return Bitmap.createScaledBitmap(bitmap,Math.max(1,Math.round(bitmap.getWidth()*ratio)),Math.max(1,Math.round(bitmap.getHeight()*ratio)),true);}
     static void prune(Context context,List<Song> songs){
-        java.util.Set<String> keep=new java.util.HashSet<>();for(Song song:songs){String name=key(song);keep.add(name+".jpg");keep.add(name+".none");keep.add(name+".stamp");}
+        java.util.Set<String> keep=new java.util.HashSet<>();for(Song song:songs){String name=key(song);keep.add(name+".jpg");keep.add(name+".none");keep.add(name+".stamp");keep.add(name+".faces");}
         File[] files=LibraryCache.directory(context,"covers").listFiles();if(files!=null)for(File file:files)if(!keep.contains(file.getName()))file.delete();
         File[] legacy=new File(context.getCacheDir(),"covers").listFiles();if(legacy!=null)for(File file:legacy)if(file.isFile())file.delete();
     }

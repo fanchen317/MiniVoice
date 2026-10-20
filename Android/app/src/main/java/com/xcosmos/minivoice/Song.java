@@ -16,6 +16,7 @@ final class Song {
     volatile java.io.File artworkFile;
     volatile String artworkCacheKey;
     volatile boolean artworkPrepared;
+    volatile String artworkFaceKey,artworkFaceVersion;
     Song(long id, long duration, long albumId, String title, String artist, String album, String path, Uri uri) {
         this(id,duration,albumId,title,artist,album,path,uri,null);
     }

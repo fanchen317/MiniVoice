@@ -26,7 +26,7 @@ final class Artwork {
     private static Bitmap decode(byte[] bytes,int size){if(bytes==null)return null;BitmapFactory.Options options=new BitmapFactory.Options();options.inJustDecodeBounds=true;BitmapFactory.decodeByteArray(bytes,0,bytes.length,options);sample(options,size);return BitmapFactory.decodeByteArray(bytes,0,bytes.length,options);}
     private static Bitmap better(Bitmap first,Bitmap second){if(first==null)return second;if(second==null)return first;if((long)second.getWidth()*second.getHeight()>(long)first.getWidth()*first.getHeight()){first.recycle();return second;}second.recycle();return first;}
     private static void sample(BitmapFactory.Options options,int size){
-        options.inSampleSize=1;while(Math.max(options.outWidth,options.outHeight)/options.inSampleSize>size*2)options.inSampleSize*=2;options.inJustDecodeBounds=false;
+        options.inSampleSize=1;while(Math.max(options.outWidth,options.outHeight)/options.inSampleSize>size*1.5f)options.inSampleSize*=2;options.inJustDecodeBounds=false;
     }
     private static Bitmap read(Context context,Uri uri,int size){
         try{BitmapFactory.Options options=new BitmapFactory.Options();options.inJustDecodeBounds=true;

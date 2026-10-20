@@ -294,7 +294,7 @@ final class HomeScreen {
     void showDrawer(boolean open) {
         if (drawerOpen == open) return;
         drawerOpen = open;
-        if(idleDock!=null)idleDock.configure(Math.max(dp(56),Math.round(portraitDockWidth)),idleEligible());
+        if(idleDock!=null)idleDock.setIdlePaused(open);
         drawerPanel.animate().cancel();
         drawerLayer.animate().cancel();
         if (open) {
@@ -315,7 +315,7 @@ final class HomeScreen {
     void setPlayback(long id, String title, boolean playing, int position, int duration) {
         boolean changed = displayedSongId != id;
         displayedSongId = id;
-        current.setText(title);
+        if(!title.contentEquals(current.getText()))current.setText(title);
         playButton.setPlaying(playing);idleDock.setPlaying(playing);
         seek.setMax(Math.max(1, duration));
         if (!seek.isPressed()) seek.setProgress(position);
@@ -379,7 +379,7 @@ final class HomeScreen {
         FrameLayout.LayoutParams heading=(FrameLayout.LayoutParams)browseHeading.getLayoutParams();heading.topMargin=safeTop+dp(20);heading.leftMargin=safeLeft+dp(76);browseHeading.setLayoutParams(heading);browseHeading.setMaxWidth(Math.max(dp(120),frame.getWidth()-safeLeft-safeRight-dp(158)));browseHeading.setVisibility(browseGroup!=null&&isWallStyle()&&!chromeHidden&&!searchControl.isOpen()?View.VISIBLE:View.GONE);
     }
 
-    private boolean idleEligible(){return isWallStyle()&&!immersive&&!keyboardVisible&&!drawerOpen;}
+    private boolean idleEligible(){return isWallStyle()&&!immersive&&!keyboardVisible;}
     private void dockProgress(float amount){if(toolsParams!=null){toolsParams.bottomMargin=safeBottom+dp(14+98*amount);wallSettings.setLayoutParams(toolsParams);}}
     void setLyricsStatus(long id,String message){wall.setLyricsStatus(id,message);if(displayedSongId==id)stylePage.setLyricsStatus(message);}
 

@@ -70,7 +70,8 @@ public final class MainActivity extends Activity {
         @Override public void onServiceConnected(ComponentName name,IBinder binder){service=((PlaybackService.LocalBinder)binder).get();service.addListener(listener);refreshPlayer();if(pendingPlay!=null){Song song=pendingPlay;pendingPlay=null;play(song);}locatePlayingIfReady();}
         @Override public void onServiceDisconnected(ComponentName name){service=null;invalidateLyricsLoad();}
     };
-    @Override public void onCreate(Bundle state){super.onCreate(state);configureSystemBars();pendingLocatePlaying=ACTION_LOCATE_PLAYING.equals(getIntent().getAction());prefs=getSharedPreferences("library",MODE_PRIVATE);AppStorage.mirrorPreferences(this);buildUi();requestLibrary();handler.postDelayed(new Runnable(){@Override public void run(){refreshPlayer();handler.postDelayed(this,500);}},500);}
+    private final Runnable playerTicker=new Runnable(){@Override public void run(){if(!isFinishing()&&!isDestroyed()&&hasWindowFocus()){refreshPlayer();handler.postDelayed(this,500);}}};
+    @Override public void onCreate(Bundle state){super.onCreate(state);configureSystemBars();pendingLocatePlaying=ACTION_LOCATE_PLAYING.equals(getIntent().getAction());prefs=getSharedPreferences("library",MODE_PRIVATE);AppStorage.mirrorPreferences(this);buildUi();requestLibrary();}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(ACTION_LOCATE_PLAYING.equals(intent.getAction())){pendingLocatePlaying=true;locatePlayingIfReady();}}
     @Override public boolean dispatchTouchEvent(android.view.MotionEvent event){
         if(event.getActionMasked()==android.view.MotionEvent.ACTION_DOWN&&home!=null)home.dismissEmptySearchOutside(event.getRawX(),event.getRawY());
@@ -79,7 +80,7 @@ public final class MainActivity extends Activity {
     @Override public void onConfigurationChanged(android.content.res.Configuration configuration){
         super.onConfigurationChanged(configuration);configureSystemBars();if(home!=null){home.orientationChanged();home.applyAppearance();}if(settings!=null)settings.appearanceChanged();
     }
-    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)configureSystemBars();}
+    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused){configureSystemBars();handler.removeCallbacks(playerTicker);handler.post(playerTicker);}else handler.removeCallbacks(playerTicker);}
     private void configureSystemBars(){
         Window window=getWindow();window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
@@ -97,7 +98,7 @@ public final class MainActivity extends Activity {
     }
     @Override public void onStart(){super.onStart();bound=bindService(new Intent(this,PlaybackService.class),connection,BIND_AUTO_CREATE);}
     @Override public void onDestroy(){handler.removeCallbacksAndMessages(null);super.onDestroy();}
-    @Override public void onStop(){invalidateLyricsLoad();if(service!=null)service.removeListener(listener);if(bound){unbindService(connection);bound=false;}service=null;super.onStop();}
+    @Override public void onStop(){handler.removeCallbacks(playerTicker);invalidateLyricsLoad();if(service!=null)service.removeListener(listener);if(bound){unbindService(connection);bound=false;}service=null;super.onStop();}
     private void requestLibrary(){reload(false,true);}
     private void reload(){reload(false);}
     private void rebuildLibrary(){reload(true);}
@@ -293,7 +294,8 @@ public final class MainActivity extends Activity {
     private void refreshPlayer(){if(service==null||now==null)return;Song song=service.current();if(song==null)return;
         if(song.id!=lastRecentId){lastRecentId=song.id;if(service.isPlaying())prefs.edit().putLong("recent_time_"+song.id,System.currentTimeMillis()).apply();Set<String> recent=ids("recent");recent.add(Long.toString(song.id));saveIds("recent",recent);}
         home.setNowPlaying(song);home.setCardState(ids("favorites"),service.mode,(int)song.duration);
-        now.setText((service.isPlaying()?"▶ ":"Ⅱ ")+song.title+" · "+song.artist+"  ♪ 歌词");home.setPlayback(song.id,song.title,service.isPlaying(),service.position(),(int)song.duration);loadPlayingLyrics(song);progress.setMax((int)Math.max(1,song.duration));if(!progress.isPressed())progress.setProgress(service.position());elapsed.setText(time(service.position())+" / "+time((int)song.duration));}
+        home.setPlayback(song.id,song.title,service.isPlaying(),service.position(),(int)song.duration);loadPlayingLyrics(song);
+        if(root.getVisibility()==View.VISIBLE){now.setText((service.isPlaying()?"▶ ":"Ⅱ ")+song.title+" · "+song.artist+"  ♪ 歌词");progress.setMax((int)Math.max(1,song.duration));if(!progress.isPressed())progress.setProgress(service.position());elapsed.setText(time(service.position())+" / "+time((int)song.duration));}}
     private void invalidateLyricsLoad(){lyricsLoad.reset();}
     private Song lyricSong(Song song){for(Song item:library)if(item.id==song.id||item.uri.equals(song.uri))return item;return song;}
     private void loadPlayingLyrics(Song song){

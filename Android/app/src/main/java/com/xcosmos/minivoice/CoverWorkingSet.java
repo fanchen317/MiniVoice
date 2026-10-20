@@ -19,7 +19,9 @@ final class CoverWorkingSet<T> {
         images.entrySet().removeIf(e->!e.getKey().equals(focused)&&!visible.contains(e.getKey())&&now-e.getValue().seen>1500);
         long bytes=0;for(Image<T> item:images.values())bytes+=item.bytes;
         Iterator<Map.Entry<String,Image<T>>> iterator=images.entrySet().iterator();while(bytes>budget&&iterator.hasNext()){Map.Entry<String,Image<T>> entry=iterator.next();if(!entry.getKey().equals(focused)&&!visible.contains(entry.getKey())){bytes-=entry.getValue().bytes;iterator.remove();}}
-        iterator=images.entrySet().iterator();while(bytes>budget&&iterator.hasNext()){Map.Entry<String,Image<T>> entry=iterator.next();if(!entry.getKey().equals(focused)){bytes-=entry.getValue().bytes;iterator.remove();}}
+        // The budget is soft for the current viewport: evicting visible images here creates a decode/evict loop.
+        // Requested resolution is bounded by each tile's actual screen size.
+
     }
     void clear(){images.clear();visible.clear();}
 }

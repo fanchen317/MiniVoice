@@ -28,6 +28,8 @@ final class FocusCardRenderer {
     private RectF feedbackBounds;
     private float feedbackAmount;
     private float glyphScale=1,lyricSize,lyricSpacing;
+    private List<Lyrics.Line> shapedLines;private int shapedActive=-1,shapedWidth,shapedFirst,shapedLast,shapedActiveLimit,shapedOtherLimit;private float shapedSize;
+    private final List<StaticLayout> shaped=new ArrayList<>();
     private void animateFeedback(float target){
         if(feedback!=null)feedback.cancel();feedback=android.animation.ValueAnimator.ofFloat(feedbackAmount,target);feedback.setDuration(target>0?80:220);
         feedback.setInterpolator(target>0?new android.view.animation.DecelerateInterpolator():new android.view.animation.OvershootInterpolator(1.2f));
@@ -82,13 +84,16 @@ final class FocusCardRenderer {
         if(area.height()<26*d)return;
         if(lines.isEmpty()){label(c,status,area.left,area.centerY(),Math.min(15*d,lyricSize),0xCCFFFFFF,false,area.width());return;}
         int active=0;for(int i=0;i<lines.size();i++){if(lines.get(i).ms<0)continue;if(lines.get(i).ms>position)break;active=i;}
-        int neighbors=area.height()<lyricSize*4?1:2;int first=Math.max(0,active-neighbors),last=Math.min(lines.size()-1,active+neighbors);List<StaticLayout> layouts=new ArrayList<>();
-        for(int i=first;i<=last;i++){
-            TextPaint ink=new TextPaint(Paint.ANTI_ALIAS_FLAG);ink.setTypeface(Typeface.DEFAULT_BOLD);ink.setTextSize(lyricSize);
-            ink.setColor(i==active?0x66FFFFFF:Math.abs(i-active)==1?0x88FFFFFF:0x50FFFFFF);
-            int availableLines=Math.max(1,Math.min(i==active?3:2,(int)(area.height()/(lyricSize*1.35f))));
-            layouts.add(StaticLayout.Builder.obtain(lines.get(i).text,0,lines.get(i).text.length(),ink,Math.max(1,(int)area.width())).setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).setLineSpacing(2*d,1).setMaxLines(availableLines).setEllipsize(android.text.TextUtils.TruncateAt.END).setEllipsizedWidth(Math.max(1,(int)area.width())).build());
+        int neighbors=area.height()<lyricSize*4?1:2;int first=Math.max(0,active-neighbors),last=Math.min(lines.size()-1,active+neighbors);
+        int width=Math.max(1,(int)area.width()),activeLimit=Math.max(1,Math.min(3,(int)(area.height()/(lyricSize*1.35f)))),otherLimit=Math.min(2,activeLimit);
+        if(shapedLines!=lines||shapedActive!=active||shapedWidth!=width||shapedSize!=lyricSize||shapedFirst!=first||shapedLast!=last||shapedActiveLimit!=activeLimit||shapedOtherLimit!=otherLimit){
+            shaped.clear();for(int i=first;i<=last;i++){
+                TextPaint ink=new TextPaint(Paint.ANTI_ALIAS_FLAG);ink.setTypeface(Typeface.DEFAULT_BOLD);ink.setTextSize(lyricSize);
+                shaped.add(StaticLayout.Builder.obtain(lines.get(i).text,0,lines.get(i).text.length(),ink,width).setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).setLineSpacing(2*d,1).setMaxLines(i==active?activeLimit:otherLimit).setEllipsize(android.text.TextUtils.TruncateAt.END).setEllipsizedWidth(width).build());
+            }
+            shapedLines=lines;shapedActive=active;shapedWidth=width;shapedSize=lyricSize;shapedFirst=first;shapedLast=last;shapedActiveLimit=activeLimit;shapedOtherLimit=otherLimit;
         }
+        List<StaticLayout> layouts=shaped;
         StaticLayout selected=layouts.get(active-first);
         long now=android.os.SystemClock.uptimeMillis();
         if(lastLines!=lines){lastLines=lines;lastActive=active;lyricOffset=0;}
@@ -97,7 +102,7 @@ final class FocusCardRenderer {
         if(Math.abs(offset)>.2f)invalidate.run();float y=area.centerY()-selected.getHeight()/2f+offset;
         for(int i=active-first-1;i>=0;i--)y-=layouts.get(i).getHeight()+lyricSpacing;
         int save=c.save();c.clipRect(area);
-        for(int i=0;i<layouts.size();i++){StaticLayout layout=layouts.get(i);float bottom=y+layout.getHeight();
+        for(int i=0;i<layouts.size();i++){StaticLayout layout=layouts.get(i);layout.getPaint().setColor(i+first==active?0x66FFFFFF:Math.abs(i+first-active)==1?0x88FFFFFF:0x50FFFFFF);float bottom=y+layout.getHeight();
             if(bottom>area.top&&y<area.bottom){int lineIndex=first+i;int saveLine=c.save();c.translate(area.left,y);layout.draw(c);
                 if(lineIndex==active){Lyrics.Line source=lines.get(lineIndex);long next=lineIndex+1<lines.size()?lines.get(lineIndex+1).ms:duration;
                     float chars=LyricSweep.characters(source,next,duration,position);int whole=Math.min(source.text.length(),(int)chars);float amount=chars-whole;

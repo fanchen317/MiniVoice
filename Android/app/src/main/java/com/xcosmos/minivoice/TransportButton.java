@@ -21,7 +21,7 @@ final class TransportButton extends View {
         ButtonFeedback.install(this);
         setContentDescription(glyph==Glyph.PREVIOUS?"上一首":glyph==Glyph.NEXT?"下一首":glyph==Glyph.QUEUE?"播放队列":"播放");
     }
-    void setPlaying(boolean value){playing=value;setContentDescription(value?"暂停":"播放");invalidate();}
+    void setPlaying(boolean value){if(playing==value)return;playing=value;setContentDescription(value?"暂停":"播放");invalidate();}
     @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);float cx=getWidth()/2f,cy=getHeight()/2f;
         paint.setColor(glyph==Glyph.PLAY_PAUSE?0xFF202522:Color.WHITE);paint.setStrokeCap(Paint.Cap.ROUND);paint.setStrokeJoin(Paint.Join.ROUND);
         if(glyph==Glyph.PLAY_PAUSE){paint.setStyle(Paint.Style.FILL);

@@ -29,5 +29,5 @@ final class ArtworkFraming {
         return new Plan(bestX*iw,bestY*ih,sw*iw,sh*ih,x,y,width,height);
     }
     private static void candidates(List<Float> out,float low,float high,float size){out.add(clamp((low+high-size)/2,0,1-size));out.add(clamp(low,0,1-size));out.add(clamp(high-size,0,1-size));}
-    private static float clamp(float value,float min,float max){return Math.max(min,Math.min(max,value));}
+    private static float clamp(float value,float min,float max){return Float.isFinite(value)?Math.max(min,Math.min(max,value)):min;}
 }

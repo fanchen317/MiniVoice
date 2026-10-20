@@ -9,6 +9,7 @@ public final class CoverQualityTests {
         check(!pending.add(CoverQuality.request("content://song/1","a",1600)),"duplicate detail is suppressed");
         check(pending.add(CoverQuality.request("content://song/1","b",1600)),"updated source can request fresh detail");
         check(CoverQuality.side(200,true)==1600&&CoverQuality.side(900,false)==640&&CoverQuality.side(1200,false)==1600,"quality follows focused and visible size");
+        check(CoverQuality.side(200,false)==256&&CoverQuality.side(400,false)==512,"small tiles do not allocate full-size textures");
         check(CoverQuality.repairSmall(96,false),"old tiny disk cover gets one source repair");
         check(!CoverQuality.repairSmall(96,true),"intrinsically tiny source is not reread every startup");
         check(!CoverQuality.repairSmall(1600,false),"existing high quality cache is retained");
