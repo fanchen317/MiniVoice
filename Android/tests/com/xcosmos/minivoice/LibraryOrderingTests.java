@@ -16,6 +16,10 @@ public final class LibraryOrderingTests {
         check(LibraryOrdering.comparator("album",true,false).compare(first,second)<0,"album order");
         check(LibraryOrdering.comparator("sourceAdded",true,false).compare(first,second)<0,"first added order");
         check(LibraryOrdering.comparator("added",false,false).compare(first,second)<0,"newest updated first");
+        Song shorter=new Song(11,120000,0,"短曲","B","A","",null),longer=new Song(12,300000,0,"长曲","A","B","",null);
+        check(LibraryOrdering.field("tracks","duration").equals("duration"),"duration preference is recognized");
+        check(LibraryOrdering.comparator("duration",true,false).compare(shorter,longer)<0,"duration ascending uses numeric milliseconds");
+        check(LibraryOrdering.comparator("duration",false,false).compare(shorter,longer)>0,"duration descending");
         first.groupCount=8;second.groupCount=3;
         check(LibraryOrdering.comparator("count",false,true).compare(first,second)<0,"group counts descending");
         check(LibraryOrdering.comparator("name",true,true).compare(first,second)<0,"group numeric names");

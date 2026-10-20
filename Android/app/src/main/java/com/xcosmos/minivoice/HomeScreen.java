@@ -203,6 +203,10 @@ final class HomeScreen {
         wallSettingsParams.setMargins(0, 0, dp(16), dp(112));
         frame.addView(wallSettings, wallSettingsParams);toolsParams=wallSettingsParams;
         drawerLayer = new FrameLayout(activity);
+        // The standard footer has elevation; the entire modal layer, including
+        // its scrim and touch target, must sit above that footer.
+        drawerLayer.setElevation(dp(16));
+        drawerLayer.setClickable(true);
         frame.addView(drawerLayer, new FrameLayout.LayoutParams(-1, -1));
         drawerLayer.setBackgroundColor(0x99000000);
         View outside = new View(activity);
@@ -213,6 +217,7 @@ final class HomeScreen {
         drawerScroll.setVerticalScrollBarEnabled(false);
         FrameLayout.LayoutParams drawerParams = new FrameLayout.LayoutParams(Math.min(dp(340), Math.round(activity.getResources().getDisplayMetrics().widthPixels * .80f)), -1, Gravity.LEFT);
         drawerPanel = new FrameLayout(activity);
+        drawerPanel.setClickable(true);
         drawerPanel.setBackground(glass().surface(drawerPanel,24,true));
         drawerLayer.addView(drawerPanel, drawerParams);
         drawerPanel.addView(drawerScroll, new FrameLayout.LayoutParams(-1,-1));
@@ -320,6 +325,7 @@ final class HomeScreen {
         drawerPanel.animate().cancel();
         drawerLayer.animate().cancel();
         if (open) {
+            drawerLayer.bringToFront();
             drawerPanel.setBackground(new GlassBackdrop(wall,false).surface(drawerPanel,24,true));
             drawerLayer.setVisibility(View.VISIBLE);
             drawerLayer.setAlpha(0);

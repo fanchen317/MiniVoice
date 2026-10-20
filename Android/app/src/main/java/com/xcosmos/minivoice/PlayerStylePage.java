@@ -44,7 +44,7 @@ final class PlayerStylePage extends FrameLayout {
     private final BaseAdapter adapter=new BaseAdapter(){
         public int getCount(){return songs.size();}public Song getItem(int index){return songs.get(index);}public long getItemId(int index){return getItem(index).id;}
         public View getView(int index,View recycled,ViewGroup parent){
-            LinearLayout row;ImageView image;TextView caption,subtitle,star,more;
+            LinearLayout row;ImageView image;TextView caption,subtitle;LibraryActionButton star,more;
             if(recycled==null){
                 row=new LinearLayout(getContext());row.setDescendantFocusability(FOCUS_BLOCK_DESCENDANTS);row.setOrientation(grouped?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(12),dp(8),dp(12),dp(8));
                 image=new ImageView(getContext());image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(shape(colors.line,12));image.setClipToOutline(true);row.addView(image,new LinearLayout.LayoutParams(grouped?-1:dp(46),grouped?dp(wide?164:134):dp(46)));
@@ -53,19 +53,19 @@ final class PlayerStylePage extends FrameLayout {
                 subtitle=text("",12,colors.secondary);subtitle.setSingleLine(true);subtitle.setEllipsize(android.text.TextUtils.TruncateAt.END);subtitle.setPadding(0,dp(4),0,0);labels.addView(caption);labels.addView(subtitle);
                 TextView artistCell=text("",13,colors.secondary),albumCell=text("",13,colors.secondary);artistCell.setSingleLine(true);albumCell.setSingleLine(true);artistCell.setEllipsize(android.text.TextUtils.TruncateAt.END);albumCell.setEllipsize(android.text.TextUtils.TruncateAt.END);
                 if(!grouped){row.addView(artistCell,new LinearLayout.LayoutParams(columns.artist,dp(48)));row.addView(albumCell,new LinearLayout.LayoutParams(columns.album,dp(48)));}artistCell.setGravity(Gravity.CENTER_VERTICAL);albumCell.setGravity(Gravity.CENTER_VERTICAL);
-                star=tool("♡",()->{});more=tool("⋮",()->{});if(!grouped){row.addView(star,new LinearLayout.LayoutParams(dp(40),dp(48)));row.addView(more,new LinearLayout.LayoutParams(dp(36),dp(48)));}
+                star=new LibraryActionButton(getContext(),true,colors.accent);more=new LibraryActionButton(getContext(),false,colors.secondary);if(!grouped){row.addView(star,new LinearLayout.LayoutParams(dp(40),dp(48)));row.addView(more,new LinearLayout.LayoutParams(dp(36),dp(48)));}
                 CheckBox check=new CheckBox(getContext());check.setButtonTintList(android.content.res.ColorStateList.valueOf(colors.accent));check.setContentDescription("选择歌曲");if(!grouped)row.addView(check,0,new LinearLayout.LayoutParams(dp(40),dp(48)));
-                TextView length=text("",11,colors.secondary);length.setGravity(Gravity.CENTER);if(!grouped)row.addView(length,new LinearLayout.LayoutParams(dp(42),dp(48)));
+                TextView length=text("",11,colors.secondary);length.setGravity(Gravity.CENTER);if(!grouped)row.addView(length,row.indexOfChild(star),new LinearLayout.LayoutParams(dp(42),dp(48)));
                 row.setTag(new Object[]{image,caption,subtitle,star,more,check,length,artistCell,albumCell});
             }else row=(LinearLayout)recycled;
-            Object[] holder=(Object[])row.getTag();image=(ImageView)holder[0];caption=(TextView)holder[1];subtitle=(TextView)holder[2];star=(TextView)holder[3];more=(TextView)holder[4];Song song=getItem(index);
+            Object[] holder=(Object[])row.getTag();image=(ImageView)holder[0];caption=(TextView)holder[1];subtitle=(TextView)holder[2];star=(LibraryActionButton)holder[3];more=(LibraryActionButton)holder[4];Song song=getItem(index);
             TextView artistCell=(TextView)holder[7],albumCell=(TextView)holder[8];artistCell.setText(song.artist);albumCell.setText(song.album);artistCell.setTextColor(colors.secondary);albumCell.setTextColor(colors.secondary);subtitle.setVisibility(!grouped&&columns.artist>0&&columns.album>0?GONE:VISIBLE);
             CheckBox check=(CheckBox)holder[5];check.setOnCheckedChangeListener(null);check.setVisibility(selecting?VISIBLE:GONE);check.setChecked(selection.contains(song.id));check.setContentDescription("选择 "+song.title);check.setOnCheckedChangeListener((button,value)->toggleSelection(song.id));
             TextView length=(TextView)holder[6];length.setText(String.format(java.util.Locale.ROOT,"%d:%02d",song.duration/60000,(song.duration/1000)%60));length.setVisibility(grouped||selecting?GONE:VISIBLE);
             star.setVisibility(selecting?GONE:VISIBLE);more.setVisibility(selecting?GONE:VISIBLE);
             bindImage(image,song,grouped?512:256);caption.setText(song.title);subtitle.setText(grouped?song.groupCount+" 首歌曲":(columns.artist>0?song.album:song.artist+" · "+song.album));caption.setTextColor(current!=null&&current.id==song.id&&!grouped?colors.accent:colors.text);subtitle.setTextColor(colors.secondary);
             row.setBackground(shape(!grouped&&(selecting?selection.contains(song.id):current!=null&&current.id==song.id)?colors.line:Color.TRANSPARENT,12));
-            star.setText(favorites.contains(Long.toString(song.id))?"♥":"♡");star.setTextColor(colors.accent);star.setContentDescription("收藏 "+song.title);star.setOnClickListener(v->{if(favorite!=null)favorite.accept(song);});more.setContentDescription(song.title+"的更多操作");more.setOnClickListener(v->{if(songMenu!=null)songMenu.accept(song);});return row;
+            boolean saved=favorites.contains(Long.toString(song.id));star.state(saved,saved?colors.accent:colors.secondary);star.setContentDescription((saved?"取消收藏 ":"收藏 ")+song.title);more.state(false,colors.secondary);star.setOnClickListener(v->{if(favorite!=null)favorite.accept(song);});more.setContentDescription("编辑／歌曲操作："+song.title);more.setOnClickListener(v->{if(songMenu!=null)songMenu.accept(song);});return row;
         }
     };
     PlayerStylePage(Context context,Consumer<Song> play,IntConsumer seek,Runnable lyricsAction,Runnable browse){super(context);this.play=play;this.seek=seek;this.lyricsAction=lyricsAction;this.browse=browse;setVisibility(GONE);}
@@ -117,7 +117,7 @@ final class PlayerStylePage extends FrameLayout {
     private void refreshColumnHeader(){
         if(columnHeader==null)return;columnHeader.removeAllViews();View leading=new View(getContext());columnHeader.addView(leading,new LinearLayout.LayoutParams(dp(58+(selecting?40:0)),1));
         column("歌曲","title",0,1);column("歌手","artist",columns.artist,0);if(columns.album>0)column("专辑","album",columns.album,0);
-        if(!selecting){columnHeader.addView(new View(getContext()),new LinearLayout.LayoutParams(dp(76),1));TextView duration=text("时长",11,colors.secondary);duration.setGravity(Gravity.CENTER);columnHeader.addView(duration,new LinearLayout.LayoutParams(dp(42),-1));}
+        if(!selecting){column("时长","duration",dp(42),0);TextView saved=text("收藏",11,colors.secondary),edit=text("编辑",11,colors.secondary);saved.setGravity(Gravity.CENTER);edit.setGravity(Gravity.CENTER);columnHeader.addView(saved,new LinearLayout.LayoutParams(dp(40),-1));columnHeader.addView(edit,new LinearLayout.LayoutParams(dp(36),-1));}
     }
     private void column(String caption,String field,int width,float weight){
         TextView view=text(caption+(field.equals(sortField)?sortAscending?" ↑":" ↓":""),12,field.equals(sortField)?colors.accent:colors.secondary);view.setGravity(Gravity.CENTER_VERTICAL);columnHeader.addView(view,new LinearLayout.LayoutParams(width,-1,weight));view.setEnabled(sort!=null&&sortField!=null);view.setOnClickListener(v->{if(sort!=null)sort.accept(field,field.equals(sortField)?!sortAscending:true);});ButtonFeedback.install(view);
