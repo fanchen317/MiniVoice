@@ -13,6 +13,8 @@ import java.util.*;
 final class LibrarySnapshot {
     private static List<Song> resident;private static String residentSource;
     private static AtomicFile file(Context context){return new AtomicFile(new File(LibraryCache.root(context),"index-v1.json"));}
+    static synchronized void forgetResident(){resident=null;residentSource=null;}
+    static synchronized void invalidate(Context context){resident=null;residentSource=null;file(context).delete();}
     static String source(Set<String> folders,boolean recursive){return new TreeSet<>(folders).toString()+"\n"+recursive;}
     private static Uri uri(String value){return value.isEmpty()?null:Uri.parse(value);}
     static synchronized List<Song> read(Context context,String source){if(source.equals(residentSource)&&resident!=null)return new ArrayList<>(resident);try{

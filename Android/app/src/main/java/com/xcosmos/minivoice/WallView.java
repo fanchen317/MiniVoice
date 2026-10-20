@@ -129,7 +129,9 @@ final class WallView extends View {
         resetExpansion();card.clear();requested.clear();cancelMotion();songs=new ArrayList<>(value);scene=new WallLayout(songs.size(),density);focus=null;pressed=null;focusAmount=0;reflowFrom=reflowTo=WallReflow.IDENTITY;cameraReady=false;
         if(focusedId!=Long.MIN_VALUE)locateSong(focusedId);invalidate();
     }
-    void locateSong(long id){
+    void locateSongDirectly(long id){locateSong(id,false);}
+    void locateSong(long id){locateSong(id,true);}
+    private void locateSong(long id,boolean animated){
         if(getWidth()==0||getHeight()==0){pendingLocate=id;return;}
         if(!cameraReady)centerInitial();
         for(int i=0;i<songs.size();i++)if(songs.get(i).id==id){
@@ -137,7 +139,7 @@ final class WallView extends View {
             // Keep the visible focused repeat. Re-selecting a periodic copy can shift the wall again.
             if(focus!=null&&focus.tile.index==i){RectF visible=frame(focus);if(visible.right>0&&visible.left<getWidth()&&visible.bottom>safeTop&&visible.top<getHeight()-safeBottom)target=focus;}
             if(target==null)target=nearestRendered(i);
-            if(target!=null)focusDirectly(target);return;
+            if(target!=null){if(animated)focus(target);else focusDirectly(target);}return;
         }
     }
     private float anchorY(){return viewport==null?(safeTop+80*density+getHeight()-safeBottom-112*density)/2:viewport.focusY;}
@@ -307,7 +309,7 @@ final class WallView extends View {
         if(action==MotionEvent.ACTION_DOWN&&card.down(event.getX(),event.getY())){interruptCamera();controlTouch=true;invalidate();return true;}
         if(controlTouch){
             if(action==MotionEvent.ACTION_MOVE)card.move(event.getX());
-            if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL||action==MotionEvent.ACTION_POINTER_DOWN){card.up(event.getX(),event.getY(),action!=MotionEvent.ACTION_UP);controlTouch=false;}
+            if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL||action==MotionEvent.ACTION_POINTER_DOWN){boolean handled=card.up(event.getX(),event.getY(),action!=MotionEvent.ACTION_UP);if(handled&&action==MotionEvent.ACTION_UP)performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK);controlTouch=false;}
             invalidate();return true;
         }
 

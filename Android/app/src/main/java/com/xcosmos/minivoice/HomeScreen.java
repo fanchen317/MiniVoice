@@ -136,7 +136,7 @@ final class HomeScreen {
         playerParams.setMargins(dp(16), 0, dp(16), dp(14));
         frame.addView(player, playerParams);dockParams=playerParams;
         playButton = new TransportButton(activity, TransportButton.Glyph.PLAY_PAUSE, actions::toggle);
-        playButton.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x55000000), round(0xFFF3F3F3, 31, 0, 0), round(Color.WHITE, 31, 0, 0)));
+        playButton.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x18000000), round(0xFFF3F3F3, 31, 0, 0), round(Color.WHITE, 31, 0, 0)));
         player.addView(playButton, new LinearLayout.LayoutParams(dp(62), dp(62)));
         LinearLayout middle = new LinearLayout(activity);
         middle.setOrientation(LinearLayout.VERTICAL);
@@ -160,6 +160,9 @@ final class HomeScreen {
         middleTop.addView(next, new LinearLayout.LayoutParams(dp(44), dp(44)));
         seek = new SeekBar(activity);
         styleSeekBar(seek);
+        ((GradientDrawable)((LayerDrawable)seek.getProgressDrawable()).findDrawableByLayerId(android.R.id.background)).setSize(1,dp(3));
+        ((LayerDrawable)seek.getProgressDrawable()).setLayerHeight(0,dp(3));((LayerDrawable)seek.getProgressDrawable()).setLayerGravity(0,Gravity.CENTER_VERTICAL);
+        ((LayerDrawable)seek.getProgressDrawable()).setLayerHeight(1,dp(3));((LayerDrawable)seek.getProgressDrawable()).setLayerGravity(1,Gravity.CENTER_VERTICAL);
         ((LayerDrawable)seek.getProgressDrawable()).findDrawableByLayerId(android.R.id.progress).setTint(0xEFFFFFFF);seek.getThumb().setTint(Color.WHITE);
         seek.setMax(1);
         middle.addView(seek, new LinearLayout.LayoutParams(-1, dp(30)));
@@ -232,9 +235,9 @@ final class HomeScreen {
         drawer.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1));
         ImageView settings = imageButton(R.drawable.icon_settings_gear, Color.WHITE, actions::settings);
         settings.setContentDescription("设置");
-        settings.setPadding(dp(12), dp(12), dp(12), dp(12));
-        settings.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x66FFFFFF), round(0x55373F3D, 14, 0x44FFFFFF, 1), round(Color.WHITE, 14, 0, 0)));
-        LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+        settings.setPadding(dp(16), dp(16), dp(16), dp(16));
+        settings.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x16FFFFFF), glass().surface(settings,28,false), WallToolStyle.glass(activity)));
+        LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(dp(56), dp(56));
         settingsParams.setMargins(dp(4), dp(4), 0, 0);
         drawer.addView(settings, settingsParams);
         View drawerEdge=new View(activity);
@@ -260,7 +263,7 @@ final class HomeScreen {
             safeLeft=left;safeTop=top;safeRight=right;safeBottom=bottom;
             menuParams.topMargin=top+dp(14);menuParams.leftMargin=left+dp(14);menu.setLayoutParams(menuParams);
             searchParams.topMargin=top+dp(14);searchParams.rightMargin=right+dp(14);searchControl.setLayoutParams(searchParams);
-            drawerParams.width=Math.min(dp(340),Math.round(activity.getResources().getDisplayMetrics().widthPixels*.80f));drawerPanel.setLayoutParams(drawerParams);drawer.setPadding(left+dp(16),top+dp(14),dp(16),bottom+dp(14));
+            drawerParams.width=Math.min(dp(320),Math.round((activity.getResources().getDisplayMetrics().widthPixels-left-right)*.82f));drawerParams.height=-1;drawerParams.bottomMargin=bottom+dp(12);drawerParams.leftMargin=left+dp(12);drawerParams.topMargin=top+dp(12);drawerParams.gravity=Gravity.TOP|Gravity.LEFT;drawerPanel.setLayoutParams(drawerParams);drawer.setPadding(dp(16),dp(14),dp(16),dp(14));
             boolean keyboard=android.os.Build.VERSION.SDK_INT>=30&&insets.isVisible(WindowInsets.Type.ime());keyboardVisible=keyboard;
             updateViewport();player.setVisibility(keyboard||immersive&&!landscape?View.GONE:View.VISIBLE);
             return insets;
@@ -291,6 +294,7 @@ final class HomeScreen {
         drawerPanel.animate().cancel();
         drawerLayer.animate().cancel();
         if (open) {
+            drawerPanel.setBackground(new GlassBackdrop(wall,false).surface(drawerPanel,24,true));
             drawerLayer.setVisibility(View.VISIBLE);
             drawerLayer.setAlpha(0);
             drawerPanel.setTranslationX(-drawerPanel.getLayoutParams().width - dp(20));
@@ -445,6 +449,7 @@ final class HomeScreen {
         if(!groupedWall)for(Song visible:visibleSongs)if(visible.id==song.id)return;
         List<Song> revealed=groupedWall?new ArrayList<>():new ArrayList<>(visibleSongs);revealed.add(song);updateWall(revealed,false);
     }
+    void locateSongDirectly(long songId){wall.locateSongDirectly(songId);}
     void locateSong(long songId) {if(playerStyle.equals("wall"))wall.locateSong(songId);else stylePage.locate(songId);}
 
     void clearSearch() {searchControl.clearQuery();}
@@ -579,7 +584,7 @@ final class HomeScreen {
         ImageView view = imageButton(resource, Color.WHITE, action);
         view.setImageDrawable(new WallToolStyle.Glyph(resource==R.drawable.icon_wall_sidebar?WallToolStyle.Glyph.SIDEBAR:WallToolStyle.Glyph.SETTINGS));
         int inset=dp((WallToolStyle.SIDE-WallToolStyle.ICON)/2f);view.setPadding(inset,inset,inset,inset);
-        view.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x44FFFFFF),glass().surface(view,28,false),WallToolStyle.glass(activity)));
+        view.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x16FFFFFF),glass().surface(view,28,false),WallToolStyle.glass(activity)));
         return view;
     }
 

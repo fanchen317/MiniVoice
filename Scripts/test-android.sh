@@ -22,7 +22,7 @@ java -cp "$output" com.xcosmos.minivoice.LibraryResourceTests
 javac -d "$output" "$source_root/WallFocusMotion.java" "$repo_root/Android/tests/com/xcosmos/minivoice/WallFocusMotionTests.java"
 java -cp "$output" com.xcosmos.minivoice.WallFocusMotionTests
 
-javac -cp "$android_jar:$output" -d "$output" "$source_root/Song.java" "$source_root/EmbeddedLyrics.java" "$source_root/LibraryCache.java" "$source_root/LyricsRepository.java" "$source_root/ScanProgress.java" "$repo_root/Android/tests/com/xcosmos/minivoice/EmbeddedLyricsTests.java"
+javac -cp "$android_jar:$output" -d "$output" "$source_root/Song.java" "$source_root/EmbeddedLyrics.java" "$source_root/AppStorage.java" "$source_root/CacheMigration.java" "$source_root/LibraryCache.java" "$source_root/LyricsRepository.java" "$source_root/ScanProgress.java" "$repo_root/Android/tests/com/xcosmos/minivoice/EmbeddedLyricsTests.java"
 java -cp "$output:$android_jar" com.xcosmos.minivoice.EmbeddedLyricsTests
 
 javac -d "$output" "$source_root/WallZoom.java" "$source_root/WallSearchDismiss.java" "$repo_root/Android/tests/com/xcosmos/minivoice/WallControlsTests.java"
@@ -42,3 +42,12 @@ java -cp "$output:$android_jar" com.xcosmos.minivoice.AppearanceTests
 
 javac -cp "$android_jar" -d "$output" "$source_root/Song.java" "$source_root/LibraryOrdering.java" "$repo_root/Android/tests/com/xcosmos/minivoice/LibraryOrderingTests.java"
 java -cp "$output:$android_jar" com.xcosmos.minivoice.LibraryOrderingTests
+
+javac -d "$output" "$source_root/SheetPosition.java" "$repo_root/Android/tests/com/xcosmos/minivoice/SheetPositionTests.java"
+java -cp "$output" com.xcosmos.minivoice.SheetPositionTests
+
+javac -cp "$android_jar:$output" -d "$output" "$source_root/CacheMigration.java" "$repo_root/Android/tests/com/xcosmos/minivoice/CacheMigrationTests.java"
+java -cp "$output:$android_jar" com.xcosmos.minivoice.CacheMigrationTests
+
+javac -d "$output" "$source_root/CacheFiles.java" "$repo_root/Android/tests/com/xcosmos/minivoice/CacheFilesTests.java"
+java -cp "$output" com.xcosmos.minivoice.CacheFilesTests
