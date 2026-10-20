@@ -155,7 +155,11 @@ public final class MainActivity extends Activity {
             public void toggle(){if(service!=null)service.toggle();}
             public void previous(){if(service!=null)service.previous();}
             public void next(){if(service!=null)service.next(true);}
-            public void favorite(Song song){Set<String> saved=ids("favorites");String id=Long.toString(song.id);if(!saved.add(id))saved.remove(id);saveIds("favorites",saved);home.setCardState(saved,service==null?1:service.mode,service==null||service.current()==null?0:(int)service.current().duration);renderRows();}
+            public void favorite(Song song){favoriteSongs(java.util.Collections.singletonList(song),!ids("favorites").contains(Long.toString(song.id)));}
+            public void favoriteSongs(List<Song> songs,boolean value){MainActivity.this.favoriteSongs(songs,value);}
+            public void playlistSongs(List<Song> songs){addToPlaylist(songs);}
+            public void removePlaylistSongs(List<Song> songs){MainActivity.this.removePlaylistSongs(songs);}
+            public void clearRecent(){MainActivity.this.clearRecent();}
             public void lyrics(){showLyrics();}
             public void locate(){pendingLocatePlaying=true;locatePlayingIfReady();}
             public void queue(){showQueue();}
@@ -256,7 +260,7 @@ public final class MainActivity extends Activity {
     private void showSearch(){EditText input=new EditText(this);input.setSingleLine(true);input.setHint("搜索歌曲、歌手或专辑");new AlertDialog.Builder(this).setTitle("搜索音乐库").setView(input).setNegativeButton("取消",null).setPositiveButton("搜索",(dialog,which)->{query=input.getText().toString().toLowerCase(Locale.ROOT);selectSection("歌曲");}).show();}
     private void clearCacheFiles(java.io.File folder){java.io.File[] files=folder.listFiles();if(files==null)return;for(java.io.File file:files){if(file.isDirectory())clearCacheFiles(file);file.delete();}}
     private void showCache(){new CachePage(this,()->scanning,()->{ArtworkCache.clear();LibrarySnapshot.forgetResident();}).open();}
-    @Override public void onBackPressed(){if(home!=null&&home.collapsePlayer())return;if(home!=null&&home.closeSearch())return;if(root!=null&&root.getVisibility()==View.VISIBLE){root.setVisibility(View.GONE);return;}if(home!=null&&home.isDrawerOpen()){home.showDrawer(false);return;}if(backGroup())return;super.onBackPressed();}
+    @Override public void onBackPressed(){if(home!=null&&home.isDrawerOpen()){home.showDrawer(false);return;}if(home!=null&&home.collapsePlayer())return;if(home!=null&&home.closeSearch())return;if(root!=null&&root.getVisibility()==View.VISIBLE){root.setVisibility(View.GONE);return;}if(home!=null&&home.isDrawerOpen()){home.showDrawer(false);return;}if(backGroup())return;super.onBackPressed();}
     private boolean matches(Song song){return song.title.toLowerCase(Locale.ROOT).contains(query)||song.artist.toLowerCase(Locale.ROOT).contains(query)||song.album.toLowerCase(Locale.ROOT).contains(query);}
     private Set<String> ids(String key){return new HashSet<>(prefs.getStringSet(key,new HashSet<>()));}
     private void saveIds(String key,Set<String> values){prefs.edit().putStringSet(key,values).apply();}
@@ -300,10 +304,22 @@ public final class MainActivity extends Activity {
             else{String key="playlist_"+section.substring(3);Set<String> saved=ids(key);saved.remove(Long.toString(song.id));saveIds(key,saved);refreshWall();home.updateDrawer(section,ids("playlists"));}
         }).show();
     }
-    private void addToPlaylist(Song song){
-        List<String> names=new ArrayList<>(new java.util.TreeSet<>(ids("playlists")));
-        if(names.isEmpty()){new AlertDialog.Builder(this).setTitle("还没有歌单").setMessage("先创建歌单，再添加歌曲。").setNegativeButton("取消",null).setPositiveButton("新建歌单",(d,w)->createPlaylist()).show();return;}
-        new AlertDialog.Builder(this).setTitle("加入歌单").setItems(names.toArray(new String[0]),(dialog,index)->{String key="playlist_"+names.get(index);Set<String> saved=ids(key);saved.add(Long.toString(song.id));saveIds(key,saved);refreshWall();home.updateDrawer(section,ids("playlists"));android.widget.Toast.makeText(this,"已加入歌单",android.widget.Toast.LENGTH_SHORT).show();}).show();
+    private void favoriteSongs(List<Song> songs,boolean value){
+        if(songs.isEmpty())return;Set<String> saved=ids("favorites");for(Song song:songs){String id=Long.toString(song.id);if(value)saved.add(id);else saved.remove(id);}saveIds("favorites",saved);refreshWall();
+    }
+    private void clearRecent(){
+        new AlertDialog.Builder(this).setTitle("清空最近播放记录？").setMessage("清空记录后，歌曲和当前播放队列会保留。").setNegativeButton("取消",null).setPositiveButton("清空",(dialog,which)->{SharedPreferences.Editor edit=prefs.edit();for(String id:ids("recent"))edit.remove("recent_time_"+id);edit.remove("recent").apply();refreshWall();}).show();
+    }
+    private void removePlaylistSongs(List<Song> songs){
+        if(songs.isEmpty()||!section.startsWith("歌单:"))return;String name=section.substring(3);List<Song> snapshot=new ArrayList<>(songs);
+        new AlertDialog.Builder(this).setTitle("从歌单移除 "+snapshot.size()+" 首歌曲？").setMessage("只修改“"+name+"”的内容，保留歌曲文件。").setNegativeButton("取消",null).setPositiveButton("移除",(dialog,which)->{if(!ids("playlists").contains(name))return;Set<String> saved=ids("playlist_"+name);for(Song song:snapshot)saved.remove(Long.toString(song.id));saveIds("playlist_"+name,saved);refreshWall();home.updateDrawer(section,ids("playlists"));}).show();
+    }
+    private void addToPlaylist(Song song){addToPlaylist(java.util.Collections.singletonList(song));}
+    private void addToPlaylist(List<Song> songs){
+        if(songs.isEmpty())return;List<Song> snapshot=new ArrayList<>(songs);List<String> names=new ArrayList<>(new java.util.TreeSet<>(ids("playlists")));names.add("＋ 新建歌单");
+        new AlertDialog.Builder(this).setTitle("将 "+snapshot.size()+" 首歌曲加入歌单").setItems(names.toArray(new String[0]),(dialog,index)->{
+            if(index==names.size()-1){createPlaylist(snapshot);return;}String name=names.get(index);if(!ids("playlists").contains(name))return;Set<String> saved=ids("playlist_"+name);for(Song song:snapshot)saved.add(Long.toString(song.id));saveIds("playlist_"+name,saved);refreshWall();home.updateDrawer(section,ids("playlists"));android.widget.Toast.makeText(this,"已加入歌单",android.widget.Toast.LENGTH_SHORT).show();
+        }).show();
     }
     private void playlistMenu(String name){
         new AlertDialog.Builder(this).setTitle(name).setItems(new String[]{"重命名歌单","删除歌单"},(dialog,index)->{
@@ -312,7 +328,12 @@ public final class MainActivity extends Activity {
             }else new AlertDialog.Builder(this).setTitle("删除歌单？").setMessage("将删除“"+name+"”，保留歌曲文件。").setNegativeButton("取消",null).setPositiveButton("删除",(d,w)->{Set<String> names=ids("playlists");names.remove(name);prefs.edit().putStringSet("playlists",names).remove("playlist_"+name).apply();if(section.equals("歌单:"+name))selectSection("歌曲");home.updateDrawer(section,names);}).show();
         }).show();
     }
-    private void createPlaylist(){EditText input=new EditText(this);new AlertDialog.Builder(this).setTitle("新建歌单").setView(input).setNegativeButton("取消",null).setPositiveButton("创建",(d,w)->{String name=input.getText().toString().trim();if(!name.isEmpty()){Set<String> set=ids("playlists");set.add(name);saveIds("playlists",set);renderRows();home.updateDrawer(section,set);}}).show();}
+    private void createPlaylist(){createPlaylist(java.util.Collections.emptyList());}
+    private void createPlaylist(List<Song> initial){
+        List<Song> snapshot=new ArrayList<>(initial);EditText input=new EditText(this);input.setSingleLine(true);input.setHint("歌单名称");input.setPadding(dp(20),dp(12),dp(20),dp(12));
+        AlertDialog editor=new AlertDialog.Builder(this).setTitle("新建歌单").setView(input).setNegativeButton("取消",null).setPositiveButton("创建",null).create();
+        editor.setOnShowListener(v->editor.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button->{String name=input.getText().toString().trim();Set<String> names=ids("playlists");if(name.isEmpty()){input.setError("请输入歌单名称");return;}if(names.contains(name)){input.setError("已有同名歌单");return;}names.add(name);Set<String> tracks=new HashSet<>();for(Song song:snapshot)tracks.add(Long.toString(song.id));prefs.edit().putStringSet("playlists",names).putStringSet("playlist_"+name,tracks).apply();refreshWall();home.updateDrawer(section,names);editor.dismiss();}));editor.show();
+    }
     private void showPlaylist(String name){List<Song> selected=new ArrayList<>();Set<String> saved=ids("playlist_"+name);for(Song song:library)if(saved.contains(Long.toString(song.id)))selected.add(song);showSongDialog(name,selected);}
     private void showSongDialog(String title,List<Song> songs){String[] names=new String[songs.size()];for(int i=0;i<songs.size();i++)names[i]=songs.get(i).title+" · "+songs.get(i).artist;new AlertDialog.Builder(this).setTitle(title).setItems(names,(d,index)->play(songs.get(index))).setPositiveButton("关闭",null).show();}
     private String time(int ms){return String.format(Locale.ROOT,"%d:%02d",ms/60000,(ms/1000)%60);}

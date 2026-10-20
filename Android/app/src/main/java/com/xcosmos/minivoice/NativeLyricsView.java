@@ -14,7 +14,8 @@ final class NativeLyricsView extends FrameLayout {
     private final ListView list;private final TextView empty;private final IntConsumer seek;
     private final Runnable edit;private final BaseAdapter adapter;
     private List<Lyrics.Line> lines=Collections.emptyList();private int active=-1,position,duration;
-    private boolean playing;private long sampledAt,manualUntil;private AppAppearance.Palette colors=new AppAppearance.Palette(false);
+    private boolean playing,manualScrolling,followPending;private long sampledAt,manualUntil;private AppAppearance.Palette colors=new AppAppearance.Palette(false);
+    private final Runnable resumeFollow=()->{if(isShown()&&!manualScrolling&&android.os.SystemClock.uptimeMillis()>=manualUntil){followPending=false;centerActive(true);}};
     private final Runnable tick=new Runnable(){public void run(){if(!isShown()||!hasWindowFocus()||!playing)return;refresh();postDelayed(this,80);}};
     NativeLyricsView(Context context,IntConsumer seek,Runnable edit){
         super(context);this.seek=seek;this.edit=edit;
@@ -23,25 +24,39 @@ final class NativeLyricsView extends FrameLayout {
         adapter=new BaseAdapter(){public int getCount(){return lines.size();}public Object getItem(int i){return lines.get(i);}public long getItemId(int i){return i;}public View getView(int i,View recycled,ViewGroup parent){LyricRow row=recycled instanceof LyricRow?(LyricRow)recycled:new LyricRow(context);row.bind(i);return row;}};
         list.setAdapter(adapter);list.setOnItemClickListener((parent,view,index,id)->{if(lines.get(index).ms>=0){manualUntil=0;seek.accept((int)Math.min(Integer.MAX_VALUE,lines.get(index).ms));}});
         list.setOnItemLongClickListener((parent,view,index,id)->{edit.run();return true;});
-        list.setOnScrollListener(new AbsListView.OnScrollListener(){public void onScrollStateChanged(AbsListView view,int state){if(state==SCROLL_STATE_TOUCH_SCROLL||state==SCROLL_STATE_FLING)manualUntil=android.os.SystemClock.uptimeMillis()+4000;}public void onScroll(AbsListView v,int first,int visible,int total){}});
+        list.setOnScrollListener(new AbsListView.OnScrollListener(){
+            public void onScrollStateChanged(AbsListView view,int state){
+                if(state==SCROLL_STATE_TOUCH_SCROLL){manualScrolling=true;followPending=true;removeCallbacks(resumeFollow);}
+                else if(state==SCROLL_STATE_IDLE&&manualScrolling){manualScrolling=false;manualUntil=android.os.SystemClock.uptimeMillis()+4000;postDelayed(resumeFollow,4000);}
+            }
+            public void onScroll(AbsListView v,int first,int visible,int total){}
+        });
     }
     private int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
     void palette(AppAppearance.Palette value){colors=value;empty.setTextColor(colors.secondary);adapter.notifyDataSetChanged();}
     void status(String value){empty.setText(value+(value.equals("暂无歌词")?"\n点按添加歌词":""));}
-    void lyrics(List<Lyrics.Line> value){if(lines==value)return;lines=value;active=-1;adapter.notifyDataSetChanged();refresh();}
+    void lyrics(List<Lyrics.Line> value){if(lines==value)return;lines=value;active=-1;manualScrolling=false;manualUntil=0;followPending=true;removeCallbacks(resumeFollow);adapter.notifyDataSetChanged();refresh();}
     void playback(int value,int total,boolean play){position=value;duration=total;sampledAt=android.os.SystemClock.uptimeMillis();playing=play;refresh();wake();}
     private int clock(){return position+(playing?(int)Math.min(1000,android.os.SystemClock.uptimeMillis()-sampledAt):0);}
     private void refresh(){
         if(lines.isEmpty())return;int time=clock(),next=0;for(int i=0;i<lines.size();i++){if(lines.get(i).ms>time)break;if(lines.get(i).ms>=0)next=i;}
         boolean changed=active!=next;active=next;
         for(int i=0;i<list.getChildCount();i++){View child=list.getChildAt(i);if(child instanceof LyricRow){LyricRow row=(LyricRow)child;if(changed)row.bind(row.index);else if(row.index==active)row.invalidate();}}
-        if(changed&&android.os.SystemClock.uptimeMillis()>=manualUntil)list.post(()->{if(active>=0){int top=Math.max(dp(20),list.getHeight()/2-dp(28));if(android.animation.ValueAnimator.areAnimatorsEnabled())list.smoothScrollToPositionFromTop(active,top,300);else list.setSelectionFromTop(active,top);}});
+        if(changed)followPending=true;
+        if(followPending&&!manualScrolling&&android.os.SystemClock.uptimeMillis()>=manualUntil){followPending=false;list.post(()->centerActive(true));}
+    }
+    private void centerActive(boolean animated){
+        if(active<0||active>=lines.size()||list.getHeight()==0||manualScrolling)return;
+        View row=list.getChildAt(active-list.getFirstVisiblePosition());int rowHeight=row==null?0:row.getHeight();
+        if(rowHeight<=0){android.text.TextPaint ink=new android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG);ink.setTypeface(Typeface.DEFAULT_BOLD);ink.setTextSize(21*getResources().getDisplayMetrics().scaledDensity);int width=Math.max(1,list.getWidth()-list.getPaddingLeft()-list.getPaddingRight()-dp(24));String value=lines.get(active).text;rowHeight=android.text.StaticLayout.Builder.obtain(value,0,value.length(),ink,width).setIncludePad(false).setLineSpacing(dp(3),1).build().getHeight()+dp(28);}
+        int top=(list.getHeight()-rowHeight)/2-list.getPaddingTop();
+        if(animated&&android.animation.ValueAnimator.areAnimatorsEnabled())list.smoothScrollToPositionFromTop(active,top,300);else list.setSelectionFromTop(active,top);
     }
     private void wake(){removeCallbacks(tick);if(playing&&isShown()&&hasWindowFocus())postDelayed(tick,80);}
-    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused){refresh();wake();}else removeCallbacks(tick);}
-    @Override protected void onVisibilityChanged(View view,int visible){super.onVisibilityChanged(view,visible);if(list!=null){if(isShown()){refresh();wake();}else removeCallbacks(tick);}}
-    @Override protected void onSizeChanged(int w,int h,int oldw,int oldh){super.onSizeChanged(w,h,oldw,oldh);if(h>0&&h!=oldh)list.post(()->{if(active>=0&&android.os.SystemClock.uptimeMillis()>=manualUntil)list.setSelectionFromTop(active,Math.max(dp(20),list.getHeight()/2-dp(28)));});}
-    @Override protected void onDetachedFromWindow(){removeCallbacks(tick);super.onDetachedFromWindow();}
+    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused){refresh();wake();}else{removeCallbacks(tick);removeCallbacks(resumeFollow);}}
+    @Override protected void onVisibilityChanged(View view,int visible){super.onVisibilityChanged(view,visible);if(list!=null){if(isShown()){refresh();wake();}else{removeCallbacks(tick);removeCallbacks(resumeFollow);}}}
+    @Override protected void onSizeChanged(int w,int h,int oldw,int oldh){super.onSizeChanged(w,h,oldw,oldh);if(h>0&&h!=oldh){int edge=Math.max(dp(24),h/2-dp(28));list.setPadding(dp(12),edge,dp(12),edge);list.post(()->{if(android.os.SystemClock.uptimeMillis()>=manualUntil)centerActive(false);});}}
+    @Override protected void onDetachedFromWindow(){removeCallbacks(tick);removeCallbacks(resumeFollow);super.onDetachedFromWindow();}
     private final class LyricRow extends TextView {
         int index;
         LyricRow(Context context){super(context);setTextSize(21);setLineSpacing(dp(3),1);setPadding(dp(12),dp(14),dp(12),dp(14));setIncludeFontPadding(false);}
