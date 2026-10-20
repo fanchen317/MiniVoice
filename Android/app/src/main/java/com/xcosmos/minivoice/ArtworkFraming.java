@@ -21,9 +21,14 @@ final class ArtworkFraming {
         float left=1,top=1,right=0,bottom=0;
         for(Face face:faces){if(face.confidence<.35f)continue;left=Math.min(left,face.left);top=Math.min(top,face.top);right=Math.max(right,face.right);bottom=Math.max(bottom,face.bottom);candidates(xs,face.left,face.right,sw);candidates(ys,face.top,face.bottom,sh);}
         if(right>=left&&bottom>=top){candidates(xs,left,right,sw);candidates(ys,top,bottom,sh);}
+        // Sample intermediate positions too: a group may not fit, but neither edge
+        // should be sacrificed merely to earn the whole-face bonus for one person.
+        int count=0;for(Face face:faces)if(face.confidence>=.35f)count++;
+        if(count>1)for(int i=0;i<=16;i++){xs.add((1-sw)*i/16);ys.add((1-sh)*i/16);}
         float bestX=baseX,bestY=baseY;double best=-Double.MAX_VALUE;
-        for(float cx:xs)for(float cy:ys){double score=-.06*(Math.abs(cx-baseX)+Math.abs(cy-baseY));
-            for(Face face:faces){if(face.confidence<.35f)continue;float area=(face.right-face.left)*(face.bottom-face.top);if(area<=0)continue;float visible=Math.max(0,Math.min(cx+sw,face.right)-Math.max(cx,face.left))*Math.max(0,Math.min(cy+sh,face.bottom)-Math.max(cy,face.top))/area;double weight=face.confidence*(.5+Math.sqrt(area));score+=weight*(visible*visible*3+(visible>.995f?4:0));}
+        for(float cx:xs)for(float cy:ys){float leastVisible=1;double score=-.06*(Math.abs(cx-baseX)+Math.abs(cy-baseY));
+            for(Face face:faces){if(face.confidence<.35f)continue;float area=(face.right-face.left)*(face.bottom-face.top);if(area<=0)continue;float visible=Math.max(0,Math.min(cx+sw,face.right)-Math.max(cx,face.left))*Math.max(0,Math.min(cy+sh,face.bottom)-Math.max(cy,face.top))/area;leastVisible=Math.min(leastVisible,visible);double weight=face.confidence*(.5+Math.sqrt(area));score+=weight*(visible*3+(visible>.995f?1:0));}
+            if(count>1)score+=12*leastVisible;
             if(score>best){best=score;bestX=cx;bestY=cy;}
         }
         return new Plan(bestX*iw,bestY*ih,sw*iw,sh*ih,x,y,width,height);

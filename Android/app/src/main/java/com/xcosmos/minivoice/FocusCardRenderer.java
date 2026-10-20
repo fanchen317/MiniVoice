@@ -128,7 +128,16 @@ final class FocusCardRenderer {
             case "play":p.setStyle(Paint.Style.FILL);path.moveTo(-5,-8);path.lineTo(8,0);path.lineTo(-5,8);path.close();c.drawPath(path,p);break;
             case "pause":p.setStyle(Paint.Style.FILL);c.drawRoundRect(-6,-8,-2,8,1,1,p);c.drawRoundRect(2,-8,6,8,1,1,p);break;
             case "heart":case "heartFill":path.moveTo(0,8);path.cubicTo(-17,-2,-6,-14,0,-6);path.cubicTo(6,-14,17,-2,0,8);if(icon.equals("heartFill"))p.setStyle(Paint.Style.FILL);c.drawPath(path,p);break;
-            case "expand":case "collapse":{float a=icon.equals("expand")?8:2,b=icon.equals("expand")?2:8;path.moveTo(-a,-b);path.lineTo(-a,-a);path.lineTo(-b,-a);path.moveTo(-a,-a);path.lineTo(-1,-1);path.moveTo(a,b);path.lineTo(a,a);path.lineTo(b,a);path.moveTo(a,a);path.lineTo(1,1);c.drawPath(path,p);break;}
+            case "expand":case "collapse":{
+                if(icon.equals("expand")){
+                    path.moveTo(-8,-2);path.lineTo(-8,-8);path.lineTo(-2,-8);path.moveTo(-8,-8);path.lineTo(-2,-2);
+                    path.moveTo(8,2);path.lineTo(8,8);path.lineTo(2,8);path.moveTo(8,8);path.lineTo(2,2);
+                }else{
+                    path.moveTo(-8,-3);path.lineTo(-3,-3);path.lineTo(-3,-8);path.moveTo(-3,-3);path.lineTo(-9,-9);
+                    path.moveTo(8,3);path.lineTo(3,3);path.lineTo(3,8);path.moveTo(3,3);path.lineTo(9,9);
+                }
+                c.drawPath(path,p);break;
+            }
         }
         p.setStyle(Paint.Style.FILL);c.restoreToCount(save);
     }

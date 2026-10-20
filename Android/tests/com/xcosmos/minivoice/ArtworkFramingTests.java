@@ -13,6 +13,10 @@ public final class ArtworkFramingTests {
         ArtworkFraming.Plan landscape=ArtworkFraming.plan(1600,1600,0,0,852,393,new ArtworkFraming.Face[]{top});check(contains(landscape,top,1600,1600),"landscape crop retains forehead and chin");
         ArtworkFraming.Face a=new ArtworkFraming.Face(.2f,.2f,.3f,.45f,.9f),b=new ArtworkFraming.Face(.5f,.2f,.6f,.45f,.9f);
         ArtworkFraming.Plan group=ArtworkFraming.plan(1600,1600,0,0,393,852,new ArtworkFraming.Face[]{a,b});check(contains(group,a,1600,1600)&&contains(group,b,1600,1600),"multiple faces retained when geometry permits");
+        ArtworkFraming.Face wideA=new ArtworkFraming.Face(.15f,.25f,.4f,.55f,.95f),wideB=new ArtworkFraming.Face(.6f,.25f,.85f,.55f,.95f);
+        ArtworkFraming.Plan wide=ArtworkFraming.plan(1600,1600,0,0,800,1600,new ArtworkFraming.Face[]{wideA,wideB});
+        check(wide.sourceX<.4f*1600&&wide.sourceX+wide.sourceWidth>.6f*1600,"wide group shares crop loss instead of removing one person");
+        near(wide.sourceX,400);
         for(float[] image:new float[][]{{1600,1600},{1800,900},{900,1800}})for(float[] screen:new float[][]{{393,852},{852,393},{600,900}}){
             ArtworkFraming.Plan p=ArtworkFraming.plan(image[0],image[1],0,0,screen[0],screen[1],new ArtworkFraming.Face[]{left,top,a,b});
             near(p.width,screen[0]);near(p.height,screen[1]);near(p.sourceWidth/p.sourceHeight,screen[0]/screen[1]);
