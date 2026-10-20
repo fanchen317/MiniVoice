@@ -54,7 +54,8 @@ public final class MainActivity extends Activity {
     private long lastScanProgress;
     private TextView now,elapsed;
     private SeekBar progress;
-    private String section="歌曲",query="";
+    private String section="歌曲",query="",groupName;
+    private final List<Song> currentTracks=new ArrayList<>();
     private boolean drawerOpen=true;
     private Song pendingLyricSong;
     private Song pendingPlay;
@@ -109,7 +110,7 @@ public final class MainActivity extends Activity {
             };
             Set<String> folders=ids("music_folders");
             List<Song> scanned;String error=null;
-            try{if(rebuild){report.update(0,0,"清理旧缓存…");ArtworkCache.clear();LibraryCache.clear(getApplicationContext());clearCacheFiles(getCacheDir());}String source=LibrarySnapshot.source(folders,prefs.getBoolean("scan_recursive",true));scanned=restore&&!rebuild?LibrarySnapshot.read(this,source):null;boolean cached=scanned!=null;if(!cached)scanned=folders.isEmpty()?Library.load(this,report):FolderLibrary.scan(this,folders,prefs.getBoolean("scan_recursive",true),report);LyricsRepository.prepare(getApplicationContext(),scanned,report);ArtworkCache.prepare(getApplicationContext(),scanned,report);if(!cached){try{LibrarySnapshot.write(this,source,scanned);}catch(Exception ignored){android.util.Log.w("MiniVoice","无法保存音乐库索引");}ArtworkCache.prune(this,scanned);}}
+            try{if(rebuild){report.update(0,0,"清理旧缓存…");ArtworkCache.clear();LibraryCache.clear(getApplicationContext());clearCacheFiles(getCacheDir());}String source=LibrarySnapshot.source(folders,prefs.getBoolean("scan_recursive",true));scanned=restore&&!rebuild?LibrarySnapshot.read(this,source):null;boolean cached=scanned!=null;if(!cached)scanned=folders.isEmpty()?Library.load(this,report):FolderLibrary.scan(this,folders,prefs.getBoolean("scan_recursive",true),report);stampLibraryDates(scanned);LyricsRepository.prepare(getApplicationContext(),scanned,report);ArtworkCache.prepare(getApplicationContext(),scanned,report);if(!cached){try{LibrarySnapshot.write(this,source,scanned);}catch(Exception ignored){android.util.Log.w("MiniVoice","无法保存音乐库索引");}ArtworkCache.prune(this,scanned);}}
             catch(Exception failure){scanned=null;error="扫描失败，请检查音乐读取权限后重试";}
             List<Song> found=scanned;String scanError=error;
             runOnUiThread(()->{if(found!=null){library.clear();library.addAll(found);if(service!=null)service.refreshLibrary(library);}if(scanError!=null)android.widget.Toast.makeText(this,scanError,android.widget.Toast.LENGTH_LONG).show();scanning=false;home.setScanning(false);invalidateLyricsLoad();renderRows();refreshWall();refreshPlayer();
@@ -123,6 +124,8 @@ public final class MainActivity extends Activity {
     private void buildUi(){
         shell=new FrameLayout(this);setContentView(shell);
         home=new HomeScreen(this,new HomeScreen.Actions(){
+            public void backGroup(){MainActivity.this.backGroup();}
+            public void sort(String field,boolean ascending){String category=sortCategory();prefs.edit().putString("sort_"+category,LibraryOrdering.field(category,field)).putBoolean("ascending_"+category,ascending).apply();refreshWall();}
             public void section(String name){selectSection(name);}
             public void playlist(String name){selectSection("歌单:"+name);}
             public void newPlaylist(){createPlaylist();}
@@ -170,38 +173,53 @@ public final class MainActivity extends Activity {
         });
         home.updateDrawer(section,ids("playlists"));refreshWall();home.applyAppearance();
     }
-    private void selectSection(String name){section=name;home.updateDrawer(section,ids("playlists"));root.setVisibility(View.GONE);refreshWall();}
+    private String sortCategory(){return LibraryOrdering.category(section,groupName!=null);}
+    private String sortField(){String category=sortCategory();return LibraryOrdering.field(category,prefs.getString("sort_"+category,null));}
+    private boolean sortAscending(){return prefs.getBoolean("ascending_"+sortCategory(),!sortCategory().equals("tracks"));}
+    private boolean groupRoot(){return groupName==null&&(section.equals("歌手")||section.equals("专辑"));}
+    private void stampLibraryDates(List<Song> songs){SharedPreferences.Editor edit=prefs.edit();long now=System.currentTimeMillis();
+        for(Song song:songs){String key="first_seen_"+LibraryCache.key(song.uri.toString());if(song.sourceAdded<=0)song.sourceAdded=prefs.getLong(key,now);edit.putLong(key,song.sourceAdded);
+            if(song.updated<=0)try{long time=Long.parseLong(song.artworkVersion.split(":")[0]);song.updated=time>0&&time<100000000000L?time*1000:time;}catch(Exception ignored){}
+        }edit.apply();
+    }
+    private void selectSection(String name){section=name;groupName=null;home.updateDrawer(section,ids("playlists"));root.setVisibility(View.GONE);refreshWall();}
+    private void openGroup(String name){groupName=name;query="";home.clearSearch();refreshWall();}
+    private boolean backGroup(){if(groupName==null)return false;groupName=null;query="";home.clearSearch();refreshWall();return true;}
     private void locatePlayingIfReady(){
         if(!pendingLocatePlaying||service==null||home==null)return;
         Song song=service.current();if(song==null){pendingLocatePlaying=false;return;}
         if(scanning)return;
         home.showDrawer(false);root.setVisibility(View.GONE);
+        if(section.equals("歌手")||section.equals("专辑")){groupName=section.equals("歌手")?song.artist:song.album;refreshWall();}
         // A locate action reveals the player in the current section; it must not change navigation.
         home.ensureSongVisible(song);
         pendingLocatePlaying=false;home.locateSong(song.id);
     }
     private void refreshWall(){if(home==null)return;
+        home.setPageKey(section+"\n"+(groupName==null?"":groupName));
         home.setCardState(ids("favorites"),service==null?1:service.mode,service==null||service.current()==null?0:(int)service.current().duration);
         List<Song> visible=new ArrayList<>();Set<String> favorites=ids("favorites"),recent=ids("recent");
-        for(Song song:library){if(!matches(song))continue;
+        for(Song song:library){if(!groupRoot()&&!matches(song))continue;
+            if(groupName!=null&&!(section.equals("歌手")?song.artist:song.album).equals(groupName))continue;
             if(section.equals("收藏")&&!favorites.contains(Long.toString(song.id)))continue;
             if(section.equals("最近播放")&&!recent.contains(Long.toString(song.id)))continue;
-            if(section.startsWith("歌单:")&&!ids("playlist_"+section.substring(3)).contains(Long.toString(song.id)))continue;
-            visible.add(song);
+            if(section.startsWith("歌单:")&&!ids("playlist_"+section.substring(3)).contains(Long.toString(song.id)))continue;visible.add(song);
         }
-        if(section.equals("歌手")||section.equals("专辑")){
-            java.util.LinkedHashMap<String,Song> representatives=new java.util.LinkedHashMap<>();java.util.Map<String,Integer> counts=new java.util.HashMap<>();
-            for(Song song:visible){String key=section.equals("歌手")?song.artist:song.album;representatives.putIfAbsent(key,song);counts.put(key,counts.getOrDefault(key,0)+1);}
-            List<Song> groups=new ArrayList<>();for(java.util.Map.Entry<String,Song> entry:representatives.entrySet()){
-                Song sample=entry.getValue();Song group=new Song(sample.id,0,sample.albumId,entry.getKey(),counts.get(entry.getKey())+" 首歌曲",sample.album,sample.path,sample.uri);group.artworkUri=sample.artworkUri;group.artworkVersion=sample.artworkVersion;group.artworkPreview=sample.artworkPreview;group.artworkFile=sample.artworkFile;group.artworkCacheKey=sample.artworkCacheKey;group.artworkPrepared=sample.artworkPrepared;groups.add(group);
+        currentTracks.clear();
+        if(groupRoot()){
+            java.util.Map<String,Song> groups=new java.util.LinkedHashMap<>();
+            for(Song sample:visible){String name=section.equals("歌手")?sample.artist:sample.album;Song group=groups.get(name);
+                if(group==null){group=new Song(sample.id,0,sample.albumId,name,"",sample.album,sample.path,sample.uri);group.artworkUri=sample.artworkUri;group.artworkVersion=sample.artworkVersion;group.artworkPreview=sample.artworkPreview;group.artworkFile=sample.artworkFile;group.artworkCacheKey=sample.artworkCacheKey;group.artworkPrepared=sample.artworkPrepared;groups.put(name,group);}group.groupCount++;
             }
-            home.updateWall(groups,true);
-        }else home.updateWall(visible);
+            List<Song> cards=new ArrayList<>();for(Song group:groups.values())if(group.title.toLowerCase(Locale.ROOT).contains(query))cards.add(group);
+            cards.sort(LibraryOrdering.comparator(sortField(),sortAscending(),true));home.updateWall(cards,true);
+        }else{
+            if(section.equals("最近播放"))visible.sort((a,b)->Long.compare(prefs.getLong("recent_time_"+b.id,0),prefs.getLong("recent_time_"+a.id,0)));
+            else visible.sort(LibraryOrdering.comparator(sortField(),sortAscending(),false));currentTracks.addAll(visible);home.updateWall(visible,false);
+        }
+        home.setBrowseContext(groupName,section);home.setSorting(section.equals("最近播放")?null:sortField(),sortAscending());
     }
-    private void playFromWall(Song song){
-        if(section.equals("歌手")||section.equals("专辑")){List<Song> group=new ArrayList<>();for(Song item:library)if((section.equals("歌手")?item.artist:item.album).equals(song.title))group.add(item);showSongDialog(song.title,group);return;}
-        play(song);
-    }
+    private void playFromWall(Song song){if(groupRoot()){openGroup(song.title);return;}play(song);}
     private void showSettings(){settings.show(library.size(),scanning);}
     private void showPlaybackModeDialog(){int selected=service==null?prefs.getInt("playback_mode",1):service.mode;new AlertDialog.Builder(this).setTitle("播放模式").setSingleChoiceItems(PlaybackModes.NAMES,PlaybackModes.valid(selected),(dialog,which)->{prefs.edit().putInt("playback_mode",which).apply();if(service!=null)service.setMode(which);dialog.dismiss();}).setNegativeButton("关闭",null).show();}
     private void showQueue(){if(service==null)return;
@@ -226,7 +244,7 @@ public final class MainActivity extends Activity {
             new AlertDialog.Builder(this).setTitle(files[index].getName()).setView(preview).setPositiveButton("关闭",null).show();
         }).setPositiveButton("关闭",null).show();
     }
-    @Override public void onBackPressed(){if(home!=null&&home.collapsePlayer())return;if(home!=null&&home.closeSearch())return;if(root!=null&&root.getVisibility()==View.VISIBLE){root.setVisibility(View.GONE);return;}if(home!=null&&home.isDrawerOpen()){home.showDrawer(false);return;}super.onBackPressed();}
+    @Override public void onBackPressed(){if(home!=null&&home.collapsePlayer())return;if(home!=null&&home.closeSearch())return;if(root!=null&&root.getVisibility()==View.VISIBLE){root.setVisibility(View.GONE);return;}if(home!=null&&home.isDrawerOpen()){home.showDrawer(false);return;}if(backGroup())return;super.onBackPressed();}
     private boolean matches(Song song){return song.title.toLowerCase(Locale.ROOT).contains(query)||song.artist.toLowerCase(Locale.ROOT).contains(query)||song.album.toLowerCase(Locale.ROOT).contains(query);}
     private Set<String> ids(String key){return new HashSet<>(prefs.getStringSet(key,new HashSet<>()));}
     private void saveIds(String key,Set<String> values){prefs.edit().putStringSet(key,values).apply();}
@@ -252,13 +270,11 @@ public final class MainActivity extends Activity {
         row.addView(button(ids("favorites").contains(Long.toString(song.id))?"♥":"♡",()->{Set<String> set=ids("favorites");String id=Long.toString(song.id);if(!set.add(id))set.remove(id);saveIds("favorites",set);renderRows();}));
         row.addView(button("⋮",()->songMenu(song)));
     }
-    private void play(Song song){if(service==null){pendingPlay=song;startService(new Intent(this,PlaybackService.class));return;}List<Song> queue=new ArrayList<>();Set<String> favorites=ids("favorites"),recent=ids("recent"),playlist=section.startsWith("歌单:")?ids("playlist_"+section.substring(3)):Set.of();
-        for(Song item:library){if(!matches(item))continue;if(section.equals("收藏")&&!favorites.contains(Long.toString(item.id)))continue;if(section.equals("最近播放")&&!recent.contains(Long.toString(item.id)))continue;
-            if(section.startsWith("歌单:")&&!playlist.contains(Long.toString(item.id)))continue;
-            if(section.equals("歌手")&&!item.artist.equals(song.artist))continue;if(section.equals("专辑")&&!item.album.equals(song.album))continue;queue.add(item);
-        }
-        int selected=queue.indexOf(song);if(selected<0){queue.clear();queue.add(song);selected=0;}recent.add(Long.toString(song.id));saveIds("recent",recent);startService(new Intent(this,PlaybackService.class));service.setQueue(queue,selected);
-        if(service.player==null)new AlertDialog.Builder(this).setTitle("无法播放").setMessage("无法读取这首歌曲，请检查文件是否仍在手机中。 ").setPositiveButton("确定",null).show();
+    private void play(Song song){if(service==null){pendingPlay=song;startService(new Intent(this,PlaybackService.class));return;}
+        List<Song> queue=new ArrayList<>(currentTracks);int selected=-1;for(int i=0;i<queue.size();i++)if(queue.get(i).id==song.id){selected=i;break;}
+        if(selected<0){queue.clear();queue.add(song);selected=0;}Set<String> recent=ids("recent");recent.add(Long.toString(song.id));saveIds("recent",recent);prefs.edit().putLong("recent_time_"+song.id,System.currentTimeMillis()).apply();
+        startService(new Intent(this,PlaybackService.class));service.setQueue(queue,selected);
+        if(service.player==null)new AlertDialog.Builder(this).setTitle("无法播放").setMessage("无法读取这首歌曲，请检查文件是否仍在手机中。").setPositiveButton("确定",null).show();
     }
     private void songMenu(Song song){List<String> names=new ArrayList<>(ids("playlists"));names.add(0,"查看歌词");new AlertDialog.Builder(this).setTitle(song.title).setItems(names.toArray(new String[0]),(dialog,index)->{if(index==0){showLyricsFor(song);return;}String key="playlist_"+names.get(index);Set<String> set=ids(key);set.add(Long.toString(song.id));saveIds(key,set);home.updateDrawer(section,ids("playlists"));android.widget.Toast.makeText(this,"已加入歌单",android.widget.Toast.LENGTH_SHORT).show();}).show();}
     private void createPlaylist(){EditText input=new EditText(this);new AlertDialog.Builder(this).setTitle("新建歌单").setView(input).setNegativeButton("取消",null).setPositiveButton("创建",(d,w)->{String name=input.getText().toString().trim();if(!name.isEmpty()){Set<String> set=ids("playlists");set.add(name);saveIds("playlists",set);renderRows();home.updateDrawer(section,set);}}).show();}
@@ -266,7 +282,7 @@ public final class MainActivity extends Activity {
     private void showSongDialog(String title,List<Song> songs){String[] names=new String[songs.size()];for(int i=0;i<songs.size();i++)names[i]=songs.get(i).title+" · "+songs.get(i).artist;new AlertDialog.Builder(this).setTitle(title).setItems(names,(d,index)->play(songs.get(index))).setPositiveButton("关闭",null).show();}
     private String time(int ms){return String.format(Locale.ROOT,"%d:%02d",ms/60000,(ms/1000)%60);}
     private void refreshPlayer(){if(service==null||now==null)return;Song song=service.current();if(song==null)return;
-        if(song.id!=lastRecentId){lastRecentId=song.id;Set<String> recent=ids("recent");recent.add(Long.toString(song.id));saveIds("recent",recent);}
+        if(song.id!=lastRecentId){lastRecentId=song.id;if(service.isPlaying())prefs.edit().putLong("recent_time_"+song.id,System.currentTimeMillis()).apply();Set<String> recent=ids("recent");recent.add(Long.toString(song.id));saveIds("recent",recent);}
         home.setNowPlaying(song);home.setCardState(ids("favorites"),service.mode,(int)song.duration);
         now.setText((service.isPlaying()?"▶ ":"Ⅱ ")+song.title+" · "+song.artist+"  ♪ 歌词");home.setPlayback(song.id,song.title,service.isPlaying(),service.position(),(int)song.duration);loadPlayingLyrics(song);progress.setMax((int)Math.max(1,song.duration));if(!progress.isPressed())progress.setProgress(service.position());elapsed.setText(time(service.position())+" / "+time((int)song.duration));}
     private void invalidateLyricsLoad(){lyricsLoad.reset();}

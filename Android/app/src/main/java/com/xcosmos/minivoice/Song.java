@@ -6,6 +6,7 @@ final class Song {
     final long id, duration, albumId;
     final String title, artist, album, path;
     final Uri uri, lyricUri;
+    long sourceAdded,updated;int groupCount;
     boolean lyricReadFailed;
     String embeddedLyrics,lyricsRaw="",lyricsError;
     boolean lyricsEmbedded,lyricsPrepared,embeddedLyricsChecked;

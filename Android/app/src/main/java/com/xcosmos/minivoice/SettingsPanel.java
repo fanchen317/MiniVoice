@@ -47,13 +47,13 @@ final class SettingsPanel {
         preference(appearance,"播放器样式",styleName+" · 切换后立即生效",()->choose("播放器样式",new String[]{"简易样式","音乐库样式","音乐墙样式"},new String[]{"simple","library","wall"},"player_style",style));
         divider(appearance);String theme=AppAppearance.theme(prefs);String themeName=theme.equals("light")?"浅色模式":theme.equals("dark")?"深色模式":"跟随系统";
         preference(appearance,"界面外观",themeName,()->choose("界面外观",new String[]{"跟随系统","浅色模式","深色模式"},new String[]{"system","light","dark"},"appearance",theme));
-        section("音乐文件夹");LinearLayout folders=group();Set<String> selected=new TreeSet<>(prefs.getStringSet("music_folders",Set.of()));
+        Set<String> selected=new TreeSet<>(prefs.getStringSet("music_folders",Set.of()));section("音乐文件夹 · "+selected.size());LinearLayout folders=group();
         if(selected.isEmpty())preference(folders,"系统音乐库","尚未选择文件夹，读取手机音频媒体库",null);
         for(String value:selected){String path=folderPath(value);String name=path.substring(path.lastIndexOf('/')+1);preference(folders,name,path,()->new AlertDialog.Builder(activity,colors.dark?android.app.AlertDialog.THEME_DEVICE_DEFAULT_DARK:android.app.AlertDialog.THEME_DEVICE_DEFAULT_LIGHT).setTitle(name).setMessage(path+"\n\n移除后不会删除目录中的音乐文件。").setNegativeButton("取消",null).setPositiveButton("移除文件夹",(dialog,which)->actions.removeFolder(value)).show());divider(folders);}
         preference(folders,"添加音乐文件夹","通过系统文件选择器授权读取",actions::addFolder);
         section("音乐库");LinearLayout library=group();
-        LinearLayout recursive=row(library);LinearLayout recursiveLabels=labels(recursive,"包含子文件夹","扫描所选目录中的下级文件夹");
-        Switch toggle=new Switch(activity);toggle.setChecked(prefs.getBoolean("scan_recursive",true));toggle.setThumbTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{colors.accent,colors.secondary}));recursive.addView(toggle);toggle.setOnCheckedChangeListener((button,value)->{prefs.edit().putBoolean("scan_recursive",value).apply();actions.rescan();});
+        LinearLayout recursive=row(library);labels(recursive,"包含子文件夹","扫描所选目录中的下级文件夹");
+        Switch toggle=new Switch(activity);toggle.setChecked(prefs.getBoolean("scan_recursive",true));toggle.setThumbTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{colors.accent,colors.secondary}));recursive.addView(toggle);toggle.setContentDescription("包含子文件夹");recursive.setOnClickListener(view->toggle.setChecked(!toggle.isChecked()));toggle.setOnCheckedChangeListener((button,value)->{prefs.edit().putBoolean("scan_recursive",value).apply();actions.rescan();});
         divider(library);statusText=preference(library,"重新扫描",scanning?"正在扫描…":songCount+" 首歌曲 · 更新新增或修改的文件",()->{if(!scanning)actions.rescan();});
         scanDetail=text("",12,colors.secondary);scanDetail.setPadding(dp(16),0,dp(16),dp(8));scanDetail.setMaxLines(2);library.addView(scanDetail);
         scanBar=new ProgressBar(activity,null,android.R.attr.progressBarStyleHorizontal);scanBar.setProgressTintList(ColorStateList.valueOf(colors.accent));LinearLayout.LayoutParams progress=new LinearLayout.LayoutParams(-1,dp(4));progress.setMargins(dp(16),0,dp(16),dp(12));library.addView(scanBar,progress);updateProgress();

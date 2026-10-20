@@ -32,6 +32,8 @@ import java.io.FileOutputStream;
 final class HomeScreen {
     interface Actions {
         void section(String name);
+        void backGroup();
+        void sort(String field,boolean ascending);
 
         void playlist(String name);
 
@@ -68,6 +70,7 @@ final class HomeScreen {
     private final FrameLayout frame, drawerLayer;
     private final ScrollView drawerScroll;
     private final FrameLayout drawerPanel;
+    private GlassBackdrop wallGlass;
     private final LinearLayout player;
     private final ImageView wallSettings;
     private ImageView menuButton;
@@ -86,6 +89,10 @@ final class HomeScreen {
     private final EditText searchInput;
     private boolean drawerOpen = false;
     private boolean groupedWall;
+    private String sortingField="added";private boolean sortingAscending=false;private String browseSection="歌曲",browseGroup,pageKey;
+    private TextView browseHeading;
+    private final java.util.Map<String,WallView.CameraState> pageCameras=new java.util.HashMap<>();
+    private WallView.CameraState pendingCamera;
     private List<Song> visibleSongs=new ArrayList<>();
     private long displayedSongId = Long.MIN_VALUE;
     private final int green = Color.rgb(21, 188, 135);
@@ -98,12 +105,15 @@ final class HomeScreen {
         frame.setBackgroundColor(Color.rgb(7, 12, 13));
         wall = new WallView(activity, actions::play, actions::toggle, actions::seek);
         frame.addView(wall, new FrameLayout.LayoutParams(-1, -1));
-        stylePage=new PlayerStylePage(activity,actions::play,actions::seek,actions::lyrics);frame.addView(stylePage,new FrameLayout.LayoutParams(-1,-1));
+        stylePage=new PlayerStylePage(activity,actions::play,actions::seek,actions::lyrics,()->{activity.getSharedPreferences("library",Activity.MODE_PRIVATE).edit().putString("player_style","library").apply();actions.section("歌曲");applyAppearance();});frame.addView(stylePage,new FrameLayout.LayoutParams(-1,-1));
+        browseHeading=text("",14,Color.WHITE);browseHeading.setSingleLine(true);browseHeading.setEllipsize(android.text.TextUtils.TruncateAt.END);browseHeading.setGravity(Gravity.CENTER_VERTICAL);browseHeading.setPadding(dp(14),0,dp(14),0);browseHeading.setBackground(round(0xDF232B27,20,0x44FFFFFF,1));browseHeading.setOnClickListener(view->actions.backGroup());browseHeading.setVisibility(View.GONE);
+        FrameLayout.LayoutParams headingParams=new FrameLayout.LayoutParams(-2,dp(40),Gravity.TOP|Gravity.LEFT);headingParams.setMargins(dp(16),dp(90),dp(16),0);frame.addView(browseHeading,headingParams);
         ImageView menu = roundImage(R.drawable.icon_wall_sidebar, () -> showDrawer(true));
         FrameLayout.LayoutParams menuParams = new FrameLayout.LayoutParams(dp(WallToolStyle.SIDE), dp(WallToolStyle.SIDE), Gravity.TOP | Gravity.LEFT);
         menuParams.setMargins(dp(14), dp(14), 0, 0);
         frame.addView(menu, menuParams);menuButton=menu;
         searchControl=new WallSearchControl(activity);
+        searchControl.setBackground(glass().surface(searchControl,28,false));
         FrameLayout.LayoutParams searchParams=new FrameLayout.LayoutParams(dp(WallToolStyle.SIDE),dp(WallToolStyle.SIDE),Gravity.TOP|Gravity.RIGHT);
         searchParams.setMargins(0,dp(14),dp(14),0);frame.addView(searchControl,searchParams);
         searchInput=searchControl.input;
@@ -121,7 +131,7 @@ final class HomeScreen {
         player = new LinearLayout(activity);
         player.setGravity(Gravity.CENTER_VERTICAL);
         player.setPadding(dp(10), 0, dp(10), 0);
-        player.setBackground(round(0xE5222725, 32, 0x66FFFFFF, 1));
+        player.setBackground(glass().surface(player,42,false));
         FrameLayout.LayoutParams playerParams = new FrameLayout.LayoutParams(-1, dp(84), Gravity.BOTTOM);
         playerParams.setMargins(dp(16), 0, dp(16), dp(14));
         frame.addView(player, playerParams);dockParams=playerParams;
@@ -150,6 +160,7 @@ final class HomeScreen {
         middleTop.addView(next, new LinearLayout.LayoutParams(dp(44), dp(44)));
         seek = new SeekBar(activity);
         styleSeekBar(seek);
+        ((LayerDrawable)seek.getProgressDrawable()).findDrawableByLayerId(android.R.id.progress).setTint(0xEFFFFFFF);seek.getThumb().setTint(Color.WHITE);
         seek.setMax(1);
         middle.addView(seek, new LinearLayout.LayoutParams(-1, dp(30)));
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -180,13 +191,13 @@ final class HomeScreen {
         drawerScroll.setVerticalScrollBarEnabled(false);
         FrameLayout.LayoutParams drawerParams = new FrameLayout.LayoutParams(Math.min(dp(340), Math.round(activity.getResources().getDisplayMetrics().widthPixels * .80f)), -1, Gravity.LEFT);
         drawerPanel = new FrameLayout(activity);
-        drawerPanel.setBackgroundColor(0xFF101014);
+        drawerPanel.setBackground(glass().surface(drawerPanel,24,true));
         drawerLayer.addView(drawerPanel, drawerParams);
         drawerPanel.addView(drawerScroll, new FrameLayout.LayoutParams(-1,-1));
         LinearLayout drawer = new LinearLayout(activity);
         drawer.setOrientation(LinearLayout.VERTICAL);
         drawer.setPadding(dp(12), dp(14), dp(12), dp(14));
-        drawer.setBackgroundColor(0xFF101014);
+        drawer.setBackgroundColor(Color.TRANSPARENT);
         drawerScroll.addView(drawer);
         LinearLayout brand = new LinearLayout(activity);
         brand.setGravity(Gravity.CENTER_VERTICAL);
@@ -310,6 +321,7 @@ final class HomeScreen {
         android.content.SharedPreferences prefs=activity.getSharedPreferences("library",Activity.MODE_PRIVATE);playerStyle=AppAppearance.style(prefs);
         wall.collapse();wall.setVisibility(isWallStyle()?View.VISIBLE:View.GONE);
         stylePage.configure(playerStyle,AppAppearance.palette(activity,prefs));stylePage.setSongs(visibleSongs);
+        browseHeading.setVisibility(isWallStyle()&&browseGroup!=null&&!chromeHidden?View.VISIBLE:View.GONE);
         if(!isWallStyle())wallSettings.setVisibility(View.GONE);else if(!chromeHidden&&!keyboardVisible)wallSettings.setVisibility(View.VISIBLE);
     }
     void setCardState(Set<String> favorites,int mode,int duration){wall.setCardState(favorites,mode,duration);}
@@ -329,7 +341,7 @@ final class HomeScreen {
         applyChromeVisibility(landscape||immersive,true);frame.requestApplyInsets();frame.post(this::updateViewport);
     }
     private void applyChromeVisibility(boolean hidden,boolean animate){
-        if(chromeHidden==hidden)return;chromeHidden=hidden;
+        browseHeading.setVisibility(!hidden&&browseGroup!=null&&isWallStyle()?View.VISIBLE:View.GONE);if(chromeHidden==hidden)return;chromeHidden=hidden;
         View[] controls=isWallStyle()?new View[]{menuButton,searchControl,wallSettings}:new View[]{menuButton,searchControl};
         for(int i=0;i<controls.length;i++){View control=controls[i];control.animate().cancel();control.setVisibility(View.VISIBLE);control.setEnabled(!hidden);
             if(control==searchControl)for(int child=0;child<searchControl.getChildCount();child++)searchControl.getChildAt(child).setEnabled(!hidden);
@@ -355,15 +367,17 @@ final class HomeScreen {
         if(landscape||!immersive){player.animate().cancel();player.setAlpha(1);player.setTranslationY(0);}
         if(!chromeHidden)wallSettings.setVisibility(keyboardVisible||!isWallStyle()?View.GONE:View.VISIBLE);
         stylePage.setInsets(safeLeft,safeTop,safeRight,safeBottom);
+        FrameLayout.LayoutParams heading=(FrameLayout.LayoutParams)browseHeading.getLayoutParams();heading.topMargin=safeTop+dp(20);heading.leftMargin=safeLeft+dp(76);browseHeading.setLayoutParams(heading);browseHeading.setMaxWidth(Math.max(dp(120),frame.getWidth()-safeLeft-safeRight-dp(158)));browseHeading.setVisibility(browseGroup!=null&&isWallStyle()&&!chromeHidden&&!searchControl.isOpen()?View.VISIBLE:View.GONE);
     }
 
-    void setLyricsStatus(long id,String message){wall.setLyricsStatus(id,message);}
+    void setLyricsStatus(long id,String message){wall.setLyricsStatus(id,message);if(displayedSongId==id)stylePage.setLyricsStatus(message);}
 
     void setLyrics(long id, List<Lyrics.Line> lines) {
         wall.setLyrics(id, lines);if(displayedSongId==id)stylePage.setLyrics(lines);
     }
 
     void updateDrawer(String selected, Set<String> playlists) {
+        stylePage.setSection(selected);
         drawerRows.removeAllViews();
         nav("♫", "音乐库", selected.equals("歌曲"), () -> actions.section("歌曲"));
         nav("◷", "最近播放", selected.equals("最近播放"), () -> actions.section("最近播放"));
@@ -415,13 +429,16 @@ final class HomeScreen {
         });
     }
 
+    void setPageKey(String key){if(key.equals(pageKey))return;if(pageKey!=null)pageCameras.put(pageKey,wall.cameraState());pageKey=key;pendingCamera=pageCameras.get(key);wall.resetCamera();}
+    void setBrowseContext(String group,String section){browseGroup=group;browseSection=section;browseHeading.setText("‹  "+section+" / "+(group==null?"":group));browseHeading.setVisibility(group!=null&&isWallStyle()&&!chromeHidden&&!searchControl.isOpen()?View.VISIBLE:View.GONE);if(group!=null)stylePage.setSection(group);else stylePage.setSection(section);}
+    void setSorting(String field,boolean ascending){sortingField=field;sortingAscending=ascending;}
     void updateWall(List<Song> songs) {
         updateWall(songs, false);
     }
 
     void updateWall(List<Song> songs, boolean grouped) {
         groupedWall = grouped;visibleSongs=new ArrayList<>(songs);
-        wall.setSongs(songs);stylePage.setSongs(songs);
+        wall.setGrouped(grouped);wall.setSongs(songs);stylePage.setSongs(songs);if(pendingCamera!=null){wall.restoreCamera(pendingCamera);pendingCamera=null;}
     }
 
     void ensureSongVisible(Song song){
@@ -446,7 +463,7 @@ final class HomeScreen {
     }
     private void showWallOptions() {
         final android.app.Dialog[] sheet = {null};
-        sheet[0] = BottomSheet.show(activity, "音乐墙", body -> {
+        sheet[0] = BottomSheet.show(activity, (browseGroup==null?browseSection:browseGroup)+" · 页面设置", body -> {
             TextView ratio = text("显示比例  ·  " + Math.round(wall.scale() * 100) + "%", 15, 0xFFE6F3ED);
             ratio.setPadding(dp(14), dp(12), 0, dp(4));
             body.addView(ratio);
@@ -463,11 +480,24 @@ final class HomeScreen {
                 public void onStopTrackingTouch(SeekBar bar) {}
             });
             BottomSheet.action(activity, body, "恢复 100%", () -> {wall.zoomTo(1f);refreshZoomControls();});
+            addSorting(body);
             addPlaybackModes(body);
             BottomSheet.action(activity, body, "回到起始位置", () -> {wall.resetCamera();sheet[0].dismiss();});
             BottomSheet.action(activity, body, "应用设置", () -> {sheet[0].dismiss();actions.settings();});
         });
         sheet[0].setOnDismissListener(dialog->{zoomLabel=null;zoomSlider=null;});refreshZoomControls();
+    }
+
+    private void addSorting(LinearLayout body){
+        if(sortingField==null)return;
+        TextView heading=text("列表排序",15,0xFFB9C8C0);heading.setPadding(dp(14),dp(18),dp(14),dp(8));body.addView(heading);
+        String[] fields=groupedWall?LibraryOrdering.GROUP_FIELDS:LibraryOrdering.TRACK_FIELDS;
+        String[] names=groupedWall?new String[]{browseSection.equals("歌手")?"歌手姓名":"专辑名称","歌曲数量"}:LibraryOrdering.TRACK_NAMES;
+        List<TextView> rows=new ArrayList<>();List<TextView> directions=new ArrayList<>();
+        Runnable refresh=()->{for(int i=0;i<rows.size();i++){boolean selected=fields[i].equals(sortingField);rows.get(i).setText((selected?"✓  ":"    ")+names[i]);rows.get(i).setTextColor(selected?0xFF35D8A6:Color.WHITE);}for(int i=0;i<directions.size();i++){boolean selected=sortingAscending==(i==0);directions.get(i).setText((selected?"✓  ":"    ")+(i==0?"正序":"降序"));directions.get(i).setTextColor(selected?0xFF35D8A6:Color.WHITE);}};
+        for(int i=0;i<fields.length;i++){String field=fields[i];rows.add(BottomSheet.action(activity,body,names[i],()->{actions.sort(field,sortingAscending);refresh.run();}));}
+        View divider=new View(activity);divider.setBackgroundColor(0x22FFFFFF);body.addView(divider,new LinearLayout.LayoutParams(-1,dp(1)));
+        for(int i=0;i<2;i++){boolean ascending=i==0;directions.add(BottomSheet.action(activity,body,i==0?"正序":"降序",()->{actions.sort(sortingField,ascending);refresh.run();}));}refresh.run();
     }
 
     private void addPlaybackModes(LinearLayout body){
@@ -543,11 +573,13 @@ final class HomeScreen {
         return view;
     }
 
+    private GlassBackdrop glass(){if(wallGlass==null)wallGlass=new GlassBackdrop(wall,true);return wallGlass;}
+
     private ImageView roundImage(int resource, Runnable action) {
         ImageView view = imageButton(resource, Color.WHITE, action);
         view.setImageDrawable(new WallToolStyle.Glyph(resource==R.drawable.icon_wall_sidebar?WallToolStyle.Glyph.SIDEBAR:WallToolStyle.Glyph.SETTINGS));
         int inset=dp((WallToolStyle.SIDE-WallToolStyle.ICON)/2f);view.setPadding(inset,inset,inset,inset);
-        view.setBackground(WallToolStyle.background(activity));
+        view.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x44FFFFFF),glass().surface(view,28,false),WallToolStyle.glass(activity)));
         return view;
     }
 

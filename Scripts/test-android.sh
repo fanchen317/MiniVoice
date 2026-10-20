@@ -36,3 +36,9 @@ java -cp "$output" com.xcosmos.minivoice.PlayerExpansionTests
 
 javac -d "$output" "$source_root/PanelDismiss.java" "$repo_root/Android/tests/com/xcosmos/minivoice/PanelDismissTests.java"
 java -cp "$output" com.xcosmos.minivoice.PanelDismissTests
+
+javac -cp "$android_jar" -d "$output" "$source_root/AppAppearance.java" "$repo_root/Android/tests/com/xcosmos/minivoice/AppearanceTests.java"
+java -cp "$output:$android_jar" com.xcosmos.minivoice.AppearanceTests
+
+javac -cp "$android_jar" -d "$output" "$source_root/Song.java" "$source_root/LibraryOrdering.java" "$repo_root/Android/tests/com/xcosmos/minivoice/LibraryOrderingTests.java"
+java -cp "$output:$android_jar" com.xcosmos.minivoice.LibraryOrderingTests

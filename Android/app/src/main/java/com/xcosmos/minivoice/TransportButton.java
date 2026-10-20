@@ -36,8 +36,6 @@ final class TransportButton extends View {
         }
         float direction=glyph==Glyph.PREVIOUS?-1:1;
         paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(2.8f*density);
-        float barX=cx+direction*10*density;canvas.drawLine(barX,cy-10*density,barX,cy+10*density,paint);
-        paint.setStyle(Paint.Style.FILL);Path triangle=new Path();
-        triangle.moveTo(cx+direction*7*density,cy);triangle.lineTo(cx-direction*7*density,cy-9*density);triangle.lineTo(cx-direction*7*density,cy+9*density);triangle.close();canvas.drawPath(triangle,paint);
+        Path chevron=new Path();chevron.moveTo(cx-direction*4*density,cy-9*density);chevron.lineTo(cx+direction*5*density,cy);chevron.lineTo(cx-direction*4*density,cy+9*density);canvas.drawPath(chevron,paint);
     }
 }

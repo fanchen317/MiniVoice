@@ -73,7 +73,7 @@ final class FolderLibrary {
                     song.artworkUri=artworks.get(strip(name).toLowerCase(Locale.ROOT));
                     if(song.artworkUri==null)for(String cover:new String[]{"cover","folder","front","album"}){song.artworkUri=artworks.get(cover);if(song.artworkUri!=null)break;}
                     song.lyricReadFailed=rootLyrics.readFailed;
-                    song.artworkVersion=entry.version;
+                    song.artworkVersion=entry.version;try{song.updated=Long.parseLong(entry.version.split(":")[0]);}catch(Exception ignored){}
                     if(song.artworkUri!=null)for(Entry image:entries)if(song.artworkUri.equals(DocumentsContract.buildDocumentUriUsingTree(tree,image.id))){song.artworkVersion+="/"+image.version;break;}
                     song.embeddedLyrics=tags.lyrics;song.embeddedLyricsChecked=tags.lyricsChecked;songs.add(song);
                     progress.update(songs.size(),jobs.size(),name);

@@ -100,7 +100,7 @@ final class FocusCardRenderer {
                     float chars=LyricSweep.characters(source,next,duration,position);int whole=Math.min(source.text.length(),(int)chars);float amount=chars-whole;
                     layout.getPaint().setColor(Color.WHITE);
                     for(int row=0;row<layout.getLineCount();row++){int start=layout.getLineStart(row),end=layout.getLineEnd(row);if(chars<=start)break;
-                        int offset=Math.min(end,whole);float x=layout.getPrimaryHorizontal(offset);if(amount>0&&offset<end)x+=(layout.getPrimaryHorizontal(offset+1)-x)*amount;
+                        int caret=Math.min(end,whole);float x=layout.getPrimaryHorizontal(caret);if(amount>0&&caret<end)x+=(layout.getPrimaryHorizontal(caret+1)-x)*amount;
                         int inkSave=c.save();c.clipRect(layout.getLineLeft(row),layout.getLineTop(row),chars>=end?layout.getLineRight(row):x,layout.getLineBottom(row));layout.draw(c);c.restoreToCount(inkSave);
                     }
                 }c.restoreToCount(saveLine);

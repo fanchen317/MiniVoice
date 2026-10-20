@@ -12,7 +12,7 @@ final class Library {
         List<Song> songs = new ArrayList<>();
         String[] columns = {MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.ALBUM_ID, MediaStore.Audio.Media.DURATION,
-            MediaStore.Audio.Media.RELATIVE_PATH,MediaStore.Audio.Media.DISPLAY_NAME,MediaStore.Audio.Media.DATE_MODIFIED,MediaStore.Audio.Media.SIZE};
+            MediaStore.Audio.Media.RELATIVE_PATH,MediaStore.Audio.Media.DISPLAY_NAME,MediaStore.Audio.Media.DATE_MODIFIED,MediaStore.Audio.Media.SIZE,MediaStore.Audio.Media.DATE_ADDED};
         try (Cursor cursor = context.getContentResolver().query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 columns, MediaStore.Audio.Media.IS_MUSIC + " != 0", null, MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC")) {
             if (cursor == null) throw new IllegalStateException("无法读取系统音乐库");
@@ -34,7 +34,7 @@ final class Library {
                 Song song=new Song(id,duration,albumId,title,artist,
                     album,clean(cursor.getString(6)),
                     ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,id));
-                song.artworkVersion=cursor.getLong(8)+":"+cursor.getLong(9);song.embeddedLyrics=tags.lyrics;song.embeddedLyricsChecked=tags.lyricsChecked;songs.add(song);
+                song.updated=cursor.getLong(8)*1000; song.sourceAdded=cursor.getLong(10)*1000;song.artworkVersion=cursor.getLong(8)+":"+cursor.getLong(9);song.embeddedLyrics=tags.lyrics;song.embeddedLyricsChecked=tags.lyricsChecked;songs.add(song);
             }
         }
         songs.sort((a,b)->a.title.compareToIgnoreCase(b.title));
