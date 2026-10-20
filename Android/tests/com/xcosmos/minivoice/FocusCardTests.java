@@ -16,8 +16,10 @@ public final class FocusCardTests {
                 check(left+m.button<=width*density-m.padding+.1f,"button outside trailing padding");
                 if(i<4)check(left+m.button<=m.buttonLeft(i+1,width*density)+.1f,"button hit targets overlap");
             }
-            if(m.inlineTime)check(m.buttonLeft(4,width*density)+m.button+120*density<=width*density-m.padding,"time overlaps buttons");
-            else check(m.timeY>m.controlsTop+m.button,"narrow card time must wrap");
+            check(!m.inlineTime,"clock consistently stays beside seek bar at every width");
+            check(m.timeY>m.controlsTop+m.button+8*density,"clock clears button targets");
+            check(m.trackY-m.timeY<=12*density,"clock stays close to seek bar");
+            check(m.buttonLeft(1,width*density)-m.buttonLeft(0,width*density)-m.button<=8.01f*density,"wide screens must not stretch button gaps");
         }
         check(FocusCardPresentation.compact(.69f,false),"below 70% must hide full card controls");
         check(!FocusCardPresentation.compact(.7f,false),"70% retains full controls");

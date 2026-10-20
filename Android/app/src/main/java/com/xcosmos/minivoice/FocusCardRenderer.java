@@ -65,7 +65,8 @@ final class FocusCardRenderer {
                 button(canvas,hit,icons[i],i==3&&favorite,commands[i]);}
             int display=scrub>=0?scrub:position;
             String clock=time(display)+" / "+time(duration);text.setTypeface(Typeface.MONOSPACE);text.setTextSize(10*d);text.setColor(0xBFFFFFFF);
-            canvas.drawText(clock,right-text.measureText(clock),rect.top+m.timeY,text);
+            float clockY=rect.top+m.timeY;
+            canvas.drawText(clock,right-text.measureText(clock),clockY,text);
             float y=rect.top+m.trackY;p.setColor(0x66FFFFFF);p.setStrokeWidth(2*d);canvas.drawLine(left,y,right,y,p);
             float fraction=duration<=0?0:Math.max(0,Math.min(1,display/(float)duration));float x=left+(right-left)*fraction;
             p.setColor(Color.WHITE);canvas.drawLine(left,y,x,y,p);p.setStyle(Paint.Style.FILL);canvas.drawCircle(x,y,(scrubbing?5.5f:3.5f)*d,p);
