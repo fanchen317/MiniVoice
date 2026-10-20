@@ -27,8 +27,8 @@
 ## 验证
 
 ```sh
-swift test --disable-sandbox --filter 'MusicWall|DisplaySynchronizedMotionTests|PreparedBrowseArtworkTests'
-swift test --disable-sandbox
+swift test --package-path MacOS --scratch-path .build --disable-sandbox --filter 'MusicWall|DisplaySynchronizedMotionTests|PreparedBrowseArtworkTests'
+swift test --package-path MacOS --scratch-path .build --disable-sandbox
 Scripts/build-app.sh release
 ```
 

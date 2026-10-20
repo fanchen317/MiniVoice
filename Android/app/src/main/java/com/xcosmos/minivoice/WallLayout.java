@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** The weighted wall partition used by Desktop/src/wallGeometry.js, in Android pixels. */
+/** The weighted wall partition used by MacOS/Desktop/src/wallGeometry.js, in Android pixels. */
 final class WallLayout {
     static final class Tile {
         final int index; final float x,y,width,height;

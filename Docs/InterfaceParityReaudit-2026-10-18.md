@@ -6,7 +6,7 @@
 
 ## 复核范围与证据边界
 
-- 对照 `Sources/MiniVoice/ContentView.swift`、音乐墙、歌词、滑块、歌单选择器及原生辅助窗口，与 `Desktop/src/`、Electron 主进程和 `DesktopEngine`。
+- 对照 `MacOS/Sources/MiniVoice/ContentView.swift`、音乐墙、歌词、滑块、歌单选择器及原生辅助窗口，与 `MacOS/Desktop/src/`、Electron 主进程和 `DesktopEngine`。
 - 对新版进行 Chromium 实际 DOM / 点击验证，使用 100 首模拟曲库，窗口 1280×820。没有操作用户音乐、收藏或真实歌单。
 - 本轮未取得原版与新版同曲目、同时间、同尺寸的双端同步录屏，因此不提供“还原百分比”，也不将渲染实现不同直接当作可见差异。
 - 本次仅审计；没有修改产品实现。上一轮音乐墙设置弹窗层级修复不再列为当前未修复项。
