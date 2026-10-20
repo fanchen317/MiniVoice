@@ -111,11 +111,14 @@ final class WallView extends View {
     private final OnLayoutChangeListener locateAfterLayout=(view,left,top,right,bottom,oldLeft,oldTop,oldRight,oldBottom)->{
         if(right>left&&bottom>top&&pendingLocate!=Long.MIN_VALUE){long id=pendingLocate;pendingLocate=Long.MIN_VALUE;locateSong(id,pendingLocateAnimated);}
     };
+    private java.util.function.Consumer<Song> songMenu;
+    void setSongMenu(java.util.function.Consumer<Song> action){songMenu=action;}
     private final float density;
     WallView(Context context,OnPlay onPlay,Runnable onToggle,IntConsumer onSeek){
         super(context);this.onPlay=onPlay;this.onToggle=onToggle;this.onSeek=onSeek;density=getResources().getDisplayMetrics().density;card=new FocusCardRenderer(density,this::postInvalidateOnAnimation);
         scene=new WallLayout(0,density);addOnLayoutChangeListener(locateAfterLayout);
         gestures=new GestureDetector(context,new GestureDetector.SimpleOnGestureListener(){
+            @Override public void onLongPress(MotionEvent event){Hit tapped=hit(event.getX(),event.getY());if(!grouped&&tapped!=null&&songMenu!=null){tapCandidate=null;performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);songMenu.accept(songs.get(tapped.instance.tile.index));}}
             @Override public boolean onDown(MotionEvent event){manualGesture=false;return true;}
             @Override public boolean onScroll(MotionEvent start,MotionEvent end,float dx,float dy){if(expanded||expansionAmount>0||scaleDetector.isInProgress())return false;if(!manualGesture){interruptCamera();manualGesture=true;}cameraX-=dx;cameraY-=dy;invalidate();return true;}
             @Override public boolean onFling(MotionEvent start,MotionEvent end,float vx,float vy){if(expanded||expansionAmount>0)return false;animateCamera(cameraX+vx*.20f,cameraY+vy*.20f,420);return true;}

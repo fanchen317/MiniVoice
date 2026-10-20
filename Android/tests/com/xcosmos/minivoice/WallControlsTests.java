@@ -4,6 +4,14 @@ public final class WallControlsTests {
     private static void check(boolean condition,String message){if(!condition)throw new AssertionError(message);}
     public static void main(String[] args){
         for(int value=60;value<=120;value++)check(WallZoom.percent(WallZoom.scale(value))==value,"slider percentage round trip");
+        for(int step=0;step<=6;step++){
+            check(WallZoom.percent(WallZoom.stepScale(step))==60+10*step,"seven exact zoom stops");
+            check(WallZoom.stepProgress(WallZoom.stepScale(step))==step,"stop round trip");
+        }
+        check(WallZoom.stepProgress(.94f)==3&&WallZoom.stepProgress(.96f)==4,"pinch value maps to nearest slider stop");
+        check(WallZoom.stepScale(-1)==.6f&&WallZoom.stepScale(9)==1.2f,"stop inputs clamp safely");
+        check(WallZoom.snapProgress(22)==22&&WallZoom.sliderScale(22)==.82f,"82% remains available");
+        check(WallZoom.snapProgress(19)==20&&WallZoom.snapProgress(21)==20,"release near stop gently snaps");
         check(WallZoom.sliderProgress(1)==40,"100% slider offset");check(WallZoom.sliderScale(40)==1,"slider offset must not become minimum");
         for(int value=0;value<=60;value++)check(WallZoom.sliderProgress(WallZoom.sliderScale(value))==value,"zero-based slider round trip");
         check(WallZoom.clamp(Float.NaN)==1&&WallZoom.clamp(Float.POSITIVE_INFINITY)==1&&WallZoom.clamp(0)==1,"invalid scale samples cannot corrupt zoom state");

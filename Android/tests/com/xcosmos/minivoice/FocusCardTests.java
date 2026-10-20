@@ -37,6 +37,17 @@ public final class FocusCardTests {
             check(m.title>=18*density&&m.artist>=9.75f*density,"small cards keep readable metadata");
             if(percent>=70)check(m.lyricsBottom-m.lyricsTop>=m.lyricText,"normal zoom retains at least one lyric line");
         }
+        float previousIcon=0;
+        for(int percent=60;percent<=120;percent+=5){
+            float side=352*percent/100f;FocusCardMetrics m=new FocusCardMetrics(side,side,1);
+            check(m.iconScale>previousIcon,"glyphs continuously grow with card zoom independently of touch size");previousIcon=m.iconScale;
+        }
+        for(float density:new float[]{1,2,3}){
+            float step=FocusCardPresentation.expandedLyricStep(500*density,28*density,density);
+            check(step>=80*density&&step<=88*density,"full-screen lyrics occupy broad central region");
+            float narrow=FocusCardPresentation.expandedLyricStep(180*density,44*density,density);
+            check(narrow>=52*density,"wrapped lyrics never overlap in short landscape viewport");
+        }
         check(PlaybackModes.valid(-1)==1&&PlaybackModes.valid(5)==1,"invalid modes fall back to list play");
         for(int i=0;i<PlaybackModes.NAMES.length;i++)check(PlaybackModes.valid(i)==i&&!PlaybackModes.DETAILS[i].isEmpty(),"all five modes are selectable and explained");
         System.out.println("PASS: focused card header, wrapped lyrics, five touch targets, timestamps and seek geometry at phone/tablet widths and densities");

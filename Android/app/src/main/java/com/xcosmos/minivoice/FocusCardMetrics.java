@@ -16,7 +16,7 @@ final class FocusCardMetrics {
         inlineTime=false;
         button=Math.min(44*density,Math.max(28*density,(content-16*density)/5));
         buttonStep=button+Math.max(0,Math.min(8*density,(content-5*button)/4));
-        iconScale=Math.max(.75f,Math.min(1.15f,button/(44*density)));
+        iconScale=Math.max(.45f,Math.min(1.2f,FocusCardPresentation.contentScale(width,density)));
 
         headerBottom=padding+badge+12*density*contentScale+title+8*density+artist;
         trackY=height-padding-12*density;

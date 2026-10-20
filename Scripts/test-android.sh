@@ -63,3 +63,6 @@ java -cp "$output" com.xcosmos.minivoice.ArtworkFramingTests
 
 javac -d "$output" "$source_root/CoverWorkingSet.java" "$repo_root/Android/tests/com/xcosmos/minivoice/CoverWorkingSetTests.java"
 java -cp "$output" com.xcosmos.minivoice.CoverWorkingSetTests
+
+javac -d "$output" "$source_root/PlayerWorkspaceMetrics.java" "$repo_root/Android/tests/com/xcosmos/minivoice/PlayerWorkspaceTests.java"
+java -cp "$output" com.xcosmos.minivoice.PlayerWorkspaceTests

@@ -15,6 +15,6 @@ export function WallSearch({query,onQuery,hidden,reduceMotion}){
   return <div className={`wall-search-field ${expanded?'expanded':''}`} data-phase={phase} inert={hidden} aria-hidden={hidden} onPointerEnter={enter} onPointerLeave={leave}>
     <button aria-label="搜索音乐" aria-expanded={expanded} className="wall-search-button" onClick={()=>{focusOnOpen.current=true;if(expanded){focusOnOpen.current=false;input.current?.focus({preventScroll:true});}else motion.current.open();}}><span className="wall-search-symbol"><Icon name="wall-search"/></span></button>
     <input ref={input} aria-label="搜索音乐" placeholder="搜索音乐" value={query} onChange={event=>onQuery(event.target.value)} tabIndex={expanded?0:-1} inert={!expanded}/>
-    {query&&expanded&&<button className="wall-clear-search" aria-label="清除搜索" onClick={()=>onQuery('')}><Icon name="clearCircle"/></button>}
+    <button className="wall-clear-search" data-empty={!query} aria-label="清除搜索" aria-hidden={!query||!expanded} disabled={!query||!expanded} tabIndex={query&&expanded?0:-1} onClick={()=>onQuery('')}><Icon name="clearCircle"/></button>
   </div>;
 }

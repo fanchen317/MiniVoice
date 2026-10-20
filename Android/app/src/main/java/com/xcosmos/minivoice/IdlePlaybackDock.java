@@ -16,8 +16,8 @@ final class IdlePlaybackDock extends FrameLayout {
     private ValueAnimator motion;
     private float amount=1;
     private int expandedWidth;
-    private boolean eligible,touching,compact,idlePaused;
-    private final Runnable idle=()->{if(eligible&&!idlePaused&&!touching&&hasWindowFocus())setCompact(true,true);};
+    private boolean eligible,touching,compact;
+    private final Runnable idle=()->{if(eligible&&!touching&&hasWindowFocus())setCompact(true,true);};
     IdlePlaybackDock(Context context,View content,Consumer<Float> progress){
         super(context);this.content=content;this.progress=progress;density=getResources().getDisplayMetrics().density;
         setClipChildren(true);setClipToPadding(true);addView(content,new LayoutParams(-1,dp(84),Gravity.LEFT|Gravity.CENTER_VERTICAL));
@@ -26,9 +26,8 @@ final class IdlePlaybackDock extends FrameLayout {
     private int dp(float value){return Math.round(value*density);}
     void configure(int width,boolean allowed){expandedWidth=Math.max(dp(56),width);eligible=allowed;if(!allowed){removeCallbacks(idle);setCompact(false,false);}else{apply(amount);schedule();}}
     void setPlaying(boolean playing){if(meter.playing==playing)return;meter.playing=playing;meter.invalidate();}
-    void setIdlePaused(boolean paused){idlePaused=paused;removeCallbacks(idle);if(!paused)schedule();}
-    void interaction(boolean down){touching=down;removeCallbacks(idle);if(!down)schedule();}
-    private void schedule(){removeCallbacks(idle);if(eligible&&!idlePaused&&!compact&&!touching&&isShown()&&hasWindowFocus())postDelayed(idle,3000);}
+    private void interaction(boolean down){touching=down;removeCallbacks(idle);if(!down)schedule();}
+    private void schedule(){removeCallbacks(idle);if(eligible&&!compact&&!touching&&isShown()&&hasWindowFocus())postDelayed(idle,3000);}
     private void setCompact(boolean value,boolean animated){
         compact=value;removeCallbacks(idle);if(motion!=null){motion.removeAllListeners();motion.cancel();motion=null;}setScaleX(1);setScaleY(1);
         float target=value?0:1;if(!animated||Math.abs(target-amount)<.001f){apply(target);if(!value)schedule();return;}
@@ -44,6 +43,13 @@ final class IdlePlaybackDock extends FrameLayout {
         LayoutParams inner=(LayoutParams)content.getLayoutParams();if(inner.width!=expandedWidth){inner.width=expandedWidth;content.setLayoutParams(inner);}
         content.setAlpha(Math.max(0,(amount-.35f)/.65f));content.setVisibility(amount>.35f?VISIBLE:INVISIBLE);content.setImportantForAccessibility(amount>.99f?IMPORTANT_FOR_ACCESSIBILITY_AUTO:IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         meter.setAlpha(Math.max(0,1-amount*2));meter.setVisibility(amount<.5f?VISIBLE:INVISIBLE);meter.setEnabled(compact&&amount<.01f);progress.accept(amount);
+    }
+    @Override public boolean dispatchTouchEvent(MotionEvent event){
+        int action=event.getActionMasked();
+        if(action==MotionEvent.ACTION_DOWN)interaction(true);
+        boolean handled=super.dispatchTouchEvent(event);
+        if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL||action==MotionEvent.ACTION_DOWN&&!handled)interaction(false);
+        return handled;
     }
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused){schedule();meter.invalidate();}else removeCallbacks(idle);}
     @Override protected void onAttachedToWindow(){super.onAttachedToWindow();apply(compact?0:1);schedule();}
