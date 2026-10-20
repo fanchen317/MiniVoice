@@ -97,6 +97,7 @@ final class HomeScreen {
     private final WallSearchControl searchControl;
     private TextView detailBack;
     private boolean immersive,restoreSearch,landscape,chromeHidden,awaitingRotationLayout,keyboardVisible;
+    private int keyboardBottom;
     private int safeLeft,safeTop,safeRight,safeBottom,portraitDockWidth;
     private FrameLayout.LayoutParams dockParams,toolsParams;
     private boolean libraryScanning;
@@ -318,7 +319,8 @@ final class HomeScreen {
             menuParams.topMargin=top+dp(6);menuParams.leftMargin=left+dp(14);menu.setLayoutParams(menuParams);
             searchParams.topMargin=top+dp(6);searchParams.rightMargin=right+dp(14);searchControl.setLayoutParams(searchParams);
             drawerParams.width=Math.min(dp(320),Math.round((activity.getResources().getDisplayMetrics().widthPixels-left-right)*.82f));drawerParams.height=-1;drawerParams.bottomMargin=bottom+dp(8);drawerParams.leftMargin=left+dp(12);drawerParams.topMargin=top+dp(6);drawerParams.gravity=Gravity.TOP|Gravity.LEFT;drawerPanel.setLayoutParams(drawerParams);drawer.setPadding(dp(16),dp(14),dp(16),dp(14));
-            boolean keyboard=android.os.Build.VERSION.SDK_INT>=30&&insets.isVisible(WindowInsets.Type.ime());keyboardVisible=keyboard;
+            keyboardBottom=android.os.Build.VERSION.SDK_INT>=30?insets.getInsets(WindowInsets.Type.ime()).bottom:0;
+            boolean keyboard=android.os.Build.VERSION.SDK_INT>=30&&insets.isVisible(WindowInsets.Type.ime())&&keyboardBottom>bottom;keyboardVisible=keyboard;
             updateViewport();updatePlaybackBarVisibility();
             return insets;
         });
@@ -450,6 +452,8 @@ final class HomeScreen {
         boolean standardWide=frame.getWidth()-safeLeft-safeRight>=dp(620);standardBar.configure(AppAppearance.palette(activity,activity.getSharedPreferences("library",0)),standardWide,false);
         FrameLayout.LayoutParams standardParams=(FrameLayout.LayoutParams)standardBar.getLayoutParams();standardParams.width=frame.getWidth()-safeLeft-safeRight-dp(28);standardParams.height=dp(standardWide?88:104);standardParams.leftMargin=safeLeft+dp(14);standardParams.rightMargin=safeRight+dp(14);standardParams.bottomMargin=safeBottom+dp(8);standardBar.setLayoutParams(standardParams);
         updateDrawerBounds();
+        int resizedBy=Math.max(0,activity.getWindow().getDecorView().getHeight()-frame.getHeight());
+        stylePage.setInputInsets(keyboardVisible,Math.max(0,keyboardBottom-resizedBy));
         stylePage.setInsets(safeLeft,safeTop,safeRight,safeBottom);updateDetailBack();
         FrameLayout.LayoutParams heading=(FrameLayout.LayoutParams)browseHeading.getLayoutParams();heading.topMargin=safeTop+dp(20);heading.leftMargin=safeLeft+dp(76);browseHeading.setLayoutParams(heading);browseHeading.setMaxWidth(Math.max(dp(120),frame.getWidth()-safeLeft-safeRight-dp(158)));browseHeading.setVisibility(browseGroup!=null&&isWallStyle()&&!chromeHidden&&!searchControl.isOpen()?View.VISIBLE:View.GONE);
     }

@@ -101,7 +101,9 @@ final class PlayerStylePage extends FrameLayout {
         if(style.equals("wall")){artGeneration++;pending.clear();if(images!=null)images.getQueue().clear();if(detailImages!=null)detailImages.getQueue().clear();}
         if(!style.equals("wall")&&(changed||themeChanged||getChildCount()==0)){render();if(changed)enter(this,14);}
     }
-    void setInsets(int left,int top,int right,int bottom){insetLeft=left;insetTop=top;insetRight=right;insetBottom=bottom;boolean footerWide=(getWidth()>0?getWidth():getResources().getDisplayMetrics().widthPixels)-left-right>=dp(620);setPadding(left,top+dp(landscapePlayback()?CONTENT_GAP:6+WallToolStyle.SIDE+CONTENT_GAP),right,bottom+dp(landscapePlayback()?CONTENT_GAP:8+(footerWide?88:104)+CONTENT_GAP));}
+    private boolean inputOccludes;private int inputBottom;
+    void setInputInsets(boolean occludes,int bottom){inputOccludes=occludes;inputBottom=bottom;}
+    void setInsets(int left,int top,int right,int bottom){insetLeft=left;insetTop=top;insetRight=right;insetBottom=bottom;boolean footerWide=(getWidth()>0?getWidth():getResources().getDisplayMetrics().widthPixels)-left-right>=dp(620);setPadding(left,top+dp(landscapePlayback()?CONTENT_GAP:6+WallToolStyle.SIDE+CONTENT_GAP),right,inputOccludes?Math.max(bottom,inputBottom)+dp(CONTENT_GAP):bottom+dp(landscapePlayback()?CONTENT_GAP:8+(footerWide?88:104)+CONTENT_GAP));}
     void setSongs(List<Song> value){boolean nextGrouped=!value.isEmpty()&&value.get(0).groupCount>0;boolean layoutChanged=nextGrouped!=grouped;boolean same=value.size()==songs.size();if(same)for(int i=0;i<value.size();i++)if(value.get(i)!=songs.get(i)){same=false;break;}if(same&&!layoutChanged){updateHeading();return;}grouped=nextGrouped;if(grouped){selecting=false;selection.clear();}songs=new ArrayList<>(value);selection.retain(visibleIDs());if(layoutChanged&&!style.equals("wall"))render();else adapter.notifyDataSetChanged();updateHeading();updateSelection();}
     void setSection(String value){section=value.equals("歌曲")?"音乐库":value.startsWith("歌单:")?value.substring(3):value;updateHeading();}
     void preparePage(String key){if(pageKey.equals(key))return;saveScroll();selecting=false;selection.clear();if(!key.equals(groupParentKey)&&!key.equals(groupChildKey))clearGroupTransition();pageKey=key;int split=key.indexOf('\n');group=split<0||split==key.length()-1?null:key.substring(split+1);navigationPending=true;}
@@ -124,7 +126,7 @@ final class PlayerStylePage extends FrameLayout {
     void toggleExpanded(){if(current!=null)setExpanded(!expanded);}
     private void updateHeading(){
         if(listHeading!=null)listHeading.setText(sidebarCatalog?(section.equals("最近播放")?"最近播放":"音乐库"):section);
-        if(summary!=null){long total=0;for(Song song:songs)total+=song.duration;summary.setText(sidebarCatalog||style.equals("library")?(libraryScanning?"正在扫描…":String.format(java.util.Locale.getDefault(),"%,d 首",songs.size())):songs.size()+(grouped?" 项": " 首 · "+(total/3600000>0?total/3600000+" 小时 ":"")+(total/60000%60)+" 分钟"));}
+        if(summary!=null)summary.setText(libraryScanning?"正在扫描…":String.format(java.util.Locale.getDefault(),"%,d %s",songs.size(),grouped?"项":"首"));
     }
     private List<Long> visibleIDs(){List<Long> ids=new ArrayList<>();for(Song song:songs)if(song.groupCount==0)ids.add(song.id);return ids;}
     private List<Song> selectedSongs(){List<Song> result=new ArrayList<>();for(Song song:songs)if(selection.contains(song.id))result.add(song);return result;}
@@ -213,10 +215,8 @@ final class PlayerStylePage extends FrameLayout {
         }else{
         LinearLayout toolbar=new LinearLayout(getContext());toolbar.setGravity(Gravity.CENTER_VERTICAL);toolbar.setPadding(dp(12),dp(4),dp(8),dp(8));libraryRoot.addView(toolbar);
         if(group!=null||style.equals("simple")){PageBackButton arrow=new PageBackButton(getContext(),colors.accent,group!=null?this::closeGroupTransition:this::showPlayer);toolbar.addView(arrow,new LinearLayout.LayoutParams(dp(44),dp(44)));}
-        listHeading=text("",22,colors.text);listHeading.setSingleLine(true);listHeading.setEllipsize(android.text.TextUtils.TruncateAt.END);listHeading.setTypeface(null,Typeface.BOLD);toolbar.addView(listHeading,new LinearLayout.LayoutParams(0,-2,1));toolbar.addView(tool(section.equals("最近播放")?"清空":"排序",()->{if(section.equals("最近播放")){if(batch!=null)batch.clearRecent();}else options.run();}));
-        if(!grouped){selectionToggle=tool(selecting?"完成":"多选",()->setSelecting(!selecting));toolbar.addView(selectionToggle);}
-        LinearLayout info=new LinearLayout(getContext());info.setGravity(Gravity.CENTER_VERTICAL);info.setPadding(dp(20),0,dp(12),0);libraryRoot.addView(info,new LinearLayout.LayoutParams(-1,dp(40)));summary=text("",12,colors.secondary);info.addView(summary,new LinearLayout.LayoutParams(0,-1,1));
-        if(!grouped&&!sidebarCatalog)info.addView(tool("播放全部",()->{if(!songs.isEmpty())play.accept(songs.get(0));}));
+        listHeading=text("",22,colors.text);listHeading.setSingleLine(true);listHeading.setEllipsize(android.text.TextUtils.TruncateAt.END);listHeading.setTypeface(null,Typeface.BOLD);toolbar.addView(listHeading,new LinearLayout.LayoutParams(-2,-2));
+        summary=text("",12,colors.secondary);summary.setPadding(dp(10),0,0,0);summary.setSingleLine(true);toolbar.addView(summary,new LinearLayout.LayoutParams(0,-2,1));
         }
         selectionBar=new HorizontalScrollView(getContext());selectionBar.setHorizontalScrollBarEnabled(false);selectionBar.setFillViewport(true);selectionBar.setBackground(selectionBackground());libraryRoot.addView(selectionBar,new LinearLayout.LayoutParams(-1,selecting?dp(48):0));selectionBar.setVisibility(selecting?VISIBLE:GONE);
         LinearLayout batchRow=new LinearLayout(getContext());batchRow.setGravity(Gravity.CENTER_VERTICAL);batchRow.setPadding(dp(12),0,dp(12),0);selectionBar.addView(batchRow,new HorizontalScrollView.LayoutParams(-2,dp(48)));
@@ -224,7 +224,7 @@ final class PlayerStylePage extends FrameLayout {
         batchRow.addView(selectionAll);batchRow.addView(selectionFavorite);batchRow.addView(selectionPlaylist);if(pageKey.startsWith("歌单:"))batchRow.addView(selectionRemove);updateSelection();
         nowPlaying=tool("",()->{if(style.equals("simple"))showPlayer();else toggleExpanded();});nowPlaying.setSingleLine(true);nowPlaying.setEllipsize(android.text.TextUtils.TruncateAt.END);nowPlaying.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);nowPlaying.setPadding(dp(20),0,dp(20),0);nowPlaying.setBackground(shape(colors.surface,12));libraryRoot.addView(nowPlaying,new LinearLayout.LayoutParams(-1,dp(48)));
         // The persistent playback bar already provides this entry in landscape.
-        if(sidebarCatalog||style.equals("library")||getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE)nowPlaying.setVisibility(GONE);
+        if(sidebarCatalog||style.equals("simple")||style.equals("library")||getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE)nowPlaying.setVisibility(GONE);
         if(!grouped&&columns.artist>0){columnHeader=new LinearLayout(getContext());columnHeader.setGravity(Gravity.CENTER_VERTICAL);columnHeader.setPadding(dp(20),0,dp(20),0);libraryRoot.addView(columnHeader,new LinearLayout.LayoutParams(-1,dp(32)));refreshColumnHeader();}
         FrameLayout results=new FrameLayout(getContext());libraryRoot.addView(results,new LinearLayout.LayoutParams(-1,0,1));
         if(grouped){GridView grid=new GridView(ListScrollStyle.context(getContext()));grid.setNumColumns(wide?3:2);grid.setHorizontalSpacing(dp(8));grid.setVerticalSpacing(dp(8));grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);list=grid;}else{ListView tracks=new ListView(ListScrollStyle.context(getContext()));tracks.setDivider(null);list=tracks;}
