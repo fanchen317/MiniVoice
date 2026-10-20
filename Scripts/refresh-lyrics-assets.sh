@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODEL_SOURCE="${1:-}"
 RUNTIME_PYTHON="${LYRICS_PYTHON:-$HOME/Library/Application Support/MiniVoice/LyricsAI/venv/bin/python3}"
-OUTPUT="$ROOT/Vendor/LyricsAI/arm64"
+OUTPUT="$ROOT/MacOS/Vendor/LyricsAI/arm64"
 DIST="$ROOT/.build/offline-ai/optimized-dist"
 WORK="$ROOT/.build/offline-ai/optimized-work"
 MODEL_SHA="9ecf779972d90ba49c06d968637d720dd632c55bbf19d441fb42bf17a411e794"

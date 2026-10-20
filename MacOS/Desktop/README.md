@@ -17,13 +17,13 @@ Scripts/build-app.sh release
 开发流程：
 
 ```sh
-node Desktop/electron/prepare-dependencies.mjs
-node Desktop/electron/prepare-runtime.mjs
-npm --prefix Desktop run build
-MINIVOICE_ENGINE=/absolute/path/to/MiniVoice npm --prefix Desktop start
+node MacOS/Desktop/electron/prepare-dependencies.mjs
+node MacOS/Desktop/electron/prepare-runtime.mjs
+npm --prefix MacOS/Desktop run build
+MINIVOICE_ENGINE=/absolute/path/to/MiniVoice npm --prefix MacOS/Desktop start
 ```
 
-Electron 分发包保存在 `Vendor/Electron/arm64`，npm 离线依赖缓存保存在 `Vendor/NodeDependencies`，均使用 Git LFS。首次检出后执行 `git lfs pull`；部署只使用本地资源，不再自动下载。Electron 按 npm 官方包的 SHA-256 校验；npm 缓存同时校验归档和 `package-lock.json` 的哈希，安装使用 `npm ci --offline` 并校验锁文件中的包完整性。Node 20/22/24 LTS 和 Xcode 命令行工具仍需预先安装。Swift 首次解析 Yams 或 DMG 首次安装 Python 工具仍可能联网，此处固定的是 Electron 和前端部署依赖。
+Electron 分发包保存在 `MacOS/Vendor/Electron/arm64`，npm 离线依赖缓存保存在 `MacOS/Vendor/NodeDependencies`，均使用 Git LFS。首次检出后执行 `git lfs pull`；部署只使用本地资源，不再自动下载。Electron 按 npm 官方包的 SHA-256 校验；npm 缓存同时校验归档和 `package-lock.json` 的哈希，安装使用 `npm ci --offline` 并校验锁文件中的包完整性。Node 20/22/24 LTS 和 Xcode 命令行工具仍需预先安装。Swift 首次解析 Yams 或 DMG 首次安装 Python 工具仍可能联网，此处固定的是 Electron 和前端部署依赖。
 
 ## 本轮迁移范围
 
@@ -46,17 +46,17 @@ macOS 上关闭主窗口遵循设置中的关闭行为，Command + Q 退出并�
 
 ## 进程边界
 
-- Renderer：`Desktop/src/`，没有 Node/文件系统权限。
+- Renderer：`MacOS/Desktop/src/`，没有 Node/文件系统权限。
 - Preload：仅暴露命令调用和后台事件订阅。
 - Electron main：命令白名单、主 frame 校验、文件夹选择、窗口、受限本地封面协议。
-- Swift：`Sources/MiniVoice/DesktopEngine.swift`，有界 JSON 行输入与请求 ID，后台串行输出；不创建 SwiftUI 主窗口。
+- Swift：`MacOS/Sources/MiniVoice/DesktopEngine.swift`，有界 JSON 行输入与请求 ID，后台串行输出；不创建 SwiftUI 主窗口。
 - 禁止外部页面导航和新窗口。封面请求只接受缓存根目录中的 64 位十六进制 key。
 
 ## 验证
 
 ```sh
-MINIVOICE_ENGINE="$(pwd)/.build/MiniVoice.app/Contents/Resources/Native/MiniVoice.app/Contents/MacOS/MiniVoice" npm --prefix Desktop test
-swift test --disable-sandbox
+MINIVOICE_ENGINE="$(pwd)/.build/MiniVoice.app/Contents/Resources/Native/MiniVoice.app/Contents/MacOS/MiniVoice" npm --prefix MacOS/Desktop test
+swift test --package-path MacOS --scratch-path .build --disable-sandbox
 ```
 
 桌面测试使用独立偏好设置域和临时静音 WAV / LRC，覆盖启动、请求/事件分离、错误命令、歌单创建、真实音频解码、时间推进、seek、暂停、定时歌词、空间查询和 60/120Hz 运动一致性。它们不会播放用户曲库或修改用户音乐。

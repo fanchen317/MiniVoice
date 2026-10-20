@@ -43,7 +43,7 @@ function logEngine(message) {
   try { fs.mkdirSync(app.getPath('logs'), { recursive: true }); fs.appendFileSync(path.join(app.getPath('logs'), 'audio-engine.log'), `${new Date().toISOString()} ${message}\n`); } catch {}
 }
 function startEngine() {
-  const executable = process.env.MINIVOICE_ENGINE || (app.isPackaged ? packagedEngine() : path.resolve(__dirname, '../../.build/native/MiniVoice.app/Contents/MacOS/MiniVoice'));
+  const executable = process.env.MINIVOICE_ENGINE || (app.isPackaged ? packagedEngine() : path.resolve(__dirname, '../../../.build/native/MiniVoice.app/Contents/MacOS/MiniVoice'));
   engine = spawn(executable, ['--desktop-engine'], { stdio: ['pipe','pipe','pipe'], env: { ...process.env } });
   const child = engine;
   child.stderr.on('data', bytes => { process.stderr.write(bytes); logEngine(bytes.toString().trim()); });

@@ -23,13 +23,13 @@ fi
 # Build the existing Swift audio backend and its bundled FFmpeg/lyrics runtime.
 "$ROOT/Scripts/build-native-engine.sh" "$CONFIGURATION"
 cd "$ROOT"
-node Desktop/electron/prepare-dependencies.mjs
-node Desktop/electron/prepare-runtime.mjs
-swift Desktop/electron/export-symbols.swift Desktop/public/symbols
-npm --prefix Desktop run build
+node MacOS/Desktop/electron/prepare-dependencies.mjs
+node MacOS/Desktop/electron/prepare-runtime.mjs
+swift MacOS/Desktop/electron/export-symbols.swift MacOS/Desktop/public/symbols
+npm --prefix MacOS/Desktop run build
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ROOT/.build/native/MiniVoice.app/Contents/Info.plist")"
 BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$ROOT/.build/native/MiniVoice.app/Contents/Info.plist")"
-ELECTRON_CACHE="$ROOT/.build/electron-cache" npm --prefix Desktop run package -- --app-version="$VERSION" --build-version="$BUILD"
+ELECTRON_CACHE="$ROOT/.build/electron-cache" npm --prefix MacOS/Desktop run package -- --app-version="$VERSION" --build-version="$BUILD"
 APP="$ROOT/.build/staging/MiniVoice-darwin-arm64/MiniVoice.app"
 mkdir -p "$APP/Contents/Resources/Native"
 ditto "$ROOT/.build/native/MiniVoice.app" "$APP/Contents/Resources/Native/MiniVoice.app"

@@ -9,7 +9,7 @@
     "build": "vite build",
     "start": "electron .",
     "test": "node --test test/*.test.mjs",
-    "package": "electron-packager . 'MiniVoice' --platform=darwin --arch=arm64 --out=../.build/staging --asar --overwrite --app-bundle-id=com.xcosmos.MiniVoice.electron --icon=../AppBundle/MiniVoice.icns --electron-zip-dir=../.build --ignore='^/src|^/test|^/node_modules|^/vite.config'"
+    "package": "electron-packager . 'MiniVoice' --platform=darwin --arch=arm64 --out=../../.build/staging --asar --overwrite --app-bundle-id=com.xcosmos.MiniVoice.electron --icon=../AppBundle/MiniVoice.icns --electron-zip-dir=../../.build --ignore='^/src|^/test|^/node_modules|^/vite.config'"
   },
   "dependencies": {
     "react": "19.3.1",

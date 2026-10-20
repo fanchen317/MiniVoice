@@ -9,8 +9,8 @@ __pycache__/
 *.py[cod]
 
 # Electron renderer and dependencies
-Desktop/node_modules/
-Desktop/dist/
+MacOS/Desktop/node_modules/
+MacOS/Desktop/dist/
 Android/.gradle/
 Android/.idea/
 Android/local.properties

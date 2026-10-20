@@ -6,14 +6,14 @@ import { fileURLToPath } from 'node:url';
 
 // Build only from the pinned distribution stored in Git LFS.
 const desktop=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const root=path.dirname(desktop), module=path.join(desktop,'node_modules/electron');
+const root=path.resolve(desktop,'../..'), module=path.join(desktop,'node_modules/electron');
 const version=JSON.parse(fs.readFileSync(path.join(module,'package.json'))).version;
 const filename=`electron-v${version}-darwin-arm64.zip`, zip=path.join(root,'.build',filename);
 const checksums=JSON.parse(fs.readFileSync(path.join(module,'checksums.json')));
 function valid(){return fs.existsSync(zip)&&crypto.createHash('sha256').update(fs.readFileSync(zip)).digest('hex')===checksums[filename];}
 if(!valid()){
   fs.mkdirSync(path.dirname(zip),{recursive:true});
-  const vendored=path.join(root,'Vendor/Electron/arm64',filename);
+  const vendored=path.join(root,'MacOS/Vendor/Electron/arm64',filename);
   if(!fs.existsSync(vendored)||crypto.createHash('sha256').update(fs.readFileSync(vendored)).digest('hex')!==checksums[filename]){
     throw new Error(`本地 Electron 资源缺失或校验失败：${vendored}。请先运行 git lfs pull；部署不会联网下载。`);
   }

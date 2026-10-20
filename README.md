@@ -1,5 +1,13 @@
 # MiniVoice
 
+## 目录结构
+
+- `MacOS/`：macOS 应用的 Electron 界面、Swift 后台、测试、资源和 Swift Package。
+- `Android/`：Android 应用及 Gradle 配置。
+- `iOS/`：预留 iOS 应用目录，目前尚无实现。
+- `Scripts/`：从仓库根目录调用的构建和维护脚本。
+
+
 macOS 本地音乐播放器，当前发行架构为 Electron / React 主窗口 + Swift 原生播放与音乐库后台；设置、歌曲编辑和桌面歌词继续使用原生窗口。macOS 13 及以上，目前打包支持 Apple silicon（arm64）。
 
 ## 已实现
@@ -50,13 +58,13 @@ Scripts/build-dmg.sh --skip-build
 
 唯一主应用继续使用已安装版本的标识 `com.xcosmos.MiniVoice.electron`，保留现有签名身份与 `~/Library/Application Support/minivoice-desktop/` 前端偏好路径。内置服务保留 `com.xcosmos.MiniVoice` 偏好域，沿用音乐库、收藏、歌单及原生设置；这两个内部标识不代表两套可运行的主窗口。更早的 `local.fanchen.MiniVoice` / `com.local.minivoice` 配置由后台迁移，已有新配置优先。原生资源目录 `~/Library/Application Support/MiniVoice/` 及缓存目录保持不变。
 
-arm64 完整应用内置固定版本的 ffmpeg / ffprobe、歌词 AI 运行环境和默认 Whisper small 模型，使用 small 模型无需额外安装 Python 或 FFmpeg。资源位于内嵌原生应用的 `Contents/Resources/`；来源、校验值和许可见 `Vendor/FFmpeg/README.md` 与 `Vendor/LyricsAI/README.md`。medium 模型仍按需下载。`swift run` 仅提示使用统一应用构建入口，不再启动另一套主窗口。
+arm64 完整应用内置固定版本的 ffmpeg / ffprobe、歌词 AI 运行环境和默认 Whisper small 模型，使用 small 模型无需额外安装 Python 或 FFmpeg。资源位于内嵌原生应用的 `Contents/Resources/`；来源、校验值和许可见 `MacOS/Vendor/FFmpeg/README.md` 与 `MacOS/Vendor/LyricsAI/README.md`。medium 模型仍按需下载。`swift run --package-path MacOS` 仅提示使用统一应用构建入口，不再启动另一套主窗口。
 
 歌词编辑页并行查询网易云、QQ 音乐、酷狗音乐、LRCLIB 和 LrcAPI 等来源，确认候选并保存后才写入本地文件。当前安装包使用 ad-hoc 签名，尚未进行 Developer ID 签名与公证。
 
 本地构建的 Electron 外层使用固定应用标识的 designated requirement，避免默认 ad-hoc 签名按每次构建的 cdhash 识别应用而反复请求文件夹权限。首次访问“下载”等受保护目录仍需允许；从旧签名切换后也可能再确认一次。撤销权限、系统重置权限或改变签名身份后仍可能重新提示，不能通过应用内的“已授权”标记跳过。此方式仅用于本地构建，不验证发布者身份；对外分发应固定使用开发者证书，可设置 `MINIVOICE_CODESIGN_IDENTITY` 指定签名身份。权限是否跨更新保留需在系统弹窗上实际验收。
 
-前端验证使用 `npm --prefix Desktop test`，原生后台验证使用 `swift test`。正式入口、还原实施和验收边界见 [单一应用与还原实施记录](Docs/UnifiedApp-2026-10-18.md)。
+前端验证使用 `npm --prefix MacOS/Desktop test`，原生后台验证使用 `swift test --package-path MacOS --scratch-path .build`。正式入口、还原实施和验收边界见 [单一应用与还原实施记录](Docs/UnifiedApp-2026-10-18.md)。
 
 ## 当前边界
 
@@ -81,17 +89,17 @@ arm64 完整应用内置固定版本的 ffmpeg / ffprobe、歌词 AI 运行环�
 
 ## 验证
 
-`swift test` 包含缓存启动不扫描、损坏缓存重建、SRT/LRC 识别、原始封面保留、文件夹递归/去重/移除安全、播放模式边界、随机历史、实际播放结束自动切歌及停止，以及 MP3/FLAC/M4A 文件往返测试：中文标签、多歌手、歌词、封面添加和删除、备份、AVAudioPlayer 可读取，以及保存前后音频码流 SHA-256 一致。
+`swift test --package-path MacOS --scratch-path .build` 包含缓存启动不扫描、损坏缓存重建、SRT/LRC 识别、原始封面保留、文件夹递归/去重/移除安全、播放模式边界、随机历史、实际播放结束自动切歌及停止，以及 MP3/FLAC/M4A 文件往返测试：中文标签、多歌手、歌词、封面添加和删除、备份、AVAudioPlayer 可读取，以及保存前后音频码流 SHA-256 一致。
 
 ## AI 歌词自动跟随
 
 在“编辑歌曲信息”粘贴纯文本、LRC 或 SRT 后保存。完整时间标签直接使用；缺少时间标签时，后台进程读取当前歌曲音频，使用 [stable-ts](https://github.com/jianfch/stable-ts) + Whisper small 在本机生成逐行时间轴。arm64 安装包已内置约 338 MiB 的离线运行环境与约 461 MiB 的原版 small 模型，首次使用无需额外下载；之后也可离线使用，无需 API Key，歌曲和歌词不上传。medium 模型约 1.5 GiB，可在设置中按需下载。结果按编辑器选择保存到文件标签、`lrc/` 或两者，并更新歌单缓存。拖动进度和桌面歌词复用同一时间轴。
 
-- 内置 small 模型和运行环境位于 `.app/Contents/Resources/`。按需下载的 medium 模型及旧版 AI 资源仍位于 `~/Library/Application Support/MiniVoice/LyricsAI/`；直接运行 `swift run` 时仍使用本机 Python 环境。
+- 内置 small 模型和运行环境位于 `.app/Contents/Resources/`。按需下载的 medium 模型及旧版 AI 资源仍位于 `~/Library/Application Support/MiniVoice/LyricsAI/`；直接运行 `swift run --package-path MacOS` 时仍使用本机 Python 环境。
 - 歌名、常见作词/作曲等信息和段落标记保存在 LRC 的 `[note:...]` 元数据中，不参与演唱对齐。歌词正文保留输入顺序和重复段落；已有手动时间点保留，时间冲突时会提示。
 - 处理时编辑窗口保持打开，取消后保留输入。只有对齐成功后才写文件；失败可选“仅保存原歌词”。仅保存的纯文本不会自动滚动，可再次打开编辑器保存重试。
 - 应输入完整、与当前音频版本一致的歌词。复杂伴奏、现场版、漏句或副歌省略可能导致失败或偏移；可手动打点校正。本地 AI 匹配生成逐行时间轴；已有有效逐字时间片段会保留。
-- `swift test` 覆盖格式分流、原文/时间轴校验、重复歌词、说明文字、取消和分钟进位。`MINIVOICE_TEST_AI=1 swift test` 额外用系统语音生成短音频，运行实际本地模型集成验证（首次运行需下载模型）。
+- `swift test --package-path MacOS --scratch-path .build` 覆盖格式分流、原文/时间轴校验、重复歌词、说明文字、取消和分钟进位。`MINIVOICE_TEST_AI=1 swift test --package-path MacOS --scratch-path .build` 额外用系统语音生成短音频，运行实际本地模型集成验证（首次运行需下载模型）。
 
 ### 歌词显示与导入修复
 
@@ -100,7 +108,7 @@ arm64 完整应用内置固定版本的 ffmpeg / ffprobe、歌词 AI 运行环�
 - AI 对齐前完整解码音频，避免流式解码提前结束造成 Broken pipe；无法完整解码的文件会显示简短提示。
 - 少数匹配失败的行会根据前后已匹配时间重新分析音频片段。仍未匹配的行保留原文，保存后提示待校正行数，不虚构时间；匹配不足 65% 时提示检查歌词版本。
 - 诊断日志保留在 `~/Library/Application Support/MiniVoice/LyricsAI/last-error.log`，弹窗不再显示 FFmpeg 或模型进度日志。
-- Worker 回归测试：`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WorkerTests`。可用 `MINIVOICE_AI_FIXTURES` 指向含 path/lyrics/title/duration 的 JSON 数组，对本地音频运行只读集成验证。
+- Worker 回归测试：`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s MacOS/Tests/WorkerTests`。可用 `MINIVOICE_AI_FIXTURES` 指向含 path/lyrics/title/duration 的 JSON 数组，对本地音频运行只读集成验证。
 
 - 封面裁剪与内描边共用连续圆角；歌词滚动条采用透明轨道和细滑块，避免系统白色轨道遮挡歌词卡片。
 
@@ -129,8 +137,8 @@ arm64 完整应用内置固定版本的 ffmpeg / ffprobe、歌词 AI 运行环�
 
 ### 图标资源
 
-应用图标固定保存在 `AppBundle/MiniVoice.icns`，打包直接复制，不再每次编译图标生成器或生成 iconset。修改 `BrandIcon.swift` 后，显式运行 `Scripts/generate-icon.sh` 更新应用图标。菜单栏和设置页的小图标仍由 `BrandIcon` 绘制。
+应用图标固定保存在 `MacOS/AppBundle/MiniVoice.icns`，打包直接复制，不再每次编译图标生成器或生成 iconset。修改 `BrandIcon.swift` 后，显式运行 `Scripts/generate-icon.sh` 更新应用图标。菜单栏和设置页的小图标仍由 `BrandIcon` 绘制。
 
 ### 可再生构建文件
 
-`.build/` 内的编译缓存、预览程序、日志和 DMG 均不属于源码。清理会释放空间，但编译缓存删除后下次构建需要重新编译；内置 AI 资源的原件由 `Vendor/LyricsAI/` 中的 Git LFS 文件保存，重新检出时需要 Git LFS。`Docs` 中的采样文件是性能报告的依据，建议保留。
+`.build/` 内的编译缓存、预览程序、日志和 DMG 均不属于源码。清理会释放空间，但编译缓存删除后下次构建需要重新编译；内置 AI 资源的原件由 `MacOS/Vendor/LyricsAI/` 中的 Git LFS 文件保存，重新检出时需要 Git LFS。`Docs` 中的采样文件是性能报告的依据，建议保留。

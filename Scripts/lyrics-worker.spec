@@ -14,7 +14,7 @@ for module in ("stable_whisper", "whisper", "tiktoken"):
     hiddenimports += module_imports
 
 analysis = Analysis(
-    [str(root / "Sources/MiniVoice/Resources/align_lyrics.py")],
+    [str(root / "MacOS/Sources/MiniVoice/Resources/align_lyrics.py")],
     pathex=[str(root)],
     binaries=binaries,
     datas=datas,

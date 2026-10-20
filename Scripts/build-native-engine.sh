@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIGURATION="${1:-release}"
 APP_NAME="MiniVoice"
 APP_PATH="$ROOT/.build/native/${APP_NAME}.app"
-INFO_PLIST="$ROOT/AppBundle/Info.plist"
+INFO_PLIST="$ROOT/MacOS/AppBundle/Info.plist"
 APP_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")"
 
 if [[ "$CONFIGURATION" != "debug" && "$CONFIGURATION" != "release" ]]; then
@@ -16,8 +16,8 @@ fi
 cd "$ROOT"
 
 ARCH="$(uname -m)"
-VENDORED_FFMPEG="$ROOT/Vendor/FFmpeg/$ARCH"
-VENDORED_AI="$ROOT/Vendor/LyricsAI/$ARCH"
+VENDORED_FFMPEG="$ROOT/MacOS/Vendor/FFmpeg/$ARCH"
+VENDORED_AI="$ROOT/MacOS/Vendor/LyricsAI/$ARCH"
 if [[ "$ARCH" != "arm64" ]]; then
   echo "error: 当前仅提供 arm64 的内置 FFmpeg，缺少 $ARCH 资源" >&2
   exit 1
@@ -30,7 +30,7 @@ for TOOL in ffmpeg ffprobe; do
   EXPECTED="$(awk -v name="$TOOL" '$2 == name {print $1}' "$VENDORED_FFMPEG/SHA256SUMS")"
   ACTUAL="$(shasum -a 256 "$VENDORED_FFMPEG/$TOOL" | awk '{print $1}')"
   if [[ -z "$EXPECTED" || "$ACTUAL" != "$EXPECTED" ]]; then
-    echo "error: $TOOL 校验失败，请检查 Vendor/FFmpeg" >&2
+    echo "error: $TOOL 校验失败，请检查 MacOS/Vendor/FFmpeg" >&2
     exit 1
   fi
 done
@@ -61,8 +61,8 @@ if [[ ! "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
 fi
 
 echo "==> 编译 (${CONFIGURATION})..."
-swift build --disable-sandbox -c "$CONFIGURATION"
-EXECUTABLE="$(swift build --disable-sandbox -c "$CONFIGURATION" --show-bin-path)/$APP_NAME"
+swift build --package-path "$ROOT/MacOS" --scratch-path "$ROOT/.build" --disable-sandbox -c "$CONFIGURATION"
+EXECUTABLE="$(swift build --package-path "$ROOT/MacOS" --scratch-path "$ROOT/.build" --disable-sandbox -c "$CONFIGURATION" --show-bin-path)/$APP_NAME"
 
 if [[ ! -x "$EXECUTABLE" ]]; then
   echo "error: 未找到编译产物：$EXECUTABLE" >&2
@@ -83,7 +83,7 @@ printf 'APPL????' > "$APP_PATH/Contents/PkgInfo"
 chmod +x "$APP_PATH/Contents/MacOS/$APP_NAME"
 
 echo "==> 复制应用图标..."
-ICON_SOURCE="$ROOT/AppBundle/MiniVoice.icns"
+ICON_SOURCE="$ROOT/MacOS/AppBundle/MiniVoice.icns"
 if [[ ! -s "$ICON_SOURCE" ]]; then
   echo "error: 缺少应用图标，请先运行 Scripts/generate-icon.sh" >&2
   exit 1
@@ -96,15 +96,15 @@ for TOOL in ffmpeg ffprobe; do
   chmod +x "$APP_PATH/Contents/Helpers/$TOOL"
   codesign --force --sign - "$APP_PATH/Contents/Helpers/$TOOL"
 done
-cp "$ROOT/Vendor/FFmpeg/README.md" "$APP_PATH/Contents/Resources/FFmpeg-NOTICES.txt"
-cp "$ROOT/Vendor/FFmpeg/COPYING.LGPLv2.1" "$APP_PATH/Contents/Resources/FFmpeg-LGPL-2.1.txt"
+cp "$ROOT/MacOS/Vendor/FFmpeg/README.md" "$APP_PATH/Contents/Resources/FFmpeg-NOTICES.txt"
+cp "$ROOT/MacOS/Vendor/FFmpeg/COPYING.LGPLv2.1" "$APP_PATH/Contents/Resources/FFmpeg-LGPL-2.1.txt"
 
 echo "==> 集成离线歌词 AI..."
 tar -xzf "$VENDORED_AI/lyrics-worker.tar.gz" -C "$APP_PATH/Contents/Resources"
 mkdir -p "$APP_PATH/Contents/Resources/LyricsModels"
 cp "$VENDORED_AI/small.pt" "$APP_PATH/Contents/Resources/LyricsModels/small.pt"
-cp "$ROOT/Vendor/LyricsAI/README.md" "$APP_PATH/Contents/Resources/LyricsAI-NOTICES.txt"
-ditto "$ROOT/Vendor/LyricsAI/licenses" "$APP_PATH/Contents/Resources/LyricsAI-Licenses"
+cp "$ROOT/MacOS/Vendor/LyricsAI/README.md" "$APP_PATH/Contents/Resources/LyricsAI-NOTICES.txt"
+ditto "$ROOT/MacOS/Vendor/LyricsAI/licenses" "$APP_PATH/Contents/Resources/LyricsAI-Licenses"
 if [[ ! -x "$APP_PATH/Contents/Resources/lyrics-worker/lyrics-worker" ]]; then
   echo "error: 歌词 AI 运行环境不完整" >&2
   exit 1

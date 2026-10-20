@@ -8,7 +8,7 @@ sign_desktop_app() {
   local identifier
   identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$candidate/Contents/Info.plist")"
   # Sign nested Chromium code with its own identifiers and JIT entitlements first.
-  codesign --force --deep --sign "$identity" --entitlements "$ROOT/Desktop/electron/entitlements.plist" "$candidate"
+  codesign --force --deep --sign "$identity" --entitlements "$ROOT/MacOS/Desktop/electron/entitlements.plist" "$candidate"
   if [[ "$identity" == "-" ]]; then
     # Local builds have no certificate identity. Like the Swift backend, give the
     # outer app a stable DR so an update does not default to a new cdhash identity.
@@ -16,7 +16,7 @@ sign_desktop_app() {
     # Identifier-only requirements are for local builds, not publisher identity.
     codesign --force --sign - \
       --requirements "=designated => identifier \"$identifier\"" \
-      --entitlements "$ROOT/Desktop/electron/entitlements.plist" "$candidate"
+      --entitlements "$ROOT/MacOS/Desktop/electron/entitlements.plist" "$candidate"
   fi
 }
 
