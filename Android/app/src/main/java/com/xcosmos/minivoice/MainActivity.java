@@ -308,7 +308,7 @@ public final class MainActivity extends Activity {
         String raw=LyricsRepository.select(resolved,manual);List<Lyrics.Line> lines=Lyrics.parse(raw);home.setLyrics(id,lines);
         if(!lines.isEmpty())return;
         String error=resolved.lyricsError;
-        home.setLyricsStatus(id,scanning?"正在扫描并匹配歌词…":error!=null?error:resolved.lyricReadFailed?"无法读取 lrc 文件夹，请重新选择音乐文件夹":"无内嵌歌词，且 lrc 中未找到同名文件");
+        home.setLyricsStatus(id,scanning?"正在加载歌词…":error!=null?error:resolved.lyricReadFailed?"歌词暂时无法加载":"暂无歌词");
         if(error!=null){resolved.lyricsPrepared=false;lyricsLoad.fail(generation,android.os.SystemClock.uptimeMillis());}
     }
     private void showLyrics(){if(service!=null&&service.current()!=null)showLyricsFor(service.current());}

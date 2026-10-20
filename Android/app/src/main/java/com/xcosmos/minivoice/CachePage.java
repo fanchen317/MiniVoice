@@ -71,6 +71,8 @@ final class CachePage extends Dialog {
     private TextView button(String label, Runnable click) {
         TextView view = text(label, 14, colors.accent);
         view.setGravity(Gravity.CENTER);
+        view.setIncludeFontPadding(false);
+        view.setSingleLine(true);
         view.setMinHeight(dp(44));
         view.setPadding(dp(14), 0, dp(14), 0);
         view.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 0));
@@ -104,12 +106,10 @@ final class CachePage extends Dialog {
         toolbar.setGravity(Gravity.CENTER_VERTICAL);
         toolbar.setPadding(dp(12), dp(4), dp(12), dp(4));
         root.addView(toolbar, new LinearLayout.LayoutParams(-1, dp(56)));
-        TextView back = button("‹", this::back);
-        back.setTextSize(30);
-        back.setContentDescription("返回");
-        toolbar.addView(back, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        View back = new PageBackButton(activity,colors.text,this::back);
+        toolbar.addView(back,new LinearLayout.LayoutParams(dp(48),dp(48)));
         TextView title = text("本地缓存", 20, colors.text);
-        title.setPadding(dp(12), 0, 0, 0);
+        title.setPadding(dp(8), 0, 0, 0);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         toolbar.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         refresh = button("刷新", this::load);

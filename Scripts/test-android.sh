@@ -51,3 +51,12 @@ java -cp "$output:$android_jar" com.xcosmos.minivoice.CacheMigrationTests
 
 javac -d "$output" "$source_root/CacheFiles.java" "$repo_root/Android/tests/com/xcosmos/minivoice/CacheFilesTests.java"
 java -cp "$output" com.xcosmos.minivoice.CacheFilesTests
+
+javac -d "$output" "$source_root/PlaybackBars.java" "$repo_root/Android/tests/com/xcosmos/minivoice/PlaybackBarsTests.java"
+java -cp "$output" com.xcosmos.minivoice.PlaybackBarsTests
+
+javac -d "$output" "$source_root/CoverQuality.java" "$repo_root/Android/tests/com/xcosmos/minivoice/CoverQualityTests.java"
+java -cp "$output" com.xcosmos.minivoice.CoverQualityTests
+
+javac -d "$output" "$source_root/ArtworkFraming.java" "$repo_root/Android/tests/com/xcosmos/minivoice/ArtworkFramingTests.java"
+java -cp "$output" com.xcosmos.minivoice.ArtworkFramingTests

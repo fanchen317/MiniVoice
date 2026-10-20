@@ -1,23 +1,29 @@
 package com.xcosmos.minivoice;
 
-/** Screen-space geometry shared by the focused card's drawing and touch targets. */
+/** Geometry is computed in screen pixels after zoom, so glyphs and touch targets agree. */
 final class FocusCardMetrics {
-    final float contentScale,padding,button,title,artist,badge,headerBottom,lyricsTop,lyricsBottom,controlsTop,timeY,trackY;
+    final float contentScale,padding,button,title,artist,badge,headerBottom,lyricsTop,lyricsBottom,controlsTop,timeY,trackY,iconScale,lyricText,lyricGap;
     final boolean inlineTime;
     FocusCardMetrics(float width,float height,float density){
-        padding=Math.min(22*density,Math.max(14*density,width*.05f));
-        contentScale=FocusCardPresentation.contentScale(width,density);
-        title=Math.min(28*density,Math.max(20*density,width*.058f))*contentScale;artist=13*density*contentScale;badge=26*density*contentScale;
-        button=44*density;inlineTime=width-2*padding>=420*density;
+        padding=Math.min(22*density,Math.max(10*density,width*.045f));
+        contentScale=Math.min(1.2f,FocusCardPresentation.contentScale(width,density));
+        float typeScale=Math.max(.75f,Math.min(1.12f,contentScale));
+        title=24*density*typeScale;artist=13*density*typeScale;badge=26*density*contentScale;
+        float content=width-2*padding;
+        button=Math.min(44*density,Math.max(28*density,(content-16*density)/5));
+        iconScale=Math.max(.75f,Math.min(1.15f,button/(44*density)));
+        inlineTime=content>=420*density;
         headerBottom=padding+badge+12*density*contentScale+title+8*density+artist;
         trackY=height-padding-12*density;
-        controlsTop=trackY-(inlineTime?68:76)*density;
-        timeY=inlineTime?controlsTop+27*density:trackY-22*density;
-        lyricsTop=headerBottom+14*density;lyricsBottom=controlsTop-8*density;
+        controlsTop=trackY-button-(inlineTime?24:32)*density;
+        timeY=inlineTime?controlsTop+button*.64f:trackY-22*density;
+        lyricsTop=headerBottom+10*density;lyricsBottom=controlsTop-10*density;
+        lyricText=Math.max(13*density,Math.min(22*density,19*density*typeScale));
+        lyricGap=Math.max(6*density,Math.min(14*density,lyricText*.6f));
     }
     float buttonLeft(int index,float width){
         float content=width-2*padding;
-        if(index==4)return width-padding-button-(inlineTime?128*(button/44):0);
-        return padding+index*(inlineTime?button:Math.min(48*(button/44),content/5));
+        if(inlineTime)return padding+index*(button+6*(button/44));
+        return padding+index*Math.max(button,(content-button)/4);
     }
 }

@@ -22,7 +22,7 @@ final class LyricsRepository {
         String raw=song.embeddedLyrics;
         if(!valid(raw)&&!song.embeddedLyricsChecked)raw=EmbeddedLyrics.read(context,song.uri);
         song.lyricsEmbedded=valid(raw);
-        if(!song.lyricsEmbedded){raw="";if(song.lyricUri!=null)try{raw=Lyrics.read(context,song.lyricUri);if(!valid(raw))song.lyricsError="歌词文件为空或格式不支持";}catch(Exception failure){song.lyricsError="歌词读取失败，请重新授权音乐文件夹";}}
+        if(!song.lyricsEmbedded){raw="";if(song.lyricUri!=null)try{raw=Lyrics.read(context,song.lyricUri);if(!valid(raw))song.lyricsError="暂无歌词";}catch(Exception failure){song.lyricsError="歌词暂时无法加载";}}
         song.lyricsRaw=raw==null?"":raw;song.lyricsPrepared=true;
         // Permission failures are retried on the next scan instead of persisted as a successful miss.
         if(song.lyricsError==null&&!song.lyricReadFailed){File temporary=null;try{

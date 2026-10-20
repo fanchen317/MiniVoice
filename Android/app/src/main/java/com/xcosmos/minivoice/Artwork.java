@@ -14,15 +14,17 @@ final class Artwork {
         try{retriever.setDataSource(context,song.uri);bytes=retriever.getEmbeddedPicture();}
         catch(Exception ignored){}finally{try{retriever.release();}catch(Exception ignored){}}
         if(bytes==null)bytes=AudioTags.read(context,song.uri,true).picture;
-        Bitmap image=null;
-        if(bytes!=null){BitmapFactory.Options options=new BitmapFactory.Options();options.inJustDecodeBounds=true;
-            BitmapFactory.decodeByteArray(bytes,0,bytes.length,options);sample(options,size);
-            image=BitmapFactory.decodeByteArray(bytes,0,bytes.length,options);
+        Bitmap image=decode(bytes,size);
+        // Embedded pictures can be tiny thumbnails even when a full-size sidecar exists.
+        if(image==null||Math.max(image.getWidth(),image.getHeight())<Math.min(size,1024)){
+            image=better(image,decode(AudioTags.read(context,song.uri,true).picture,size));
+            if(song.artworkUri!=null)image=better(image,read(context,song.artworkUri,size));
         }
-        if(image==null&&song.artworkUri!=null)image=read(context,song.artworkUri,size);
         if(image==null&&song.albumId>0)image=read(context,ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"),song.albumId),size);
         return image;
     }
+    private static Bitmap decode(byte[] bytes,int size){if(bytes==null)return null;BitmapFactory.Options options=new BitmapFactory.Options();options.inJustDecodeBounds=true;BitmapFactory.decodeByteArray(bytes,0,bytes.length,options);sample(options,size);return BitmapFactory.decodeByteArray(bytes,0,bytes.length,options);}
+    private static Bitmap better(Bitmap first,Bitmap second){if(first==null)return second;if(second==null)return first;if((long)second.getWidth()*second.getHeight()>(long)first.getWidth()*first.getHeight()){first.recycle();return second;}second.recycle();return first;}
     private static void sample(BitmapFactory.Options options,int size){
         options.inSampleSize=1;while(Math.max(options.outWidth,options.outHeight)/options.inSampleSize>size*2)options.inSampleSize*=2;options.inJustDecodeBounds=false;
     }

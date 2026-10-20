@@ -72,6 +72,7 @@ final class HomeScreen {
     private final FrameLayout drawerPanel;
     private GlassBackdrop wallGlass;
     private final LinearLayout player;
+    private IdlePlaybackDock idleDock;
     private final ImageView wallSettings;
     private ImageView menuButton;
     private final WallSearchControl searchControl;
@@ -83,6 +84,7 @@ final class HomeScreen {
     private final WallView wall;
     private final PlayerStylePage stylePage;
     private String playerStyle="wall";
+    private boolean restoringWallState;
     private final TextView current;
     private final TransportButton playButton;
     private final SeekBar seek;
@@ -101,7 +103,7 @@ final class HomeScreen {
     HomeScreen(Activity activity, Actions actions) {
         this.activity = activity;
         this.actions = actions;
-        frame = new FrameLayout(activity);
+        frame = new FrameLayout(activity){@Override public boolean dispatchTouchEvent(android.view.MotionEvent event){if(idleDock!=null){int action=event.getActionMasked();if(action==android.view.MotionEvent.ACTION_DOWN)idleDock.interaction(true);else if(action==android.view.MotionEvent.ACTION_UP||action==android.view.MotionEvent.ACTION_CANCEL)idleDock.interaction(false);}return super.dispatchTouchEvent(event);}};
         frame.setBackgroundColor(Color.rgb(7, 12, 13));
         wall = new WallView(activity, actions::play, actions::toggle, actions::seek);
         frame.addView(wall, new FrameLayout.LayoutParams(-1, -1));
@@ -131,10 +133,10 @@ final class HomeScreen {
         player = new LinearLayout(activity);
         player.setGravity(Gravity.CENTER_VERTICAL);
         player.setPadding(dp(10), 0, dp(10), 0);
-        player.setBackground(glass().surface(player,42,false));
+        idleDock=new IdlePlaybackDock(activity,player,this::dockProgress);idleDock.setBackground(glass().surface(idleDock,42,false));
         FrameLayout.LayoutParams playerParams = new FrameLayout.LayoutParams(-1, dp(84), Gravity.BOTTOM);
         playerParams.setMargins(dp(16), 0, dp(16), dp(14));
-        frame.addView(player, playerParams);dockParams=playerParams;
+        frame.addView(idleDock, playerParams);dockParams=playerParams;
         playButton = new TransportButton(activity, TransportButton.Glyph.PLAY_PAUSE, actions::toggle);
         playButton.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x18000000), round(0xFFF3F3F3, 31, 0, 0), round(Color.WHITE, 31, 0, 0)));
         player.addView(playButton, new LinearLayout.LayoutParams(dp(62), dp(62)));
@@ -161,6 +163,7 @@ final class HomeScreen {
         seek = new SeekBar(activity);
         styleSeekBar(seek);
         ((GradientDrawable)((LayerDrawable)seek.getProgressDrawable()).findDrawableByLayerId(android.R.id.background)).setSize(1,dp(3));
+        GradientDrawable dockThumb=new GradientDrawable();dockThumb.setShape(GradientDrawable.OVAL);dockThumb.setColor(Color.WHITE);dockThumb.setSize(dp(20),dp(20));seek.setThumb(dockThumb);seek.setThumbOffset(dp(10));seek.setPadding(dp(11),dp(4),dp(11),dp(4));
         ((LayerDrawable)seek.getProgressDrawable()).setLayerHeight(0,dp(3));((LayerDrawable)seek.getProgressDrawable()).setLayerGravity(0,Gravity.CENTER_VERTICAL);
         ((LayerDrawable)seek.getProgressDrawable()).setLayerHeight(1,dp(3));((LayerDrawable)seek.getProgressDrawable()).setLayerGravity(1,Gravity.CENTER_VERTICAL);
         ((LayerDrawable)seek.getProgressDrawable()).findDrawableByLayerId(android.R.id.progress).setTint(0xEFFFFFFF);seek.getThumb().setTint(Color.WHITE);
@@ -265,7 +268,7 @@ final class HomeScreen {
             searchParams.topMargin=top+dp(14);searchParams.rightMargin=right+dp(14);searchControl.setLayoutParams(searchParams);
             drawerParams.width=Math.min(dp(320),Math.round((activity.getResources().getDisplayMetrics().widthPixels-left-right)*.82f));drawerParams.height=-1;drawerParams.bottomMargin=bottom+dp(12);drawerParams.leftMargin=left+dp(12);drawerParams.topMargin=top+dp(12);drawerParams.gravity=Gravity.TOP|Gravity.LEFT;drawerPanel.setLayoutParams(drawerParams);drawer.setPadding(dp(16),dp(14),dp(16),dp(14));
             boolean keyboard=android.os.Build.VERSION.SDK_INT>=30&&insets.isVisible(WindowInsets.Type.ime());keyboardVisible=keyboard;
-            updateViewport();player.setVisibility(keyboard||immersive&&!landscape?View.GONE:View.VISIBLE);
+            updateViewport();idleDock.setVisibility(keyboard||immersive?View.GONE:View.VISIBLE);
             return insets;
         });
         wall.setCardActions(new WallView.CardActions(){
@@ -276,7 +279,7 @@ final class HomeScreen {
         });
         frame.addOnLayoutChangeListener((view,left,top,right,bottom,oldLeft,oldTop,oldRight,oldBottom)->{if(right-left!=oldRight-oldLeft||bottom-top!=oldBottom-oldTop)updateViewport();});
         ButtonFeedback.installTree(frame);
-        wall.setScaleListener(this::refreshZoomControls);
+        wall.setScaleListener(this::zoomChanged);
         frame.post(frame::requestApplyInsets);
     }
 
@@ -291,6 +294,7 @@ final class HomeScreen {
     void showDrawer(boolean open) {
         if (drawerOpen == open) return;
         drawerOpen = open;
+        if(idleDock!=null)idleDock.configure(Math.max(dp(56),Math.round(portraitDockWidth)),idleEligible());
         drawerPanel.animate().cancel();
         drawerLayer.animate().cancel();
         if (open) {
@@ -312,7 +316,7 @@ final class HomeScreen {
         boolean changed = displayedSongId != id;
         displayedSongId = id;
         current.setText(title);
-        playButton.setPlaying(playing);
+        playButton.setPlaying(playing);idleDock.setPlaying(playing);
         seek.setMax(Math.max(1, duration));
         if (!seek.isPressed()) seek.setProgress(position);
         wall.setPlayback(id, playing, position);stylePage.setPosition(position);
@@ -326,17 +330,18 @@ final class HomeScreen {
         wall.collapse();wall.setVisibility(isWallStyle()?View.VISIBLE:View.GONE);
         stylePage.configure(playerStyle,AppAppearance.palette(activity,prefs));stylePage.setSongs(visibleSongs);
         browseHeading.setVisibility(isWallStyle()&&browseGroup!=null&&!chromeHidden?View.VISIBLE:View.GONE);
+        if(idleDock!=null)idleDock.configure(Math.max(dp(56),Math.round(portraitDockWidth)),idleEligible());
         if(!isWallStyle())wallSettings.setVisibility(View.GONE);else if(!chromeHidden&&!keyboardVisible)wallSettings.setVisibility(View.VISIBLE);
     }
     void setCardState(Set<String> favorites,int mode,int duration){wall.setCardState(favorites,mode,duration);}
     boolean collapsePlayer(){return wall.collapse();}
     private void setImmersive(boolean expanded){
         immersive=expanded;
+        idleDock.configure(Math.max(dp(56),Math.round(portraitDockWidth)),idleEligible());
         if(expanded){restoreSearch=searchControl.isOpen();showDrawer(false);searchControl.setOpen(false,false);}
-        applyChromeVisibility(landscape||immersive,true);player.animate().cancel();
-        if(landscape){player.setVisibility(View.VISIBLE);player.setAlpha(1);player.setTranslationY(0);}
-        else if(expanded){player.animate().alpha(0).translationY(dp(24)).setDuration(180).withEndAction(()->{if(immersive&&!landscape)player.setVisibility(View.INVISIBLE);}).start();}
-        else{player.setVisibility(keyboardVisible?View.GONE:View.VISIBLE);player.animate().alpha(1).translationY(0).setDuration(230).start();}
+        applyChromeVisibility(landscape||immersive,true);idleDock.animate().cancel();
+        if(expanded){idleDock.animate().alpha(0).translationY(dp(24)).setDuration(180).withEndAction(()->{if(immersive)idleDock.setVisibility(View.INVISIBLE);}).start();}
+        else{idleDock.setVisibility(keyboardVisible?View.GONE:View.VISIBLE);idleDock.animate().alpha(1).translationY(0).setDuration(230).start();}
         if(!expanded&&!landscape&&restoreSearch)searchControl.setOpen(true,false);
     }
     void orientationChanged(){
@@ -364,16 +369,18 @@ final class HomeScreen {
         if(!landscape)portraitDockWidth=Math.max(1,frame.getWidth()-safeLeft-safeRight-dp(32));
         if(portraitDockWidth==0)portraitDockWidth=Math.max(dp(280),Math.min(frame.getWidth(),frame.getHeight())-dp(32));
         WallViewport viewport=new WallViewport(frame.getWidth(),frame.getHeight(),density,safeLeft,safeTop,safeRight,safeBottom,landscape,portraitDockWidth);
-        dockParams.width=Math.round(viewport.dockWidth);dockParams.height=dp(84);dockParams.gravity=Gravity.BOTTOM|Gravity.RIGHT;dockParams.leftMargin=0;dockParams.rightMargin=Math.round(viewport.dockRight);dockParams.bottomMargin=Math.round(viewport.dockBottom);player.setLayoutParams(dockParams);
-        toolsParams.bottomMargin=safeBottom+dp(112);toolsParams.rightMargin=safeRight+dp(16);wallSettings.setLayoutParams(toolsParams);
+        dockParams.width=Math.round(viewport.dockWidth);dockParams.height=dp(84);dockParams.gravity=Gravity.BOTTOM|(landscape?Gravity.RIGHT:Gravity.LEFT);dockParams.leftMargin=landscape?0:safeLeft+dp(14);dockParams.rightMargin=Math.round(viewport.dockRight);dockParams.bottomMargin=Math.round(viewport.dockBottom);idleDock.setLayoutParams(dockParams);
+        toolsParams.rightMargin=safeRight+dp(14);wallSettings.setLayoutParams(toolsParams);idleDock.configure(Math.round(viewport.dockWidth),idleEligible());
         wall.setSafeInsets(safeTop,safeBottom);wall.setViewport(viewport);applyChromeVisibility(landscape||immersive,true);
-        player.setVisibility(keyboardVisible||immersive&&!landscape?View.GONE:View.VISIBLE);
-        if(landscape||!immersive){player.animate().cancel();player.setAlpha(1);player.setTranslationY(0);}
+        idleDock.setVisibility(keyboardVisible||immersive?View.GONE:View.VISIBLE);
+        if(!immersive){idleDock.animate().cancel();idleDock.setAlpha(1);idleDock.setTranslationY(0);}
         if(!chromeHidden)wallSettings.setVisibility(keyboardVisible||!isWallStyle()?View.GONE:View.VISIBLE);
         stylePage.setInsets(safeLeft,safeTop,safeRight,safeBottom);
         FrameLayout.LayoutParams heading=(FrameLayout.LayoutParams)browseHeading.getLayoutParams();heading.topMargin=safeTop+dp(20);heading.leftMargin=safeLeft+dp(76);browseHeading.setLayoutParams(heading);browseHeading.setMaxWidth(Math.max(dp(120),frame.getWidth()-safeLeft-safeRight-dp(158)));browseHeading.setVisibility(browseGroup!=null&&isWallStyle()&&!chromeHidden&&!searchControl.isOpen()?View.VISIBLE:View.GONE);
     }
 
+    private boolean idleEligible(){return isWallStyle()&&!immersive&&!keyboardVisible&&!drawerOpen;}
+    private void dockProgress(float amount){if(toolsParams!=null){toolsParams.bottomMargin=safeBottom+dp(14+98*amount);wallSettings.setLayoutParams(toolsParams);}}
     void setLyricsStatus(long id,String message){wall.setLyricsStatus(id,message);if(displayedSongId==id)stylePage.setLyricsStatus(message);}
 
     void setLyrics(long id, List<Lyrics.Line> lines) {
@@ -433,7 +440,8 @@ final class HomeScreen {
         });
     }
 
-    void setPageKey(String key){if(key.equals(pageKey))return;if(pageKey!=null)pageCameras.put(pageKey,wall.cameraState());pageKey=key;pendingCamera=pageCameras.get(key);wall.resetCamera();}
+    void setPageKey(String key){if(key.equals(pageKey))return;if(pageKey!=null)pageCameras.put(pageKey,wall.cameraState());pageKey=key;pendingCamera=pageCameras.get(key);restoringWallState=true;wall.resetCamera();wall.zoomTo(WallZoom.scale(activity.getSharedPreferences("library",0).getInt("wall_zoom_"+key,100)));restoringWallState=false;refreshZoomControls();}
+    private void zoomChanged(){refreshZoomControls();if(pageKey!=null&&!restoringWallState)activity.getSharedPreferences("library",0).edit().putInt("wall_zoom_"+pageKey,WallZoom.percent(wall.scale())).apply();}
     void setBrowseContext(String group,String section){browseGroup=group;browseSection=section;browseHeading.setText("‹  "+section+" / "+(group==null?"":group));browseHeading.setVisibility(group!=null&&isWallStyle()&&!chromeHidden&&!searchControl.isOpen()?View.VISIBLE:View.GONE);if(group!=null)stylePage.setSection(group);else stylePage.setSection(section);}
     void setSorting(String field,boolean ascending){sortingField=field;sortingAscending=ascending;}
     void updateWall(List<Song> songs) {

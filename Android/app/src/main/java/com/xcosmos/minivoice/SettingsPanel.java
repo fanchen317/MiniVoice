@@ -128,11 +128,8 @@ final class SettingsPanel {
         toolbar.setGravity(Gravity.CENTER_VERTICAL);
         toolbar.setPadding(dp(8), 0, dp(16), 0);
         root.addView(toolbar, new LinearLayout.LayoutParams(-1, dp(56)));
-        TextView back = text("‹", 32, colors.text);
-        back.setGravity(Gravity.CENTER);
-        back.setContentDescription("返回");
-        back.setOnClickListener(view -> dialog.dismiss());
-        toolbar.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        View back=new PageBackButton(activity,colors.text,()->dialog.dismiss());
+        toolbar.addView(back,new LinearLayout.LayoutParams(dp(48),dp(48)));
         TextView title = text("设置", 20, colors.text);
         title.setTypeface(null, Typeface.BOLD);
         title.setPadding(dp(8), 0, 0, 0);

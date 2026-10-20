@@ -27,6 +27,14 @@ public final class FocusCardTests {
             float small=new FocusCardMetrics(211.2f*density,211.2f*density,density).badge;
             check(Math.abs(small/large-.6f)<.001f,"badge must scale in proportion to card");
         }
+        for(float density:new float[]{1,2,3})for(int percent=60;percent<=120;percent+=5){
+            float side=352*density*percent/100f;FocusCardMetrics m=new FocusCardMetrics(side,side,density);
+            check(m.lyricText>=13*density&&m.lyricText<=22*density,"zoom preserves readable lyric type size");
+            for(int i=0;i<4;i++)check(m.buttonLeft(i,side)+m.button<=m.buttonLeft(i+1,side)+.01f,"zoomed touch targets never overlap");
+            check(m.buttonLeft(4,side)+m.button<=side-m.padding+.01f,"zoomed expand button remains inside card");
+            check(m.title>=18*density&&m.artist>=9.75f*density,"small cards keep readable metadata");
+            if(percent>=70)check(m.lyricsBottom-m.lyricsTop>=m.lyricText,"normal zoom retains at least one lyric line");
+        }
         check(PlaybackModes.valid(-1)==1&&PlaybackModes.valid(5)==1,"invalid modes fall back to list play");
         for(int i=0;i<PlaybackModes.NAMES.length;i++)check(PlaybackModes.valid(i)==i&&!PlaybackModes.DETAILS[i].isEmpty(),"all five modes are selectable and explained");
         System.out.println("PASS: focused card header, wrapped lyrics, five touch targets, timestamps and seek geometry at phone/tablet widths and densities");

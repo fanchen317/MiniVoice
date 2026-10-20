@@ -40,10 +40,10 @@ final class GlassBackdrop {
         public void draw(Canvas canvas){
             if(live&&hardware&&canvas.isHardwareAccelerated()&&source.getWidth()>0){
                 long now=android.os.SystemClock.uptimeMillis();
-                if(node==null||now-captured>=16){
+                if(node==null||node.getWidth()!=Math.max(1,source.getWidth()/4)||node.getHeight()!=Math.max(1,source.getHeight()/4)){
                     if(node==null)node=new android.graphics.RenderNode("MiniVoice glass");
                     int w=Math.max(1,source.getWidth()/4),h=Math.max(1,source.getHeight()/4);node.setPosition(0,0,w,h);
-                    Canvas recording=node.beginRecording(w,h);recording.scale(w/(float)source.getWidth(),h/(float)source.getHeight());source.draw(recording);node.endRecording();
+                    Canvas recording=node.beginRecording(w,h);recording.scale(w/(float)source.getWidth(),h/(float)source.getHeight());if(source instanceof WallView)((WallView)source).drawBackdrop(recording);node.endRecording();
                     node.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(7,7,Shader.TileMode.CLAMP));source.getLocationOnScreen(origin);captured=now;
                 }
             }
@@ -51,7 +51,7 @@ final class GlassBackdrop {
             clip.addRoundRect(bounds,r,r,Path.Direction.CW);int save=canvas.save();canvas.clipPath(clip);
             if(live&&hardware&&node!=null&&canvas.isHardwareAccelerated()){host.getLocationOnScreen(location);int layer=canvas.save();canvas.translate(origin[0]-location[0],origin[1]-location[1]);canvas.scale(source.getWidth()/(float)node.getWidth(),source.getHeight()/(float)node.getHeight());canvas.drawRenderNode(node);canvas.restoreToCount(layer);}
             if(!live&&bitmap!=null){host.getLocationOnScreen(location);float sx=source.getWidth()/(float)bitmap.getWidth(),sy=source.getHeight()/(float)bitmap.getHeight();RectF destination=new RectF(origin[0]-location[0],origin[1]-location[1],origin[0]-location[0]+bitmap.getWidth()*sx,origin[1]-location[1]+bitmap.getHeight()*sy);paint.setShader(null);paint.setColor(Color.WHITE);canvas.drawBitmap(bitmap,null,destination,paint);}
-            paint.setShader(new LinearGradient(0,0,0,bounds.height(),panel?new int[]{0xA825292C,0xC0101317}:new int[]{0x805E6562,0xB51C2220},null,Shader.TileMode.CLAMP));canvas.drawRect(bounds,paint);paint.setShader(null);canvas.restoreToCount(save);
+            paint.setShader(new LinearGradient(0,0,0,bounds.height(),panel?new int[]{0xDE25292C,0xEB101317}:new int[]{0x805E6562,0xB51C2220},null,Shader.TileMode.CLAMP));canvas.drawRect(bounds,paint);paint.setShader(null);canvas.restoreToCount(save);
             paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(host.getResources().getDisplayMetrics().density);paint.setShader(new LinearGradient(0,0,0,bounds.height(),0x99FFFFFF,0x22FFFFFF,Shader.TileMode.CLAMP));bounds.inset(.7f,.7f);canvas.drawRoundRect(bounds,r,r,paint);paint.setShader(null);paint.setStyle(Paint.Style.FILL);
             if(live&&hardware&&host.isShown())host.postInvalidateOnAnimation();
         }
