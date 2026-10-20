@@ -81,7 +81,10 @@ final class HomeScreen {
     private IdlePlaybackDock idleDock;
     private StandardPlaybackBar standardBar;
     private final ImageView wallSettings;
-    private ImageView menuButton;
+    private ImageView menuButton, drawerClose, drawerSettings;
+    private TextView drawerName,drawerSubtitle;
+    private String drawerSelected="歌曲";
+    private Set<String> drawerPlaylists=Set.of();
     private int styleTransitionEpoch;
     private final WallSearchControl searchControl;
     private boolean immersive,restoreSearch,landscape,chromeHidden,awaitingRotationLayout,keyboardVisible;
@@ -249,13 +252,14 @@ final class HomeScreen {
         brand.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         TextView name = text("MiniVoice", 19, Color.WHITE);
         name.setTypeface(null, Typeface.BOLD);
-        title.addView(name);
+        title.addView(name);drawerName=name;
         TextView sub = text("音乐让生活更美好", 11, 0xFF9DA7A4);
         sub.setSingleLine(false);
         sub.setEllipsize(null);
         sub.setPadding(0, dp(3), 0, 0);
-        title.addView(sub);
+        title.addView(sub);drawerSubtitle=sub;
         ImageView closeDrawer = imageButton(R.drawable.icon_close, Color.WHITE, () -> showDrawer(false));
+        drawerClose=closeDrawer;
         closeDrawer.setPadding(dp(8), dp(8), dp(8), dp(8));
         brand.addView(closeDrawer, new LinearLayout.LayoutParams(dp(34), dp(42)));
         drawerRows = new LinearLayout(activity);
@@ -265,7 +269,7 @@ final class HomeScreen {
         View spacer = new View(activity);
         drawer.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1));
         ImageView settings = imageButton(R.drawable.icon_settings_gear, Color.WHITE, actions::settings);
-        settings.setContentDescription("设置");
+        drawerSettings=settings;settings.setContentDescription("设置");
         settings.setPadding(dp(16), dp(16), dp(16), dp(16));
         settings.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x16FFFFFF), glass().surface(settings,28,false), WallToolStyle.glass(activity)));
         LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(dp(56), dp(56));
@@ -326,7 +330,7 @@ final class HomeScreen {
         drawerLayer.animate().cancel();
         if (open) {
             drawerLayer.bringToFront();
-            drawerPanel.setBackground(new GlassBackdrop(wall,false).surface(drawerPanel,24,true));
+            applyDrawerAppearance();
             drawerLayer.setVisibility(View.VISIBLE);
             drawerLayer.setAlpha(0);
             drawerPanel.setTranslationX(-drawerPanel.getLayoutParams().width - dp(20));
@@ -371,6 +375,7 @@ final class HomeScreen {
         }else{wall.setVisibility(isWallStyle()?View.VISIBLE:View.GONE);wall.setAlpha(1);stylePage.setAlpha(1);}
         if(changed&&!isWallStyle()&&android.animation.ValueAnimator.areAnimatorsEnabled()){standardBar.animate().cancel();standardBar.setAlpha(0);standardBar.setTranslationY(dp(14));standardBar.animate().alpha(1).translationY(0).setDuration(280).start();}
         standardBar.configure(AppAppearance.palette(activity,prefs),frame.getWidth()-safeLeft-safeRight>=dp(620));updatePlaybackBarVisibility();
+        applyControlsAppearance();
         boolean light=!isWallStyle()&&!AppAppearance.dark(activity,prefs);int flags=activity.getWindow().getDecorView().getSystemUiVisibility();int lightFlags=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;activity.getWindow().getDecorView().setSystemUiVisibility(light?flags|lightFlags:flags&~lightFlags);
         browseHeading.setVisibility(isWallStyle()&&browseGroup!=null&&!chromeHidden?View.VISIBLE:View.GONE);
         if(idleDock!=null)idleDock.configure(Math.max(dp(56),Math.round(portraitDockWidth)),idleEligible());
@@ -437,6 +442,7 @@ final class HomeScreen {
     }
 
     void updateDrawer(String selected, Set<String> playlists) {
+        drawerSelected=selected;drawerPlaylists=new java.util.HashSet<>(playlists);
         stylePage.setSection(selected);
         drawerRows.removeAllViews();
         nav("♫", "音乐库", selected.equals("歌曲"), () -> actions.section("歌曲"));
@@ -444,7 +450,7 @@ final class HomeScreen {
         nav("♡", "收藏", selected.equals("收藏"), () -> actions.section("收藏"));
         nav("♙", "歌手", selected.equals("歌手"), () -> actions.section("歌手"));
         nav("◎", "专辑", selected.equals("专辑"), () -> actions.section("专辑"));
-        TextView heading = text("我的歌单", 13, 0xFFB8BEBA);
+        TextView heading = text("我的歌单", 13, chromePalette().secondary);
         heading.setPadding(dp(20), dp(18), 0, dp(8));
         drawerRows.addView(heading);
         for (String name : new java.util.TreeSet<>(playlists)) {
@@ -464,24 +470,25 @@ final class HomeScreen {
         LinearLayout row = new LinearLayout(activity);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(14), 0, dp(8), 0);
-        if (selected) row.setBackground(round(0x55468C74, 13, 0, 0));
+        AppAppearance.Palette palette=chromePalette();
+        if (selected) row.setBackground(round(palette.dark?0x55468C74:0x220A8763, 13, 0, 0));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(51));
         lp.setMargins(0, dp(2), 0, dp(2));
         drawerRows.addView(row, lp);
         int resource = iconFor(label);
         if (resource != 0)
-            row.addView(imageButton(resource, selected ? green : 0xFFE6EBE8, () -> row.performClick()), new LinearLayout.LayoutParams(dp(30), dp(30)));
+            row.addView(imageButton(resource, selected ? palette.accent : palette.text, () -> row.performClick()), new LinearLayout.LayoutParams(dp(30), dp(30)));
         else {
-            TextView icon = text(symbol, 22, selected ? green : 0xFFE6EBE8);
+            TextView icon = text(symbol, 22, selected ? palette.accent : palette.text);
             icon.setGravity(Gravity.CENTER);
             row.addView(icon, new LinearLayout.LayoutParams(dp(30), -1));
         }
-        TextView title = text(label, 15, selected ? green : Color.WHITE);
+        TextView title = text(label, 15, selected ? palette.accent : palette.text);
         title.setTypeface(null, Typeface.BOLD);
         title.setPadding(dp(8), 0, 0, 0);
         row.addView(title, new LinearLayout.LayoutParams(0, -1, 1));
         if (badge != null) {
-            TextView count = text(badge, 12, 0xFFB6BDB8);
+            TextView count = text(badge, 12, palette.secondary);
             row.addView(count);
         }
         ButtonFeedback.install(row);
@@ -650,6 +657,23 @@ final class HomeScreen {
         view.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x66FFFFFF), null, round(Color.WHITE, 28, 0, 0)));
         view.setOnClickListener(v -> action.run());ButtonFeedback.install(view);
         return view;
+    }
+
+    private AppAppearance.Palette chromePalette(){return new AppAppearance.Palette(isWallStyle()||AppAppearance.dark(activity,activity.getSharedPreferences("library",0)));}
+    private android.graphics.drawable.Drawable chromeBackground(View view){
+        AppAppearance.Palette palette=chromePalette();
+        return isWallStyle()?glass().surface(view,28,false):new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(palette.dark?0x22FFFFFF:0x16000000),round(palette.surface,28,palette.line,1),round(Color.WHITE,28,0,0));
+    }
+    private void applyDrawerAppearance(){
+        AppAppearance.Palette palette=chromePalette();
+        drawerPanel.setBackground(isWallStyle()?new GlassBackdrop(wall,false).surface(drawerPanel,24,true):round(palette.surface,24,palette.line,1));
+        drawerName.setTextColor(palette.text);drawerSubtitle.setTextColor(palette.secondary);
+        drawerClose.setColorFilter(palette.text);drawerSettings.setColorFilter(palette.text);drawerSettings.setBackground(chromeBackground(drawerSettings));
+    }
+    private void applyControlsAppearance(){
+        AppAppearance.Palette palette=chromePalette();menuButton.setColorFilter(palette.text);menuButton.setBackground(chromeBackground(menuButton));
+        searchControl.configure(palette);searchControl.setBackground(chromeBackground(searchControl));
+        applyDrawerAppearance();updateDrawer(drawerSelected,drawerPlaylists);
     }
 
     private GlassBackdrop glass(){if(wallGlass==null)wallGlass=new GlassBackdrop(wall,true);return wallGlass;}

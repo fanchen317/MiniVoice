@@ -22,6 +22,7 @@ final class WallSearchControl extends FrameLayout {
     private ValueAnimator animator;
     private boolean open;
     private float amount;
+    private AppAppearance.Palette colors=new AppAppearance.Palette(true);
     WallSearchControl(Activity activity){
         super(activity);this.activity=activity;setClipChildren(true);setClipToPadding(true);
         setBackground(WallToolStyle.glass(activity));
@@ -40,8 +41,9 @@ final class WallSearchControl extends FrameLayout {
     private int dp(float value){return Math.round(value*getResources().getDisplayMetrics().density);}
     private float targetWidth(){int parent=getParent() instanceof View?((View)getParent()).getWidth():getResources().getDisplayMetrics().widthPixels;return dp(WallToolStyle.SIDE)+(Math.min(dp(320),Math.max(dp(WallToolStyle.SIDE),parent-dp(100)))-dp(WallToolStyle.SIDE))*amount;}
     private void apply(float value){amount=value;FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)getLayoutParams();if(params!=null){int width=Math.round(targetWidth());if(params.width!=width){params.width=width;setLayoutParams(params);}}
-        input.setAlpha(Math.max(0,(value-.25f)/.75f));lens.setColorFilter(value>0?0xFF2DD3A8:Color.WHITE);clear.setAlpha(value);
+        input.setAlpha(Math.max(0,(value-.25f)/.75f));lens.setColorFilter(value>0?colors.accent:colors.text);clear.setAlpha(value);
     }
+    void configure(AppAppearance.Palette palette){colors=palette;input.setTextColor(colors.text);input.setHintTextColor(colors.secondary);clear.setTextColor(colors.secondary);lens.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(colors.dark?0x44FFFFFF:0x18000000),null,null));apply(amount);}
     boolean isOpen(){return open;}
     void setOpen(boolean value,boolean animate){
         open=value;if(animator!=null){animator.removeAllListeners();animator.cancel();}
