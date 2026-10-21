@@ -275,7 +275,7 @@ final class HomeScreen {
             searchInput.setText("");actions.section("歌曲");applyAppearance();if(playerStyle.equals("simple"))stylePage.showPlayer();updateViewport();
             icon.announceForAccessibility(nextStyle.equals("simple")?"简易样式":nextStyle.equals("library")?"音乐库样式":"音乐墙样式");
             }finally{fragmentSwitch=false;stylePage.setSnapshotTransition(false);}
-        };if(drawerOpen)changeStyle.run();else fragmentTransition.run(icon,changeStyle);});
+        };fragmentTransition.run(icon,changeStyle);});
         LinearLayout title = new LinearLayout(activity);
         title.setOrientation(LinearLayout.VERTICAL);
         title.setPadding(dp(12), 0, 0, 0);

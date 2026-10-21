@@ -11,18 +11,25 @@ import java.util.function.Consumer;
 /** A trackless thumb: pointer motion stays continuous instead of snapping to row indices. */
 final class ListScrollThumb extends View {
     private final ListView list;
+    private final ScrollThumbVisibility visibility;
     private final Consumer<Boolean> scrolling;
     private final Paint ink=new Paint(Paint.ANTI_ALIAS_FLAG);
     private float top,height,grab,dragRowHeight,dragRange,lastOffset;
     private int color;
     private boolean dragging,touchScrolling;
     ListScrollThumb(ListView list,int color,Consumer<Boolean> scrolling){
-        super(list.getContext());this.list=list;this.color=color;this.scrolling=scrolling;
+        super(list.getContext());this.list=list;this.color=color;this.scrolling=scrolling;visibility=new ScrollThumbVisibility(this);
         list.setFastScrollEnabled(false);list.setVerticalScrollBarEnabled(false);
         list.setOnScrollListener(new AbsListView.OnScrollListener(){
-            public void onScroll(AbsListView view,int first,int visible,int total){postInvalidateOnAnimation();}
+            int previousFirst,previousTop,previousCount;boolean observed;
+            public void onScroll(AbsListView view,int first,int visible,int total){
+                View child=list.getChildAt(0);int top=child==null?0:child.getTop();
+                if(observed&&previousCount==total&&(first!=previousFirst||top!=previousTop)&&scrollable())visibility.pulse();
+                observed=true;previousFirst=first;previousTop=top;previousCount=total;postInvalidateOnAnimation();
+            }
             public void onScrollStateChanged(AbsListView view,int state){
                 if(dragging)return;
+                if(scrollable())visibility.hold(state!=SCROLL_STATE_IDLE);
                 if(state==SCROLL_STATE_TOUCH_SCROLL){touchScrolling=true;scrolling.accept(true);}
                 else if(state==SCROLL_STATE_IDLE&&touchScrolling){touchScrolling=false;scrolling.accept(false);}
             }
@@ -55,7 +62,8 @@ final class ListScrollThumb extends View {
     @Override public boolean onTouchEvent(MotionEvent event){
         int action=event.getActionMasked();
         if(action==MotionEvent.ACTION_DOWN){
-            if(!scrollable())return false;
+            if(!visibility.visible()||!scrollable())return false;
+            visibility.hold(true);
             geometry();grab=event.getY()>=top&&event.getY()<=top+height?event.getY()-top:height/2;
             dragRowHeight=rowHeight();dragRange=Math.max(0,list.getCount()*dragRowHeight-viewport());
             lastOffset=top/Math.max(1,getHeight()-height)*dragRange;
@@ -84,8 +92,8 @@ final class ListScrollThumb extends View {
         return true;
     }
     private void finishDrag(){
-        if(!dragging)return;dragging=false;scrolling.accept(false);
+        if(!dragging)return;dragging=false;scrolling.accept(false);visibility.hold(false);
         if(getParent()!=null)getParent().requestDisallowInterceptTouchEvent(false);postInvalidateOnAnimation();
     }
-    @Override protected void onDetachedFromWindow(){finishDrag();super.onDetachedFromWindow();}
+    @Override protected void onDetachedFromWindow(){finishDrag();visibility.clear();super.onDetachedFromWindow();}
 }
