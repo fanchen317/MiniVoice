@@ -43,7 +43,6 @@ final class HomeScreen {
         void newPlaylist();
 
         void settings();
-        void refreshLibrary();
 
         void search(String query);
 
@@ -136,7 +135,7 @@ final class HomeScreen {
         wall = new WallView(activity, actions::play, actions::toggle, actions::seek);
         wall.setSongMenu(actions::songMenu);
         frame.addView(wall, new FrameLayout.LayoutParams(-1, -1));
-        stylePage=new PlayerStylePage(activity,actions::play,actions::seek,actions::lyrics,this::browseSimpleSongs);stylePage.setPlaybackActions(actions);stylePage.setSongLaunch(this::animateSongLaunch);stylePage.setSidebarTools(this::focusLibrarySong,actions::refreshLibrary);stylePage.setSongMenu(actions::songMenu);stylePage.setTools(actions::backGroup,this::showSortingOptions,actions::queue,actions::favorite);stylePage.setSortAction(actions::sort);stylePage.setBatchActions(new PlayerStylePage.BatchActions(){
+        stylePage=new PlayerStylePage(activity,actions::play,actions::seek,actions::lyrics,this::browseSimpleSongs);stylePage.setPlaybackActions(actions);stylePage.setSongLaunch(this::animateSongLaunch);stylePage.setSidebarLocate(this::focusLibrarySong);stylePage.setSongMenu(actions::songMenu);stylePage.setTools(actions::backGroup,this::showSortingOptions,actions::queue,actions::favorite);stylePage.setSortAction(actions::sort);stylePage.setBatchActions(new PlayerStylePage.BatchActions(){
             public void favorite(List<Song> songs,boolean value){actions.favoriteSongs(songs,value);}
             public void playlist(List<Song> songs){actions.playlistSongs(songs);}
             public void removeFromPlaylist(List<Song> songs){actions.removePlaylistSongs(songs);}
@@ -754,7 +753,7 @@ final class HomeScreen {
         drawerSearch.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int start,int count,int after){}public void onTextChanged(CharSequence s,int start,int before,int count){if(!s.toString().contentEquals(searchInput.getText()))searchInput.setText(s);}public void afterTextChanged(android.text.Editable value){}});
         drawerSearch.setOnEditorActionListener((v,action,event)->{if(action==EditorInfo.IME_ACTION_SEARCH){((InputMethodManager)activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(v.getWindowToken(),0);drawerSearch.clearFocus();return true;}return false;});
         simpleLibraryTab=simpleTab("音乐库",R.drawable.icon_navigation_all,()->actions.section("歌曲"));simpleRecentTab=simpleTab("最近播放",R.drawable.icon_navigation_recent,()->actions.section("最近播放"));
-        sidebarPage=new PlayerStylePage(activity,actions::play,actions::seek,actions::lyrics,()->{});sidebarPage.useSidebarCatalog();sidebarPage.glassSource(stylePage);sidebarPage.setSidebarTools(this::focusSidebarSong,actions::refreshLibrary);sidebarPage.setScanning(libraryScanning);sidebarPage.setSongMenu(actions::songMenu);sidebarPage.setTools(()->{},this::showSortingOptions,actions::queue,actions::favorite);sidebarPage.setSortAction(actions::sort);
+        sidebarPage=new PlayerStylePage(activity,actions::play,actions::seek,actions::lyrics,()->{});sidebarPage.useSidebarCatalog();sidebarPage.glassSource(stylePage);sidebarPage.setSidebarLocate(this::focusSidebarSong);sidebarPage.setScanning(libraryScanning);sidebarPage.setSongMenu(actions::songMenu);sidebarPage.setTools(()->{},this::showSortingOptions,actions::queue,actions::favorite);sidebarPage.setSortAction(actions::sort);
         sidebarPage.setBatchActions(new PlayerStylePage.BatchActions(){public void favorite(List<Song> songs,boolean value){actions.favoriteSongs(songs,value);}public void playlist(List<Song> songs){actions.playlistSongs(songs);}public void removeFromPlaylist(List<Song> songs){actions.removePlaylistSongs(songs);}public void clearRecent(){actions.clearRecent();}});
         simpleDrawerRoot.addView(sidebarPage,new LinearLayout.LayoutParams(-1,0,1));
     }
@@ -784,7 +783,8 @@ final class HomeScreen {
     }
     private void updateDetailBack(){
         if(detailBack==null)return;
-        boolean visible=playerStyle.equals("library")&&stylePage.libraryDetailOpen()&&!chromeHidden;
+        boolean visible=!isWallStyle()&&(stylePage.libraryDetailOpen()||stylePage.groupCatalogOpen())&&!chromeHidden;
+        detailBack.setContentDescription(stylePage.groupCatalogOpen()?"返回"+browseSection:"返回音乐库");
         detailBack.setVisibility(visible?View.VISIBLE:View.GONE);
         AppAppearance.Palette palette=chromePalette();detailBack.setTextColor(palette.accent);android.graphics.drawable.Drawable backIcon=activity.getDrawable(R.drawable.icon_back).mutate();backIcon.setTint(palette.accent);backIcon.setBounds(0,0,dp(18),dp(18));detailBack.setCompoundDrawablesRelative(backIcon,null,null,null);detailBack.setBackground(stylePage.glassSurface(detailBack,22,palette.dark));
         FrameLayout.LayoutParams back=(FrameLayout.LayoutParams)detailBack.getLayoutParams();back.leftMargin=safeLeft+dp(80);back.topMargin=safeTop+dp(12);detailBack.setLayoutParams(back);

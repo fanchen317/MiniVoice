@@ -141,7 +141,6 @@ public final class MainActivity extends Activity {
             public void playlist(String name){selectSection("歌单:"+name);}
             public void newPlaylist(){createPlaylist();}
             public void settings(){showSettings();}
-            public void refreshLibrary(){rebuildLibrary();}
             public void search(String value){query=value.toLowerCase(Locale.ROOT);refreshWall();}
             public void play(Song song){MainActivity.this.playFromWall(song);}
             public void toggle(){if(service!=null)service.toggle();}
@@ -170,7 +169,7 @@ public final class MainActivity extends Activity {
         EditText search=new EditText(this);search.setSingleLine(true);search.setHint("搜索歌曲、歌手或专辑");root.addView(search);
         search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){query=s.toString().toLowerCase(Locale.ROOT);renderRows();}public void afterTextChanged(android.text.Editable e){}});
         LinearLayout actions=new LinearLayout(this);root.addView(actions);
-        actions.addView(button("刷新音乐库",this::rebuildLibrary));actions.addView(button("新建歌单",this::createPlaylist));
+        actions.addView(button("新建歌单",this::createPlaylist));
         ScrollView scroll=new ScrollView(this);ListScrollStyle.apply(scroll);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);scroll.addView(rows);
         playerBar=new LinearLayout(this);playerBar.setOrientation(LinearLayout.VERTICAL);playerBar.setPadding(dp(8),dp(8),dp(8),0);playerBar.setBackgroundColor(Color.rgb(225,241,230));root.addView(playerBar);
         now=label("选择一首歌曲",16,Color.rgb(20,70,42));playerBar.addView(now);now.setOnClickListener(v->showLyrics());
