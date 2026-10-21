@@ -3,63 +3,104 @@ package com.xcosmos.minivoice;
 import android.graphics.*;
 import android.graphics.drawable.Drawable;
 import android.view.View;
+import android.view.ViewParent;
+import java.util.WeakHashMap;
 
-/** Blurs only the captured background; foreground text and controls stay sharp. */
+/** Samples the scene behind a surface, never the surface or its foreground text. */
 final class GlassBackdrop {
+    private boolean windowSnapshot;
+    private final android.os.Handler main=new android.os.Handler(android.os.Looper.getMainLooper());
     private Bitmap bitmap;
+    private final Bitmap[] cachedBitmaps=new Bitmap[2];
+    private final int[] cachedGenerations={-1,-1},cachedWidths=new int[2],cachedHeights=new int[2];
     private final View source;
     private final boolean live;
     private final float blurDp;
-    private long captured;
-    private final boolean hardware=android.os.Build.VERSION.SDK_INT>=31;
+    private final WeakHashMap<View,Boolean> hosts=new WeakHashMap<>();
+    private int generation,bitmapWidth,bitmapHeight;
     private final int[] origin=new int[2];
-    GlassBackdrop(View source,boolean live){this(source,live,0);}
-    GlassBackdrop(View source,boolean live,float blurDp){this.source=source;this.live=live;this.blurDp=blurDp;if(!live)capture();}
-    void invalidateSnapshot(){bitmap=null;}
-    void capture(){
-        if(source.getWidth()==0||source.getHeight()==0)return;
-        int sample=blurDp>0?Math.max(1,Math.round(blurDp*source.getResources().getDisplayMetrics().density/2)):12;
-        int width=Math.max(1,source.getWidth()/sample),height=Math.max(1,source.getHeight()/sample);
-        Bitmap image=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888);
-        Canvas canvas=new Canvas(image);canvas.scale(width/(float)source.getWidth(),height/(float)source.getHeight());if(live&&source instanceof PlayerStylePage)((PlayerStylePage)source).drawBackdrop(canvas);else source.draw(canvas);
-        source.getLocationOnScreen(origin);
-        int[] pixels=new int[width*height],temp=new int[pixels.length];image.getPixels(pixels,0,width,0,0,width,height);
-        // Separable Gaussian kernel, with clamped edges to avoid black borders.
-        int[] kernel={1,4,6,4,1};
-        for(int pass=0;pass<(blurDp>0?4:3);pass++){
-            for(int axis=0;axis<2;axis++){
-                for(int y=0;y<height;y++)for(int x=0;x<width;x++){
-                    int r=0,g=0,b=0;
-                    for(int k=-2;k<=2;k++){int xx=axis==0?Math.max(0,Math.min(width-1,x+k)):x,yy=axis==1?Math.max(0,Math.min(height-1,y+k)):y,c=pixels[yy*width+xx],w=kernel[k+2];r+=Color.red(c)*w;g+=Color.green(c)*w;b+=Color.blue(c)*w;}
-                    temp[y*width+x]=Color.rgb(r/16,g/16,b/16);
-                }
-                int[] swap=pixels;pixels=temp;temp=swap;
+    GlassBackdrop(View source,boolean live){this(source,live,20);}
+    GlassBackdrop(View source,boolean live,float blurDp){this.source=source;this.live=live;this.blurDp=blurDp>0?blurDp:20;}
+    void invalidateSnapshot(){generation++;bitmap=null;cachedBitmaps[0]=cachedBitmaps[1]=null;for(View host:hosts.keySet())if(host.isShown())host.invalidate();}
+    private boolean contains(View host){for(ViewParent parent=host.getParent();parent!=null;parent=parent.getParent())if(parent==source)return true;return host==source;}
+    /** Copy the already rendered window before the drawer/scrim appears. Never redraw a View tree here. */
+    void captureWindow(android.app.Activity activity,Runnable complete){
+        if(source.getWidth()<=0||source.getHeight()<=0){complete.run();return;}
+        int[] at=new int[2];source.getLocationInWindow(at);
+        Rect area=new Rect(at[0],at[1],at[0]+source.getWidth(),at[1]+source.getHeight());
+        float density=source.getResources().getDisplayMetrics().density;
+        int sample=Math.max(2,Math.round(blurDp*density/4));
+        Bitmap image=Bitmap.createBitmap(Math.max(1,source.getWidth()/sample),Math.max(1,source.getHeight()/sample),Bitmap.Config.ARGB_8888);
+        try{android.view.PixelCopy.request(activity.getWindow(),area,image,result->{
+            if(result==android.view.PixelCopy.SUCCESS){
+                int w=image.getWidth(),h=image.getHeight();int[] pixels=new int[w*h];image.getPixels(pixels,0,w,0,0,w,h);
+                pixels=GlassGaussian.blur(pixels,w,h);image.setPixels(pixels,0,w,0,0,w,h);
+                bitmap=image;bitmapWidth=area.width();bitmapHeight=area.height();windowSnapshot=true;
+                for(View host:hosts.keySet())host.invalidate();
             }
-        }
-        image.setPixels(pixels,0,width,0,0,width,height);bitmap=image;captured=android.os.SystemClock.uptimeMillis();
+            complete.run();
+        },main);}catch(IllegalArgumentException failure){complete.run();}
+    }
+    private boolean drawSource(Canvas canvas,boolean scene){
+        if(source instanceof PlayerStylePage){((PlayerStylePage)source).drawBackdrop(canvas);return true;}
+        if(source instanceof WallView&&canvas.isHardwareAccelerated())return ((WallView)source).drawBackdrop(canvas);
+        source.draw(canvas);return true;
+    }
+    private void capture(boolean scene){
+        if(source.getWidth()<=0||source.getHeight()<=0)return;
+        float density=source.getResources().getDisplayMetrics().density;
+        // Keep detail in the sampling texture; a Gaussian kernel supplies the blur.
+        int sample=Math.max(2,Math.round(blurDp*density/4));
+        int width=Math.max(1,(source.getWidth()+sample-1)/sample),height=Math.max(1,(source.getHeight()+sample-1)/sample);
+        Bitmap image=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888);
+        Canvas canvas=new Canvas(image);canvas.scale(width/(float)source.getWidth(),height/(float)source.getHeight());
+        drawSource(canvas,scene);
+        int[] pixels=new int[width*height];image.getPixels(pixels,0,width,0,0,width,height);
+        pixels=GlassGaussian.blur(pixels,width,height);
+        image.setPixels(pixels,0,width,0,0,width,height);bitmap=image;bitmapWidth=source.getWidth();bitmapHeight=source.getHeight();int key=scene?1:0;cachedBitmaps[key]=image;cachedGenerations[key]=generation;cachedWidths[key]=bitmapWidth;cachedHeights[key]=bitmapHeight;
     }
     Drawable surface(View host,float radius,boolean panel){return surface(host,radius,panel,false);}
-    Drawable surface(View host,float radius,boolean panel,boolean light){return new Drawable(){
-        final Paint paint=new Paint(3);final int[] location=new int[2];
-        android.graphics.RenderNode tile;int previousX=Integer.MIN_VALUE,previousY,previousWidth,previousHeight;
-        public void draw(Canvas canvas){
-            if(live&&hardware&&canvas.isHardwareAccelerated()&&source.getWidth()>0){
-                host.getLocationOnScreen(location);source.getLocationOnScreen(origin);int x=location[0]-origin[0],y=location[1]-origin[1],width=getBounds().width(),height=getBounds().height();
-                if(source instanceof PlayerStylePage||tile==null||x!=previousX||y!=previousY||width!=previousWidth||height!=previousHeight){
-                    if(tile==null)tile=new android.graphics.RenderNode("Glass sampling tile");int w=Math.max(1,width/2),h=Math.max(1,height/2);tile.setPosition(0,0,w,h);tile.setClipToBounds(true);
-                    Canvas recording=tile.beginRecording(w,h);recording.scale(w/(float)Math.max(1,width),h/(float)Math.max(1,height));recording.translate(-x,-y);if(source instanceof WallView)((WallView)source).drawBackdrop(recording);else if(source instanceof PlayerStylePage)((PlayerStylePage)source).drawBackdrop(recording);tile.endRecording();tile.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(10,10,Shader.TileMode.CLAMP));previousX=x;previousY=y;previousWidth=width;previousHeight=height;
+    Drawable surface(View host,float radius,boolean panel,boolean light){
+        hosts.put(host,Boolean.TRUE);
+        return new Drawable(){
+            final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
+            final int[] location=new int[2];
+            android.graphics.RenderNode tile;
+            int previousX=Integer.MIN_VALUE,previousY,previousWidth,previousHeight,previousGeneration=-1,previousSourceWidth,previousSourceHeight;
+            boolean previousScene;
+            @Override public void draw(Canvas canvas){
+                RectF bounds=new RectF(getBounds());if(bounds.isEmpty())return;
+                float density=host.getResources().getDisplayMetrics().density,r=radius*density;
+                boolean scene=!contains(host),gpu=live&&android.os.Build.VERSION.SDK_INT>=31&&canvas.isHardwareAccelerated();
+                host.getLocationOnScreen(location);source.getLocationOnScreen(origin);
+                int x=location[0]-origin[0],y=location[1]-origin[1],width=getBounds().width(),height=getBounds().height();
+                int pad=Math.max(1,Math.round(blurDp*density*2));
+                if(gpu&&source.getWidth()>0&&source.getHeight()>0){
+                    if(tile==null||x!=previousX||y!=previousY||width!=previousWidth||height!=previousHeight||generation!=previousGeneration||source.getWidth()!=previousSourceWidth||source.getHeight()!=previousSourceHeight||scene!=previousScene){
+                        if(tile==null)tile=new android.graphics.RenderNode("MiniVoice glass tile");
+                        int w=Math.max(1,(width+2*pad)/2),h=Math.max(1,(height+2*pad)/2);tile.setPosition(0,0,w,h);tile.setClipToBounds(true);
+                        Canvas recording=tile.beginRecording(w,h);boolean ready;
+                        try{recording.scale(.5f,.5f);recording.translate(pad-x,pad-y);ready=drawSource(recording,scene);}finally{tile.endRecording();}
+                        tile.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(blurDp*density/2,blurDp*density/2,Shader.TileMode.CLAMP));
+                        if(ready){previousX=x;previousY=y;previousWidth=width;previousHeight=height;previousGeneration=generation;previousScene=scene;previousSourceWidth=source.getWidth();previousSourceHeight=source.getHeight();}else tile=null;
+                    }
+                }else if(!windowSnapshot){
+                    int key=scene?1:0;bitmap=cachedBitmaps[key];
+                    if(bitmap==null||cachedWidths[key]!=source.getWidth()||cachedHeights[key]!=source.getHeight()||(live&&cachedGenerations[key]!=generation))capture(scene);
                 }
+                Path clip=new Path();clip.addRoundRect(bounds,r,r,Path.Direction.CW);int save=canvas.save();canvas.clipPath(clip);
+                // An opaque base only fills unavailable source pixels; the sampled scene is drawn above it.
+                paint.setColor(light?0xFFE5EDE9:0xFF202925);canvas.drawRect(bounds,paint);
+                if(gpu&&tile!=null){int layer=canvas.save();canvas.translate(bounds.left-pad,bounds.top-pad);canvas.scale(2,2);canvas.drawRenderNode(tile);canvas.restoreToCount(layer);}
+                else if(bitmap!=null){float sx=bitmapWidth/(float)bitmap.getWidth(),sy=bitmapHeight/(float)bitmap.getHeight();RectF destination=new RectF(bounds.left-x,bounds.top-y,bounds.left-x+bitmap.getWidth()*sx,bounds.top-y+bitmap.getHeight()*sy);paint.setColor(Color.WHITE);canvas.drawBitmap(bitmap,null,destination,paint);}
+                int top=light?0x5CF5FAF8:panel?0x88202A27:0x66202A27,bottom=light?0x80E5EFEB:panel?0xA6101916:0x88202A27;
+                paint.setShader(new LinearGradient(0,bounds.top,0,bounds.bottom,top,bottom,Shader.TileMode.CLAMP));canvas.drawRect(bounds,paint);paint.setShader(null);canvas.restoreToCount(save);
+                paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(density);
+                paint.setShader(new LinearGradient(0,bounds.top,0,bounds.bottom,light?0x8071847D:0x99D3E3DC,light?0x59647770:0x668CA69A,Shader.TileMode.CLAMP));
+                bounds.inset(density/2,density/2);canvas.drawRoundRect(bounds,Math.max(0,r-density/2),Math.max(0,r-density/2),paint);paint.setShader(null);paint.setStyle(Paint.Style.FILL);
             }
-            if(live&&!hardware&&bitmap==null)capture();
-            RectF bounds=new RectF(getBounds());Path clip=new Path();float r=radius*host.getResources().getDisplayMetrics().density;
-            clip.addRoundRect(bounds,r,r,Path.Direction.CW);int save=canvas.save();canvas.clipPath(clip);
-            // An opaque blurred backing prevents sharp, live lyrics bleeding through.
-            if(blurDp>0){paint.setColor(light?0xFFE1E8E8:0xFF252A29);canvas.drawRect(bounds,paint);}
-            if(live&&hardware&&tile!=null&&canvas.isHardwareAccelerated()){int layer=canvas.save();canvas.scale(bounds.width()/tile.getWidth(),bounds.height()/tile.getHeight());canvas.drawRenderNode(tile);canvas.restoreToCount(layer);}
-            if((!live||!hardware)&&bitmap!=null){host.getLocationOnScreen(location);float sx=source.getWidth()/(float)bitmap.getWidth(),sy=source.getHeight()/(float)bitmap.getHeight();RectF destination=new RectF(origin[0]-location[0],origin[1]-location[1],origin[0]-location[0]+bitmap.getWidth()*sx,origin[1]-location[1]+bitmap.getHeight()*sy);paint.setShader(null);paint.setColor(Color.WHITE);canvas.drawBitmap(bitmap,null,destination,paint);}
-            paint.setShader(new LinearGradient(0,0,0,bounds.height(),source instanceof PlayerStylePage?(light?new int[]{0x66F5FAFA,0x88E3EEEB}:new int[]{0x66202C29,0x99202A28}):light?new int[]{0xBDE9EFF0,0xCCDCE6E8}:panel?new int[]{0xDE25292C,0xEB101317}:new int[]{0x805E6562,0xB51C2220},null,Shader.TileMode.CLAMP));canvas.drawRect(bounds,paint);paint.setShader(null);canvas.restoreToCount(save);
-            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(host.getResources().getDisplayMetrics().density);paint.setShader(new LinearGradient(0,0,0,bounds.height(),0x99FFFFFF,0x22FFFFFF,Shader.TileMode.CLAMP));bounds.inset(.7f,.7f);canvas.drawRoundRect(bounds,r,r,paint);paint.setShader(null);paint.setStyle(Paint.Style.FILL);
-        }
-        public void setAlpha(int alpha){}public void setColorFilter(ColorFilter filter){}public int getOpacity(){return PixelFormat.TRANSLUCENT;}
-    };}
+            @Override public void getOutline(Outline outline){outline.setRoundRect(getBounds(),radius*host.getResources().getDisplayMetrics().density);}
+            @Override public void setAlpha(int alpha){}@Override public void setColorFilter(ColorFilter filter){}@Override public int getOpacity(){return PixelFormat.TRANSLUCENT;}
+        };
+    }
 }

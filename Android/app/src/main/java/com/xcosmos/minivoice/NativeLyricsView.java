@@ -16,7 +16,8 @@ final class NativeLyricsView extends FrameLayout {
     private List<Lyrics.Line> lines=Collections.emptyList();private int active=-1,position,duration;
     private ListScrollThumb scrollRail;
     private boolean frosted;
-    void frosted(boolean value){frosted=value;list.setVerticalFadingEdgeEnabled(value);list.setFadingEdgeLength(dp(44));LayoutParams rail=(LayoutParams)scrollRail.getLayoutParams();rail.topMargin=dp(value?52:16);rail.bottomMargin=dp(20);scrollRail.setLayoutParams(rail);adapter.notifyDataSetChanged();}
+    void reserveExpandControl(boolean value){LayoutParams rail=(LayoutParams)scrollRail.getLayoutParams();rail.topMargin=dp(value?52:16);rail.bottomMargin=dp(20);scrollRail.setLayoutParams(rail);}
+    void frosted(boolean value){frosted=value;list.setVerticalFadingEdgeEnabled(value);list.setFadingEdgeLength(dp(44));reserveExpandControl(value);adapter.notifyDataSetChanged();}
     private boolean playing,manualScrolling,followPending;private long sampledAt,manualUntil;private AppAppearance.Palette colors=new AppAppearance.Palette(false);
     private final Runnable resumeFollow=()->{if(isShown()&&!manualScrolling&&android.os.SystemClock.uptimeMillis()>=manualUntil){followPending=false;centerActive(true);}};
     private final Runnable centerFollow=()->centerActive(true);

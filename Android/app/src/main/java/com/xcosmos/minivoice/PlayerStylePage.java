@@ -61,11 +61,16 @@ final class PlayerStylePage extends FrameLayout {
     private GlassBackdrop workspaceGlass;
     void glassSource(PlayerStylePage value){glassSource=value;}
     void drawBackdrop(Canvas canvas){if(getBackground()!=null)getBackground().draw(canvas);}
+    private final android.view.ViewTreeObserver.OnScrollChangedListener glassScroll=()->{if(isShown())refreshGlass();};
+    private void refreshGlass(){if(workspaceGlass!=null)workspaceGlass.invalidateSnapshot();}
+    @Override public void invalidateDrawable(android.graphics.drawable.Drawable drawable){super.invalidateDrawable(drawable);if(drawable==atmosphere)refreshGlass();}
     android.graphics.drawable.Drawable glassSurface(View host,float radius,boolean dark){if(glassSource!=null)return glassSource.glassSurface(host,radius,dark);if(workspaceGlass==null)workspaceGlass=new GlassBackdrop(this,true,18);return workspaceGlass.surface(host,radius,false,!dark);}
 
     private TextView album;
     private AbsListView list;private TextView listHeading,title,artist,nowPlaying;private ImageView cover;
     private LinearLayout libraryRoot,detailRoot,hero;private FrameLayout lyricPanel,heroSlot;private NativeLyricsView lyricView;
+    private boolean lyricsExpanded;
+    private ImageView lyricsExpandButton;
     private int position,duration,insetLeft,insetTop,insetRight,insetBottom,renderWidth,renderHeight,heroExtent;
     private String lyricStatus="暂无歌词";private ValueAnimator heroMotion;private int transitionEpoch,artGeneration;
     private final Map<String,Parcelable> scrollStates=new HashMap<>();
@@ -76,7 +81,7 @@ final class PlayerStylePage extends FrameLayout {
         public View getView(int index,View recycled,ViewGroup parent){
             LinearLayout row;ImageView image;TextView caption,subtitle;LibraryActionButton star,more;
             if(recycled==null){
-                row=new LinearLayout(getContext());row.setDescendantFocusability(FOCUS_BLOCK_DESCENDANTS);row.setOrientation(grouped?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(sidebarCatalog?8:12),dp(8),dp(sidebarCatalog?8:12),dp(8));
+                row=new LinearLayout(getContext());row.setOutlineProvider(new ViewOutlineProvider(){@Override public void getOutline(View view,android.graphics.Outline outline){outline.setRoundRect(0,0,view.getWidth(),view.getHeight(),dp(12));}});row.setClipToOutline(true);row.setDescendantFocusability(FOCUS_BLOCK_DESCENDANTS);row.setOrientation(grouped?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(sidebarCatalog?8:12),dp(8),dp(sidebarCatalog?8:12),dp(8));
                 image=grouped?new SquareArtwork(getContext()):new ImageView(getContext());image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(shape(colors.line,12));image.setClipToOutline(true);row.addView(image,new LinearLayout.LayoutParams(grouped?-1:dp(sidebarCatalog?52:46),grouped?-2:dp(sidebarCatalog?52:46)));
                 LinearLayout labels=new LinearLayout(getContext());labels.setOrientation(LinearLayout.VERTICAL);labels.setPadding(grouped?0:dp(12),grouped?dp(10):0,dp(6),0);row.addView(labels,grouped?new LinearLayout.LayoutParams(-1,-2):new LinearLayout.LayoutParams(0,-2,1));
                 caption=text("",sidebarCatalog?17:15,colors.text);caption.setTypeface(null,sidebarCatalog?Typeface.NORMAL:Typeface.BOLD);caption.setSingleLine(true);caption.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -111,7 +116,7 @@ final class PlayerStylePage extends FrameLayout {
     void setFavorites(Set<String> value){if(favorites.equals(value))return;favorites=new HashSet<>(value);adapter.notifyDataSetChanged();updateSelection();updateLandscapeControls();}
     void configure(String value,AppAppearance.Palette palette){
         boolean changed=!style.equals(value),themeChanged=colors.dark!=palette.dark;saveScroll();style=value;colors=palette;
-        if(changed){expanded=false;catalogOpen=false;selecting=false;selection.clear();}if(usesCoverAtmosphere()){atmosphere.theme(colors.dark);setBackground(atmosphere);}else setBackgroundColor(sidebarCatalog?Color.TRANSPARENT:colors.background);
+        if(changed){lyricsExpanded=false;expanded=false;catalogOpen=false;selecting=false;selection.clear();}if(usesCoverAtmosphere()){atmosphere.theme(colors.dark);setBackground(atmosphere);}else setBackgroundColor(sidebarCatalog?Color.TRANSPARENT:colors.background);
         setVisibility(style.equals("wall")?GONE:VISIBLE);
         if(style.equals("wall")){artGeneration++;pending.clear();if(images!=null)images.getQueue().clear();if(detailImages!=null)detailImages.getQueue().clear();}
         if(!style.equals("wall")&&(changed||themeChanged||getChildCount()==0)){render();if(changed)enter(this,14);}
@@ -132,7 +137,7 @@ final class PlayerStylePage extends FrameLayout {
     void setPosition(int value){setPlayback(value,duration,playing);}
     void setPlayback(int value,int duration,boolean playing){if(sidebarCatalog&&this.playing!=playing)post(()->adapter.notifyDataSetChanged());position=value;this.duration=duration;this.playing=playing;updateLandscapeControls();if(lyricView!=null)lyricView.playback(value,duration,playing);}
     void locate(long id){if(style.equals("library")&&expanded)setExpanded(false);if(list!=null)for(int i=0;i<songs.size();i++)if(songs.get(i).id==id){jumpToSong(i);break;}}
-    boolean collapse(){if(selecting){setSelecting(false);return true;}if(group!=null&&(style.equals("library")&&!expanded||style.equals("simple")&&catalogOpen)){closeGroupTransition();return true;}if(style.equals("simple")&&catalogOpen){showPlayer();return true;}if(!expanded)return false;setExpanded(false);return true;}
+    boolean collapse(){if(lyricsExpanded){toggleLyricsExpanded();return true;}if(selecting){setSelecting(false);return true;}if(group!=null&&(style.equals("library")&&!expanded||style.equals("simple")&&catalogOpen)){closeGroupTransition();return true;}if(style.equals("simple")&&catalogOpen){showPlayer();return true;}if(!expanded)return false;setExpanded(false);return true;}
     void showCatalog(){if(!style.equals("simple")||catalogOpen)return;catalogOpen=true;detailChanged.run();if(libraryRoot!=null){detailRoot.setVisibility(GONE);libraryRoot.setVisibility(VISIBLE);enter(libraryRoot,18);}}
     void showPlayer(){if(!style.equals("simple"))return;catalogOpen=false;detailChanged.run();if(detailRoot!=null){libraryRoot.setVisibility(GONE);detailRoot.setVisibility(VISIBLE);enter(detailRoot,-14);updateDetails();}}
     private Runnable detailChanged=()->{};
@@ -205,7 +210,7 @@ final class PlayerStylePage extends FrameLayout {
     private boolean animations(){return !snapshotTransition&&ValueAnimator.areAnimatorsEnabled();}
     private void render(){
         transitionEpoch++;closingGroup=false;if(libraryRoot!=null)libraryRoot.animate().cancel();if(heroMotion!=null){heroMotion.cancel();heroMotion=null;}if(selectionMotion!=null){selectionMotion.removeAllListeners();selectionMotion.cancel();selectionMotion=null;}animate().cancel();setAlpha(1);setTranslationY(0);removeAllViews();artGeneration++;pending.clear();if(images!=null)images.getQueue().clear();if(detailImages!=null)detailImages.getQueue().clear();
-        libraryEmpty=null;sidebarReload=null;sidebarSelection=null;album=null;list=null;listHeading=null;selectionBar=null;selectionCount=null;selectionToggle=null;summary=null;columnHeader=null;cover=null;title=null;artist=null;nowPlaying=null;lyricView=null;hero=null;libraryRoot=null;detailRoot=null;
+        lyricsExpandButton=null;libraryEmpty=null;sidebarReload=null;sidebarSelection=null;album=null;list=null;listHeading=null;selectionBar=null;selectionCount=null;selectionToggle=null;summary=null;columnHeader=null;cover=null;title=null;artist=null;nowPlaying=null;lyricView=null;hero=null;libraryRoot=null;detailRoot=null;
         if(style.equals("wall"))return;
         wide=getWidth()-getPaddingLeft()-getPaddingRight()>dp(620);columns=new LibraryColumns(getWidth()-getPaddingLeft()-getPaddingRight(),getResources().getDisplayMetrics().density);
         buildLibrary();if(sidebarCatalog){updateHeading();return;}buildDetails();
@@ -243,7 +248,7 @@ final class PlayerStylePage extends FrameLayout {
         if(!grouped&&columns.artist>0){columnHeader=new LinearLayout(getContext());columnHeader.setGravity(Gravity.CENTER_VERTICAL);columnHeader.setPadding(dp(20),0,dp(20),0);libraryRoot.addView(columnHeader,new LinearLayout.LayoutParams(-1,dp(32)));refreshColumnHeader();}
         FrameLayout results=new FrameLayout(getContext());libraryRoot.addView(results,new LinearLayout.LayoutParams(-1,0,1));
         if(grouped){GridView grid=new GridView(ListScrollStyle.context(getContext()));grid.setNumColumns(wide?3:2);grid.setHorizontalSpacing(dp(8));grid.setVerticalSpacing(dp(8));grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);list=grid;}else{ListView tracks=new ListView(ListScrollStyle.context(getContext()));tracks.setDivider(null);list=tracks;}
-        if(grouped)ListScrollStyle.fast(list);list.setCacheColorHint(0);list.setPadding(dp(sidebarCatalog?0:8),dp(8),dp(grouped?(sidebarCatalog?0:8):32),dp(16));list.setClipToPadding(false);list.setAdapter(adapter);results.addView(list,new LayoutParams(-1,-1));
+        if(grouped)ListScrollStyle.fast(list);list.setSelector(shape(colors.dark?0x1851D5AA:0x140A8763,12));list.setCacheColorHint(0);list.setPadding(dp(sidebarCatalog?0:8),dp(8),dp(grouped?(sidebarCatalog?0:8):32),dp(16));list.setClipToPadding(false);list.setAdapter(adapter);results.addView(list,new LayoutParams(-1,-1));
         list.setOnItemClickListener((parent,view,index,id)->{if(selecting)toggleSelection(songs.get(index).id);else{if(grouped)captureGroup(view,songs.get(index).title);else if(view.getTag() instanceof Object[])songLaunch.accept((ImageView)((Object[])view.getTag())[0]);play.accept(songs.get(index));}});list.setOnItemLongClickListener((parent,view,index,id)->{Song song=songs.get(index);if(grouped||songMenu==null)return false;if(selecting)toggleSelection(song.id);else songMenu.accept(song);return true;});
         libraryEmpty=new LibraryLoadingView(getContext());updateLibraryEmpty();results.addView(libraryEmpty,new LayoutParams(-1,-1));list.setEmptyView(libraryEmpty);
         if(list instanceof ListView){ListScrollThumb thumb=new ListScrollThumb((ListView)list,colors.accent,busy->{});thumb.setContentDescription("拖动滚动歌曲列表");LayoutParams rail=new LayoutParams(dp(32),-1,Gravity.RIGHT);rail.topMargin=dp(12);rail.bottomMargin=dp(16);results.addView(thumb,rail);}
@@ -253,25 +258,25 @@ final class PlayerStylePage extends FrameLayout {
         landscapeSeek=null;landscapePlay=null;landscapeMode=null;landscapeFavorite=null;
         if(landscapeLayout()){buildLandscapeDetails();return;}
         if(style.equals("simple")){buildSimpleDetails();return;}
-        detailRoot=new LinearLayout(getContext());detailRoot.setOrientation(LinearLayout.VERTICAL);detailRoot.setBackgroundColor(Color.TRANSPARENT);addView(detailRoot,new LayoutParams(-1,-1));
+        detailRoot=new LinearLayout(getContext());detailRoot.setOrientation(LinearLayout.VERTICAL);detailRoot.setPadding(dp(14),0,dp(14),0);detailRoot.setBackgroundColor(Color.TRANSPARENT);addView(detailRoot,new LayoutParams(-1,-1));
         LinearLayout workspace=new LinearLayout(getContext());workspace.setOrientation(wide?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);detailRoot.addView(workspace,new LinearLayout.LayoutParams(-1,0,1));
         hero=new LinearLayout(getContext());hero.setOrientation(LinearLayout.VERTICAL);hero.setGravity(Gravity.CENTER);hero.setPadding(dp(20),dp(8),dp(20),dp(8));
         int availableH=Math.max(1,getHeight()-getPaddingTop()-getPaddingBottom());
         PlayerWorkspaceMetrics metrics=new PlayerWorkspaceMetrics(Math.max(1,getWidth()-getPaddingLeft()-getPaddingRight()),availableH,getResources().getDisplayMetrics().density);
-        int side=metrics.artwork;heroExtent=metrics.hero;
-        boolean hidden=style.equals("simple")&&expanded;
+        int side=metrics.artwork;heroExtent=metrics.wide?metrics.hero:Math.min(metrics.hero,side+dp(80));
+        boolean hidden=lyricsExpanded;
         heroSlot=new FrameLayout(getContext());ScrollView heroScroll=new ScrollView(getContext());heroScroll.setFillViewport(true);ListScrollStyle.apply(heroScroll);heroScroll.addView(hero,new ScrollView.LayoutParams(-1,-1));heroSlot.addView(heroScroll,new LayoutParams(-1,-1));
         workspace.addView(heroSlot,wide?new LinearLayout.LayoutParams(hidden?0:heroExtent,-1):new LinearLayout.LayoutParams(-1,hidden?0:heroExtent));hero.setAlpha(hidden?0:1);hero.setImportantForAccessibility(hidden?IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS:IMPORTANT_FOR_ACCESSIBILITY_AUTO);
         cover=new ImageView(getContext());cover.setScaleType(ImageView.ScaleType.CENTER_CROP);cover.setBackground(shape(colors.line,18));cover.setClipToOutline(true);cover.setContentDescription("展开或收起歌词");cover.setOnClickListener(v->toggleExpanded());ButtonFeedback.install(cover);hero.addView(cover,new LinearLayout.LayoutParams(side,side));
         title=text("",23,colors.text);title.setTypeface(null,Typeface.BOLD);title.setMaxLines(2);title.setEllipsize(android.text.TextUtils.TruncateAt.END);title.setGravity(Gravity.CENTER);title.setPadding(0,dp(12),0,0);hero.addView(title,new LinearLayout.LayoutParams(-1,-2));
         artist=text("",13,colors.secondary);artist.setGravity(Gravity.CENTER);artist.setMaxLines(2);artist.setEllipsize(android.text.TextUtils.TruncateAt.END);artist.setPadding(0,dp(6),0,0);hero.addView(artist,new LinearLayout.LayoutParams(-1,-2));
-        lyricPanel=new FrameLayout(getContext());workspace.addView(lyricPanel,wide?new LinearLayout.LayoutParams(0,-1,1):new LinearLayout.LayoutParams(-1,0,1));
+        lyricPanel=new FrameLayout(getContext());lyricPanel.setBackground(glassSurface(lyricPanel,20,colors.dark));lyricPanel.setClipToOutline(true);workspace.addView(lyricPanel,wide?new LinearLayout.LayoutParams(0,-1,1):new LinearLayout.LayoutParams(-1,0,1));
         lyricView=new NativeLyricsView(getContext(),seek,lyricsAction);lyricView.palette(colors);lyricView.lyrics(lyrics);lyricView.status(lyricStatus);lyricView.playback(position,duration,playing);lyricPanel.addView(lyricView,new LayoutParams(-1,-1));
-        if(current==null){TextView choose=tool("选择歌曲 · 浏览音乐库",browse);hero.addView(choose);}
+        installLyricsExpand(lyricPanel);
     }
     private void buildLandscapeDetails(){
         detailRoot=new LinearLayout(getContext());detailRoot.setOrientation(LinearLayout.HORIZONTAL);detailRoot.setPadding(dp(16),0,dp(16),0);addView(detailRoot,new LayoutParams(-1,-1));
-        FrameLayout leftSlot=new FrameLayout(getContext());detailRoot.addView(leftSlot,new LinearLayout.LayoutParams(0,-1,1));
+        FrameLayout leftSlot=new FrameLayout(getContext());heroSlot=leftSlot;detailRoot.addView(leftSlot,new LinearLayout.LayoutParams(0,-1,1));leftSlot.setVisibility(lyricsExpanded?GONE:VISIBLE);
         int availableHeight=Math.max(dp(260),getHeight()-getPaddingTop()-getPaddingBottom());
         int availableWidth=Math.max(dp(160),Math.round((getWidth()-getPaddingLeft()-getPaddingRight()-dp(32))*.50f)-dp(24));
         int columnWidth=Math.min(availableWidth,Math.max(dp(140),availableHeight-dp(156)));
@@ -296,10 +301,31 @@ final class PlayerStylePage extends FrameLayout {
         TransportButton next=new TransportButton(getContext(),TransportButton.Glyph.NEXT_TRACK,()->{if(playbackActions!=null)playbackActions.next();});controls.addView(next,new LinearLayout.LayoutParams(0,-1,1));
         TransportButton queueButton=new TransportButton(getContext(),TransportButton.Glyph.QUEUE,queue);queueButton.setContentDescription("播放队列");controls.addView(queueButton,new LinearLayout.LayoutParams(0,-1,1));
         for(TransportButton button:new TransportButton[]{previous,next,queueButton})button.setColors(colors.text,colors.surface);landscapePlay.setColors(colors.text,Color.WHITE);
-        FrameLayout rightSlot=new FrameLayout(getContext());detailRoot.addView(rightSlot,new LinearLayout.LayoutParams(0,-1,1));
+        FrameLayout rightSlot=new FrameLayout(getContext());rightSlot.setBackground(glassSurface(rightSlot,20,colors.dark));rightSlot.setClipToOutline(true);detailRoot.addView(rightSlot,new LinearLayout.LayoutParams(0,-1,1));
         lyricView=new NativeLyricsView(getContext(),seek,lyricsAction);lyricView.palette(colors);lyricView.lyrics(lyrics);lyricView.status(lyricStatus);lyricView.playback(position,duration,playing);
         rightSlot.addView(lyricView,new FrameLayout.LayoutParams(-1,-1));
+        if(style.equals("library"))installLyricsExpand(rightSlot);
         updateLandscapeControls();
+    }
+    private void installLyricsExpand(FrameLayout panel){
+        lyricView.reserveExpandControl(true);
+        lyricsExpandButton=new ImageView(getContext());lyricsExpandButton.setScaleType(ImageView.ScaleType.CENTER);
+        android.graphics.drawable.GradientDrawable mask=shape(Color.WHITE,22);
+        lyricsExpandButton.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(colors.dark?0x22FFFFFF:0x180A8763),null,mask));
+        lyricsExpandButton.setOnClickListener(v->toggleLyricsExpanded());ButtonFeedback.install(lyricsExpandButton);
+        panel.addView(lyricsExpandButton,new LayoutParams(dp(44),dp(44),Gravity.TOP|Gravity.RIGHT));updateLyricsExpandIcon();
+    }
+    private void updateLyricsExpandIcon(){if(lyricsExpandButton!=null){lyricsExpandButton.setImageDrawable(new SimplePlayerGlyph(lyricsExpanded?SimplePlayerGlyph.COLLAPSE:SimplePlayerGlyph.EXPAND,colors.secondary,getResources().getDisplayMetrics().density));lyricsExpandButton.setContentDescription(lyricsExpanded?"收起歌词":"展开歌词");}}
+    private void toggleLyricsExpanded(){
+        if(!style.equals("library")||heroSlot==null)return;
+        lyricsExpanded=!lyricsExpanded;updateLyricsExpandIcon();
+        if(heroMotion!=null){heroMotion.cancel();heroMotion=null;}
+        if(landscapeLayout()){heroSlot.setVisibility(lyricsExpanded?GONE:VISIBLE);return;}
+        LinearLayout.LayoutParams params=(LinearLayout.LayoutParams)heroSlot.getLayoutParams();
+        int start=wide?params.width:params.height,end=lyricsExpanded?0:heroExtent;
+        hero.setImportantForAccessibility(lyricsExpanded?IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS:IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        heroMotion=ValueAnimator.ofInt(start,end);heroMotion.setDuration(animations()?260:0);heroMotion.setInterpolator(new android.view.animation.DecelerateInterpolator());
+        heroMotion.addUpdateListener(a->{int extent=(int)a.getAnimatedValue();if(wide)params.width=extent;else params.height=extent;heroSlot.setLayoutParams(params);hero.setAlpha(Math.min(1,extent/(float)Math.max(1,heroExtent)));});heroMotion.start();
     }
     private void updateLandscapeControls(){
         if(landscapePlay==null)return;landscapePlay.setPlaying(playing);landscapePlay.setEnabled(current!=null);
@@ -322,7 +348,7 @@ final class PlayerStylePage extends FrameLayout {
         title=text("",24,colors.text);title.setTypeface(null,Typeface.BOLD);title.setMaxLines(2);title.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(title);
         artist=text("",16,colors.text);artist.setTypeface(null,Typeface.BOLD);artist.setSingleLine(true);artist.setEllipsize(android.text.TextUtils.TruncateAt.END);artist.setPadding(0,dp(6),0,0);info.addView(artist);
         album=text("",14,colors.secondary);album.setSingleLine(true);album.setEllipsize(android.text.TextUtils.TruncateAt.END);album.setPadding(0,dp(6),0,0);info.addView(album);
-        lyricPanel=new FrameLayout(getContext());lyricPanel.setBackground(frostedPanel());lyricPanel.setClipToOutline(true);detailRoot.addView(lyricPanel,wide?new LinearLayout.LayoutParams(0,-1,1):new LinearLayout.LayoutParams(-1,0,1));
+        lyricPanel=new FrameLayout(getContext());lyricPanel.setBackground(glassSurface(lyricPanel,20,colors.dark));lyricPanel.setClipToOutline(true);detailRoot.addView(lyricPanel,wide?new LinearLayout.LayoutParams(0,-1,1):new LinearLayout.LayoutParams(-1,0,1));
         lyricView=new NativeLyricsView(getContext(),seek,lyricsAction);lyricView.frosted(true);lyricView.palette(colors);lyricView.lyrics(lyrics);lyricView.status(lyricStatus);lyricView.playback(position,duration,playing);lyricPanel.addView(lyricView,new LayoutParams(-1,-1));
         ImageView expand=new ImageView(getContext());expand.setImageDrawable(new SimplePlayerGlyph(expanded?SimplePlayerGlyph.COLLAPSE:SimplePlayerGlyph.EXPAND,colors.secondary,getResources().getDisplayMetrics().density));expand.setScaleType(ImageView.ScaleType.CENTER);expand.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x22708179),null,null));expand.setOnClickListener(v->toggleExpanded());ButtonFeedback.install(expand);expand.setContentDescription(expanded?"收起歌词":"展开歌词");expand.setTag("expand");lyricPanel.addView(expand,new LayoutParams(dp(44),dp(44),Gravity.TOP|Gravity.RIGHT));
         if(current==null){title.setOnClickListener(v->browse.run());title.setContentDescription("选择歌曲，打开音乐库");}
@@ -336,7 +362,7 @@ final class PlayerStylePage extends FrameLayout {
         if(cover!=null&&current!=null)bindImage(cover,current,1600);updateLandscapeControls();
     }
     private void setExpanded(boolean value){
-        if(expanded==value||style.equals("wall"))return;expanded=value;detailChanged.run();int epoch=++transitionEpoch;
+        if(expanded==value||style.equals("wall"))return;if(!value&&lyricsExpanded)toggleLyricsExpanded();expanded=value;detailChanged.run();int epoch=++transitionEpoch;
         if(style.equals("library")){
             if(libraryRoot==null||detailRoot==null)return;View target=value?detailRoot:libraryRoot,source=value?libraryRoot:detailRoot;
             source.animate().cancel();target.animate().cancel();target.setVisibility(VISIBLE);if(value)updateDetails();target.setAlpha(animations()?0:1);target.setTranslationY(animations()?dp(value?28:-16):0);source.setEnabled(false);target.bringToFront();target.setClickable(true);
@@ -357,8 +383,10 @@ final class PlayerStylePage extends FrameLayout {
         if(images==null||images.isShutdown()){images=new ThreadPoolExecutor(1,1,10,TimeUnit.SECONDS,new ArrayBlockingQueue<>(16));images.allowCoreThreadTimeOut(true);}
         if(side>=1600&&(detailImages==null||detailImages.isShutdown())){detailImages=new ThreadPoolExecutor(1,1,10,TimeUnit.SECONDS,new ArrayBlockingQueue<>(2));detailImages.allowCoreThreadTimeOut(true);}
         ThreadPoolExecutor loader=side>=1600?detailImages:images;
-        int generation=artGeneration;pending.add(key);try{loader.execute(()->{Bitmap result=null;try{result=ArtworkCache.load(getContext(),song,side);}catch(RuntimeException|OutOfMemoryError ignored){}final Bitmap ready=result;post(()->{if(generation!=artGeneration)return;pending.remove(key);if(ready!=null){if(key.equals(image.getTag())){image.setImageBitmap(ready);if(image==cover&&usesCoverAtmosphere())updateAtmosphere(ready);}if(cover!=null&&key.equals(cover.getTag()))cover.setImageBitmap(ready);if(list!=null)for(int i=0;i<list.getChildCount();i++){Object holder=list.getChildAt(i).getTag();if(holder instanceof Object[]){ImageView thumbnail=(ImageView)((Object[])holder)[0];if(key.equals(thumbnail.getTag()))thumbnail.setImageBitmap(ready);}}}});});}catch(RejectedExecutionException busy){pending.remove(key);}
+        int generation=artGeneration;pending.add(key);try{loader.execute(()->{Bitmap result=null;try{result=ArtworkCache.load(getContext(),song,side);}catch(RuntimeException|OutOfMemoryError ignored){}final Bitmap ready=result;post(()->{if(generation!=artGeneration)return;pending.remove(key);if(ready!=null){if(key.equals(image.getTag())){image.setImageBitmap(ready);if(image==cover&&usesCoverAtmosphere())updateAtmosphere(ready);}if(cover!=null&&key.equals(cover.getTag()))cover.setImageBitmap(ready);if(list!=null)for(int i=0;i<list.getChildCount();i++){Object holder=list.getChildAt(i).getTag();if(holder instanceof Object[]){ImageView thumbnail=(ImageView)((Object[])holder)[0];if(key.equals(thumbnail.getTag()))thumbnail.setImageBitmap(ready);}}refreshGlass();}});});}catch(RejectedExecutionException busy){pending.remove(key);}
     }
     @Override protected void onSizeChanged(int w,int h,int oldw,int oldh){super.onSizeChanged(w,h,oldw,oldh);if(w>0&&h>0&&(w!=renderWidth||h!=renderHeight)){renderWidth=w;renderHeight=h;clearGroupTransition();saveScroll();post(()->{if(getWidth()==w&&getHeight()==h&&!style.equals("wall"))render();});}}
-    @Override protected void onDetachedFromWindow(){atmosphere.stop();transitionEpoch++;artGeneration++;clearGroupTransition();if(heroMotion!=null)heroMotion.cancel();if(selectionMotion!=null)selectionMotion.cancel();if(images!=null)images.shutdownNow();if(detailImages!=null)detailImages.shutdownNow();pending.clear();super.onDetachedFromWindow();}
+    @Override protected void onAttachedToWindow(){super.onAttachedToWindow();getViewTreeObserver().addOnScrollChangedListener(glassScroll);}
+    @Override protected void onLayout(boolean changed,int l,int t,int r,int b){super.onLayout(changed,l,t,r,b);refreshGlass();}
+    @Override protected void onDetachedFromWindow(){if(getViewTreeObserver().isAlive())getViewTreeObserver().removeOnScrollChangedListener(glassScroll);atmosphere.stop();transitionEpoch++;artGeneration++;clearGroupTransition();if(heroMotion!=null)heroMotion.cancel();if(selectionMotion!=null)selectionMotion.cancel();if(images!=null)images.shutdownNow();if(detailImages!=null)detailImages.shutdownNow();pending.clear();super.onDetachedFromWindow();}
 }

@@ -16,6 +16,8 @@ final class PlayerStyleTransition {
     private boolean busy;
     private int generation;
     private Runnable queued;
+    private Runnable finished=()->{};
+    void setFinished(Runnable action){finished=action;}
     private Sweep sweep;
     PlayerStyleTransition(Activity activity,ViewGroup root){
         this.activity=activity;this.root=root;
@@ -51,8 +53,8 @@ final class PlayerStyleTransition {
             },main);
         }catch(IllegalArgumentException failure){main.removeCallbacks(timeout);snapshot.recycle();busy=false;change.run();drain();}
     }
-    void cancel(){generation++;queued=null;busy=false;if(sweep!=null){Sweep old=sweep;sweep=null;old.dispose();}}
-    private void drain(){Runnable next=queued;queued=null;if(next!=null)root.postOnAnimation(next);}
+    void cancel(){boolean interrupted=busy;generation++;queued=null;busy=false;if(sweep!=null){Sweep old=sweep;sweep=null;old.dispose();}if(interrupted&&root.isAttachedToWindow())root.post(finished);}
+    private void drain(){finished.run();Runnable next=queued;queued=null;if(next!=null)root.postOnAnimation(next);}
     private final class Sweep extends View {
         private final Bitmap bitmap;
         private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);

@@ -13,7 +13,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-/** Right-anchored search lens: grow first, then open horizontally, like the Mac wall. */
+/** Right-anchored search field with an immediate, reversible horizontal transition. */
 final class WallSearchControl extends FrameLayout {
     final EditText input;
     private final Activity activity;
@@ -22,6 +22,7 @@ final class WallSearchControl extends FrameLayout {
     private ValueAnimator animator;
     private boolean open;
     private float amount;
+    private final android.animation.ArgbEvaluator tint=new android.animation.ArgbEvaluator();
     private boolean simpleStyle;
     private final android.graphics.Paint surfacePaint=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
     private AppAppearance.Palette colors=new AppAppearance.Palette(true);
@@ -33,20 +34,20 @@ final class WallSearchControl extends FrameLayout {
         input=new EditText(activity);input.setSingleLine(true);input.setImeOptions(EditorInfo.IME_ACTION_SEARCH);input.setTextColor(Color.WHITE);input.setHintTextColor(0xFFB9C5BE);input.setHint("搜索音乐");input.setTextSize(14);input.setBackgroundColor(Color.TRANSPARENT);input.setPadding(0,0,0,0);input.setVisibility(INVISIBLE);
         LayoutParams field=new LayoutParams(-1,-1);field.leftMargin=dp(WallToolStyle.SIDE);field.rightMargin=dp(38);addView(input,field);
         clear=new TextView(activity);clear.setText("×");clear.setTextSize(24);clear.setTextColor(0xFFBAC5BF);clear.setGravity(Gravity.CENTER);clear.setContentDescription("清除搜索");addView(clear,new LayoutParams(dp(38),-1,Gravity.RIGHT));clear.setVisibility(INVISIBLE);clear.setOnClickListener(v->input.setText(""));
-        lens.setOnClickListener(v->{if(open){input.requestFocus();keyboard();}else setOpen(true,true);});
+        lens.setOnClickListener(v->{if(open){if(animator!=null&&animator.isRunning())return;input.requestFocus();keyboard();}else setOpen(true,true);});
         input.setOnEditorActionListener((v,action,event)->{if(action==EditorInfo.IME_ACTION_SEARCH){hideKeyboard();input.clearFocus();if(input.length()==0)setOpen(false,true);return true;}return false;});
         input.setOnFocusChangeListener((v,focused)->{if(!focused&&open&&input.length()==0)setOpen(false,true);});
         input.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int start,int count,int after){}public void onTextChanged(CharSequence s,int start,int before,int count){clear.setVisibility(open&&s.length()>0?VISIBLE:INVISIBLE);}public void afterTextChanged(android.text.Editable e){}});
-        ButtonFeedback.install(lens);ButtonFeedback.install(clear);
+        ButtonFeedback.install(lens);lens.setStateListAnimator(null);ButtonFeedback.install(clear);
         addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{if(getParent() instanceof View&&((View)getParent()).getWidth()>0&&r-l!=Math.round(targetWidth()))apply(amount);});
     }
     private int dp(float value){return Math.round(value*getResources().getDisplayMetrics().density);}
     private float targetWidth(){int parent=getParent() instanceof View?((View)getParent()).getWidth():getResources().getDisplayMetrics().widthPixels;return dp(WallToolStyle.SIDE)+(Math.min(dp(320),Math.max(dp(WallToolStyle.SIDE),availableWidth(parent)))-dp(WallToolStyle.SIDE))*amount;}
     private int availableWidth(int parent){FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)getLayoutParams();return params==null?parent-dp(100):parent-params.leftMargin-params.rightMargin;}
     private void apply(float value){amount=value;FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)getLayoutParams();if(params!=null){int width=Math.round(targetWidth());if(params.width!=width){params.width=width;setLayoutParams(params);}}
-        input.setAlpha(Math.max(0,(value-.25f)/.75f));lens.setColorFilter(value>0?colors.accent:colors.text);clear.setAlpha(value);invalidate();
+        input.setAlpha(Math.max(0,(value-.25f)/.75f));lens.setColorFilter((Integer)tint.evaluate(value,colors.text,colors.accent));clear.setAlpha(value);invalidate();
     }
-    void configure(AppAppearance.Palette palette){colors=palette;input.setTextColor(colors.text);input.setHintTextColor(colors.secondary);clear.setTextColor(colors.secondary);lens.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(colors.dark?0x44FFFFFF:0x18000000),null,null));apply(amount);}
+    void configure(AppAppearance.Palette palette){colors=palette;input.setTextColor(colors.text);input.setHintTextColor(colors.secondary);clear.setTextColor(colors.secondary);GradientDrawable mask=new GradientDrawable();mask.setColor(Color.WHITE);mask.setShape(GradientDrawable.OVAL);lens.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(colors.dark?0x20FFFFFF:0x140A8763),null,mask));apply(amount);}
     void simpleStyle(boolean value){simpleStyle=value;invalidate();}
     @Override protected void onDraw(android.graphics.Canvas canvas){
         super.onDraw(canvas);
@@ -65,12 +66,12 @@ final class WallSearchControl extends FrameLayout {
         if(!value){hideKeyboard();input.clearFocus();}
         else input.setVisibility(VISIBLE);
         clear.setVisibility(value&&input.length()>0?VISIBLE:INVISIBLE);
-        if(!animate){apply(value?1:0);setScaleX(1);setScaleY(1);input.setVisibility(value?VISIBLE:INVISIBLE);return;}
-        float start=amount;boolean grow=value&&start==0;
-        animator=ValueAnimator.ofFloat(0,1);animator.setDuration(value?600:360);
-        animator.addUpdateListener(a->{float t=(float)a.getAnimatedValue();float expansion=grow?Math.max(0,(t-.4f)/.6f):t;float eased=1-(float)Math.pow(1-expansion,3);apply(start+((value?1:0)-start)*eased);
-            setPivotX(getWidth()-dp(WallToolStyle.SIDE/2f));setPivotY(getHeight()/2f);float pulse=grow?(t<.4f?t/.4f:1-(t-.4f)/.6f):0;setScaleX(1+.10f*pulse);setScaleY(1+.10f*pulse);
-        });
+        if(!animate||!ValueAnimator.areAnimatorsEnabled()){apply(value?1:0);setScaleX(1);setScaleY(1);input.setVisibility(value?VISIBLE:INVISIBLE);if(value&&animate){input.requestFocus();keyboard();}return;}
+        float start=amount,target=value?1:0;
+        setScaleX(1);setScaleY(1);
+        animator=ValueAnimator.ofFloat(start,target);animator.setDuration(Math.max(100,Math.round((value?280:220)*Math.abs(target-start))));
+        animator.setInterpolator(new android.view.animation.DecelerateInterpolator(1.5f));
+        animator.addUpdateListener(a->apply((float)a.getAnimatedValue()));
         animator.addListener(new android.animation.AnimatorListenerAdapter(){@Override public void onAnimationEnd(android.animation.Animator animation){setScaleX(1);setScaleY(1);input.setVisibility(open?VISIBLE:INVISIBLE);if(open){input.requestFocus();keyboard();}}});animator.start();
     }
     void clearQuery(){input.setText("");setOpen(false,false);}
