@@ -739,7 +739,7 @@ final class HomeScreen {
     private AppAppearance.Palette chromePalette(){return new AppAppearance.Palette(isWallStyle()||AppAppearance.dark(activity,activity.getSharedPreferences("library",0)));}
     private android.graphics.drawable.Drawable chromeBackground(View view){
         AppAppearance.Palette palette=chromePalette();
-        return isWallStyle()?glass().surface(view,28,false):new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(palette.dark?0x22FFFFFF:0x16000000),FrostedSurface.background(activity,28),round(Color.WHITE,28,0,0));
+        return isWallStyle()?glass().surface(view,28,false):new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(palette.dark?0x22FFFFFF:0x16000000),FrostedSurface.background(activity,28,palette.dark),round(Color.WHITE,28,0,0));
     }
     private void applyDrawerAppearance(){
         AppAppearance.Palette palette=chromePalette();
@@ -751,7 +751,7 @@ final class HomeScreen {
         sidebarPage.configure("library",palette);
         drawerSearch.setTextColor(palette.text);drawerSearch.setHintTextColor(palette.secondary);drawerSearch.setBackground(round(palette.dark?0x553F4945:0x99FFFFFF,14,0,0));
         simpleLibraryTab.setTextColor(palette.text);simpleRecentTab.setTextColor(palette.text);updateSimpleTabs();
-        drawerPanel.setBackground(isWallStyle()?new GlassBackdrop(wall,false).surface(drawerPanel,24,true):new GlassBackdrop(stylePage,false,28).surface(drawerPanel,24,true));
+        drawerPanel.setBackground(isWallStyle()?new GlassBackdrop(wall,false).surface(drawerPanel,24,true):new GlassBackdrop(stylePage,false,28).surface(drawerPanel,24,true,!palette.dark));
         drawerName.setTextColor(palette.text);drawerSubtitle.setTextColor(palette.secondary);
         drawerClose.setColorFilter(palette.text);drawerSettings.setColorFilter(palette.text);drawerSettings.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(palette.dark?0x22FFFFFF:0x16000000),null,null));
     }
@@ -759,7 +759,7 @@ final class HomeScreen {
         if(detailBack==null)return;
         boolean visible=playerStyle.equals("library")&&stylePage.libraryDetailOpen()&&!chromeHidden;
         detailBack.setVisibility(visible?View.VISIBLE:View.GONE);
-        AppAppearance.Palette palette=chromePalette();detailBack.setTextColor(palette.accent);detailBack.setBackground(FrostedSurface.background(activity,22));
+        AppAppearance.Palette palette=chromePalette();detailBack.setTextColor(palette.accent);detailBack.setBackground(FrostedSurface.background(activity,22,palette.dark));
         FrameLayout.LayoutParams back=(FrameLayout.LayoutParams)detailBack.getLayoutParams();back.leftMargin=safeLeft+dp(80);back.topMargin=safeTop+dp(12);detailBack.setLayoutParams(back);
         FrameLayout.LayoutParams search=(FrameLayout.LayoutParams)searchControl.getLayoutParams();search.leftMargin=safeLeft+dp(visible?188:82);searchControl.setLayoutParams(search);
     }

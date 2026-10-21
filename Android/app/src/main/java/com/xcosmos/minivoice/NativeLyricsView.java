@@ -16,7 +16,7 @@ final class NativeLyricsView extends FrameLayout {
     private List<Lyrics.Line> lines=Collections.emptyList();private int active=-1,position,duration;
     private View scrollRail;
     private boolean frosted;
-    void frosted(boolean value){frosted=value;list.setVerticalFadingEdgeEnabled(value);list.setFadingEdgeLength(dp(44));adapter.notifyDataSetChanged();}
+    void frosted(boolean value){frosted=value;list.setVerticalFadingEdgeEnabled(value);list.setFadingEdgeLength(dp(44));LayoutParams rail=(LayoutParams)scrollRail.getLayoutParams();rail.topMargin=dp(value?52:16);rail.bottomMargin=dp(20);scrollRail.setLayoutParams(rail);adapter.notifyDataSetChanged();}
     private boolean playing,manualScrolling,followPending;private long sampledAt,manualUntil;private AppAppearance.Palette colors=new AppAppearance.Palette(false);
     private final Runnable resumeFollow=()->{if(isShown()&&!manualScrolling&&android.os.SystemClock.uptimeMillis()>=manualUntil){followPending=false;centerActive(true);}};
     private final Runnable centerFollow=()->centerActive(true);
@@ -30,10 +30,9 @@ final class NativeLyricsView extends FrameLayout {
             @Override protected void onDraw(Canvas canvas){
                 if(lines.isEmpty())return;float h=getHeight(),x=getWidth()/2f;
                 int count=Math.max(1,list.getCount()),visible=Math.max(1,list.getLastVisiblePosition()-list.getFirstVisiblePosition()+1);
-                thumbHeight=Math.min(h,Math.max(dp(48),h*Math.min(1,visible/(float)count)));
+                thumbHeight=Math.min(h,Math.min(dp(64),Math.max(dp(36),h*Math.min(1,visible/(float)count))));
                 thumbTop=(h-thumbHeight)*Math.min(1,list.getFirstVisiblePosition()/(float)Math.max(1,count-visible));
-                ink.setColor(0x22708078);canvas.drawRoundRect(x-dp(2),0,x+dp(2),h,dp(2),dp(2),ink);
-                ink.setColor(0xCC51BFA0);canvas.drawRoundRect(x-dp(5),thumbTop,x+dp(5),thumbTop+thumbHeight,dp(5),dp(5),ink);
+                ink.setColor(colors.accent);canvas.drawRoundRect(x-dp(5),thumbTop,x+dp(5),thumbTop+thumbHeight,dp(5),dp(5),ink);
             }
             @Override public boolean onTouchEvent(MotionEvent event){
                 if(lines.isEmpty())return false;
@@ -43,7 +42,7 @@ final class NativeLyricsView extends FrameLayout {
                 if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){manualScrolling=false;manualUntil=android.os.SystemClock.uptimeMillis()+4000;NativeLyricsView.this.removeCallbacks(resumeFollow);NativeLyricsView.this.postDelayed(resumeFollow,4000);getParent().requestDisallowInterceptTouchEvent(false);}return true;
             }
         };
-        scrollRail.setContentDescription("拖动滚动歌词");addView(scrollRail,new LayoutParams(dp(32),-1,Gravity.RIGHT));
+        scrollRail.setContentDescription("拖动滚动歌词");LayoutParams railParams=new LayoutParams(dp(32),-1,Gravity.RIGHT);railParams.topMargin=dp(16);railParams.bottomMargin=dp(20);addView(scrollRail,railParams);
         empty=new TextView(context);empty.setGravity(Gravity.CENTER);empty.setTextSize(16);empty.setText("暂无歌词\n点按添加歌词");empty.setOnClickListener(v->edit.run());addView(empty,new LayoutParams(-1,-1));list.setEmptyView(empty);
         adapter=new BaseAdapter(){public int getCount(){return lines.size();}public Object getItem(int i){return lines.get(i);}public long getItemId(int i){return i;}public View getView(int i,View recycled,ViewGroup parent){LyricRow row=recycled instanceof LyricRow?(LyricRow)recycled:new LyricRow(context);row.bind(i);return row;}};
         list.setAdapter(adapter);list.setOnItemClickListener((parent,view,index,id)->{if(lines.get(index).ms>=0){manualUntil=0;seek.accept((int)Math.min(Integer.MAX_VALUE,lines.get(index).ms));}});
@@ -57,7 +56,7 @@ final class NativeLyricsView extends FrameLayout {
         });
     }
     private int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
-    void palette(AppAppearance.Palette value){colors=value;empty.setTextColor(colors.secondary);adapter.notifyDataSetChanged();}
+    void palette(AppAppearance.Palette value){colors=value;empty.setTextColor(colors.secondary);scrollRail.invalidate();adapter.notifyDataSetChanged();}
     void status(String value){empty.setText(value+(value.equals("暂无歌词")?"\n点按添加歌词":""));}
     void lyrics(List<Lyrics.Line> value){if(lines==value)return;list.removeCallbacks(centerFollow);lines=value;active=-1;manualScrolling=false;manualUntil=0;followPending=true;removeCallbacks(resumeFollow);adapter.notifyDataSetChanged();refresh();}
     void playback(int value,int total,boolean play){position=value;duration=total;sampledAt=android.os.SystemClock.uptimeMillis();playing=play;refresh();wake();}
@@ -80,7 +79,7 @@ final class NativeLyricsView extends FrameLayout {
     private void wake(){removeCallbacks(tick);if(playing&&isShown()&&hasWindowFocus())postDelayed(tick,80);}
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused){refresh();wake();}else{removeCallbacks(tick);removeCallbacks(resumeFollow);}}
     @Override protected void onVisibilityChanged(View view,int visible){super.onVisibilityChanged(view,visible);if(list!=null){if(isShown()){refresh();wake();}else{removeCallbacks(tick);removeCallbacks(resumeFollow);}}}
-    @Override protected void onSizeChanged(int w,int h,int oldw,int oldh){super.onSizeChanged(w,h,oldw,oldh);if(h>0&&h!=oldh){int edge=Math.max(dp(24),h/2-dp(28));list.setPadding(dp(12),edge,dp(12),edge);list.post(()->{if(android.os.SystemClock.uptimeMillis()>=manualUntil)centerActive(false);});}}
+    @Override protected void onSizeChanged(int w,int h,int oldw,int oldh){super.onSizeChanged(w,h,oldw,oldh);if(h>0&&h!=oldh){int edge=Math.max(dp(24),h/2-dp(28));list.setPadding(dp(12),edge,dp(40),edge);list.post(()->{if(android.os.SystemClock.uptimeMillis()>=manualUntil)centerActive(false);});}}
     @Override protected void onDetachedFromWindow(){list.removeCallbacks(centerFollow);removeCallbacks(tick);removeCallbacks(resumeFollow);super.onDetachedFromWindow();}
     private final class LyricRow extends TextView {
         int index;

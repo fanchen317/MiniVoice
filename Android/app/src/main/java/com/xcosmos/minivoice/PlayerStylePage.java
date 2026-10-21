@@ -292,7 +292,7 @@ final class PlayerStylePage extends FrameLayout {
         int mode=playbackActions==null?1:PlaybackModes.valid(playbackActions.playbackMode());PlaybackModeGlyph.bind(landscapeMode,mode,colors.accent);landscapeMode.setContentDescription("播放模式："+PlaybackModes.NAMES[mode]+"，点击切换");
         boolean saved=current!=null&&favorites.contains(Long.toString(current.id));landscapeFavorite.state(saved,saved?colors.accent:colors.secondary);landscapeFavorite.setEnabled(current!=null);landscapeFavorite.setContentDescription(saved?"取消收藏":"收藏歌曲");
     }
-    private GradientDrawable frostedPanel(){return FrostedSurface.background(getContext(),20);}
+    private GradientDrawable frostedPanel(){return FrostedSurface.background(getContext(),20,colors.dark);}
     private void buildSimpleDetails(){
         detailRoot=new LinearLayout(getContext());detailRoot.setOrientation(wide?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);detailRoot.setPadding(dp(14),0,dp(14),0);addView(detailRoot,new LayoutParams(-1,-1));
         int availableH=Math.max(1,getHeight()-getPaddingTop()-getPaddingBottom());

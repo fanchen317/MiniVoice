@@ -26,7 +26,7 @@ final class StandardPlaybackBar extends LinearLayout {
     private TransportButton button(TransportButton.Glyph glyph,Runnable action){TransportButton button=new TransportButton(getContext(),glyph,action);button.setColors(colors.text,colors.surface);return button;}
     private void render(){
         if(simple){renderSimple();return;}
-        modeButton=null;mediaVolume=null;volumePercent=null;removeAllViews();setOrientation(wide?HORIZONTAL:VERTICAL);setGravity(Gravity.CENTER_VERTICAL);setPadding(dp(12),dp(8),dp(12),dp(8));setBackground(FrostedSurface.background(getContext(),20));
+        modeButton=null;mediaVolume=null;volumePercent=null;removeAllViews();setOrientation(wide?HORIZONTAL:VERTICAL);setGravity(Gravity.CENTER_VERTICAL);setPadding(dp(12),dp(8),dp(12),dp(8));setBackground(FrostedSurface.background(getContext(),20,colors.dark));
         LinearLayout top=new LinearLayout(getContext());top.setGravity(Gravity.CENTER_VERTICAL);addView(top,wide?new LayoutParams(0,-1,1):new LayoutParams(-1,dp(48)));
         artwork=new ImageView(getContext());artwork.setScaleType(ImageView.ScaleType.CENTER_CROP);artwork.setBackground(shape(colors.line,8));artwork.setClipToOutline(true);artwork.setContentDescription("展开或收起播放页");artwork.setOnClickListener(v->expand.run());ButtonFeedback.install(artwork);top.addView(artwork,new LayoutParams(dp(44),dp(44)));
         LinearLayout info=new LinearLayout(getContext());info.setOrientation(VERTICAL);info.setGravity(Gravity.CENTER_VERTICAL);info.setPadding(dp(10),0,dp(8),0);top.addView(info,new LayoutParams(0,-1,1));title=text("",14,colors.text);title.setTypeface(null,Typeface.BOLD);artist=text("",11,colors.secondary);artist.setPadding(0,dp(4),0,0);info.addView(title);info.addView(artist);
