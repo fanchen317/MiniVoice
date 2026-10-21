@@ -87,3 +87,6 @@ java -cp "$output" com.xcosmos.minivoice.GlassGaussianTests
 
 javac -d "$output" "$source_root/DrawerMaterialState.java" "$repo_root/Android/tests/com/xcosmos/minivoice/DrawerMaterialTests.java"
 java -cp "$output" com.xcosmos.minivoice.DrawerMaterialTests
+
+javac -d "$output" "$source_root/PageScrollMemory.java" "$repo_root/Android/tests/com/xcosmos/minivoice/PageScrollMemoryTests.java"
+java -cp "$output" com.xcosmos.minivoice.PageScrollMemoryTests

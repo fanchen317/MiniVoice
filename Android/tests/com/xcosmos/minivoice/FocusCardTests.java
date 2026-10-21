@@ -48,6 +48,25 @@ public final class FocusCardTests {
             float narrow=FocusCardPresentation.expandedLyricStep(180*density,44*density,density);
             check(narrow>=52*density,"wrapped lyrics never overlap in short landscape viewport");
         }
+        for(float density:new float[]{1,2,3.5f})for(int height=26;height<=240;height++){
+            float size=19*density,gap=6*density,available=height*density;
+            int count=FocusCardPresentation.cardLyricCount(available,size,gap);
+            int lines=FocusCardPresentation.cardActiveLines(available,size,gap,count-1);
+            check(count==3||count==5,"card retains multiple lyric sentences at every zoom");
+            check(lines>=1&&lines<=3,"current sentence has bounded wrapping at every zoom");
+            if(available>=count*size*1.25f+(count-1)*gap)check(lines*size*1.25f+(count-1)*(size*1.25f+gap)<=available+.1f,"readable lyric rows overlap their available region");
+        }
+        for(float density:new float[]{1,2,3.5f})for(int percent=60;percent<=120;percent++){
+            float side=352*density*percent/100f;FocusCardMetrics m=new FocusCardMetrics(side,side,density);
+            float height=percent<70?side-m.padding-44*density-8*density-m.headerBottom-6*density:m.lyricsBottom-m.lyricsTop;
+            float gap=Math.max(2*density,Math.min(5*density,height*.025f));
+            int count=FocusCardPresentation.cardLyricCount(height,m.lyricText,gap);
+            float size=Math.min(m.lyricText,Math.max(11*density,(height-(count-1)*gap)/(count*1.25f)));
+            check(count>=3,"minimum zoom must retain previous/current/next sentences");
+            check(size>=11*density,"multiple lyrics must not shrink to tiny text");
+            check(count*size*1.25f+(count-1)*gap<=height+.1f,"zoomed lyric group exceeds its available region");
+            if(percent>=100)check(count==5,"normal and large cards must allow five lyric sentences");
+        }
         check(PlaybackModes.valid(-1)==1&&PlaybackModes.valid(5)==1,"invalid modes fall back to list play");
         for(int i=0;i<PlaybackModes.NAMES.length;i++)check(PlaybackModes.valid(i)==i&&!PlaybackModes.DETAILS[i].isEmpty(),"all five modes are selectable and explained");
         System.out.println("PASS: focused card header, wrapped lyrics, five touch targets, timestamps and seek geometry at phone/tablet widths and densities");

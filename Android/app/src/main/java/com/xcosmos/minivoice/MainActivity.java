@@ -203,7 +203,7 @@ public final class MainActivity extends Activity {
         if(section.equals("歌手")||section.equals("专辑")){groupName=section.equals("歌手")?song.artist:song.album;refreshWall();}
         // A locate action reveals the player in the current section; it must not change navigation.
         home.ensureSongVisible(song);
-        pendingLocatePlaying=false;home.locateSongDirectly(song.id);
+        pendingLocatePlaying=false;home.locateSong(song.id);
     }
     private void refreshWall(){if(home==null)return;
         home.setPageKey(section+"\n"+(groupName==null?"":groupName));

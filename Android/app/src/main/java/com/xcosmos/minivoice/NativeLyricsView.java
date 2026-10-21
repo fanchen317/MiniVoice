@@ -32,12 +32,21 @@ final class NativeLyricsView extends FrameLayout {
         scrollRail.setContentDescription("拖动滚动歌词");LayoutParams railParams=new LayoutParams(dp(32),-1,Gravity.RIGHT);railParams.topMargin=dp(16);railParams.bottomMargin=dp(20);addView(scrollRail,railParams);
         empty=new TextView(context);empty.setGravity(Gravity.CENTER);empty.setTextSize(16);empty.setText("暂无歌词\n点按添加歌词");empty.setOnClickListener(v->edit.run());addView(empty,new LayoutParams(-1,-1));list.setEmptyView(empty);
         adapter=new BaseAdapter(){public int getCount(){return lines.size();}public Object getItem(int i){return lines.get(i);}public long getItemId(int i){return i;}public View getView(int i,View recycled,ViewGroup parent){LyricRow row=recycled instanceof LyricRow?(LyricRow)recycled:new LyricRow(context);row.bind(i);return row;}};
-        list.setAdapter(adapter);list.setOnItemClickListener((parent,view,index,id)->{if(lines.get(index).ms>=0){manualUntil=0;seek.accept((int)Math.min(Integer.MAX_VALUE,lines.get(index).ms));}});
+        list.setAdapter(adapter);list.setOnItemClickListener((parent,view,index,id)->{
+            if(lines.get(index).ms<0)return;
+            list.smoothScrollBy(0,0);list.removeCallbacks(centerFollow);removeCallbacks(resumeFollow);
+            manualScrolling=false;manualUntil=0;followPending=true;
+            int target=(int)Math.min(Integer.MAX_VALUE,lines.get(index).ms);
+            seek.accept(target);position=target;sampledAt=android.os.SystemClock.uptimeMillis();followPending=true;refresh();
+            view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK);
+        });
         list.setOnItemLongClickListener((parent,view,index,id)->{edit.run();return true;});
     }
 
     private int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
-    void palette(AppAppearance.Palette value){colors=value;empty.setTextColor(colors.secondary);scrollRail.palette(colors.accent);adapter.notifyDataSetChanged();}
+    void palette(AppAppearance.Palette value){colors=value;empty.setTextColor(colors.secondary);scrollRail.palette(colors.accent);
+        android.graphics.drawable.GradientDrawable mask=new android.graphics.drawable.GradientDrawable();mask.setColor(android.graphics.Color.WHITE);mask.setCornerRadius(dp(14));
+        list.setSelector(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(colors.dark?0x3051D5AA:0x240A8763),null,mask));list.setDrawSelectorOnTop(false);adapter.notifyDataSetChanged();}
     void status(String value){empty.setText(value+(value.equals("暂无歌词")?"\n点按添加歌词":""));}
     void lyrics(List<Lyrics.Line> value){if(lines==value)return;list.removeCallbacks(centerFollow);lines=value;active=-1;manualScrolling=false;manualUntil=0;followPending=true;removeCallbacks(resumeFollow);adapter.notifyDataSetChanged();refresh();}
     void playback(int value,int total,boolean play){position=value;duration=total;sampledAt=android.os.SystemClock.uptimeMillis();playing=play;refresh();wake();}
@@ -65,7 +74,7 @@ final class NativeLyricsView extends FrameLayout {
     private final class LyricRow extends TextView {
         int index;
         LyricRow(Context context){super(context);setTextSize(frosted?26:21);setLineSpacing(dp(3),1);setPadding(dp(frosted?24:12),dp(frosted?18:14),dp(frosted?24:12),dp(frosted?18:14));setIncludeFontPadding(false);}
-        void bind(int value){index=value;String valueText=lines.get(value).text;if(!valueText.contentEquals(getText()))setText(valueText.isEmpty()?"•••":valueText);setTypeface(null,frosted||index==active?Typeface.BOLD:Typeface.NORMAL);setTextColor(frosted&&index==active?((colors.accent&0x00FFFFFF)|0x66000000):colors.secondary);setAlpha(index==active?1:frosted?(Math.abs(index-active)>1?.42f:.72f):.7f);invalidate();}
+        void bind(int value){index=value;String valueText=lines.get(value).text;if(!valueText.contentEquals(getText()))setText(valueText.isEmpty()?"•••":valueText);setTypeface(null,frosted?Typeface.BOLD:Typeface.NORMAL);setTextColor(frosted&&index==active?((colors.accent&0x00FFFFFF)|0x66000000):colors.secondary);setAlpha(index==active?1:frosted?(Math.abs(index-active)>1?.42f:.72f):.7f);invalidate();}
         @Override protected void onDraw(Canvas canvas){
             super.onDraw(canvas);if(index!=active||index>=lines.size())return;Layout layout=getLayout();if(layout==null)return;
             Lyrics.Line line=lines.get(index);long next=index+1<lines.size()?lines.get(index+1).ms:duration;

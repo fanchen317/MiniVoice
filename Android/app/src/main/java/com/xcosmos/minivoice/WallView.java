@@ -122,11 +122,10 @@ final class WallView extends View {
             @Override public boolean onDown(MotionEvent event){manualGesture=false;return true;}
             @Override public boolean onScroll(MotionEvent start,MotionEvent end,float dx,float dy){if(expanded||expansionAmount>0||scaleDetector.isInProgress())return false;if(!manualGesture){interruptCamera();manualGesture=true;}cameraX-=dx;cameraY-=dy;invalidate();return true;}
             @Override public boolean onFling(MotionEvent start,MotionEvent end,float vx,float vy){if(expanded||expansionAmount>0)return false;animateCamera(cameraX+vx*.20f,cameraY+vy*.20f,420);return true;}
-            @Override public boolean onSingleTapUp(MotionEvent event){Hit tapped=hit(event.getX(),event.getY());tapCandidate=tapped==null?null:tapped.instance;return tapped!=null;}
+            @Override public boolean onSingleTapUp(MotionEvent event){if(!grouped&&card.seekLyric(event.getX(),event.getY())){tapCandidate=null;performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK);return true;}Hit tapped=hit(event.getX(),event.getY());tapCandidate=tapped==null?null:tapped.instance;return tapped!=null;}
             @Override public boolean onSingleTapConfirmed(MotionEvent event){
                 WallLayout.Instance target=tapCandidate;tapCandidate=null;if(target==null)return false;
                 if(grouped){onPlay.play(songs.get(target.tile.index));return true;}
-                if(card.seekLyric(event.getX(),event.getY()))return true;
                 if(!expanded&&expansionAmount==0)focus(target);return true;
             }
             @Override public boolean onDoubleTap(MotionEvent event){

@@ -31,11 +31,11 @@ final class FocusCardRenderer {
     private List<Lyrics.Line> shapedLines;private int shapedActive=-1,shapedWidth,shapedFirst,shapedLast,shapedActiveLimit,shapedOtherLimit;private float shapedSize;private boolean shapedExpanded;
     private final List<StaticLayout> shaped=new ArrayList<>();
     private void animateFeedback(float target){
-        if(feedback!=null)feedback.cancel();feedback=android.animation.ValueAnimator.ofFloat(feedbackAmount,target);feedback.setDuration(target>0?80:220);
+        if(feedback!=null){feedback.removeAllListeners();feedback.cancel();}feedback=android.animation.ValueAnimator.ofFloat(feedbackAmount,target);feedback.setDuration(target>0?80:220);
         feedback.setInterpolator(target>0?new android.view.animation.DecelerateInterpolator():new android.view.animation.OvershootInterpolator(1.2f));
         feedback.addUpdateListener(animation->{feedbackAmount=(float)animation.getAnimatedValue();invalidate.run();});feedback.start();
     }
-    void dispose(){if(feedback!=null)feedback.cancel();}
+    void dispose(){if(feedback!=null){feedback.removeAllListeners();feedback.cancel();}}
 
     FocusCardRenderer(float density,Runnable invalidate){d=density;this.invalidate=invalidate;p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);}
     void clear(){buttons.clear();lyrics.clear();track=null;}
@@ -53,7 +53,7 @@ final class FocusCardRenderer {
         label(canvas,song.title,left,top+m.title,m.title,Color.WHITE,true,right-left);
         label(canvas,song.artist,left,top+m.title+8*d+m.artist,m.artist,0xBFFFFFFF,false,right-left);
         if(compact){
-            if(current)drawLyrics(canvas,new RectF(left,rect.top+m.lyricsTop,right,rect.top+m.lyricsBottom),lines,position,lyricStatus,false);
+            if(current)drawLyrics(canvas,new RectF(left,rect.top+m.headerBottom+6*d,right,rect.bottom-m.padding-44*d-8*d),lines,position,lyricStatus,false);
             RectF playHit=new RectF(left,rect.bottom-m.padding-44*d,left+44*d,rect.bottom-m.padding);
             button(canvas,playHit,current&&playing?"pause":"play",false,current?actions::toggle:actions::play);
             button(canvas,new RectF(right-44*d,rect.bottom-m.padding-44*d,right,rect.bottom-m.padding),"expand",false,actions::expand);
@@ -89,14 +89,15 @@ final class FocusCardRenderer {
         int active=0;for(int i=0;i<lines.size();i++){if(lines.get(i).ms<0)continue;if(lines.get(i).ms>position)break;active=i;}
         // Expanded typography is independent of the wall scale and card fitting.
         if(expanded){lyricSize=22*d;lyricSpacing=12*d;}
-        int count=expanded?5:area.height()>=150*d?5:area.height()>=62*d?3:2;
+        if(!expanded)lyricSpacing=Math.max(2*d,Math.min(5*d,area.height()*.025f));
+        int count=expanded?5:FocusCardPresentation.cardLyricCount(area.height(),lyricSize,lyricSpacing);
+        if(!expanded)lyricSize=Math.min(lyricSize,Math.max(11*d,(area.height()-(count-1)*lyricSpacing)/(count*1.25f)));
         int first=Math.max(0,Math.min(active-count/2,lines.size()-count));
         int last=Math.min(lines.size()-1,first+count-1);
-        if(!expanded)lyricSpacing=Math.min(lyricSpacing,Math.max(3*d,Math.min(8*d,area.height()*.035f)));
-        int width=Math.max(1,(int)area.width()),activeLimit=Math.max(1,Math.min(3,(int)(area.height()/(lyricSize*1.35f)))),otherLimit=Math.min(2,activeLimit);
+        int width=Math.max(1,(int)area.width()),activeLimit=FocusCardPresentation.cardActiveLines(area.height(),lyricSize,lyricSpacing,last-first),otherLimit=1;
         if(shapedExpanded!=expanded||shapedLines!=lines||shapedActive!=active||shapedWidth!=width||shapedAreaHeight!=area.height()||shapedSize!=lyricSize||shapedFirst!=first||shapedLast!=last||shapedActiveLimit!=activeLimit||shapedOtherLimit!=otherLimit){
             if(expanded)shapeExpandedLyrics(lines,first,last,active,width,area.height());
-            else shapeCardLyrics(lines,first,last,width,area.height());
+            else shapeCardLyrics(lines,first,last,active,width,activeLimit);
             shapedExpanded=expanded;
             shapedLines=lines;shapedActive=active;shapedWidth=width;shapedAreaHeight=area.height();shapedSize=lyricSize;shapedFirst=first;shapedLast=last;shapedActiveLimit=activeLimit;shapedOtherLimit=otherLimit;
         }
@@ -122,6 +123,7 @@ final class FocusCardRenderer {
             y=activeTop-above;
         }
         int save=c.save();c.clipRect(area);
+        if(feedbackBounds!=null&&feedbackAmount>0){p.setStyle(Paint.Style.FILL);p.setColor(Color.argb(Math.round(38*feedbackAmount),255,255,255));c.drawRoundRect(feedbackBounds,10*d,10*d,p);}
         for(int i=0;i<layouts.size();i++){StaticLayout layout=layouts.get(i);if(expanded)y=expandedCenter+(i-(layouts.size()-1)/2f)*expandedStep-layout.getHeight()/2f;layout.getPaint().setColor(i+first==active?0x66FFFFFF:Math.abs(i+first-active)==1?0x88FFFFFF:0x50FFFFFF);float bottom=y+layout.getHeight();
             if(y>=area.top-.1f&&bottom<=area.bottom+.1f){int lineIndex=first+i;int saveLine=c.save();c.translate(area.left,y);layout.draw(c);
                 if(lineIndex==active){Lyrics.Line source=lines.get(lineIndex);long next=lineIndex+1<lines.size()?lines.get(lineIndex+1).ms:duration;
@@ -153,16 +155,14 @@ final class FocusCardRenderer {
             shaped.add(layout);
         }
     }
-    private void shapeCardLyrics(List<Lyrics.Line> lines,int first,int last,int width,float height){
-        float size=lyricSize;
-        for(int attempt=0;attempt<16;attempt++){
-            shaped.clear();float total=(last-first)*lyricSpacing;
-            for(int i=first;i<=last;i++){
-                TextPaint ink=new TextPaint(Paint.ANTI_ALIAS_FLAG);ink.setTypeface(Typeface.DEFAULT_BOLD);ink.setTextSize(size);
-                StaticLayout layout=lyricLayout(lines.get(i).text,ink,width);shaped.add(layout);total+=layout.getHeight();
-            }
-            if(total<=height-2*d||size<=1)break;
-            size=Math.max(1,size*Math.min(.92f,(height-2*d)/total));
+    private void shapeCardLyrics(List<Lyrics.Line> lines,int first,int last,int active,int width,int activeLimit){
+        shaped.clear();
+        for(int i=first;i<=last;i++){
+            TextPaint ink=new TextPaint(Paint.ANTI_ALIAS_FLAG);ink.setTypeface(Typeface.DEFAULT_BOLD);ink.setTextSize(lyricSize);
+            String value=lines.get(i).text;
+            shaped.add(StaticLayout.Builder.obtain(value,0,value.length(),ink,width)
+                .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).setLineSpacing(2*d,1)
+                .setMaxLines(i==active?activeLimit:1).setEllipsize(android.text.TextUtils.TruncateAt.END).setEllipsizedWidth(width).build());
         }
     }
     private StaticLayout expandedLyricLayout(String value,TextPaint ink,int width){
@@ -208,6 +208,10 @@ final class FocusCardRenderer {
         if(scrubbing){int target=scrub;scrubbing=false;scrub=-1;if(!cancel)actions.seek(target);return true;}
         Button button=pressed;pressed=null;if(button==null)return false;animateFeedback(0);if(!cancel&&button.bounds.contains(x,y))button.action.run();return true;
     }
-    boolean seekLyric(float x,float y){for(Button b:lyrics)if(b.bounds.contains(x,y)){b.action.run();return true;}return false;}
+    boolean seekLyric(float x,float y){for(Button b:lyrics)if(b.bounds.contains(x,y)){
+        feedbackBounds=new RectF(b.bounds);animateFeedback(1);
+        feedback.addListener(new android.animation.AnimatorListenerAdapter(){@Override public void onAnimationEnd(android.animation.Animator animation){if(feedback==animation)animateFeedback(0);}});
+        b.action.run();return true;
+    }return false;}
     private static String time(int ms){return String.format(Locale.ROOT,"%02d:%02d",Math.max(0,ms)/60000,Math.max(0,ms)/1000%60);}
 }

@@ -4,7 +4,6 @@ import android.animation.*;
 import android.content.Context;
 import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
-import android.os.Parcelable;
 import android.view.*;
 import android.widget.*;
 import java.util.*;
@@ -82,7 +81,10 @@ final class PlayerStylePage extends FrameLayout {
     private ImageView lyricsExpandButton;
     private int position,duration,insetLeft,insetTop,insetRight,insetBottom,renderWidth,renderHeight,heroExtent;
     private String lyricStatus="暂无歌词";private ValueAnimator heroMotion;private int transitionEpoch,artGeneration;
-    private final Map<String,Parcelable> scrollStates=new HashMap<>();
+    private final PageScrollMemory scrollMemory=new PageScrollMemory();
+    private String renderedPageKey;
+    private List<String> renderedItems=Collections.emptyList();
+    private AbsListView pendingScrollRestore;
     private final Set<String> pending=new HashSet<>();
     private ThreadPoolExecutor images,detailImages;
     private final BaseAdapter adapter=new BaseAdapter(){
@@ -133,7 +135,7 @@ final class PlayerStylePage extends FrameLayout {
     private boolean inputOccludes;private int inputBottom;
     void setInputInsets(boolean occludes,int bottom){inputOccludes=occludes;inputBottom=bottom;}
     void setInsets(int left,int top,int right,int bottom){insetLeft=left;insetTop=top;insetRight=right;insetBottom=bottom;boolean footerWide=(getWidth()>0?getWidth():getResources().getDisplayMetrics().widthPixels)-left-right>=dp(620);setPadding(left,top+dp(landscapePlayback()||landscapeLibrary()?CONTENT_GAP:6+WallToolStyle.SIDE+CONTENT_GAP),right,inputOccludes?Math.max(bottom,inputBottom)+dp(CONTENT_GAP):bottom+dp(landscapePlayback()?CONTENT_GAP:8+(footerWide?88:104)+CONTENT_GAP));}
-    void setSongs(List<Song> value){boolean nextGrouped=!value.isEmpty()&&value.get(0).groupCount>0;boolean layoutChanged=nextGrouped!=grouped;boolean same=value.size()==songs.size();if(same)for(int i=0;i<value.size();i++)if(value.get(i)!=songs.get(i)){same=false;break;}if(same&&!layoutChanged){updateHeading();return;}grouped=nextGrouped;if(grouped){selecting=false;selection.clear();}songs=new ArrayList<>(value);selection.retain(visibleIDs());if(layoutChanged&&!style.equals("wall"))render();else adapter.notifyDataSetChanged();updateHeading();updateSelection();}
+    void setSongs(List<Song> value){boolean nextGrouped=!value.isEmpty()&&value.get(0).groupCount>0;boolean layoutChanged=nextGrouped!=grouped;boolean same=value.size()==songs.size();if(same)for(int i=0;i<value.size();i++)if(value.get(i)!=songs.get(i)){same=false;break;}if(same&&!layoutChanged){updateHeading();return;}saveScroll();grouped=nextGrouped;if(grouped){selecting=false;selection.clear();}songs=new ArrayList<>(value);selection.retain(visibleIDs());if(layoutChanged&&!style.equals("wall"))render();else adapter.notifyDataSetChanged();updateHeading();updateSelection();}
     void setSection(String value){section=value.equals("歌曲")?"音乐库":value.startsWith("歌单:")?value.substring(3):value;updateHeading();}
     void preparePage(String key){if(pageKey.equals(key))return;saveScroll();selecting=false;selection.clear();if(!key.equals(groupParentKey)&&!key.equals(groupChildKey))clearGroupTransition();pageKey=key;int split=key.indexOf('\n');group=split<0||split==key.length()-1?null:key.substring(split+1);navigationPending=true;}
     void setBrowseContext(String group,String section){
@@ -218,13 +220,36 @@ final class PlayerStylePage extends FrameLayout {
             .withEndAction(()->{if(epoch==transitionEpoch){closingGroup=false;back.run();}}).start();
     }
     private void clearGroupTransition(){groupParentKey=null;groupChildKey=null;}
-    private void saveScroll(){if(list!=null)scrollStates.put(pageKey,list.onSaveInstanceState());}
+    private void saveScroll(){
+        if(list==null||list==pendingScrollRestore||list.getChildCount()==0)return;
+        scrollMemory.save(renderedPageKey,renderedItems,list.getFirstVisiblePosition(),list.getChildAt(0).getTop()-list.getPaddingTop());
+    }
+    private void restoreScroll(){
+        renderedPageKey=pageKey;renderedItems=new ArrayList<>();
+        for(Song song:songs)renderedItems.add(grouped?"group:"+song.title:"song:"+song.id);
+        final AbsListView target=list;final String key=pageKey;
+        final PageScrollMemory.Position saved=scrollMemory.restore(key,renderedItems);
+        if(saved==null)return;pendingScrollRestore=target;
+        target.post(()->{
+            if(list!=target||!key.equals(renderedPageKey))return;
+            target.setSelectionFromTop(saved.index,saved.offset);
+            target.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener(){
+                public boolean onPreDraw(){
+                    if(list!=target||target.getChildCount()>0){
+                        if(target.getViewTreeObserver().isAlive())target.getViewTreeObserver().removeOnPreDrawListener(this);
+                        if(pendingScrollRestore==target)pendingScrollRestore=null;
+                    }
+                    return true;
+                }
+            });
+        });
+    }
     private void enter(View view,float shift){view.animate().cancel();if(!animations()){view.setAlpha(1);view.setTranslationY(0);return;}view.setAlpha(0);view.setTranslationY(dp(shift));view.animate().alpha(1).translationY(0).setDuration(280).setInterpolator(new android.view.animation.DecelerateInterpolator()).start();}
     private boolean snapshotTransition;
     void setSnapshotTransition(boolean value){snapshotTransition=value;}
     private boolean animations(){return !snapshotTransition&&ValueAnimator.areAnimatorsEnabled();}
     private void render(){
-        glassScene.clear();transitionEpoch++;closingGroup=false;if(libraryRoot!=null)libraryRoot.animate().cancel();if(heroMotion!=null){heroMotion.cancel();heroMotion=null;}if(selectionMotion!=null){selectionMotion.removeAllListeners();selectionMotion.cancel();selectionMotion=null;}animate().cancel();setAlpha(1);setTranslationY(0);removeAllViews();artGeneration++;pending.clear();if(images!=null)images.getQueue().clear();if(detailImages!=null)detailImages.getQueue().clear();
+        saveScroll();glassScene.clear();transitionEpoch++;closingGroup=false;if(libraryRoot!=null)libraryRoot.animate().cancel();if(heroMotion!=null){heroMotion.cancel();heroMotion=null;}if(selectionMotion!=null){selectionMotion.removeAllListeners();selectionMotion.cancel();selectionMotion=null;}animate().cancel();setAlpha(1);setTranslationY(0);removeAllViews();artGeneration++;pending.clear();if(images!=null)images.getQueue().clear();if(detailImages!=null)detailImages.getQueue().clear();
         lyricsExpandButton=null;libraryEmpty=null;sidebarSelection=null;album=null;list=null;listHeading=null;selectionBar=null;selectionCount=null;selectionToggle=null;summary=null;columnHeader=null;cover=null;title=null;artist=null;nowPlaying=null;lyricView=null;hero=null;libraryRoot=null;detailRoot=null;
         if(style.equals("wall"))return;
         wide=getWidth()-getPaddingLeft()-getPaddingRight()>dp(620);columns=new LibraryColumns(getWidth()-getPaddingLeft()-getPaddingRight(),getResources().getDisplayMetrics().density);
@@ -266,7 +291,7 @@ final class PlayerStylePage extends FrameLayout {
         list.setOnItemClickListener((parent,view,index,id)->{if(selecting)toggleSelection(songs.get(index).id);else{if(grouped)captureGroup(songs.get(index).title);else if(view.getTag() instanceof Object[])songLaunch.accept((ImageView)((Object[])view.getTag())[0]);play.accept(songs.get(index));}});list.setOnItemLongClickListener((parent,view,index,id)->{Song song=songs.get(index);if(grouped||songMenu==null)return false;if(selecting)toggleSelection(song.id);else songMenu.accept(song);return true;});
         libraryEmpty=new LibraryLoadingView(getContext());updateLibraryEmpty();results.addView(libraryEmpty,new LayoutParams(-1,-1));list.setEmptyView(libraryEmpty);
         if(list instanceof ListView){ListScrollThumb thumb=new ListScrollThumb((ListView)list,colors.accent,busy->{});thumb.setContentDescription("拖动滚动歌曲列表");LayoutParams rail=new LayoutParams(dp(32),-1,Gravity.RIGHT);rail.topMargin=dp(12);rail.bottomMargin=dp(16);results.addView(thumb,rail);}
-        Parcelable saved=scrollStates.get(pageKey);if(saved!=null)list.onRestoreInstanceState(saved);
+        restoreScroll();
     }
     private void buildDetails(){
         landscapeSeek=null;landscapePlay=null;landscapeMode=null;landscapeFavorite=null;
@@ -279,7 +304,7 @@ final class PlayerStylePage extends FrameLayout {
         PlayerWorkspaceMetrics metrics=new PlayerWorkspaceMetrics(Math.max(1,getWidth()-getPaddingLeft()-getPaddingRight()),availableH,getResources().getDisplayMetrics().density);
         int side=metrics.artwork;heroExtent=metrics.wide?metrics.hero:Math.min(metrics.hero,side+dp(80));
         boolean hidden=lyricsExpanded;
-        heroSlot=new FrameLayout(getContext());ScrollView heroScroll=new ScrollView(getContext());heroScroll.setFillViewport(true);ListScrollStyle.apply(heroScroll);heroScroll.addView(hero,new ScrollView.LayoutParams(-1,-1));heroSlot.addView(heroScroll,new LayoutParams(-1,-1));
+        heroSlot=new FrameLayout(getContext());heroSlot.addView(hero,new LayoutParams(-1,-1));
         workspace.addView(heroSlot,wide?new LinearLayout.LayoutParams(hidden?0:heroExtent,-1):new LinearLayout.LayoutParams(-1,hidden?0:heroExtent));hero.setAlpha(hidden?0:1);hero.setImportantForAccessibility(hidden?IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS:IMPORTANT_FOR_ACCESSIBILITY_AUTO);
         cover=new ImageView(getContext());cover.setScaleType(ImageView.ScaleType.CENTER_CROP);cover.setBackground(shape(colors.line,18));cover.setClipToOutline(true);cover.setContentDescription("展开或收起歌词");cover.setOnClickListener(v->toggleExpanded());ButtonFeedback.install(cover);hero.addView(cover,new LinearLayout.LayoutParams(side,side));
         title=text("",23,colors.text);title.setTypeface(null,Typeface.BOLD);title.setMaxLines(2);title.setEllipsize(android.text.TextUtils.TruncateAt.END);title.setGravity(Gravity.CENTER);title.setPadding(0,dp(12),0,0);hero.addView(title,new LinearLayout.LayoutParams(-1,-2));
