@@ -101,7 +101,11 @@ final class HomeScreen {
     private int safeLeft,safeTop,safeRight,safeBottom,portraitDockWidth;
     private FrameLayout.LayoutParams dockParams,toolsParams;
     private boolean libraryScanning;
-    void setScanning(boolean value){libraryScanning=value;wall.setScanning(value);if(sidebarPage!=null)sidebarPage.setScanning(value);}
+    private LibraryLoadingView libraryLoading;
+    private String scanMessage="正在扫描音乐库…";
+    void scanProgress(String stage,int completed,int total){scanMessage=(stage==null||stage.isEmpty()?"正在扫描音乐库":stage)+"…"+(total>0?"\n"+completed+" / "+total+" · "+ScanStatusText.percent(completed,total)+"%":"");stylePage.scanProgress(scanMessage);if(sidebarPage!=null)sidebarPage.scanProgress(scanMessage);updateLibraryLoading();}
+    private void updateLibraryLoading(){if(libraryLoading==null)return;AppAppearance.Palette colors=AppAppearance.palette(activity,activity.getSharedPreferences("library",0));libraryLoading.palette(colors);libraryLoading.setBackgroundColor(colors.background);libraryLoading.state(libraryScanning,scanMessage);libraryLoading.setVisibility(libraryScanning&&visibleSongs.isEmpty()?View.VISIBLE:View.GONE);}
+    void setScanning(boolean value){libraryScanning=value;wall.setScanning(value);stylePage.setScanning(value);if(sidebarPage!=null)sidebarPage.setScanning(value);updateLibraryLoading();}
     private final LinearLayout drawerRows;
     private final WallView wall;
     private final PlayerStylePage stylePage;
@@ -131,12 +135,13 @@ final class HomeScreen {
         wall = new WallView(activity, actions::play, actions::toggle, actions::seek);
         wall.setSongMenu(actions::songMenu);
         frame.addView(wall, new FrameLayout.LayoutParams(-1, -1));
-        stylePage=new PlayerStylePage(activity,actions::play,actions::seek,actions::lyrics,this::browseSimpleSongs);stylePage.setPlaybackActions(actions);stylePage.setSidebarTools(this::focusLibrarySong,actions::refreshLibrary);stylePage.setSongMenu(actions::songMenu);stylePage.setTools(actions::backGroup,this::showSortingOptions,actions::queue,actions::favorite);stylePage.setSortAction(actions::sort);stylePage.setBatchActions(new PlayerStylePage.BatchActions(){
+        stylePage=new PlayerStylePage(activity,actions::play,actions::seek,actions::lyrics,this::browseSimpleSongs);stylePage.setPlaybackActions(actions);stylePage.setSongLaunch(this::animateSongLaunch);stylePage.setSidebarTools(this::focusLibrarySong,actions::refreshLibrary);stylePage.setSongMenu(actions::songMenu);stylePage.setTools(actions::backGroup,this::showSortingOptions,actions::queue,actions::favorite);stylePage.setSortAction(actions::sort);stylePage.setBatchActions(new PlayerStylePage.BatchActions(){
             public void favorite(List<Song> songs,boolean value){actions.favoriteSongs(songs,value);}
             public void playlist(List<Song> songs){actions.playlistSongs(songs);}
             public void removeFromPlaylist(List<Song> songs){actions.removePlaylistSongs(songs);}
             public void clearRecent(){actions.clearRecent();}
         });frame.addView(stylePage,new FrameLayout.LayoutParams(-1,-1));
+        libraryLoading=new LibraryLoadingView(activity);libraryLoading.setVisibility(View.GONE);frame.addView(libraryLoading,new FrameLayout.LayoutParams(-1,-1));
         browseHeading=text("",14,Color.WHITE);browseHeading.setSingleLine(true);browseHeading.setEllipsize(android.text.TextUtils.TruncateAt.END);browseHeading.setGravity(Gravity.CENTER_VERTICAL);browseHeading.setPadding(dp(14),0,dp(14),0);browseHeading.setBackground(round(0xDF232B27,20,0x44FFFFFF,1));browseHeading.setOnClickListener(view->actions.backGroup());browseHeading.setVisibility(View.GONE);
         FrameLayout.LayoutParams headingParams=new FrameLayout.LayoutParams(-2,dp(40),Gravity.TOP|Gravity.LEFT);headingParams.setMargins(dp(16),dp(90),dp(16),0);frame.addView(browseHeading,headingParams);
         ImageView menu = roundImage(R.drawable.icon_wall_sidebar, () -> showDrawer(true));
@@ -147,9 +152,9 @@ final class HomeScreen {
         searchControl.setBackground(glass().surface(searchControl,28,false));
         FrameLayout.LayoutParams searchParams=new FrameLayout.LayoutParams(dp(WallToolStyle.SIDE),dp(WallToolStyle.SIDE),Gravity.TOP|Gravity.RIGHT);
         searchParams.setMargins(0,dp(6),dp(14),0);frame.addView(searchControl,searchParams);
-        detailBack=text("‹  返回",16,green);detailBack.setGravity(Gravity.CENTER);detailBack.setContentDescription("返回音乐库");detailBack.setVisibility(View.GONE);
+        detailBack=text("返回",16,green);detailBack.setGravity(Gravity.CENTER);detailBack.setPadding(dp(10),0,dp(10),0);detailBack.setCompoundDrawablePadding(dp(2));detailBack.setSingleLine(true);detailBack.setContentDescription("返回音乐库");detailBack.setVisibility(View.GONE);
         detailBack.setOnClickListener(v->stylePage.collapse());ButtonFeedback.install(detailBack);
-        FrameLayout.LayoutParams backParams=new FrameLayout.LayoutParams(dp(96),dp(44),Gravity.TOP|Gravity.LEFT);frame.addView(detailBack,backParams);
+        FrameLayout.LayoutParams backParams=new FrameLayout.LayoutParams(dp(76),dp(44),Gravity.TOP|Gravity.LEFT);frame.addView(detailBack,backParams);
         stylePage.setDetailChanged(()->{updateDetailBack();frame.post(this::updateViewport);});
         searchInput=searchControl.input;
         searchInput.addTextChangedListener(new android.text.TextWatcher() {
@@ -381,6 +386,16 @@ final class HomeScreen {
         if (changed && !groupedWall && isWallStyle()) wall.locateSong(id);
     }
 
+    private ImageView flyingArtwork;
+    private void animateSongLaunch(ImageView source){
+        if(!playerStyle.equals("library")||!android.animation.ValueAnimator.areAnimatorsEnabled()||!standardBar.isShown())return;
+        ImageView target=standardBar.artworkTarget();if(target==null||source.getDrawable()==null||source.getWidth()==0||target.getWidth()==0)return;
+        if(flyingArtwork!=null){flyingArtwork.animate().cancel();frame.removeView(flyingArtwork);}
+        int[] origin=new int[2],destination=new int[2],host=new int[2];source.getLocationInWindow(origin);target.getLocationInWindow(destination);frame.getLocationInWindow(host);
+        ImageView flight=new ImageView(activity);flyingArtwork=flight;flight.setImageDrawable(source.getDrawable().getConstantState()==null?source.getDrawable():source.getDrawable().getConstantState().newDrawable().mutate());flight.setScaleType(ImageView.ScaleType.CENTER_CROP);flight.setBackground(round(Color.TRANSPARENT,8,0,0));flight.setClipToOutline(true);flight.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);flight.setElevation(dp(32));
+        FrameLayout.LayoutParams bounds=new FrameLayout.LayoutParams(source.getWidth(),source.getHeight());bounds.leftMargin=origin[0]-host[0];bounds.topMargin=origin[1]-host[1];frame.addView(flight,bounds);flight.setPivotX(0);flight.setPivotY(0);
+        flight.animate().translationX(destination[0]-origin[0]).translationY(destination[1]-origin[1]).scaleX(target.getWidth()/(float)source.getWidth()).scaleY(target.getHeight()/(float)source.getHeight()).alpha(.3f).setDuration(360).setInterpolator(new android.view.animation.DecelerateInterpolator()).withEndAction(()->{frame.removeView(flight);if(flyingArtwork==flight)flyingArtwork=null;}).start();
+    }
     private void browseSimpleSongs(){actions.section("歌曲");stylePage.showCatalog();}
     void songSelected(){if(playerStyle.equals("simple"))stylePage.showPlayer();}
     void navigationChanged(){if(playerStyle.equals("simple"))stylePage.showCatalog();}
@@ -400,8 +415,8 @@ final class HomeScreen {
             }
         }else{wall.setVisibility(isWallStyle()?View.VISIBLE:View.GONE);wall.setAlpha(1);stylePage.setAlpha(1);}
         if(changed&&!fragmentSwitch&&!isWallStyle()&&android.animation.ValueAnimator.areAnimatorsEnabled()){standardBar.animate().cancel();standardBar.setAlpha(0);standardBar.setTranslationY(dp(14));standardBar.animate().alpha(1).translationY(0).setDuration(280).start();}
-        standardBar.configure(AppAppearance.palette(activity,prefs),frame.getWidth()-safeLeft-safeRight>=dp(620),false);updatePlaybackBarVisibility();
-        updateViewport();applyControlsAppearance();
+        standardBar.configure(AppAppearance.palette(activity,prefs),frame.getWidth()-safeLeft-safeRight>=dp(620),false);standardBar.setBackground(stylePage.glassSurface(standardBar,20,AppAppearance.dark(activity,prefs)));updatePlaybackBarVisibility();
+        updateViewport();applyControlsAppearance();updateLibraryLoading();
         boolean light=!isWallStyle()&&!AppAppearance.dark(activity,prefs);int flags=activity.getWindow().getDecorView().getSystemUiVisibility();int lightFlags=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;activity.getWindow().getDecorView().setSystemUiVisibility(light?flags|lightFlags:flags&~lightFlags);
         browseHeading.setVisibility(isWallStyle()&&browseGroup!=null&&!chromeHidden?View.VISIBLE:View.GONE);
         if(idleDock!=null)idleDock.configure(Math.max(dp(56),Math.round(portraitDockWidth)),idleEligible());
@@ -413,7 +428,7 @@ final class HomeScreen {
         immersive=expanded;
         idleDock.configure(Math.max(dp(56),Math.round(portraitDockWidth)),idleEligible());
         if(expanded){restoreSearch=searchControl.isOpen();showDrawer(false);searchControl.setOpen(false,false);}
-        applyChromeVisibility((landscape&&(isWallStyle()||stylePage.landscapePlayback()))||immersive,true);idleDock.animate().cancel();
+        applyChromeVisibility((landscape&&(isWallStyle()||stylePage.landscapePlayback()||stylePage.landscapeLibrary()))||immersive,true);idleDock.animate().cancel();
         if(expanded){idleDock.animate().alpha(0).translationY(dp(24)).setDuration(180).withEndAction(()->{if(immersive)idleDock.setVisibility(View.INVISIBLE);}).start();}
         else{updatePlaybackBarVisibility();idleDock.animate().alpha(1).translationY(0).setDuration(230).start();}
         if(!expanded&&!landscape&&restoreSearch)searchControl.setOpen(true,false);
@@ -422,7 +437,7 @@ final class HomeScreen {
         fragmentTransition.cancel();
         boolean next=activity.getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE;
         if(next){showDrawer(false);searchControl.setOpen(false,false);}landscape=next;awaitingRotationLayout=true;
-        applyChromeVisibility((landscape&&(isWallStyle()||stylePage.landscapePlayback()))||immersive,true);frame.requestApplyInsets();frame.post(this::updateViewport);
+        applyChromeVisibility((landscape&&(isWallStyle()||stylePage.landscapePlayback()||stylePage.landscapeLibrary()))||immersive,true);frame.requestApplyInsets();frame.post(this::updateViewport);
     }
     private void applyChromeVisibility(boolean hidden,boolean animate){
         browseHeading.setVisibility(!hidden&&browseGroup!=null&&isWallStyle()?View.VISIBLE:View.GONE);if(chromeHidden==hidden)return;chromeHidden=hidden;
@@ -446,11 +461,11 @@ final class HomeScreen {
         WallViewport viewport=new WallViewport(frame.getWidth(),frame.getHeight(),density,safeLeft,safeTop,safeRight,safeBottom,landscape,portraitDockWidth);
         dockParams.width=Math.round(viewport.dockWidth);dockParams.height=dp(84);dockParams.gravity=Gravity.BOTTOM|(landscape?Gravity.RIGHT:Gravity.LEFT);dockParams.leftMargin=landscape?0:safeLeft+dp(14);dockParams.rightMargin=Math.round(viewport.dockRight);dockParams.bottomMargin=Math.round(viewport.dockBottom);idleDock.setLayoutParams(dockParams);
         toolsParams.rightMargin=safeRight+dp(14);wallSettings.setLayoutParams(toolsParams);idleDock.configure(Math.round(viewport.dockWidth),idleEligible());
-        wall.setSafeInsets(safeTop,safeBottom);wall.setViewport(viewport);applyChromeVisibility((landscape&&(isWallStyle()||stylePage.landscapePlayback()))||immersive,true);
+        wall.setSafeInsets(safeTop,safeBottom);wall.setViewport(viewport);applyChromeVisibility((landscape&&(isWallStyle()||stylePage.landscapePlayback()||stylePage.landscapeLibrary()))||immersive,true);
         updatePlaybackBarVisibility();
         if(!immersive){idleDock.animate().cancel();idleDock.setAlpha(1);idleDock.setTranslationY(0);}
         if(!chromeHidden)wallSettings.setVisibility(keyboardVisible||!isWallStyle()?View.GONE:View.VISIBLE);
-        boolean standardWide=frame.getWidth()-safeLeft-safeRight>=dp(620);standardBar.configure(AppAppearance.palette(activity,activity.getSharedPreferences("library",0)),standardWide,false);
+        boolean standardWide=frame.getWidth()-safeLeft-safeRight>=dp(620);standardBar.configure(AppAppearance.palette(activity,activity.getSharedPreferences("library",0)),standardWide,false);standardBar.setBackground(stylePage.glassSurface(standardBar,20,AppAppearance.dark(activity,activity.getSharedPreferences("library",0))));
         FrameLayout.LayoutParams standardParams=(FrameLayout.LayoutParams)standardBar.getLayoutParams();standardParams.width=frame.getWidth()-safeLeft-safeRight-dp(28);standardParams.height=dp(standardWide?88:104);standardParams.leftMargin=safeLeft+dp(14);standardParams.rightMargin=safeRight+dp(14);standardParams.bottomMargin=safeBottom+dp(8);standardBar.setLayoutParams(standardParams);
         updateDrawerBounds();
         int resizedBy=Math.max(0,activity.getWindow().getDecorView().getHeight()-frame.getHeight());
@@ -549,7 +564,7 @@ final class HomeScreen {
     }
 
     void updateWall(List<Song> songs, boolean grouped) {
-        groupedWall = grouped;visibleSongs=new ArrayList<>(songs);
+        groupedWall = grouped;visibleSongs=new ArrayList<>(songs);updateLibraryLoading();
         wall.setGrouped(grouped);wall.setSongs(songs);stylePage.setSongs(songs);sidebarPage.setSongs(grouped?java.util.Collections.emptyList():songs);if(pendingCamera!=null){wall.restoreCamera(pendingCamera);pendingCamera=null;}
     }
 
@@ -557,7 +572,7 @@ final class HomeScreen {
         if(!groupedWall)for(Song visible:visibleSongs)if(visible.id==song.id)return;
         List<Song> revealed=groupedWall?new ArrayList<>():new ArrayList<>(visibleSongs);revealed.add(song);updateWall(revealed,false);
     }
-    void locateSongDirectly(long songId){wall.locateSongDirectly(songId);}
+    void locateSongDirectly(long songId){if(isWallStyle())wall.locateSongDirectly(songId);else stylePage.locate(songId);}
     void locateSong(long songId) {if(playerStyle.equals("wall"))wall.locateSong(songId);else stylePage.locate(songId);}
 
     void clearSearch() {searchControl.clearQuery();}
@@ -729,7 +744,7 @@ final class HomeScreen {
         drawerSearch.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int start,int count,int after){}public void onTextChanged(CharSequence s,int start,int before,int count){if(!s.toString().contentEquals(searchInput.getText()))searchInput.setText(s);}public void afterTextChanged(android.text.Editable value){}});
         drawerSearch.setOnEditorActionListener((v,action,event)->{if(action==EditorInfo.IME_ACTION_SEARCH){((InputMethodManager)activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(v.getWindowToken(),0);drawerSearch.clearFocus();return true;}return false;});
         simpleLibraryTab=simpleTab("音乐库",R.drawable.icon_navigation_all,()->actions.section("歌曲"));simpleRecentTab=simpleTab("最近播放",R.drawable.icon_navigation_recent,()->actions.section("最近播放"));
-        sidebarPage=new PlayerStylePage(activity,actions::play,actions::seek,actions::lyrics,()->{});sidebarPage.useSidebarCatalog();sidebarPage.setSidebarTools(this::focusSidebarSong,actions::refreshLibrary);sidebarPage.setScanning(libraryScanning);sidebarPage.setSongMenu(actions::songMenu);sidebarPage.setTools(()->{},this::showSortingOptions,actions::queue,actions::favorite);sidebarPage.setSortAction(actions::sort);
+        sidebarPage=new PlayerStylePage(activity,actions::play,actions::seek,actions::lyrics,()->{});sidebarPage.useSidebarCatalog();sidebarPage.glassSource(stylePage);sidebarPage.setSidebarTools(this::focusSidebarSong,actions::refreshLibrary);sidebarPage.setScanning(libraryScanning);sidebarPage.setSongMenu(actions::songMenu);sidebarPage.setTools(()->{},this::showSortingOptions,actions::queue,actions::favorite);sidebarPage.setSortAction(actions::sort);
         sidebarPage.setBatchActions(new PlayerStylePage.BatchActions(){public void favorite(List<Song> songs,boolean value){actions.favoriteSongs(songs,value);}public void playlist(List<Song> songs){actions.playlistSongs(songs);}public void removeFromPlaylist(List<Song> songs){actions.removePlaylistSongs(songs);}public void clearRecent(){actions.clearRecent();}});
         simpleDrawerRoot.addView(sidebarPage,new LinearLayout.LayoutParams(-1,0,1));
     }
@@ -739,7 +754,7 @@ final class HomeScreen {
     private AppAppearance.Palette chromePalette(){return new AppAppearance.Palette(isWallStyle()||AppAppearance.dark(activity,activity.getSharedPreferences("library",0)));}
     private android.graphics.drawable.Drawable chromeBackground(View view){
         AppAppearance.Palette palette=chromePalette();
-        return isWallStyle()?glass().surface(view,28,false):new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(palette.dark?0x22FFFFFF:0x16000000),FrostedSurface.background(activity,28,palette.dark),round(Color.WHITE,28,0,0));
+        return isWallStyle()?glass().surface(view,28,false):new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(palette.dark?0x22FFFFFF:0x16000000),stylePage.glassSurface(view,28,palette.dark),round(Color.WHITE,28,0,0));
     }
     private void applyDrawerAppearance(){
         AppAppearance.Palette palette=chromePalette();
@@ -759,9 +774,9 @@ final class HomeScreen {
         if(detailBack==null)return;
         boolean visible=playerStyle.equals("library")&&stylePage.libraryDetailOpen()&&!chromeHidden;
         detailBack.setVisibility(visible?View.VISIBLE:View.GONE);
-        AppAppearance.Palette palette=chromePalette();detailBack.setTextColor(palette.accent);detailBack.setBackground(FrostedSurface.background(activity,22,palette.dark));
+        AppAppearance.Palette palette=chromePalette();detailBack.setTextColor(palette.accent);android.graphics.drawable.Drawable backIcon=activity.getDrawable(R.drawable.icon_back).mutate();backIcon.setTint(palette.accent);backIcon.setBounds(0,0,dp(18),dp(18));detailBack.setCompoundDrawablesRelative(backIcon,null,null,null);detailBack.setBackground(stylePage.glassSurface(detailBack,22,palette.dark));
         FrameLayout.LayoutParams back=(FrameLayout.LayoutParams)detailBack.getLayoutParams();back.leftMargin=safeLeft+dp(80);back.topMargin=safeTop+dp(12);detailBack.setLayoutParams(back);
-        FrameLayout.LayoutParams search=(FrameLayout.LayoutParams)searchControl.getLayoutParams();search.leftMargin=safeLeft+dp(visible?188:82);searchControl.setLayoutParams(search);
+        FrameLayout.LayoutParams search=(FrameLayout.LayoutParams)searchControl.getLayoutParams();search.leftMargin=safeLeft+dp(visible?168:82);searchControl.setLayoutParams(search);
     }
     private void applyControlsAppearance(){
         AppAppearance.Palette palette=chromePalette();menuButton.setColorFilter(palette.text);menuButton.setBackground(chromeBackground(menuButton));

@@ -14,10 +14,13 @@ import java.util.function.*;
 /** Native library and simple workspaces, sharing playback but retaining their own navigation. */
 final class PlayerStylePage extends FrameLayout {
     interface BatchActions {void favorite(List<Song> songs,boolean value);void playlist(List<Song> songs);void removeFromPlaylist(List<Song> songs);void clearRecent();}
+    private Consumer<ImageView> songLaunch=image->{};
+    void setSongLaunch(Consumer<ImageView> action){songLaunch=action;}
     private HomeScreen.Actions playbackActions;
     private SeekBar landscapeSeek;private TextView landscapeTime,landscapeTotal,landscapeMode;private TransportButton landscapePlay;private LibraryActionButton landscapeFavorite;
     void setPlaybackActions(HomeScreen.Actions value){playbackActions=value;}
     boolean landscapePlayback(){return !sidebarCatalog&&getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE&&(style.equals("library")&&expanded||style.equals("simple")&&!catalogOpen);}
+    boolean landscapeLibrary(){return !sidebarCatalog&&style.equals("library")&&landscapeLayout();}
     private boolean landscapeLayout(){return !sidebarCatalog&&getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE;}
     private static final int CONTENT_GAP=8;
     private BatchActions batch;
@@ -28,8 +31,13 @@ final class PlayerStylePage extends FrameLayout {
     private Runnable sidebarLocate=()->{},sidebarRefresh=()->{};
     private SidebarToolButton sidebarReload,sidebarSelection;
     private boolean libraryScanning;
-    void setScanning(boolean value){libraryScanning=value;if(sidebarReload!=null)sidebarReload.busy(value);updateHeading();}
-    boolean focusCurrentSong(){if(current==null||list==null)return false;for(int i=0;i<songs.size();i++)if(songs.get(i).id==current.id){list.smoothScrollToPositionFromTop(i,dp(8),240);return true;}return false;}
+    private LibraryLoadingView libraryEmpty;
+    private String scanMessage="正在扫描音乐库…";
+    void scanProgress(String message){scanMessage=message;updateLibraryEmpty();}
+    private void updateLibraryEmpty(){if(libraryEmpty==null)return;libraryEmpty.palette(colors);libraryEmpty.state(libraryScanning,libraryScanning?scanMessage:section.equals("收藏")?"暂无收藏\n点按歌曲旁的爱心添加":section.equals("最近播放")?"还没有播放记录":pageKey.startsWith("歌单:")?"歌单还没有歌曲\n可从歌曲菜单或多选工具栏添加":"暂无歌曲\n可在设置中添加音乐文件夹");}
+    void setScanning(boolean value){libraryScanning=value;if(sidebarReload!=null)sidebarReload.busy(value);updateHeading();updateLibraryEmpty();}
+    private void jumpToSong(int index){list.smoothScrollBy(0,0);list.setSelectionFromTop(index,dp(8));}
+    boolean focusCurrentSong(){if(current==null||list==null)return false;for(int i=0;i<songs.size();i++)if(songs.get(i).id==current.id){jumpToSong(i);return true;}return false;}
     void setSidebarTools(Runnable locate,Runnable refresh){sidebarLocate=locate;sidebarRefresh=refresh;}
     void refreshVisibleArtwork(){post(()->adapter.notifyDataSetChanged());}
     private HorizontalScrollView selectionBar;
@@ -49,6 +57,12 @@ final class PlayerStylePage extends FrameLayout {
     private Set<String> favorites=Collections.emptySet();private AppAppearance.Palette colors=new AppAppearance.Palette(false);
     private String style="wall",section="音乐库",pageKey="音乐库",group;private boolean grouped,expanded,wide,playing,catalogOpen,navigationPending;
     private final CoverAtmosphere atmosphere=new CoverAtmosphere();
+    private PlayerStylePage glassSource;
+    private GlassBackdrop workspaceGlass;
+    void glassSource(PlayerStylePage value){glassSource=value;}
+    void drawBackdrop(Canvas canvas){if(getBackground()!=null)getBackground().draw(canvas);}
+    android.graphics.drawable.Drawable glassSurface(View host,float radius,boolean dark){if(glassSource!=null)return glassSource.glassSurface(host,radius,dark);if(workspaceGlass==null)workspaceGlass=new GlassBackdrop(this,true,18);return workspaceGlass.surface(host,radius,false,!dark);}
+
     private TextView album;
     private AbsListView list;private TextView listHeading,title,artist,nowPlaying;private ImageView cover;
     private LinearLayout libraryRoot,detailRoot,hero;private FrameLayout lyricPanel,heroSlot;private NativeLyricsView lyricView;
@@ -82,7 +96,8 @@ final class PlayerStylePage extends FrameLayout {
             star.setVisibility(selecting||sidebarCatalog?GONE:VISIBLE);more.setVisibility(GONE);
             if(sidebarCatalog){length.setVisibility(GONE);row.setMinimumHeight(dp(76));SidebarPlaybackIndicator indicator=(SidebarPlaybackIndicator)holder[9];boolean active=current!=null&&current.id==song.id;indicator.state(active,playing,colors.accent,selecting);}
             bindImage(image,song,grouped?512:256);caption.setText(song.title);subtitle.setText(grouped?song.groupCount+" 首歌曲":sidebarCatalog?song.artist:(columns.artist>0?song.album:song.artist+" · "+song.album));caption.setTextColor(current!=null&&current.id==song.id&&!grouped&&!sidebarCatalog?colors.accent:colors.text);subtitle.setTextColor(colors.secondary);
-            row.setBackground(shape(!grouped&&(selecting?selection.contains(song.id):current!=null&&current.id==song.id)?(sidebarCatalog?(colors.dark?0x334FCDA6:0x220A8763):colors.line):Color.TRANSPARENT,12));
+            boolean highlighted=!grouped&&(selecting?selection.contains(song.id):current!=null&&current.id==song.id);
+            row.setBackground(highlighted?new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{glassSurface(row,12,colors.dark),shape(colors.dark?0x244FCDA6:0x180A8763,12)}):null);
             boolean saved=favorites.contains(Long.toString(song.id));star.state(saved,saved?colors.accent:colors.secondary);star.setContentDescription((saved?"取消收藏 ":"收藏 ")+song.title);more.state(false,colors.secondary);star.setOnClickListener(v->{if(favorite!=null)favorite.accept(song);});more.setContentDescription("编辑／歌曲操作："+song.title);more.setOnClickListener(v->{if(songMenu!=null)songMenu.accept(song);});return row;
         }
     };
@@ -103,7 +118,7 @@ final class PlayerStylePage extends FrameLayout {
     }
     private boolean inputOccludes;private int inputBottom;
     void setInputInsets(boolean occludes,int bottom){inputOccludes=occludes;inputBottom=bottom;}
-    void setInsets(int left,int top,int right,int bottom){insetLeft=left;insetTop=top;insetRight=right;insetBottom=bottom;boolean footerWide=(getWidth()>0?getWidth():getResources().getDisplayMetrics().widthPixels)-left-right>=dp(620);setPadding(left,top+dp(landscapePlayback()?CONTENT_GAP:6+WallToolStyle.SIDE+CONTENT_GAP),right,inputOccludes?Math.max(bottom,inputBottom)+dp(CONTENT_GAP):bottom+dp(landscapePlayback()?CONTENT_GAP:8+(footerWide?88:104)+CONTENT_GAP));}
+    void setInsets(int left,int top,int right,int bottom){insetLeft=left;insetTop=top;insetRight=right;insetBottom=bottom;boolean footerWide=(getWidth()>0?getWidth():getResources().getDisplayMetrics().widthPixels)-left-right>=dp(620);setPadding(left,top+dp(landscapePlayback()||landscapeLibrary()?CONTENT_GAP:6+WallToolStyle.SIDE+CONTENT_GAP),right,inputOccludes?Math.max(bottom,inputBottom)+dp(CONTENT_GAP):bottom+dp(landscapePlayback()?CONTENT_GAP:8+(footerWide?88:104)+CONTENT_GAP));}
     void setSongs(List<Song> value){boolean nextGrouped=!value.isEmpty()&&value.get(0).groupCount>0;boolean layoutChanged=nextGrouped!=grouped;boolean same=value.size()==songs.size();if(same)for(int i=0;i<value.size();i++)if(value.get(i)!=songs.get(i)){same=false;break;}if(same&&!layoutChanged){updateHeading();return;}grouped=nextGrouped;if(grouped){selecting=false;selection.clear();}songs=new ArrayList<>(value);selection.retain(visibleIDs());if(layoutChanged&&!style.equals("wall"))render();else adapter.notifyDataSetChanged();updateHeading();updateSelection();}
     void setSection(String value){section=value.equals("歌曲")?"音乐库":value.startsWith("歌单:")?value.substring(3):value;updateHeading();}
     void preparePage(String key){if(pageKey.equals(key))return;saveScroll();selecting=false;selection.clear();if(!key.equals(groupParentKey)&&!key.equals(groupChildKey))clearGroupTransition();pageKey=key;int split=key.indexOf('\n');group=split<0||split==key.length()-1?null:key.substring(split+1);navigationPending=true;}
@@ -116,7 +131,7 @@ final class PlayerStylePage extends FrameLayout {
     void setLyrics(List<Lyrics.Line> value){lyrics=value;if(lyricView!=null)lyricView.lyrics(value);}
     void setPosition(int value){setPlayback(value,duration,playing);}
     void setPlayback(int value,int duration,boolean playing){if(sidebarCatalog&&this.playing!=playing)post(()->adapter.notifyDataSetChanged());position=value;this.duration=duration;this.playing=playing;updateLandscapeControls();if(lyricView!=null)lyricView.playback(value,duration,playing);}
-    void locate(long id){if(style.equals("library")&&expanded)setExpanded(false);if(list!=null)for(int i=0;i<songs.size();i++)if(songs.get(i).id==id){list.smoothScrollToPosition(i);break;}}
+    void locate(long id){if(style.equals("library")&&expanded)setExpanded(false);if(list!=null)for(int i=0;i<songs.size();i++)if(songs.get(i).id==id){jumpToSong(i);break;}}
     boolean collapse(){if(selecting){setSelecting(false);return true;}if(group!=null&&(style.equals("library")&&!expanded||style.equals("simple")&&catalogOpen)){closeGroupTransition();return true;}if(style.equals("simple")&&catalogOpen){showPlayer();return true;}if(!expanded)return false;setExpanded(false);return true;}
     void showCatalog(){if(!style.equals("simple")||catalogOpen)return;catalogOpen=true;detailChanged.run();if(libraryRoot!=null){detailRoot.setVisibility(GONE);libraryRoot.setVisibility(VISIBLE);enter(libraryRoot,18);}}
     void showPlayer(){if(!style.equals("simple"))return;catalogOpen=false;detailChanged.run();if(detailRoot!=null){libraryRoot.setVisibility(GONE);detailRoot.setVisibility(VISIBLE);enter(detailRoot,-14);updateDetails();}}
@@ -190,7 +205,7 @@ final class PlayerStylePage extends FrameLayout {
     private boolean animations(){return !snapshotTransition&&ValueAnimator.areAnimatorsEnabled();}
     private void render(){
         transitionEpoch++;closingGroup=false;if(libraryRoot!=null)libraryRoot.animate().cancel();if(heroMotion!=null){heroMotion.cancel();heroMotion=null;}if(selectionMotion!=null){selectionMotion.removeAllListeners();selectionMotion.cancel();selectionMotion=null;}animate().cancel();setAlpha(1);setTranslationY(0);removeAllViews();artGeneration++;pending.clear();if(images!=null)images.getQueue().clear();if(detailImages!=null)detailImages.getQueue().clear();
-        sidebarReload=null;sidebarSelection=null;album=null;list=null;listHeading=null;selectionBar=null;selectionCount=null;selectionToggle=null;summary=null;columnHeader=null;cover=null;title=null;artist=null;nowPlaying=null;lyricView=null;hero=null;libraryRoot=null;detailRoot=null;
+        libraryEmpty=null;sidebarReload=null;sidebarSelection=null;album=null;list=null;listHeading=null;selectionBar=null;selectionCount=null;selectionToggle=null;summary=null;columnHeader=null;cover=null;title=null;artist=null;nowPlaying=null;lyricView=null;hero=null;libraryRoot=null;detailRoot=null;
         if(style.equals("wall"))return;
         wide=getWidth()-getPaddingLeft()-getPaddingRight()>dp(620);columns=new LibraryColumns(getWidth()-getPaddingLeft()-getPaddingRight(),getResources().getDisplayMetrics().density);
         buildLibrary();if(sidebarCatalog){updateHeading();return;}buildDetails();
@@ -228,9 +243,10 @@ final class PlayerStylePage extends FrameLayout {
         if(!grouped&&columns.artist>0){columnHeader=new LinearLayout(getContext());columnHeader.setGravity(Gravity.CENTER_VERTICAL);columnHeader.setPadding(dp(20),0,dp(20),0);libraryRoot.addView(columnHeader,new LinearLayout.LayoutParams(-1,dp(32)));refreshColumnHeader();}
         FrameLayout results=new FrameLayout(getContext());libraryRoot.addView(results,new LinearLayout.LayoutParams(-1,0,1));
         if(grouped){GridView grid=new GridView(ListScrollStyle.context(getContext()));grid.setNumColumns(wide?3:2);grid.setHorizontalSpacing(dp(8));grid.setVerticalSpacing(dp(8));grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);list=grid;}else{ListView tracks=new ListView(ListScrollStyle.context(getContext()));tracks.setDivider(null);list=tracks;}
-        ListScrollStyle.fast(list);list.setCacheColorHint(0);list.setPadding(dp(sidebarCatalog?0:8),dp(8),dp(sidebarCatalog?0:8),dp(16));list.setClipToPadding(false);list.setAdapter(adapter);results.addView(list,new LayoutParams(-1,-1));
-        list.setOnItemClickListener((parent,view,index,id)->{if(selecting)toggleSelection(songs.get(index).id);else{if(grouped)captureGroup(view,songs.get(index).title);play.accept(songs.get(index));}});list.setOnItemLongClickListener((parent,view,index,id)->{Song song=songs.get(index);if(grouped||songMenu==null)return false;if(selecting)toggleSelection(song.id);else songMenu.accept(song);return true;});
-        TextView empty=text(section.equals("收藏")?"暂无收藏\n点按歌曲旁的爱心添加":section.equals("最近播放")?"还没有播放记录":pageKey.startsWith("歌单:")?"歌单还没有歌曲\n可从歌曲菜单或多选工具栏添加":"暂无歌曲\n可在设置中添加音乐文件夹",15,colors.secondary);empty.setGravity(Gravity.CENTER);results.addView(empty,new LayoutParams(-1,-1));list.setEmptyView(empty);
+        if(grouped)ListScrollStyle.fast(list);list.setCacheColorHint(0);list.setPadding(dp(sidebarCatalog?0:8),dp(8),dp(grouped?(sidebarCatalog?0:8):32),dp(16));list.setClipToPadding(false);list.setAdapter(adapter);results.addView(list,new LayoutParams(-1,-1));
+        list.setOnItemClickListener((parent,view,index,id)->{if(selecting)toggleSelection(songs.get(index).id);else{if(grouped)captureGroup(view,songs.get(index).title);else if(view.getTag() instanceof Object[])songLaunch.accept((ImageView)((Object[])view.getTag())[0]);play.accept(songs.get(index));}});list.setOnItemLongClickListener((parent,view,index,id)->{Song song=songs.get(index);if(grouped||songMenu==null)return false;if(selecting)toggleSelection(song.id);else songMenu.accept(song);return true;});
+        libraryEmpty=new LibraryLoadingView(getContext());updateLibraryEmpty();results.addView(libraryEmpty,new LayoutParams(-1,-1));list.setEmptyView(libraryEmpty);
+        if(list instanceof ListView){ListScrollThumb thumb=new ListScrollThumb((ListView)list,colors.accent,busy->{});thumb.setContentDescription("拖动滚动歌曲列表");LayoutParams rail=new LayoutParams(dp(32),-1,Gravity.RIGHT);rail.topMargin=dp(12);rail.bottomMargin=dp(16);results.addView(thumb,rail);}
         Parcelable saved=scrollStates.get(pageKey);if(saved!=null)list.onRestoreInstanceState(saved);
     }
     private void buildDetails(){
@@ -274,9 +290,9 @@ final class PlayerStylePage extends FrameLayout {
         landscapeSeek=new SeekBar(getContext());landscapeSeek.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(colors.dark?0x667A9690:0x66708179));landscapeSeek.setSplitTrack(false);landscapeSeek.setPadding(dp(8),0,dp(8),0);landscapeSeek.setProgressTintList(android.content.res.ColorStateList.valueOf(colors.accent));landscapeSeek.setThumbTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));progress.addView(landscapeSeek,new LinearLayout.LayoutParams(0,-1,1));progress.addView(landscapeTotal,new LinearLayout.LayoutParams(dp(36),-2));
         landscapeSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar bar,int value,boolean user){}public void onStartTrackingTouch(SeekBar bar){}public void onStopTrackingTouch(SeekBar bar){seek.accept(bar.getProgress());}});
         LinearLayout controls=new LinearLayout(getContext());controls.setGravity(Gravity.CENTER_VERTICAL);left.addView(controls,new LinearLayout.LayoutParams(-1,dp(56)));
-        landscapeMode=tool("",()->{if(playbackActions!=null){playbackActions.selectPlaybackMode((PlaybackModes.valid(playbackActions.playbackMode())+1)%PlaybackModes.NAMES.length);updateLandscapeControls();}});controls.addView(landscapeMode,new LinearLayout.LayoutParams(dp(44),-1));landscapeMode.setTag("edge");landscapeMode.setPadding(0,0,0,0);
+        landscapeMode=tool("",()->{if(playbackActions!=null){playbackActions.selectPlaybackMode((PlaybackModes.valid(playbackActions.playbackMode())+1)%PlaybackModes.NAMES.length);updateLandscapeControls();}});controls.addView(landscapeMode,new LinearLayout.LayoutParams(0,-1,1));
         TransportButton previous=new TransportButton(getContext(),TransportButton.Glyph.PREVIOUS_TRACK,()->{if(playbackActions!=null)playbackActions.previous();});controls.addView(previous,new LinearLayout.LayoutParams(0,-1,1));
-        landscapePlay=new TransportButton(getContext(),TransportButton.Glyph.PLAY_PAUSE,()->{if(playbackActions!=null)playbackActions.toggle();});landscapePlay.setBackground(shape(colors.accent,28));controls.addView(landscapePlay,new LinearLayout.LayoutParams(dp(56),dp(56)));
+        landscapePlay=new TransportButton(getContext(),TransportButton.Glyph.PLAY_PAUSE,()->{if(playbackActions!=null)playbackActions.toggle();});landscapePlay.setBackground(shape(colors.accent,28));FrameLayout playSlot=new FrameLayout(getContext());controls.addView(playSlot,new LinearLayout.LayoutParams(0,-1,1));int playSize=Math.min(dp(56),columnWidth/5);playSlot.addView(landscapePlay,new FrameLayout.LayoutParams(playSize,playSize,Gravity.CENTER));
         TransportButton next=new TransportButton(getContext(),TransportButton.Glyph.NEXT_TRACK,()->{if(playbackActions!=null)playbackActions.next();});controls.addView(next,new LinearLayout.LayoutParams(0,-1,1));
         TransportButton queueButton=new TransportButton(getContext(),TransportButton.Glyph.QUEUE,queue);queueButton.setContentDescription("播放队列");controls.addView(queueButton,new LinearLayout.LayoutParams(0,-1,1));
         for(TransportButton button:new TransportButton[]{previous,next,queueButton})button.setColors(colors.text,colors.surface);landscapePlay.setColors(colors.text,Color.WHITE);
@@ -334,7 +350,7 @@ final class PlayerStylePage extends FrameLayout {
         }
     }
     private boolean usesCoverAtmosphere(){return !sidebarCatalog&&(style.equals("simple")||style.equals("library"));}
-    private void updateAtmosphere(Bitmap bitmap){atmosphere.artwork(bitmap);}
+    private void updateAtmosphere(Bitmap bitmap){atmosphere.artwork(bitmap);if(workspaceGlass!=null)workspaceGlass.invalidateSnapshot();}
     private void bindImage(ImageView image,Song song,int side){
         String key=song.uri+"\n"+song.artworkUri+"\n"+song.artworkVersion+"\n"+side;image.setTag(key);Bitmap bitmap=ArtworkCache.peek(song,side);if(bitmap==null)bitmap=song.artworkPreview;image.setImageBitmap(bitmap);if(image==cover&&usesCoverAtmosphere())updateAtmosphere(bitmap);
         if(ArtworkCache.peek(song,side)!=null||!isShown()||pending.contains(key))return;

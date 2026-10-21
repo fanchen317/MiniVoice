@@ -111,7 +111,7 @@ public final class MainActivity extends Activity {
         }
     }
     private void scanChanged(LibraryScanService.State state){
-        if(isDestroyed())return;boolean wasScanning=scanning;scanning=state.running;home.setScanning(scanning);
+        if(isDestroyed())return;boolean wasScanning=scanning;scanning=state.running;home.setScanning(scanning);home.scanProgress(state.stage,state.completed,state.total);
         boolean changed=state.songs!=null&&appliedScanRevision!=state.revision;
         if(changed){appliedScanRevision=state.revision;library.clear();Set<String> folders=ids("music_folders");for(Song song:state.songs)if(belongsToSelectedFolder(song,folders))library.add(song);if(service!=null)service.retainLibrary(library);invalidateLyricsLoad();renderRows();refreshWall();refreshPlayer();if(service!=null&&service.current()!=null&&!groupRoot())home.locateSong(service.current().id);locatePlayingIfReady();}
         if(settings!=null){if(wasScanning!=scanning||changed)settings.refresh(library.size(),scanning);settings.progress(state.completed,state.total,state.detail);}
@@ -204,7 +204,7 @@ public final class MainActivity extends Activity {
         if(section.equals("歌手")||section.equals("专辑")){groupName=section.equals("歌手")?song.artist:song.album;refreshWall();}
         // A locate action reveals the player in the current section; it must not change navigation.
         home.ensureSongVisible(song);
-        pendingLocatePlaying=false;home.locateSong(song.id);
+        pendingLocatePlaying=false;home.locateSongDirectly(song.id);
     }
     private void refreshWall(){if(home==null)return;
         home.setPageKey(section+"\n"+(groupName==null?"":groupName));
@@ -235,7 +235,7 @@ public final class MainActivity extends Activity {
     private void showPlaybackModeDialog(){int current=service==null?prefs.getInt("playback_mode",1):service.mode;int next=(PlaybackModes.valid(current)+1)%PlaybackModes.NAMES.length;prefs.edit().putInt("playback_mode",next).apply();if(service!=null)service.setMode(next);refreshPlayer();}
     private void showQueue(){if(service==null)return;
         List<Song> queue=new ArrayList<>(service.queue);int selected=service.index;
-        final android.app.Dialog[] sheet={null};sheet[0]=BottomSheet.show(this,"播放队列 · "+queue.size()+" 首",body->{
+        final android.app.Dialog[] sheet={null};sheet[0]=BottomSheet.queue(this,"播放队列 · "+queue.size()+" 首",body->{
             if(queue.isEmpty()){BottomSheet.action(this,body,"暂无播放队列",()->{});return;}
             for(int i=0;i<queue.size();i++){Song song=queue.get(i);int index=i;
                 TextView row=BottomSheet.action(this,body,(i==selected?"▸  ":"    ")+song.title+"  ·  "+song.artist,()->{if(service!=null)service.select(index);if(sheet[0]!=null)sheet[0].dismiss();});

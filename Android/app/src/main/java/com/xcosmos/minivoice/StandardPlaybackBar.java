@@ -19,6 +19,7 @@ final class StandardPlaybackBar extends LinearLayout {
     private TextView text(String value,int size,int color){TextView view=new TextView(getContext());view.setText(value);view.setTextSize(size);view.setTextColor(color);view.setSingleLine(true);view.setEllipsize(android.text.TextUtils.TruncateAt.END);return view;}
     private GradientDrawable shape(int color,int radius){GradientDrawable result=new GradientDrawable();result.setColor(color);result.setCornerRadius(dp(radius));return result;}
     void configure(AppAppearance.Palette value,boolean landscape,boolean simpleStyle){boolean rebuild=play==null||wide!=landscape||colors.dark!=value.dark||simple!=simpleStyle;colors=value;wide=landscape;simple=simpleStyle;if(rebuild)render();}
+    ImageView artworkTarget(){return artwork;}
     void song(Song value){song=value;refreshSong();}
     void state(boolean value,int time,int length){if(simple)refreshAudio();playing=value;position=time;duration=length;if(play==null)return;play.setPlaying(value);if(!seek.isPressed()){seek.setMax(Math.max(1,length));seek.setProgress(Math.min(length,time));elapsed.setText(clock(time));}total.setText(clock(length));seek.setEnabled(song!=null&&length>0);}
     void mode(int value){mode=PlaybackModes.valid(value);if(modeButton!=null){PlaybackModeGlyph.bind(modeButton,mode,colors.accent);modeButton.setContentDescription("播放模式："+PlaybackModes.NAMES[mode]);}}

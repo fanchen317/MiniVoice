@@ -23,6 +23,10 @@ final class BottomSheet {
     private static int dp(Activity activity,float value){return Math.round(value*activity.getResources().getDisplayMetrics().density);}
     private static GradientDrawable background(Activity activity,int color,int radius){GradientDrawable shape=new GradientDrawable();shape.setColor(color);shape.setCornerRadii(new float[]{dp(activity,radius),dp(activity,radius),dp(activity,radius),dp(activity,radius),0,0,0,0});return shape;}
     static Dialog show(Activity activity,String title,Consumer<LinearLayout> content){
+        return show(activity,title,content,false);
+    }
+    static Dialog queue(Activity activity,String title,Consumer<LinearLayout> content){return show(activity,title,content,true);}
+    private static Dialog show(Activity activity,String title,Consumer<LinearLayout> content,boolean queue){
         SheetDialog dialog=new SheetDialog(activity);dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         FrameLayout root=new FrameLayout(activity);
         View outside=new View(activity);outside.setBackgroundColor(0x99000000);root.addView(outside,new FrameLayout.LayoutParams(-1,-1));outside.setOnClickListener(v->dialog.dismiss());
@@ -35,8 +39,9 @@ final class BottomSheet {
         LinearLayout heading=new LinearLayout(activity);heading.setGravity(Gravity.CENTER_VERTICAL);sheet.addView(heading,new LinearLayout.LayoutParams(-1,dp(activity,48)));
         TextView titleView=new TextView(activity);titleView.setText(title);titleView.setTextColor(Color.WHITE);titleView.setTextSize(21);titleView.setTypeface(null,Typeface.BOLD);heading.addView(titleView,new LinearLayout.LayoutParams(0,-2,1));
         TextView close=new TextView(activity);close.setText("×");close.setTextSize(28);close.setTextColor(0xCCFFFFFF);close.setGravity(Gravity.CENTER);close.setContentDescription("关闭");close.setBackground(new RippleDrawable(ColorStateList.valueOf(0x44FFFFFF),null,null));close.setOnClickListener(view->dialog.dismiss());ButtonFeedback.install(close);heading.addView(close,new LinearLayout.LayoutParams(dp(activity,42),dp(activity,42)));
-        SheetScroll scroll=new SheetScroll(activity);scroll.setFillViewport(false);ListScrollStyle.apply(scroll);sheet.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        SheetScroll scroll=new SheetScroll(activity);scroll.setFillViewport(false);ListScrollStyle.apply(scroll);FrameLayout scrollArea=new FrameLayout(activity);sheet.addView(scrollArea,new LinearLayout.LayoutParams(-1,0,1));scrollArea.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout body=new LinearLayout(activity);body.setOrientation(LinearLayout.VERTICAL);body.setPadding(0,dp(activity,10),0,dp(activity,16));scroll.addView(body);content.accept(body);
+        if(queue){scroll.setVerticalScrollBarEnabled(false);body.setPadding(0,dp(activity,10),dp(activity,32),dp(activity,16));QueueScrollThumb thumb=new QueueScrollThumb(scroll);scrollArea.addView(thumb,new FrameLayout.LayoutParams(dp(activity,32),-1,Gravity.RIGHT));dialog.queueThumb=thumb;scrollArea.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->thumb.invalidate());}
         Drag drag=new Drag(activity,dialog,sheet,outside,panelParams,root);grip.setOnTouchListener(drag);heading.setOnTouchListener(drag);scroll.drag=drag;dialog.drag=drag;
         dialog.setContentView(root);dialog.show();Window window=dialog.getWindow();if(window!=null){window.setBackgroundDrawableResource(android.R.color.transparent);window.setLayout(-1,-1);
             window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);window.setStatusBarColor(Color.TRANSPARENT);window.setNavigationBarColor(Color.TRANSPARENT);
@@ -87,7 +92,7 @@ final class BottomSheet {
         }
         void stop(){if(motion!=null){motion.removeAllListeners();motion.cancel();motion=null;}sheet.animate().cancel();scrim.animate().cancel();}
         void recycle(){if(velocity!=null){velocity.recycle();velocity=null;}}
-        void position(float value){sheet.setTranslationY(value);scrim.setAlpha(value<=collapsed?1:Math.max(0,1-(value-collapsed)/Math.max(1,params.height-collapsed)));}
+        void position(float value){sheet.setTranslationY(value);if(dialog.queueThumb!=null)dialog.queueThumb.invalidate();scrim.setAlpha(value<=collapsed?1:Math.max(0,1-(value-collapsed)/Math.max(1,params.height-collapsed)));}
         void animate(float target,Runnable end){
             stop();android.animation.ValueAnimator animation=android.animation.ValueAnimator.ofFloat(sheet.getTranslationY(),target);motion=animation;animation.setDuration(dialog.closing?220:250);animation.setInterpolator(new android.view.animation.DecelerateInterpolator());
             animation.addUpdateListener(a->position((float)a.getAnimatedValue()));
@@ -105,7 +110,7 @@ final class BottomSheet {
         }
     }
     private static final class SheetDialog extends Dialog {
-        View panel,scrim;Drag drag;boolean closing;
+        View panel,scrim;QueueScrollThumb queueThumb;Drag drag;boolean closing;
         SheetDialog(Activity activity){super(activity);}
         @Override public void cancel(){dismiss();}
         @Override public void dismiss(){
