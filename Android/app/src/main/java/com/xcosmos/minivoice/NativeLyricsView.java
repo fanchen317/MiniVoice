@@ -14,6 +14,7 @@ final class NativeLyricsView extends FrameLayout {
     private final ListView list;private final TextView empty;private final IntConsumer seek;
     private final Runnable edit;private final BaseAdapter adapter;
     private List<Lyrics.Line> lines=Collections.emptyList();private int active=-1,position,duration;
+    private View scrollRail;
     private boolean frosted;
     void frosted(boolean value){frosted=value;list.setVerticalFadingEdgeEnabled(value);list.setFadingEdgeLength(dp(44));adapter.notifyDataSetChanged();}
     private boolean playing,manualScrolling,followPending;private long sampledAt,manualUntil;private AppAppearance.Palette colors=new AppAppearance.Palette(false);
@@ -22,7 +23,27 @@ final class NativeLyricsView extends FrameLayout {
     private final Runnable tick=new Runnable(){public void run(){if(!isShown()||!hasWindowFocus()||!playing)return;refresh();postDelayed(this,80);}};
     NativeLyricsView(Context context,IntConsumer seek,Runnable edit){
         super(context);this.seek=seek;this.edit=edit;
-        list=new ListView(context);list.setDivider(null);ListScrollStyle.apply(list);list.setClipToPadding(false);list.setPadding(dp(12),dp(32),dp(12),dp(32));list.setCacheColorHint(0);addView(list,new LayoutParams(-1,-1));
+        list=new ListView(context);list.setDivider(null);list.setVerticalScrollBarEnabled(false);list.setClipToPadding(false);list.setPadding(dp(12),dp(32),dp(40),dp(32));list.setCacheColorHint(0);addView(list,new LayoutParams(-1,-1));
+        scrollRail=new View(context){
+            final android.graphics.Paint ink=new android.graphics.Paint(3);
+            float thumbTop,thumbHeight,dragOffset;
+            @Override protected void onDraw(Canvas canvas){
+                if(lines.isEmpty())return;float h=getHeight(),x=getWidth()/2f;
+                int count=Math.max(1,list.getCount()),visible=Math.max(1,list.getLastVisiblePosition()-list.getFirstVisiblePosition()+1);
+                thumbHeight=Math.min(h,Math.max(dp(48),h*Math.min(1,visible/(float)count)));
+                thumbTop=(h-thumbHeight)*Math.min(1,list.getFirstVisiblePosition()/(float)Math.max(1,count-visible));
+                ink.setColor(0x22708078);canvas.drawRoundRect(x-dp(2),0,x+dp(2),h,dp(2),dp(2),ink);
+                ink.setColor(0xCC51BFA0);canvas.drawRoundRect(x-dp(5),thumbTop,x+dp(5),thumbTop+thumbHeight,dp(5),dp(5),ink);
+            }
+            @Override public boolean onTouchEvent(MotionEvent event){
+                if(lines.isEmpty())return false;
+                int action=event.getActionMasked();
+                if(action==MotionEvent.ACTION_DOWN)dragOffset=event.getY()>=thumbTop&&event.getY()<=thumbTop+thumbHeight?event.getY()-thumbTop:thumbHeight/2;
+                if(action==MotionEvent.ACTION_DOWN||action==MotionEvent.ACTION_MOVE){manualScrolling=true;NativeLyricsView.this.removeCallbacks(resumeFollow);getParent().requestDisallowInterceptTouchEvent(true);float fraction=Math.max(0,Math.min(1,(event.getY()-dragOffset)/Math.max(1,getHeight()-thumbHeight)));int visible=Math.max(1,list.getLastVisiblePosition()-list.getFirstVisiblePosition()+1);list.setSelectionFromTop(Math.round(fraction*Math.max(0,lines.size()-visible)),0);invalidate();}
+                if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){manualScrolling=false;manualUntil=android.os.SystemClock.uptimeMillis()+4000;NativeLyricsView.this.removeCallbacks(resumeFollow);NativeLyricsView.this.postDelayed(resumeFollow,4000);getParent().requestDisallowInterceptTouchEvent(false);}return true;
+            }
+        };
+        scrollRail.setContentDescription("拖动滚动歌词");addView(scrollRail,new LayoutParams(dp(32),-1,Gravity.RIGHT));
         empty=new TextView(context);empty.setGravity(Gravity.CENTER);empty.setTextSize(16);empty.setText("暂无歌词\n点按添加歌词");empty.setOnClickListener(v->edit.run());addView(empty,new LayoutParams(-1,-1));list.setEmptyView(empty);
         adapter=new BaseAdapter(){public int getCount(){return lines.size();}public Object getItem(int i){return lines.get(i);}public long getItemId(int i){return i;}public View getView(int i,View recycled,ViewGroup parent){LyricRow row=recycled instanceof LyricRow?(LyricRow)recycled:new LyricRow(context);row.bind(i);return row;}};
         list.setAdapter(adapter);list.setOnItemClickListener((parent,view,index,id)->{if(lines.get(index).ms>=0){manualUntil=0;seek.accept((int)Math.min(Integer.MAX_VALUE,lines.get(index).ms));}});
@@ -32,7 +53,7 @@ final class NativeLyricsView extends FrameLayout {
                 if(state==SCROLL_STATE_TOUCH_SCROLL){manualScrolling=true;followPending=true;removeCallbacks(resumeFollow);}
                 else if(state==SCROLL_STATE_IDLE&&manualScrolling){manualScrolling=false;manualUntil=android.os.SystemClock.uptimeMillis()+4000;postDelayed(resumeFollow,4000);}
             }
-            public void onScroll(AbsListView v,int first,int visible,int total){}
+            public void onScroll(AbsListView v,int first,int visible,int total){if(scrollRail!=null)scrollRail.invalidate();}
         });
     }
     private int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}

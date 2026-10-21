@@ -255,9 +255,9 @@ final class PlayerStylePage extends FrameLayout {
     }
     private void buildLandscapeDetails(){
         detailRoot=new LinearLayout(getContext());detailRoot.setOrientation(LinearLayout.HORIZONTAL);detailRoot.setPadding(dp(16),0,dp(16),0);addView(detailRoot,new LayoutParams(-1,-1));
-        FrameLayout leftSlot=new FrameLayout(getContext());detailRoot.addView(leftSlot,new LinearLayout.LayoutParams(0,-1,.42f));
+        FrameLayout leftSlot=new FrameLayout(getContext());detailRoot.addView(leftSlot,new LinearLayout.LayoutParams(0,-1,1));
         int availableHeight=Math.max(dp(260),getHeight()-getPaddingTop()-getPaddingBottom());
-        int availableWidth=Math.max(dp(160),Math.round((getWidth()-getPaddingLeft()-getPaddingRight()-dp(32))*.42f)-dp(24));
+        int availableWidth=Math.max(dp(160),Math.round((getWidth()-getPaddingLeft()-getPaddingRight()-dp(32))*.50f)-dp(24));
         int columnWidth=Math.min(availableWidth,Math.max(dp(140),availableHeight-dp(156)));
         LinearLayout left=new LinearLayout(getContext());left.setOrientation(LinearLayout.VERTICAL);
         FrameLayout.LayoutParams column=new FrameLayout.LayoutParams(columnWidth,-1,Gravity.CENTER_HORIZONTAL);leftSlot.addView(left,column);
@@ -274,13 +274,15 @@ final class PlayerStylePage extends FrameLayout {
         landscapeSeek=new SeekBar(getContext());landscapeSeek.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(colors.dark?0x667A9690:0x66708179));landscapeSeek.setSplitTrack(false);landscapeSeek.setPadding(dp(8),0,dp(8),0);landscapeSeek.setProgressTintList(android.content.res.ColorStateList.valueOf(colors.accent));landscapeSeek.setThumbTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));progress.addView(landscapeSeek,new LinearLayout.LayoutParams(0,-1,1));progress.addView(landscapeTotal,new LinearLayout.LayoutParams(dp(36),-2));
         landscapeSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar bar,int value,boolean user){}public void onStartTrackingTouch(SeekBar bar){}public void onStopTrackingTouch(SeekBar bar){seek.accept(bar.getProgress());}});
         LinearLayout controls=new LinearLayout(getContext());controls.setGravity(Gravity.CENTER_VERTICAL);left.addView(controls,new LinearLayout.LayoutParams(-1,dp(56)));
-        landscapeMode=tool("",()->{if(playbackActions!=null){playbackActions.selectPlaybackMode((PlaybackModes.valid(playbackActions.playbackMode())+1)%PlaybackModes.NAMES.length);updateLandscapeControls();}});controls.addView(landscapeMode,new LinearLayout.LayoutParams(0,-1,1));
+        landscapeMode=tool("",()->{if(playbackActions!=null){playbackActions.selectPlaybackMode((PlaybackModes.valid(playbackActions.playbackMode())+1)%PlaybackModes.NAMES.length);updateLandscapeControls();}});controls.addView(landscapeMode,new LinearLayout.LayoutParams(dp(44),-1));landscapeMode.setTag("edge");landscapeMode.setPadding(0,0,0,0);
         TransportButton previous=new TransportButton(getContext(),TransportButton.Glyph.PREVIOUS_TRACK,()->{if(playbackActions!=null)playbackActions.previous();});controls.addView(previous,new LinearLayout.LayoutParams(0,-1,1));
         landscapePlay=new TransportButton(getContext(),TransportButton.Glyph.PLAY_PAUSE,()->{if(playbackActions!=null)playbackActions.toggle();});landscapePlay.setBackground(shape(colors.accent,28));controls.addView(landscapePlay,new LinearLayout.LayoutParams(dp(56),dp(56)));
         TransportButton next=new TransportButton(getContext(),TransportButton.Glyph.NEXT_TRACK,()->{if(playbackActions!=null)playbackActions.next();});controls.addView(next,new LinearLayout.LayoutParams(0,-1,1));
         TransportButton queueButton=new TransportButton(getContext(),TransportButton.Glyph.QUEUE,queue);queueButton.setContentDescription("播放队列");controls.addView(queueButton,new LinearLayout.LayoutParams(0,-1,1));
         for(TransportButton button:new TransportButton[]{previous,next,queueButton})button.setColors(colors.text,colors.surface);landscapePlay.setColors(colors.text,Color.WHITE);
-        lyricView=new NativeLyricsView(getContext(),seek,lyricsAction);lyricView.palette(colors);lyricView.lyrics(lyrics);lyricView.status(lyricStatus);lyricView.playback(position,duration,playing);detailRoot.addView(lyricView,new LinearLayout.LayoutParams(0,-1,.58f));
+        FrameLayout rightSlot=new FrameLayout(getContext());detailRoot.addView(rightSlot,new LinearLayout.LayoutParams(0,-1,1));
+        lyricView=new NativeLyricsView(getContext(),seek,lyricsAction);lyricView.palette(colors);lyricView.lyrics(lyrics);lyricView.status(lyricStatus);lyricView.playback(position,duration,playing);
+        rightSlot.addView(lyricView,new FrameLayout.LayoutParams(-1,-1));
         updateLandscapeControls();
     }
     private void updateLandscapeControls(){

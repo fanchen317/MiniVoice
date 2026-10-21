@@ -18,7 +18,7 @@ final class PlaybackModeGlyph extends Drawable {
     }
     @Override public int getIntrinsicWidth(){return size;}@Override public int getIntrinsicHeight(){return size;}
     @Override public void setAlpha(int alpha){paint.setAlpha(alpha);}@Override public void setColorFilter(ColorFilter filter){paint.setColorFilter(filter);}@Override public int getOpacity(){return PixelFormat.TRANSLUCENT;}
-    private static void center(android.widget.TextView view){int icon=Math.round(24*view.getResources().getDisplayMetrics().density);view.setPadding(Math.max(0,(view.getWidth()-icon)/2),0,0,0);}
+    private static void center(android.widget.TextView view){if("edge".equals(view.getTag())){view.setPadding(0,0,0,0);return;}int icon=Math.round(24*view.getResources().getDisplayMetrics().density);view.setPadding(Math.max(0,(view.getWidth()-icon)/2),0,0,0);}
     static void bind(android.widget.TextView view,int mode,int color){
         view.setText("");view.setCompoundDrawables(new PlaybackModeGlyph(view.getContext(),mode,color),null,null,null);
         if(view.getTag()==null){view.setTag(Boolean.TRUE);view.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->center(view));}center(view);

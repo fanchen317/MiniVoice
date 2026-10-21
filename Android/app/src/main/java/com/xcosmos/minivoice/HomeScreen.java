@@ -315,6 +315,7 @@ final class HomeScreen {
             int top,bottom,left=0,right=0;
             if(android.os.Build.VERSION.SDK_INT>=30){android.graphics.Insets safe=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());top=safe.top;bottom=safe.bottom;left=safe.left;right=safe.right;}
             else{top=insets.getSystemWindowInsetTop();bottom=insets.getSystemWindowInsetBottom();android.view.DisplayCutout cutout=insets.getDisplayCutout();if(cutout!=null){left=cutout.getSafeInsetLeft();right=cutout.getSafeInsetRight();top=Math.max(top,cutout.getSafeInsetTop());bottom=Math.max(bottom,cutout.getSafeInsetBottom());}}
+            if(landscape&&!isWallStyle()){int symmetric=Math.max(left,right);left=symmetric;right=symmetric;}
             safeLeft=left;safeTop=top;safeRight=right;safeBottom=bottom;
             menuParams.topMargin=top+dp(6);menuParams.leftMargin=left+dp(14);menu.setLayoutParams(menuParams);
             searchParams.topMargin=top+dp(6);searchParams.rightMargin=right+dp(14);searchControl.setLayoutParams(searchParams);
