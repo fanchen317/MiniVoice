@@ -8,8 +8,6 @@ import java.util.WeakHashMap;
 
 /** Samples the scene behind a surface, never the surface or its foreground text. */
 final class GlassBackdrop {
-    private boolean windowSnapshot;
-    private final android.os.Handler main=new android.os.Handler(android.os.Looper.getMainLooper());
     private Bitmap bitmap;
     private final Bitmap[] cachedBitmaps=new Bitmap[2];
     private final int[] cachedGenerations={-1,-1},cachedWidths=new int[2],cachedHeights=new int[2];
@@ -23,26 +21,8 @@ final class GlassBackdrop {
     GlassBackdrop(View source,boolean live,float blurDp){this.source=source;this.live=live;this.blurDp=blurDp>0?blurDp:20;}
     void invalidateSnapshot(){generation++;bitmap=null;cachedBitmaps[0]=cachedBitmaps[1]=null;for(View host:hosts.keySet())if(host.isShown())host.invalidate();}
     private boolean contains(View host){for(ViewParent parent=host.getParent();parent!=null;parent=parent.getParent())if(parent==source)return true;return host==source;}
-    /** Copy the already rendered window before the drawer/scrim appears. Never redraw a View tree here. */
-    void captureWindow(android.app.Activity activity,Runnable complete){
-        if(source.getWidth()<=0||source.getHeight()<=0){complete.run();return;}
-        int[] at=new int[2];source.getLocationInWindow(at);
-        Rect area=new Rect(at[0],at[1],at[0]+source.getWidth(),at[1]+source.getHeight());
-        float density=source.getResources().getDisplayMetrics().density;
-        int sample=Math.max(2,Math.round(blurDp*density/4));
-        Bitmap image=Bitmap.createBitmap(Math.max(1,source.getWidth()/sample),Math.max(1,source.getHeight()/sample),Bitmap.Config.ARGB_8888);
-        try{android.view.PixelCopy.request(activity.getWindow(),area,image,result->{
-            if(result==android.view.PixelCopy.SUCCESS){
-                int w=image.getWidth(),h=image.getHeight();int[] pixels=new int[w*h];image.getPixels(pixels,0,w,0,0,w,h);
-                pixels=GlassGaussian.blur(pixels,w,h);image.setPixels(pixels,0,w,0,0,w,h);
-                bitmap=image;bitmapWidth=area.width();bitmapHeight=area.height();windowSnapshot=true;
-                for(View host:hosts.keySet())host.invalidate();
-            }
-            complete.run();
-        },main);}catch(IllegalArgumentException failure){complete.run();}
-    }
     private boolean drawSource(Canvas canvas,boolean scene){
-        if(source instanceof PlayerStylePage){((PlayerStylePage)source).drawBackdrop(canvas);return true;}
+        if(source instanceof PlayerStylePage)return ((PlayerStylePage)source).drawBackdrop(canvas,scene);
         if(source instanceof WallView&&canvas.isHardwareAccelerated())return ((WallView)source).drawBackdrop(canvas);
         source.draw(canvas);return true;
     }
@@ -68,6 +48,7 @@ final class GlassBackdrop {
             android.graphics.RenderNode tile;
             int previousX=Integer.MIN_VALUE,previousY,previousWidth,previousHeight,previousGeneration=-1,previousSourceWidth,previousSourceHeight;
             boolean previousScene;
+            int sourceRetries;
             @Override public void draw(Canvas canvas){
                 RectF bounds=new RectF(getBounds());if(bounds.isEmpty())return;
                 float density=host.getResources().getDisplayMetrics().density,r=radius*density;
@@ -82,9 +63,14 @@ final class GlassBackdrop {
                         Canvas recording=tile.beginRecording(w,h);boolean ready;
                         try{recording.scale(.5f,.5f);recording.translate(pad-x,pad-y);ready=drawSource(recording,scene);}finally{tile.endRecording();}
                         tile.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(blurDp*density/2,blurDp*density/2,Shader.TileMode.CLAMP));
-                        if(ready){previousX=x;previousY=y;previousWidth=width;previousHeight=height;previousGeneration=generation;previousScene=scene;previousSourceWidth=source.getWidth();previousSourceHeight=source.getHeight();}else tile=null;
+                        if(ready){previousX=x;previousY=y;previousWidth=width;previousHeight=height;previousGeneration=generation;previousScene=scene;previousSourceWidth=source.getWidth();previousSourceHeight=source.getHeight();sourceRetries=0;}else{
+                            tile=null;
+                            // A scene may not be recorded on the first frame. Retry without
+                            // requiring a tap, but never start an unbounded redraw loop.
+                            if(sourceRetries++<3){source.postInvalidateOnAnimation();host.postInvalidateOnAnimation();}
+                        }
                     }
-                }else if(!windowSnapshot){
+                }else{
                     int key=scene?1:0;bitmap=cachedBitmaps[key];
                     if(bitmap==null||cachedWidths[key]!=source.getWidth()||cachedHeights[key]!=source.getHeight()||(live&&cachedGenerations[key]!=generation))capture(scene);
                 }

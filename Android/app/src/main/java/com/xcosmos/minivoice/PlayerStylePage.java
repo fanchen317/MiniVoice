@@ -60,7 +60,16 @@ final class PlayerStylePage extends FrameLayout {
     private PlayerStylePage glassSource;
     private GlassBackdrop workspaceGlass;
     void glassSource(PlayerStylePage value){glassSource=value;}
-    void drawBackdrop(Canvas canvas){if(getBackground()!=null)getBackground().draw(canvas);}
+    private final GlassSceneLayer glassScene=new GlassSceneLayer();
+    @Override protected void dispatchDraw(Canvas canvas){
+        if(sidebarCatalog){super.dispatchDraw(canvas);return;}
+        glassScene.draw(canvas,getWidth(),getHeight(),this::drawSceneChildren);
+    }
+    private void drawSceneChildren(Canvas canvas){if(getBackground()!=null)getBackground().draw(canvas);super.dispatchDraw(canvas);}
+    boolean drawBackdrop(Canvas canvas,boolean includeScene){
+        if(includeScene&&glassScene.backdrop(canvas))return true;
+        if(getBackground()!=null)getBackground().draw(canvas);return !includeScene;
+    }
     private final android.view.ViewTreeObserver.OnScrollChangedListener glassScroll=()->{if(isShown())refreshGlass();};
     private void refreshGlass(){if(workspaceGlass!=null)workspaceGlass.invalidateSnapshot();}
     @Override public void invalidateDrawable(android.graphics.drawable.Drawable drawable){super.invalidateDrawable(drawable);if(drawable==atmosphere)refreshGlass();}
@@ -209,7 +218,7 @@ final class PlayerStylePage extends FrameLayout {
     void setSnapshotTransition(boolean value){snapshotTransition=value;}
     private boolean animations(){return !snapshotTransition&&ValueAnimator.areAnimatorsEnabled();}
     private void render(){
-        transitionEpoch++;closingGroup=false;if(libraryRoot!=null)libraryRoot.animate().cancel();if(heroMotion!=null){heroMotion.cancel();heroMotion=null;}if(selectionMotion!=null){selectionMotion.removeAllListeners();selectionMotion.cancel();selectionMotion=null;}animate().cancel();setAlpha(1);setTranslationY(0);removeAllViews();artGeneration++;pending.clear();if(images!=null)images.getQueue().clear();if(detailImages!=null)detailImages.getQueue().clear();
+        glassScene.clear();transitionEpoch++;closingGroup=false;if(libraryRoot!=null)libraryRoot.animate().cancel();if(heroMotion!=null){heroMotion.cancel();heroMotion=null;}if(selectionMotion!=null){selectionMotion.removeAllListeners();selectionMotion.cancel();selectionMotion=null;}animate().cancel();setAlpha(1);setTranslationY(0);removeAllViews();artGeneration++;pending.clear();if(images!=null)images.getQueue().clear();if(detailImages!=null)detailImages.getQueue().clear();
         lyricsExpandButton=null;libraryEmpty=null;sidebarReload=null;sidebarSelection=null;album=null;list=null;listHeading=null;selectionBar=null;selectionCount=null;selectionToggle=null;summary=null;columnHeader=null;cover=null;title=null;artist=null;nowPlaying=null;lyricView=null;hero=null;libraryRoot=null;detailRoot=null;
         if(style.equals("wall"))return;
         wide=getWidth()-getPaddingLeft()-getPaddingRight()>dp(620);columns=new LibraryColumns(getWidth()-getPaddingLeft()-getPaddingRight(),getResources().getDisplayMetrics().density);

@@ -79,7 +79,6 @@ final class HomeScreen {
     private final ScrollView drawerScroll;
     private final FrameLayout drawerPanel;
     private GlassBackdrop wallGlass,drawerGlass;
-    private int drawerAnimationEpoch;
     private final DrawerMaterialState drawerMaterial=new DrawerMaterialState();
     private LinearLayout drawerContent,drawerBrand,simpleDrawerRoot;
     private PlayerStylePage sidebarPage;
@@ -132,7 +131,7 @@ final class HomeScreen {
         this.activity = activity;
         this.actions = actions;
         frame = new FrameLayout(activity);
-        fragmentTransition=new PlayerStyleTransition(activity,frame);fragmentTransition.setFinished(this::restoreDrawerAfterAppearance);
+        fragmentTransition=new PlayerStyleTransition(activity,frame);
         frame.setBackgroundColor(Color.rgb(7, 12, 13));
         wall = new WallView(activity, actions::play, actions::toggle, actions::seek);
         wall.setSongMenu(actions::songMenu);
@@ -268,7 +267,7 @@ final class HomeScreen {
         icon.setOnClickListener(v->{
             if(fragmentTransition.isRunning())return;
             icon.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK);
-            fragmentTransition.run(icon,()->{
+            Runnable changeStyle=()->{
             fragmentSwitch=true;stylePage.setSnapshotTransition(true);
             try{
             String nextStyle=playerStyle.equals("simple")?"library":playerStyle.equals("library")?"wall":"simple";
@@ -276,7 +275,7 @@ final class HomeScreen {
             searchInput.setText("");actions.section("歌曲");applyAppearance();if(playerStyle.equals("simple"))stylePage.showPlayer();updateViewport();
             icon.announceForAccessibility(nextStyle.equals("simple")?"简易样式":nextStyle.equals("library")?"音乐库样式":"音乐墙样式");
             }finally{fragmentSwitch=false;stylePage.setSnapshotTransition(false);}
-        });});
+        };if(drawerOpen)changeStyle.run();else fragmentTransition.run(icon,changeStyle);});
         LinearLayout title = new LinearLayout(activity);
         title.setOrientation(LinearLayout.VERTICAL);
         title.setPadding(dp(12), 0, 0, 0);
@@ -311,8 +310,8 @@ final class HomeScreen {
                 int action=event.getActionMasked();
                 if(action==android.view.MotionEvent.ACTION_DOWN){drawerPanel.animate().cancel();drawerLayer.animate().cancel();start=event.getRawX()-drawerPanel.getTranslationX();velocity=android.view.VelocityTracker.obtain();}
                 if(velocity==null)return true;velocity.addMovement(event);
-                if(action==android.view.MotionEvent.ACTION_MOVE){float x=Math.min(0,event.getRawX()-start);drawerPanel.setTranslationX(x);drawerLayer.setAlpha(Math.max(0,1+x/Math.max(1,drawerPanel.getWidth())));}
-                if(action==android.view.MotionEvent.ACTION_UP||action==android.view.MotionEvent.ACTION_CANCEL){velocity.computeCurrentVelocity(1000);boolean close=action==android.view.MotionEvent.ACTION_UP&&PanelDismiss.shouldClose(-drawerPanel.getTranslationX(),-velocity.getXVelocity(),drawerPanel.getWidth(),activity.getResources().getDisplayMetrics().density);velocity.recycle();velocity=null;if(close)showDrawer(false);else{drawerPanel.animate().translationX(0).setDuration(220).start();drawerLayer.animate().alpha(1).setDuration(220).start();}}
+                if(action==android.view.MotionEvent.ACTION_MOVE){float x=Math.min(0,event.getRawX()-start);drawerPanel.setTranslationX(x);drawerPanel.invalidate();drawerLayer.setAlpha(Math.max(0,1+x/Math.max(1,drawerPanel.getWidth())));}
+                if(action==android.view.MotionEvent.ACTION_UP||action==android.view.MotionEvent.ACTION_CANCEL){velocity.computeCurrentVelocity(1000);boolean close=action==android.view.MotionEvent.ACTION_UP&&PanelDismiss.shouldClose(-drawerPanel.getTranslationX(),-velocity.getXVelocity(),drawerPanel.getWidth(),activity.getResources().getDisplayMetrics().density);velocity.recycle();velocity=null;if(close)showDrawer(false);else{animateDrawerPanel(0,220);drawerLayer.animate().alpha(1).setDuration(220).start();}}
                 return true;
             }
         });
@@ -352,30 +351,31 @@ final class HomeScreen {
         return drawerOpen;
     }
 
+    private void animateDrawerPanel(float destination,long duration){
+        // Translation alone reuses the old display list. The sampled background must be
+        // recorded at every new screen position, including the final settled position.
+        drawerPanel.animate().translationX(destination).setDuration(duration)
+            .setUpdateListener(animation->drawerPanel.invalidate())
+            .withEndAction(()->{drawerPanel.invalidate();drawerPanel.postOnAnimation(drawerPanel::invalidate);}).start();
+    }
+
     void showDrawer(boolean open) {
         if (drawerOpen == open) return;
         drawerOpen = open;
-        final int request=++drawerAnimationEpoch;
         drawerPanel.animate().cancel();
         drawerLayer.animate().cancel();
         if (open) {
             drawerLayer.bringToFront();
-            drawerGlass=null;applyDrawerAppearance();
-            Runnable reveal=()->{
-                if(!drawerOpen||request!=drawerAnimationEpoch)return;
-                drawerLayer.setVisibility(View.VISIBLE);
-                if(playerStyle.equals("simple"))sidebarPage.refreshVisibleArtwork();
-                drawerLayer.setAlpha(0);
-                drawerPanel.setTranslationX(-drawerPanel.getLayoutParams().width-dp(20));
-                drawerLayer.animate().alpha(1).setDuration(220).start();
-                drawerPanel.animate().translationX(0).setDuration(260).start();
-            };
-            drawerLayer.setVisibility(View.GONE);
-            // Let the window submit a clean frame after canceling a closing drawer.
-            frame.postOnAnimation(()->frame.post(()->{if(drawerOpen&&request==drawerAnimationEpoch)drawerGlass.captureWindow(activity,reveal);}));
+            applyDrawerAppearance();
+            drawerLayer.setVisibility(View.VISIBLE);
+            if(playerStyle.equals("simple"))sidebarPage.refreshVisibleArtwork();
+            drawerLayer.setAlpha(0);
+            drawerPanel.setTranslationX(-drawerPanel.getLayoutParams().width-dp(20));
+            drawerLayer.animate().alpha(1).setDuration(220).start();
+            animateDrawerPanel(0,260);
         } else {
             drawerSearch.clearFocus();((InputMethodManager)activity.getSystemService(Activity.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(drawerSearch.getWindowToken(),0);
-            drawerPanel.animate().translationX(-drawerPanel.getLayoutParams().width - dp(20)).setDuration(230).start();
+            animateDrawerPanel(-drawerPanel.getLayoutParams().width-dp(20),230);
             drawerLayer.animate().alpha(0).setDuration(230).withEndAction(() -> {
                 if (!drawerOpen) drawerLayer.setVisibility(View.GONE);
             }).start();
@@ -413,14 +413,10 @@ final class HomeScreen {
     void applyAppearance(){
         android.content.SharedPreferences prefs=activity.getSharedPreferences("library",Activity.MODE_PRIVATE);
         String nextStyle=AppAppearance.style(prefs);boolean changed=!playerStyle.equals(nextStyle);
-        if(drawerMaterial.prepare(nextStyle,AppAppearance.dark(activity,prefs),drawerOpen)){drawerOpen=false;++drawerAnimationEpoch;
-            drawerPanel.animate().cancel();drawerLayer.animate().cancel();drawerLayer.setVisibility(View.GONE);
-            drawerLayer.setAlpha(1);drawerPanel.setTranslationX(0);drawerGlass=null;
-        }
         int epoch=++styleTransitionEpoch;
         wall.collapse();playerStyle=nextStyle;wall.animate().cancel();stylePage.animate().cancel();
         stylePage.configure(playerStyle,AppAppearance.palette(activity,prefs));stylePage.setSongs(visibleSongs);
-        if(changed&&!drawerMaterial.pending()&&!fragmentSwitch&&android.animation.ValueAnimator.areAnimatorsEnabled()){
+        if(changed&&!fragmentSwitch&&android.animation.ValueAnimator.areAnimatorsEnabled()){
             if(isWallStyle()){
                 wall.setVisibility(View.VISIBLE);wall.setAlpha(0);wall.animate().alpha(1).setDuration(300).start();
                 stylePage.setVisibility(View.VISIBLE);stylePage.animate().cancel();stylePage.setAlpha(1);stylePage.animate().alpha(0).setDuration(220).withEndAction(()->{if(epoch==styleTransitionEpoch&&isWallStyle()){stylePage.setVisibility(View.GONE);stylePage.setAlpha(1);}}).start();
@@ -428,18 +424,13 @@ final class HomeScreen {
                 wall.setVisibility(View.VISIBLE);wall.setAlpha(1);wall.animate().alpha(0).setDuration(220).withEndAction(()->{if(epoch==styleTransitionEpoch&&!isWallStyle()){wall.setVisibility(View.GONE);wall.setAlpha(1);}}).start();
             }
         }else{wall.setVisibility(isWallStyle()?View.VISIBLE:View.GONE);wall.setAlpha(1);stylePage.setAlpha(1);}
-        if(changed&&!drawerMaterial.pending()&&!fragmentSwitch&&!isWallStyle()&&android.animation.ValueAnimator.areAnimatorsEnabled()){standardBar.animate().cancel();standardBar.setAlpha(0);standardBar.setTranslationY(dp(14));standardBar.animate().alpha(1).translationY(0).setDuration(280).start();}
+        if(changed&&!fragmentSwitch&&!isWallStyle()&&android.animation.ValueAnimator.areAnimatorsEnabled()){standardBar.animate().cancel();standardBar.setAlpha(0);standardBar.setTranslationY(dp(14));standardBar.animate().alpha(1).translationY(0).setDuration(280).start();}
         standardBar.configure(AppAppearance.palette(activity,prefs),frame.getWidth()-safeLeft-safeRight>=dp(620),false);standardBar.setBackground(stylePage.glassSurface(standardBar,20,AppAppearance.dark(activity,prefs)));updatePlaybackBarVisibility();
         updateViewport();applyControlsAppearance();updateLibraryLoading();
         boolean light=!isWallStyle()&&!AppAppearance.dark(activity,prefs);int flags=activity.getWindow().getDecorView().getSystemUiVisibility();int lightFlags=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;activity.getWindow().getDecorView().setSystemUiVisibility(light?flags|lightFlags:flags&~lightFlags);
         browseHeading.setVisibility(isWallStyle()&&browseGroup!=null&&!chromeHidden?View.VISIBLE:View.GONE);
         if(idleDock!=null)idleDock.configure(Math.max(dp(56),Math.round(portraitDockWidth)),idleEligible());
         if(!isWallStyle())wallSettings.setVisibility(View.GONE);else if(!chromeHidden&&!keyboardVisible)wallSettings.setVisibility(View.VISIBLE);
-        restoreDrawerAfterAppearance();
-    }
-    private void restoreDrawerAfterAppearance(){
-        if(!drawerMaterial.restore(fragmentTransition.isRunning()))return;
-        frame.postOnAnimation(()->showDrawer(true));
     }
     void setCardState(Set<String> favorites,int mode,int duration){wall.setCardState(favorites,mode,duration);stylePage.setFavorites(favorites);sidebarPage.setFavorites(favorites);standardBar.mode(mode);}
     boolean collapsePlayer(){return isWallStyle()?wall.collapse():stylePage.collapse();}
@@ -777,7 +768,6 @@ final class HomeScreen {
     }
     private void applyDrawerAppearance(){
         AppAppearance.Palette palette=chromePalette();
-        drawerMaterial.applied(playerStyle,palette.dark);
         boolean simple=playerStyle.equals("simple");
         LinearLayout parent=simple?simpleDrawerRoot:drawerContent;
         if(drawerBrand.getParent()!=parent){((android.view.ViewGroup)drawerBrand.getParent()).removeView(drawerBrand);parent.addView(drawerBrand,0,new LinearLayout.LayoutParams(-1,-2));}
@@ -786,8 +776,9 @@ final class HomeScreen {
         sidebarPage.configure("library",palette);
         drawerSearch.setTextColor(palette.text);drawerSearch.setHintTextColor(palette.secondary);drawerSearch.setBackground(round(palette.dark?0x553F4945:0x99FFFFFF,14,0,0));
         simpleLibraryTab.setTextColor(palette.text);simpleRecentTab.setTextColor(palette.text);updateSimpleTabs();
-        if(!drawerOpen||drawerGlass==null)drawerGlass=new GlassBackdrop(isWallStyle()?wall:stylePage,false,28);
-        drawerPanel.setBackground(drawerGlass.surface(drawerPanel,24,true,!palette.dark));
+        boolean materialChanged=drawerMaterial.update(playerStyle,palette.dark);
+        if(materialChanged||drawerGlass==null)drawerGlass=DrawerMaterialState.liquid(playerStyle)?glass():new GlassBackdrop(stylePage,true,28);
+        drawerPanel.setBackground(drawerGlass.surface(drawerPanel,24,!DrawerMaterialState.liquid(playerStyle),!palette.dark));
         drawerName.setTextColor(palette.text);drawerSubtitle.setTextColor(palette.secondary);
         drawerClose.setColorFilter(palette.text);drawerSettings.setColorFilter(palette.text);drawerSettings.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(palette.dark?0x22FFFFFF:0x16000000),null,null));
     }
