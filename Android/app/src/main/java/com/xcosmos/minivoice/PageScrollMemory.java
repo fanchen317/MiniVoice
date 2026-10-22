@@ -14,6 +14,9 @@ final class PageScrollMemory {
         final String item;final int index,offset;
         Anchor(String item,int index,int offset){this.item=item;this.index=index;this.offset=offset;}
     }
+    static boolean canSnapshot(List<String> rendered,List<String> current,int first,int last){
+        return first>=0&&last>=first&&last<current.size()&&rendered.equals(current);
+    }
     private final Map<String,Anchor> pages=new HashMap<>();
     void save(String page,List<String> items,int first,int offset){
         if(page==null||first<0||first>=items.size())return;

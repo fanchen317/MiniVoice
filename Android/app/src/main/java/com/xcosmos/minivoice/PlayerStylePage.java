@@ -82,13 +82,18 @@ final class PlayerStylePage extends FrameLayout {
     private int position,duration,insetLeft,insetTop,insetRight,insetBottom,renderWidth,renderHeight,heroExtent;
     private String lyricStatus="暂无歌词";private ValueAnimator heroMotion;private int transitionEpoch,artGeneration;
     private final PageScrollMemory scrollMemory=new PageScrollMemory();
+    private final Map<String,android.os.Parcelable> gridScrollStates=new HashMap<>();
+    private final Map<String,List<String>> gridScrollItems=new HashMap<>();
+    private List<Song> navigationSongs;
     private String renderedPageKey;
     private List<String> renderedItems=Collections.emptyList();
     private AbsListView pendingScrollRestore;
     private final Set<String> pending=new HashSet<>();
     private ThreadPoolExecutor images,detailImages;
     private final BaseAdapter adapter=new BaseAdapter(){
-        public int getCount(){return songs.size();}public Song getItem(int index){return songs.get(index);}public long getItemId(int index){return getItem(index).id;}
+        public int getCount(){return songs.size();}public Song getItem(int index){return songs.get(index);}// AbsListView treats negative IDs as "no saved row". Folder songs have
+        // negative domain IDs, so this non-stable adapter uses its row index.
+        public long getItemId(int index){return index;}
         public View getView(int index,View recycled,ViewGroup parent){
             LinearLayout row;ImageView image;TextView caption,subtitle;LibraryActionButton star,more;
             if(recycled==null){
@@ -135,12 +140,30 @@ final class PlayerStylePage extends FrameLayout {
     private boolean inputOccludes;private int inputBottom;
     void setInputInsets(boolean occludes,int bottom){inputOccludes=occludes;inputBottom=bottom;}
     void setInsets(int left,int top,int right,int bottom){insetLeft=left;insetTop=top;insetRight=right;insetBottom=bottom;boolean footerWide=(getWidth()>0?getWidth():getResources().getDisplayMetrics().widthPixels)-left-right>=dp(620);setPadding(left,top+dp(landscapePlayback()||landscapeLibrary()?CONTENT_GAP:6+WallToolStyle.SIDE+CONTENT_GAP),right,inputOccludes?Math.max(bottom,inputBottom)+dp(CONTENT_GAP):bottom+dp(landscapePlayback()?CONTENT_GAP:8+(footerWide?88:104)+CONTENT_GAP));}
-    void setSongs(List<Song> value){boolean nextGrouped=!value.isEmpty()&&value.get(0).groupCount>0;boolean layoutChanged=nextGrouped!=grouped;boolean same=value.size()==songs.size();if(same)for(int i=0;i<value.size();i++)if(value.get(i)!=songs.get(i)){same=false;break;}if(same&&!layoutChanged){updateHeading();return;}saveScroll();grouped=nextGrouped;if(grouped){selecting=false;selection.clear();}songs=new ArrayList<>(value);selection.retain(visibleIDs());if(layoutChanged&&!style.equals("wall"))render();else adapter.notifyDataSetChanged();updateHeading();updateSelection();}
+    void setSongs(List<Song> value){if(navigationPending){navigationSongs=new ArrayList<>(value);return;}boolean nextGrouped=!value.isEmpty()&&value.get(0).groupCount>0;boolean layoutChanged=nextGrouped!=grouped;boolean same=value.size()==songs.size();if(same)for(int i=0;i<value.size();i++)if(value.get(i)!=songs.get(i)){same=false;break;}if(same&&!layoutChanged){updateHeading();return;}saveScroll();grouped=nextGrouped;if(grouped){selecting=false;selection.clear();}songs=new ArrayList<>(value);selection.retain(visibleIDs());if(layoutChanged&&!style.equals("wall"))render();else{adapter.notifyDataSetChanged();if(list!=null&&!style.equals("wall"))restoreScroll();}updateHeading();updateSelection();}
     void setSection(String value){section=value.equals("歌曲")?"音乐库":value.startsWith("歌单:")?value.substring(3):value;updateHeading();}
-    void preparePage(String key){if(pageKey.equals(key))return;saveScroll();selecting=false;selection.clear();if(!key.equals(groupParentKey)&&!key.equals(groupChildKey))clearGroupTransition();pageKey=key;int split=key.indexOf('\n');group=split<0||split==key.length()-1?null:key.substring(split+1);navigationPending=true;}
+    void preparePage(String key){
+        if(pageKey.equals(key)&&!navigationPending)return;
+        saveScroll();selecting=false;selection.clear();
+        if(!key.equals(groupParentKey)&&!key.equals(groupChildKey))clearGroupTransition();
+        navigationPending=true;
+    }
     void setBrowseContext(String group,String section){
-        String key=section+"\n"+(group==null?"":group);boolean returningToCard=group==null&&key.equals(groupParentKey);boolean changed=navigationPending||!pageKey.equals(key);navigationPending=false;if(!pageKey.equals(key))saveScroll();pageKey=key;this.group=group;setSection(group==null?section:group);
-        if(changed&&!style.equals("wall")){lyricsExpanded=false;if(style.equals("library"))expanded=false;render();if(libraryRoot!=null&&libraryRoot.getVisibility()==VISIBLE){if(group!=null&&pageKey.equals(groupChildKey))openGroupTransition();else if(!returningToCard)enter(libraryRoot,group==null?-18:18);}if(group==null){clearGroupTransition();if(returningToCard&&libraryRoot!=null)enterGroup(libraryRoot,-10);}}
+        String key=section+"\n"+(group==null?"":group);
+        boolean returningToCard=group==null&&key.equals(groupParentKey);
+        boolean changed=navigationPending||!pageKey.equals(key);
+        if(changed)saveScroll();
+        // Commit page identity and its adapter data together. No intermediate old/new grid.
+        if(navigationSongs!=null){songs=navigationSongs;navigationSongs=null;grouped=!songs.isEmpty()&&songs.get(0).groupCount>0;selection.retain(visibleIDs());}
+        navigationPending=false;pageKey=key;this.group=group;setSection(group==null?section:group);
+        if(changed&&!style.equals("wall")){
+            lyricsExpanded=false;if(style.equals("library"))expanded=false;render();
+            if(libraryRoot!=null&&libraryRoot.getVisibility()==VISIBLE){
+                if(group!=null&&pageKey.equals(groupChildKey))openGroupTransition();
+                else if(!returningToCard)enter(libraryRoot,group==null?-18:18);
+            }
+            if(group==null){clearGroupTransition();if(returningToCard&&libraryRoot!=null)enterGroup(libraryRoot,-10);}
+        }
     }
     void setSong(Song song){boolean changed=current!=song&&(current==null||song==null||current.id!=song.id||!Objects.equals(current.artworkVersion,song.artworkVersion));current=song;if(changed){lyrics=Collections.emptyList();lyricStatus="正在加载歌词…";if(lyricView!=null){lyricView.lyrics(lyrics);lyricView.status(lyricStatus);}updateDetails();adapter.notifyDataSetChanged();}}
     void setLyricsStatus(String value){lyricStatus=value;if(lyricView!=null)lyricView.status(value);}
@@ -222,7 +245,16 @@ final class PlayerStylePage extends FrameLayout {
     private void clearGroupTransition(){groupParentKey=null;groupChildKey=null;}
     private void saveScroll(){
         if(list==null||list==pendingScrollRestore||list.getChildCount()==0)return;
+        // Navigation commits new adapter data before tearing down the old children.
+        // Never ask that old grid to save state against the replacement dataset.
+        List<String> currentItems=new ArrayList<>();
+        for(Song song:songs)currentItems.add(grouped?"group:"+song.title:"song:"+song.id);
+        if(!PageScrollMemory.canSnapshot(renderedItems,currentItems,list.getFirstVisiblePosition(),list.getLastVisiblePosition()))return;
         scrollMemory.save(renderedPageKey,renderedItems,list.getFirstVisiblePosition(),list.getChildAt(0).getTop()-list.getPaddingTop());
+        if(list instanceof GridView&&renderedPageKey!=null){
+            gridScrollStates.put(renderedPageKey,list.onSaveInstanceState());
+            gridScrollItems.put(renderedPageKey,new ArrayList<>(renderedItems));
+        }
     }
     private void restoreScroll(){
         renderedPageKey=pageKey;renderedItems=new ArrayList<>();
@@ -230,9 +262,14 @@ final class PlayerStylePage extends FrameLayout {
         final AbsListView target=list;final String key=pageKey;
         final PageScrollMemory.Position saved=scrollMemory.restore(key,renderedItems);
         if(saved==null)return;pendingScrollRestore=target;
+        // GridView inherits AbsListView.setSelectionFromTop, which does not update
+        // selection in touch mode. Its saved state restores the first row instead.
+        final android.os.Parcelable gridState=target instanceof GridView
+            &&renderedItems.equals(gridScrollItems.get(key))?gridScrollStates.get(key):null;
         target.post(()->{
             if(list!=target||!key.equals(renderedPageKey))return;
-            target.setSelectionFromTop(saved.index,saved.offset);
+            if(gridState!=null)target.onRestoreInstanceState(gridState);
+            else target.setSelectionFromTop(saved.index,saved.offset);
             target.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener(){
                 public boolean onPreDraw(){
                     if(list!=target||target.getChildCount()>0){

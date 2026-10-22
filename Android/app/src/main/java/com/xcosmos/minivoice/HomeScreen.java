@@ -115,6 +115,7 @@ final class HomeScreen {
     private final TransportButton playButton;
     private final SeekBar seek;
     private final EditText searchInput;
+    private boolean clearingNavigationSearch;
     private boolean drawerOpen = false;
     private boolean groupedWall;
     private String sortingField="added";private boolean sortingAscending=false;private String browseSection="歌曲",browseGroup,pageKey;
@@ -163,7 +164,7 @@ final class HomeScreen {
 
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 if(drawerSearch!=null&&!s.toString().contentEquals(drawerSearch.getText()))drawerSearch.setText(s);
-                actions.search(s.toString());
+                if(!clearingNavigationSearch)actions.search(s.toString());
                 if(playerStyle.equals("simple")&&s.length()>0&&!drawerOpen)stylePage.showCatalog();
             }
 
@@ -566,7 +567,7 @@ final class HomeScreen {
 
     void setPageKey(String key){if(key.equals(pageKey))return;stylePage.preparePage(key);if(pageKey!=null)pageCameras.put(pageKey,wall.cameraState());pageKey=key;pendingCamera=pageCameras.get(key);restoringWallState=true;wall.resetCamera();wall.zoomTo(WallZoom.scale(activity.getSharedPreferences("library",0).getInt("wall_zoom_"+key,100)));restoringWallState=false;refreshZoomControls();}
     private void zoomChanged(){refreshZoomControls();if(pageKey!=null&&!restoringWallState)activity.getSharedPreferences("library",0).edit().putInt("wall_zoom_"+pageKey,WallZoom.percent(wall.scale())).apply();}
-    void setBrowseContext(String group,String section){browseGroup=group;browseSection=section;browseHeading.setText("‹  "+section+" / "+(group==null?"":group));browseHeading.setVisibility(group!=null&&isWallStyle()&&!chromeHidden&&!searchControl.isOpen()?View.VISIBLE:View.GONE);stylePage.setBrowseContext(group,section);}
+    void setBrowseContext(String group,String section){browseGroup=group;browseSection=section;browseHeading.setText("‹  "+section+" / "+(group==null?"":group));browseHeading.setVisibility(group!=null&&isWallStyle()&&!chromeHidden&&!searchControl.isOpen()?View.VISIBLE:View.GONE);stylePage.setBrowseContext(group,section);if(sidebarPage!=null)sidebarPage.setBrowseContext(null,drawerSelected);}
     void setSorting(String field,boolean ascending){sortingField=field;sortingAscending=ascending;stylePage.setSorting(field,ascending);sidebarPage.setSorting(field,ascending);}
     void updateWall(List<Song> songs) {
         updateWall(songs, false);
@@ -584,7 +585,7 @@ final class HomeScreen {
     void locateSongDirectly(long songId){if(isWallStyle())wall.locateSongDirectly(songId);else stylePage.locate(songId);}
     void locateSong(long songId) {if(playerStyle.equals("wall"))wall.locateSong(songId);else stylePage.locate(songId);}
 
-    void clearSearch() {searchControl.clearQuery();}
+    void clearSearch() {clearingNavigationSearch=true;try{searchControl.clearQuery();}finally{clearingNavigationSearch=false;}}
     boolean closeSearch(){if(!searchControl.isOpen())return false;searchControl.setOpen(false,true);return true;}
 
     private TextView zoomLabel;

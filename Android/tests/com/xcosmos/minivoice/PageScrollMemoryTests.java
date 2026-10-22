@@ -21,6 +21,10 @@ public final class PageScrollMemoryTests {
         memory.save("歌手\n",Collections.emptyList(),0,0);
         check(memory.restore("歌手\n",artists).offset==-31,"An unlaid-out empty page overwrote its anchor");
         check(memory.restore("歌手\n",Collections.emptyList())==null,"Empty page requested an invalid selection");
+        check(PageScrollMemory.canSnapshot(artists,artists,2,3),"Settled grid snapshot was rejected");
+        check(!PageScrollMemory.canSnapshot(artists,Arrays.asList("song:1"),2,3),"Old grid saved against shorter child dataset");
+        check(!PageScrollMemory.canSnapshot(artists,Arrays.asList("1","2","3","4"),2,3),"Same-size replacement dataset was accepted");
+        check(!PageScrollMemory.canSnapshot(artists,artists,2,4),"Out-of-range visible child was accepted");
         System.out.println("PASS: independent artist/album/group scroll anchors, pixel offsets, stable identities after sorting and empty/rebuilt list protection");
     }
 }
