@@ -2,6 +2,8 @@
 // remain mouse / dedicated-shortcut controls rather than stops in a key loop.
 export function textInputTabNavigation(event){
   if(event.metaKey||event.ctrlKey||event.altKey)return;
+  // DialogBoundary owns every dialog stop, including confirmation buttons.
+  if(document.querySelector('[role="dialog"],[role="alertdialog"],[data-mv-menu]'))return;
   event.preventDefault();
   const scope=document.querySelector('[role="dialog"],.modal-backdrop')||document;
   const fields=[...scope.querySelectorAll('input,textarea,[contenteditable="true"]')].filter(node=>

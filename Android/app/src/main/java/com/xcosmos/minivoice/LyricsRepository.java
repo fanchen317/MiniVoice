@@ -13,7 +13,7 @@ final class LyricsRepository {
     static synchronized void prepareSong(Context context,Song song){
         if(song.lyricsPrepared)return;
         song.lyricsError=null;
-        File directory=LibraryCache.directory(context,"lyrics");String key=LibraryCache.key(song.uri+"\n"+song.artworkVersion+"\n"+song.lyricUri);
+        File directory=LibraryCache.directory(context,"lyrics");String key=LibraryCache.key(song.uri+"\n"+song.artworkVersion+"\n"+song.lyricUri+"\n"+song.lyricVersion);
         File file=new File(directory,key+".txt");
         try{if(file.isFile()){
             String cached=read(file);int separator=cached.indexOf('\n');
@@ -32,7 +32,7 @@ final class LyricsRepository {
             if(!temporary.renameTo(file))temporary.delete();
         }catch(Exception ignored){if(temporary!=null)temporary.delete();}}
     }
-    static void prune(Context context,List<Song> songs){java.util.Set<String> keep=new java.util.HashSet<>();for(Song song:songs)keep.add(LibraryCache.key(song.uri+"\n"+song.artworkVersion+"\n"+song.lyricUri)+".txt");File[] files=LibraryCache.directory(context,"lyrics").listFiles();if(files!=null)for(File file:files)if(!keep.contains(file.getName()))file.delete();}
+    static void prune(Context context,List<Song> songs){java.util.Set<String> keep=new java.util.HashSet<>();for(Song song:songs)keep.add(LibraryCache.key(song.uri+"\n"+song.artworkVersion+"\n"+song.lyricUri+"\n"+song.lyricVersion)+".txt");File[] files=LibraryCache.directory(context,"lyrics").listFiles();if(files!=null)for(File file:files)if(!keep.contains(file.getName()))file.delete();}
     private static boolean valid(String text){return text!=null&&!text.isBlank()&&!Lyrics.parse(text).isEmpty();}
     private static String read(File file)throws Exception{try(InputStream in=new FileInputStream(file);ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] bytes=new byte[8192];int count;while((count=in.read(bytes))>=0){if(out.size()+count>1024*1024+32)throw new IOException("歌词缓存过大");out.write(bytes,0,count);}return new String(out.toByteArray(),StandardCharsets.UTF_8);}}
     static String select(Song song,String manual){return song.lyricsEmbedded?song.lyricsRaw:manual!=null&&!manual.isEmpty()?manual:song.lyricsRaw;}

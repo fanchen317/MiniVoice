@@ -15,7 +15,7 @@ final class QueueScrollThumb extends View {
     private final Rect visible=new Rect();
     private float top,height,grab,track;
     private boolean dragging;
-    QueueScrollThumb(ScrollView scroll){super(scroll.getContext());this.scroll=scroll;visibility=new ScrollThumbVisibility(this);paint.setColor(0xFF51D5AA);setContentDescription("拖动滚动播放队列");scroll.setOnScrollChangeListener((v,x,y,oldX,oldY)->{if(y!=oldY&&range()>0)visibility.pulse();postInvalidateOnAnimation();});}
+    QueueScrollThumb(ScrollView scroll){super(scroll.getContext());this.scroll=scroll;visibility=new ScrollThumbVisibility(this);paint.setColor(DialogSurface.palette((android.app.Activity)scroll.getContext()).accent);setContentDescription("拖动滚动播放队列");scroll.setOnScrollChangeListener((v,x,y,oldX,oldY)->{if(y!=oldY&&range()>0)visibility.pulse();postInvalidateOnAnimation();});}
     private float dp(float value){return value*getResources().getDisplayMetrics().density;}
     private int range(){return scroll.getChildCount()==0?0:Math.max(0,scroll.getChildAt(0).getHeight()-scroll.getHeight()+scroll.getPaddingTop()+scroll.getPaddingBottom());}
     private void geometry(){getGlobalVisibleRect(visible);track=Math.max(0,Math.min(getHeight(),visible.height())-dp(24));height=Math.min(track,Math.max(dp(36),Math.min(dp(64),track*scroll.getHeight()/Math.max(1f,scroll.getHeight()+range()))));if(!dragging)top=dp(12)+(track-height)*scroll.getScrollY()/Math.max(1f,range());}

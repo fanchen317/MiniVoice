@@ -1,4 +1,5 @@
 import AppKit
+import MiniVoiceShared
 import Combine
 
 /// The Electron shell owns every main-window pixel. This process owns audio,
@@ -198,6 +199,15 @@ final class DesktopEngine {
     }
     private func command(_ action: String, _ payload: [String: Any]) async throws -> Any {
         switch action {
+        case "sharedCore": return try SharedEngine.execute(payload)
+        case "portableSnapshot":
+            return ["songs": library.tracks.map { item in ["id": item.id.uuidString, "title": item.title, "artist": item.artist, "album": item.album, "duration": Int(item.duration*1000), "artwork": item.artworkKey.map { "minivoice-art://cover/\($0)?v=\(library.browseArtworkRevision)" } ?? ""] as [String: Any] },
+                    "favorites": library.tracks.filter { collections.isFavorite($0.url.path) }.map { $0.id.uuidString },
+                    "recent": library.recentPaths.compactMap { path in library.tracks.first { $0.url.path == path }?.id.uuidString },
+                    "queue": library.playbackIDs.map(\.uuidString), "mode": library.playbackMode.rawValue,
+                    "playlists": collections.playlists.map { list in ["id": list.id.uuidString, "name": list.name, "ids": library.tracks.filter { list.paths.contains($0.url.path) }.map { $0.id.uuidString }] as [String: Any] },
+                    "capabilities": ["favorite", "mode", "queueSelect", "createPlaylist", "addToPlaylist", "settings"],
+                    "current": library.playingTrack?.id.uuidString as Any? ?? NSNull(), "position": Int(library.playbackTime*1000), "playing": library.isPlaying, "rawLyrics": library.playingTrack?.lyrics ?? ""] as [String: Any]
         case "openSettings": panels.showSettings(); return true
         case "openEditor":
             let selected = try track(payload); panels.showEditor(selected); return true

@@ -61,7 +61,7 @@ final class NativeLyricsView extends FrameLayout {
     private void centerActive(boolean animated){
         if(active<0||active>=lines.size()||list.getHeight()==0||manualScrolling)return;
         View row=list.getChildAt(active-list.getFirstVisiblePosition());int rowHeight=row==null?0:row.getHeight();
-        if(rowHeight<=0){android.text.TextPaint ink=new android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG);ink.setTypeface(Typeface.DEFAULT_BOLD);ink.setTextSize((frosted?26:21)*getResources().getDisplayMetrics().scaledDensity);int width=Math.max(1,list.getWidth()-list.getPaddingLeft()-list.getPaddingRight()-dp(frosted?48:24));String value=lines.get(active).text;rowHeight=android.text.StaticLayout.Builder.obtain(value,0,value.length(),ink,width).setIncludePad(false).setLineSpacing(dp(3),1).build().getHeight()+dp(frosted?36:28);}
+        if(rowHeight<=0){android.text.TextPaint ink=new android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG);ink.setTypeface(Typeface.DEFAULT_BOLD);ink.setTextSize((frosted?26:21)*getResources().getDisplayMetrics().scaledDensity);int width=Math.max(1,list.getWidth()-list.getPaddingLeft()-list.getPaddingRight()-dp(frosted?48:24));String value=lines.get(active).displayText();rowHeight=android.text.StaticLayout.Builder.obtain(value,0,value.length(),ink,width).setIncludePad(false).setLineSpacing(dp(3),1).build().getHeight()+dp(frosted?36:28);}
         int top=(list.getHeight()-rowHeight)/2-list.getPaddingTop();
         if(row!=null&&Math.abs(row.getTop()-(top+list.getPaddingTop()))<=dp(2))return;
         if(animated&&android.animation.ValueAnimator.areAnimatorsEnabled())list.smoothScrollToPositionFromTop(active,top,300);else list.setSelectionFromTop(active,top);
@@ -74,7 +74,8 @@ final class NativeLyricsView extends FrameLayout {
     private final class LyricRow extends TextView {
         int index;
         LyricRow(Context context){super(context);setTextSize(frosted?26:21);setLineSpacing(dp(3),1);setPadding(dp(frosted?24:12),dp(frosted?18:14),dp(frosted?24:12),dp(frosted?18:14));setIncludeFontPadding(false);}
-        void bind(int value){index=value;String valueText=lines.get(value).text;if(!valueText.contentEquals(getText()))setText(valueText.isEmpty()?"•••":valueText);setTypeface(null,frosted?Typeface.BOLD:Typeface.NORMAL);setTextColor(frosted&&index==active?((colors.accent&0x00FFFFFF)|0x66000000):colors.secondary);setAlpha(index==active?1:frosted?(Math.abs(index-active)>1?.42f:.72f):.7f);invalidate();}
+        void bind(int value){index=value;Lyrics.Line line=lines.get(value);String valueText=line.displayText();
+            if(!valueText.contentEquals(getText())){android.text.SpannableString styled=new android.text.SpannableString(valueText.isEmpty()?"•••":valueText);if(!line.translation.isEmpty()){int start=line.text.length()+1;styled.setSpan(new android.text.style.RelativeSizeSpan(.72f),start,styled.length(),android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);}setText(styled);}setTypeface(null,frosted?Typeface.BOLD:Typeface.NORMAL);setTextColor(frosted&&index==active?((colors.accent&0x00FFFFFF)|0x66000000):colors.secondary);setAlpha(index==active?1:frosted?(Math.abs(index-active)>1?.42f:.72f):.7f);invalidate();}
         @Override protected void onDraw(Canvas canvas){
             super.onDraw(canvas);if(index!=active||index>=lines.size())return;Layout layout=getLayout();if(layout==null)return;
             Lyrics.Line line=lines.get(index);long next=index+1<lines.size()?lines.get(index+1).ms:duration;

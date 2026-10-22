@@ -97,7 +97,7 @@ final class FocusCardRenderer {
         int width=Math.max(1,(int)area.width()),activeLimit=FocusCardPresentation.cardActiveLines(area.height(),lyricSize,lyricSpacing,last-first),otherLimit=1;
         if(shapedExpanded!=expanded||shapedLines!=lines||shapedActive!=active||shapedWidth!=width||shapedAreaHeight!=area.height()||shapedSize!=lyricSize||shapedFirst!=first||shapedLast!=last||shapedActiveLimit!=activeLimit||shapedOtherLimit!=otherLimit){
             if(expanded)shapeExpandedLyrics(lines,first,last,active,width,area.height());
-            else shapeCardLyrics(lines,first,last,active,width,activeLimit);
+            else shapeCardLyrics(lines,first,last,active,width,activeLimit,area.height());
             shapedExpanded=expanded;
             shapedLines=lines;shapedActive=active;shapedWidth=width;shapedAreaHeight=area.height();shapedSize=lyricSize;shapedFirst=first;shapedLast=last;shapedActiveLimit=activeLimit;shapedOtherLimit=otherLimit;
         }
@@ -145,24 +145,30 @@ final class FocusCardRenderer {
             TextPaint ink=new TextPaint(Paint.ANTI_ALIAS_FLAG);
             ink.setTypeface(i==active?Typeface.DEFAULT_BOLD:Typeface.DEFAULT);
             ink.setTextSize(22*d);
-            StaticLayout layout=expandedLyricLayout(lines.get(i).text,ink,width);
+            StaticLayout layout=expandedLyricLayout(lines.get(i).displayText(),ink,width);
             // Only an exceptionally long current sentence is fitted to the whole
             // viewport. Neighbor count never changes the expanded font size.
             if(i==active)for(int attempt=0;attempt<12&&layout.getHeight()>height-2*d;attempt++){
                 ink.setTextSize(Math.max(1,ink.getTextSize()*Math.min(.92f,(height-2*d)/layout.getHeight())));
-                layout=expandedLyricLayout(lines.get(i).text,ink,width);
+                layout=expandedLyricLayout(lines.get(i).displayText(),ink,width);
             }
             shaped.add(layout);
         }
     }
-    private void shapeCardLyrics(List<Lyrics.Line> lines,int first,int last,int active,int width,int activeLimit){
-        shaped.clear();
-        for(int i=first;i<=last;i++){
-            TextPaint ink=new TextPaint(Paint.ANTI_ALIAS_FLAG);ink.setTypeface(Typeface.DEFAULT_BOLD);ink.setTextSize(lyricSize);
-            String value=lines.get(i).text;
-            shaped.add(StaticLayout.Builder.obtain(value,0,value.length(),ink,width)
-                .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).setLineSpacing(2*d,1)
-                .setMaxLines(i==active?activeLimit:1).setEllipsize(android.text.TextUtils.TruncateAt.END).setEllipsizedWidth(width).build());
+    private void shapeCardLyrics(List<Lyrics.Line> lines,int first,int last,int active,int width,int activeLimit,float height){
+        float size=lyricSize;
+        for(int attempt=0;attempt<8;attempt++){
+            shaped.clear();float used=Math.max(0,last-first)*lyricSpacing;
+            for(int i=first;i<=last;i++){
+                TextPaint ink=new TextPaint(Paint.ANTI_ALIAS_FLAG);ink.setTypeface(Typeface.DEFAULT_BOLD);ink.setTextSize(size);
+                String value=i==active?lines.get(i).displayText():lines.get(i).text;
+                StaticLayout layout=StaticLayout.Builder.obtain(value,0,value.length(),ink,width)
+                    .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).setLineSpacing(2*d,1)
+                    .setMaxLines(i==active?Math.max(activeLimit,lines.get(i).translation.isEmpty()?1:2):1).setEllipsize(android.text.TextUtils.TruncateAt.END).setEllipsizedWidth(width).build();
+                shaped.add(layout);used+=layout.getHeight();
+            }
+            if(used<=height||size<=8*d)break;
+            size=Math.max(8*d,size*Math.min(.92f,height/used));
         }
     }
     private StaticLayout expandedLyricLayout(String value,TextPaint ink,int width){

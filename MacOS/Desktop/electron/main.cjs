@@ -23,7 +23,7 @@ function showMainWindow(){
 }
 const pending = new Map(), latest = new Map();
 let engineRestarts = [], restartTimer;
-const actions = new Set(['sorting','tasks','deleteTracks','addManyToPlaylist','removeManyFromPlaylist','openSettings','openEditor','interfaceStyle','orderedTracks','lyricsPresentation','favoriteMany','appearance','snapshot','play','select','toggle','pause','seek','skip','volume','mode','favorite','rescan','removeFolder','recursive','createPlaylist','renamePlaylist','deletePlaylist','addToPlaylist','removeFromPlaylist','clearRecent','detail','reveal','desktopLyrics','outputDevice','clearError','lyricsSearch','syncLyrics','saveMetadata','removeTrack']);
+const actions = new Set(['sharedCore','portableSnapshot','sorting','tasks','deleteTracks','addManyToPlaylist','removeManyFromPlaylist','openSettings','openEditor','interfaceStyle','orderedTracks','lyricsPresentation','favoriteMany','appearance','snapshot','play','select','toggle','pause','seek','skip','volume','mode','favorite','rescan','removeFolder','recursive','createPlaylist','renamePlaylist','deletePlaylist','addToPlaylist','removeFromPlaylist','clearRecent','detail','reveal','desktopLyrics','outputDevice','clearError','lyricsSearch','syncLyrics','saveMetadata','removeTrack']);
 const stateFile = () => path.join(app.getPath('userData'), 'window.json');
 const packagedEngine = () => path.join(process.resourcesPath, 'Native', 'MiniVoice.app', 'Contents', 'MacOS', 'MiniVoice');
 function request(action, payload = {}) {
@@ -127,6 +127,7 @@ app.whenReady().then(() => {
       if (payload.action === 'fullscreen') window.setFullScreen(!window.isFullScreen());
       return true;
     }
+    if (action === 'portableExit') { await window.loadFile(path.resolve(__dirname, '../dist/index.html')); return true; }
     if (action === 'quit') { app.quit(); return true; }
     if (!actions.has(action) || !payload || typeof payload !== 'object' || JSON.stringify(payload).length > 4 * 1024 * 1024) throw new Error('无效的后台命令');
     return request(action, payload);
@@ -136,7 +137,7 @@ app.whenReady().then(() => {
     { label: 'MiniVoice', submenu: [{ role: 'about' }, { type: 'separator' }, { label: '设置…', accelerator: 'Cmd+,', click: () => menuAction('openSettings') }, { role: 'hide' }, { role: 'hideOthers' }, { type: 'separator' }, { role: 'quit' }] },
     { role: 'editMenu' },
     { label: '播放', submenu: [{ label: '播放 / 暂停', click: () => menuAction('toggle') }, { label: '上一首', click: () => menuAction('skip', { delta: -1 }) }, { label: '下一首', click: () => menuAction('skip', { delta: 1 }) }] },
-    { label: '显示', submenu: [{ role: 'togglefullscreen' }, { label: '简易样式', click: () => emit('style','simple') }, { label: '音乐库样式', click: () => emit('style','library') }, { label: '音乐墙样式', click: () => emit('style','wall') }] },
+    { label: '显示', submenu: [{label:'桌面界面预览（Mac 布局）',click:()=>window.loadFile(path.resolve(__dirname,'../dist/index.html'),{query:{portable:'1'}})}, {label:'返回当前播放器',click:()=>window.loadFile(path.resolve(__dirname,'../dist/index.html'))}, { role: 'togglefullscreen' }, { label: '简易样式', click: () => emit('style','simple') }, { label: '音乐库样式', click: () => emit('style','library') }, { label: '音乐墙样式', click: () => emit('style','wall') }] },
     { role: 'windowMenu' }
   ]));
   createWindow(); startEngine();

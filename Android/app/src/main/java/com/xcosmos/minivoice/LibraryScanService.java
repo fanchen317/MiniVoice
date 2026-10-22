@@ -33,7 +33,7 @@ public final class LibraryScanService extends Service {
     static void observe(Listener listener){LISTENERS.add(listener);listener.changed(state);}
     static void remove(Listener listener){LISTENERS.remove(listener);}
     static void request(Context context,boolean rebuild,boolean restore,boolean sourcesChanged){
-        if(sourcesChanged)synchronized(SOURCE_LOCK){generation++;LibrarySnapshot.invalidate(context);}
+        if(sourcesChanged)synchronized(SOURCE_LOCK){generation++;LibrarySnapshot.forgetResident();}
         Intent intent=new Intent(context,LibraryScanService.class).putExtra("rebuild",rebuild).putExtra("restore",restore).putExtra("sources_changed",sourcesChanged);
         context.startForegroundService(intent);
     }
@@ -55,6 +55,7 @@ public final class LibraryScanService extends Service {
         else if(rebuild)prefs.edit().putBoolean("scan_requested_rebuild",true).apply();
         return START_REDELIVER_INTENT;
     }
+    private boolean inFolders(Song song,Set<String> folders){for(String value:folders)try{android.net.Uri tree=android.net.Uri.parse(value);if(!java.util.Objects.equals(tree.getAuthority(),song.uri.getAuthority()))continue;String parent=android.provider.DocumentsContract.getTreeDocumentId(tree),child=android.provider.DocumentsContract.getDocumentId(song.uri);if(android.provider.DocumentsContract.isTreeUri(song.uri)&&parent.equals(android.provider.DocumentsContract.getTreeDocumentId(song.uri)))return true;if(child.equals(parent)||child.startsWith(parent+"/"))return true;}catch(Exception ignored){}return false;}
     private String source(Set<String> folders,boolean recursive){return "folders\n"+LibrarySnapshot.source(folders,recursive);}
     private String currentSource(){android.content.SharedPreferences prefs=getSharedPreferences("library",MODE_PRIVATE);return source(prefs.getStringSet("music_folders",Collections.emptySet()),prefs.getBoolean("scan_recursive",true));}
     private void start(ScanRequestQueue.Request request){
@@ -77,7 +78,7 @@ public final class LibraryScanService extends Service {
                 LibraryCache.migrateLegacy(this);
                 if(request.rebuild){progress.update(0,0,"清理旧缓存…");synchronized(SOURCE_LOCK){LibrarySnapshot.invalidate(this);}ArtworkCache.clear();LibraryCache.clear(this);clearFiles(getCacheDir());clearFiles(AppStorage.temporary(this));}
                 found=request.restore&&!request.rebuild?LibrarySnapshot.read(this,source):null;cached=found!=null;
-                if(found==null)found=folders.isEmpty()?new ArrayList<>():FolderLibrary.scan(this,folders,recursive,progress);
+                if(found==null){List<Song> previous=request.rebuild?null:LibrarySnapshot.read(this,source);boolean sameScope=previous!=null;if(previous==null&&!request.rebuild)previous=LibrarySnapshot.readAny(this);if(previous!=null)previous.removeIf(song->!inFolders(song,folders));found=folders.isEmpty()?new ArrayList<>():FolderLibrary.scan(this,folders,recursive,progress,previous==null?Collections.emptyList():previous,sameScope);}
                 stampDates(found,prefs);LyricsRepository.prepare(this,found,progress);ArtworkCache.prepare(this,found,progress);
                 synchronized(SOURCE_LOCK){
                     if(token!=generation||!source.equals(currentSource())||destroyed)throw new CancellationException();
@@ -85,7 +86,7 @@ public final class LibraryScanService extends Service {
                     LibrarySnapshot.write(this,source,found);ArtworkCache.prune(this,found);LyricsRepository.prune(this,found);
                 }
             }catch(CancellationException failure){cancelled=true;}
-            catch(Exception|OutOfMemoryError failure){error="扫描失败，请检查音乐目录权限和可用空间后重试";android.util.Log.w("MiniVoice","音乐库扫描失败",failure);}
+            catch(Exception|OutOfMemoryError failure){error="扫描失败，请检查音乐目录权限和可用空间后重试";android.util.Log.w("MiniVoice","音乐库扫描失败",failure);Diagnostics.failure("scan failed",failure);}
             final List<Song> result=found;final String failure=error;final boolean stale=cancelled,restored=cached;
             MAIN.post(()->finish(token,request,result,failure,stale,restored));
         });

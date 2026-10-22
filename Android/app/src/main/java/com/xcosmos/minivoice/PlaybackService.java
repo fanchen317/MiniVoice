@@ -107,7 +107,7 @@ public final class PlaybackService extends Service {
             player=new MediaPlayer(); player.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
             player.setDataSource(this,song.uri); player.setOnCompletionListener(mp->next(false)); player.prepare();
             requestFocus(); player.start(); active=true; publish();loadArtwork(song,generation);
-        } catch(Exception e){if(player!=null){player.release();player=null;}active=false;publish();}
+        } catch(Exception e){Diagnostics.failure("playback failed",e);android.widget.Toast.makeText(this,"无法播放：文件可能已失效或格式不支持",android.widget.Toast.LENGTH_LONG).show();if(player!=null){player.release();player=null;}active=false;publish();}
     }
     private void loadArtwork(Song song,int generation){
         artworkLoader.execute(()->{

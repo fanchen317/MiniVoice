@@ -15,7 +15,7 @@ final class PageScrollMemory {
         Anchor(String item,int index,int offset){this.item=item;this.index=index;this.offset=offset;}
     }
     static boolean canSnapshot(List<String> rendered,List<String> current,int first,int last){
-        return first>=0&&last>=first&&last<current.size()&&rendered.equals(current);
+        return SharedCore.canSnapshot(rendered.toArray(new String[0]),current.toArray(new String[0]),first,last);
     }
     private final Map<String,Anchor> pages=new HashMap<>();
     void save(String page,List<String> items,int first,int offset){
@@ -24,7 +24,7 @@ final class PageScrollMemory {
     }
     Position restore(String page,List<String> items){
         Anchor anchor=pages.get(page);if(anchor==null||items.isEmpty())return null;
-        int index=items.indexOf(anchor.item);if(index<0)index=Math.min(anchor.index,items.size()-1);
-        return new Position(index,anchor.offset);
+        int[] restored=SharedCore.restoreAnchor(items.toArray(new String[0]),anchor.item,anchor.index,anchor.offset);
+        return new Position(restored[0],restored[1]);
     }
 }

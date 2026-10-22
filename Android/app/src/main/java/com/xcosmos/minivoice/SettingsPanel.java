@@ -1,7 +1,7 @@
 package com.xcosmos.minivoice;
 
 import android.app.Activity;
-import android.app.AlertDialog;
+
 import android.app.Dialog;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
@@ -30,6 +30,8 @@ final class SettingsPanel {
         void rescan();
 
         void viewCache();
+        void exportDiagnostics();
+        void inspectLibrary();
 
         void clearCache();
 
@@ -163,7 +165,7 @@ final class SettingsPanel {
         for (String value : selected) {
             String path = folderPath(value);
             String name = path.substring(path.lastIndexOf('/') + 1);
-            preference(folders, name, path, () -> new AlertDialog.Builder(activity, colors.dark ? android.app.AlertDialog.THEME_DEVICE_DEFAULT_DARK : android.app.AlertDialog.THEME_DEVICE_DEFAULT_LIGHT).setTitle(name).setMessage(path + "\n\n移除后不会删除目录中的音乐文件。").setNegativeButton("取消", null).setPositiveButton("移除文件夹", (dialog, which) -> actions.removeFolder(value)).show());
+            preference(folders, name, path, () -> new AppDialog.Builder(activity).setTitle(name).setMessage(path + "\n\n移除后不会删除目录中的音乐文件。").setNegativeButton("取消", null).setPositiveButton("移除文件夹", (dialog, which) -> actions.removeFolder(value)).show());
             divider(folders);
         }
         preference(folders, "添加音乐文件夹", "通过系统文件选择器授权读取", actions::addFolder);
@@ -195,13 +197,21 @@ final class SettingsPanel {
         progress.setMargins(dp(16), 0, dp(16), dp(12));
         library.addView(scanBar, progress);
         updateProgress();
+        divider(library);
+        preference(library,"音乐库检查","查看疑似重复、失效文件及歌手名称归并",actions::inspectLibrary);
+        section("实验功能");
+        LinearLayout preview=group();
+        preference(preview,"跨平台界面试用","尚在开发：部分功能未迁移，仅供试用，可随时返回当前播放器",()->activity.startActivity(new android.content.Intent(activity,PortablePlayerActivity.class)));
+        section("诊断与稳定性");
+        LinearLayout diagnostics=group();
+        preference(diagnostics,"导出诊断报告","本地保存最近 "+Diagnostics.crashCount()+" 次崩溃 · 导出 ZIP，不自动上传",actions::exportDiagnostics);
         section("缓存与存储");
         LinearLayout cache = group();
         preference(cache, "应用数据目录", AppStorage.files(activity).getAbsolutePath() + "\nconfig：设置快照 · library：索引、封面、歌词", null);
         divider(cache);
         preference(cache, "查看本地缓存", "存储位置：" + LibraryCache.root(activity).getAbsolutePath(), actions::viewCache);
         divider(cache);
-        preference(cache, "重建缓存", "清理缓存后重新读取音乐，不删除原始文件", () -> new AlertDialog.Builder(activity, colors.dark ? android.app.AlertDialog.THEME_DEVICE_DEFAULT_DARK : android.app.AlertDialog.THEME_DEVICE_DEFAULT_LIGHT).setTitle("重建音乐库缓存？").setMessage("将重新读取歌曲、封面和歌词。音乐文件、收藏和歌单会保留。").setNegativeButton("取消", null).setPositiveButton("重建", (dialog, which) -> {
+        preference(cache, "重建缓存", "清理缓存后重新读取音乐，不删除原始文件", () -> new AppDialog.Builder(activity).setTitle("重建音乐库缓存？").setMessage("将重新读取歌曲、封面和歌词。音乐文件、收藏和歌单会保留。").setNegativeButton("取消", null).setPositiveButton("重建", (dialog, which) -> {
             if (!scanning) actions.clearCache();
         }).show());
         TextView footer = text("MiniVoice · 本地音乐播放器", 12, colors.secondary);
@@ -215,7 +225,7 @@ final class SettingsPanel {
     private void choose(String title, String[] names, String[] values, String key, String value) {
         int checked = 0;
         for (int i = 0; i < values.length; i++) if (values[i].equals(value)) checked = i;
-        new AlertDialog.Builder(activity, colors.dark ? android.app.AlertDialog.THEME_DEVICE_DEFAULT_DARK : android.app.AlertDialog.THEME_DEVICE_DEFAULT_LIGHT).setTitle(title).setSingleChoiceItems(names, checked, (dialog, which) -> {
+        new AppDialog.Builder(activity).setTitle(title).setSingleChoiceItems(names, checked, (dialog, which) -> {
             prefs.edit().putString(key, values[which]).apply();
             dialog.dismiss();
             actions.appearanceChanged();

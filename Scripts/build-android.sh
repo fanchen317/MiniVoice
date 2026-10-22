@@ -10,13 +10,16 @@ output="$repo_root/.build/Android"
 source "$repo_root/Scripts/android-signing.sh"
 minivoice_check_signing "$repo_root"
 printf 'Signing key: %s\nCertificate SHA-256: %s\n' "$keystore" "$signing_fingerprint"
+bash "$repo_root/Scripts/build-shared-core-android.sh"
+bash "$repo_root/Scripts/build-shared-ui.sh"
 mkdir -p "$output/classes" "$output/dex" "$output/generated"
 rm -f "$output/MiniVoice-unsigned.apk" "$output/MiniVoice-unaligned.apk" "$output/MiniVoice-debug.apk"
 "$build_tools/aapt2" compile --dir "$repo_root/Android/app/src/main/res" -o "$output/resources.zip"
-"$build_tools/aapt2" link -o "$output/MiniVoice-unsigned.apk" -I "$android_jar" --manifest "$repo_root/Android/app/src/main/AndroidManifest.xml" -R "$output/resources.zip" --java "$output/generated" --auto-add-overlay
+"$build_tools/aapt2" link -o "$output/MiniVoice-unsigned.apk" -I "$android_jar" --manifest "$repo_root/Android/app/src/main/AndroidManifest.xml" -R "$output/resources.zip" --java "$output/generated" --auto-add-overlay -A "$repo_root/.build/Shared/UI"
 javac -source 17 -target 17 -cp "$android_jar" -d "$output/classes" "$output/generated/com/xcosmos/minivoice/R.java" "$repo_root"/Android/app/src/main/java/com/xcosmos/minivoice/*.java
 "$build_tools/d8" --lib "$android_jar" --min-api 29 --output "$output/dex" "$output"/classes/com/xcosmos/minivoice/*.class
 (cd "$output/dex" && zip -q "$output/MiniVoice-unsigned.apk" classes.dex)
+(cd "$output/native" && zip -q "$output/MiniVoice-unsigned.apk" lib/*/libminivoice_core.so)
 "$build_tools/zipalign" -f 4 "$output/MiniVoice-unsigned.apk" "$output/MiniVoice-unaligned.apk"
 "$build_tools/apksigner" sign --ks "$keystore" --ks-key-alias "$key_alias" --ks-pass env:MINIVOICE_STORE_PASSWORD --key-pass env:MINIVOICE_KEY_PASSWORD --out "$output/MiniVoice-debug.apk" "$output/MiniVoice-unaligned.apk"
 "$build_tools/apksigner" verify "$output/MiniVoice-debug.apk"

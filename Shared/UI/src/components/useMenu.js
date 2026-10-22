@@ -1,0 +1,15 @@
+import {useLayoutEffect,useRef} from 'react';
+import {menuIndex,menuMatch} from './menuModel.js';
+export function useMenu(root,{onClose,autoFocus=false,version}={}){
+ const close=useRef(onClose);close.current=onClose;
+ useLayoutEffect(()=>{
+  const node=root.current;if(!node)return;let initial=true,query='',at=0;const saved=new Map();
+  const items=()=>[...node.querySelectorAll('button,[role=menuitem],[role=menuitemradio],[role=menuitemcheckbox]')].filter(item=>!item.closest('[hidden]')&&item.getClientRects().length);
+  const enabled=list=>list.map(item=>!item.disabled&&item.getAttribute('aria-disabled')!=='true');
+  const choose=(list,index,focus=false)=>{list.forEach((item,i)=>item.tabIndex=i===index?0:-1);if(focus&&index>=0){list[index].focus({preventScroll:true});list[index].scrollIntoView({block:'nearest'});}};
+  const sync=()=>{const list=items();for(const item of list){if(!saved.has(item))saved.set(item,{role:item.getAttribute('role'),tabindex:item.getAttribute('tabindex')});if(!item.hasAttribute('role'))item.setAttribute('role','menuitem');}const active=list.indexOf(node.ownerDocument.activeElement),current=active>=0?active:list.findIndex(item=>item.tabIndex===0&&!item.disabled);const index=current>=0?current:menuIndex(enabled(list),-1,'Home');choose(list,index,initial&&autoFocus);initial=false;};
+  const key=event=>{const list=items(),active=list.indexOf(node.ownerDocument.activeElement),valid=enabled(list);if(event.key==='Escape'||event.key==='Tab'){if(!close.current)return;event.preventDefault();event.stopPropagation();close.current();return;}if((event.key==='Enter'||event.key===' ')&&active>=0&&valid[active]){event.preventDefault();event.stopPropagation();list[active].click();return;}if(['ArrowUp','ArrowDown','Home','End'].includes(event.key)){event.preventDefault();event.stopPropagation();choose(list,menuIndex(valid,active,event.key),true);return;}if(event.key.length===1&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key!==' '){const now=Date.now();query=now-at>700?event.key:query+event.key;at=now;let found=menuMatch(list.map(item=>item.textContent),valid,query,active);if(found<0&&query.length>1){query=event.key;found=menuMatch(list.map(item=>item.textContent),valid,query,active);}if(found>=0){event.preventDefault();event.stopPropagation();choose(list,found,true);}}};
+  sync();const focusFrame=autoFocus?requestAnimationFrame(()=>{if(!node.contains(node.ownerDocument.activeElement)){const list=items();choose(list,menuIndex(enabled(list),-1,'Home'),true);}}):0;node.addEventListener('keydown',key);const observer=new MutationObserver(sync);observer.observe(node,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','aria-disabled']});
+  return()=>{cancelAnimationFrame(focusFrame);observer.disconnect();node.removeEventListener('keydown',key);for(const [item,old]of saved){if(old.role===null)item.removeAttribute('role');else item.setAttribute('role',old.role);if(old.tabindex===null)item.removeAttribute('tabindex');else item.setAttribute('tabindex',old.tabindex);}};
+ },[root,version,autoFocus]);
+}

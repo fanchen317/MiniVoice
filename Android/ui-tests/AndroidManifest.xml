@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.xcosmos.minivoice.uitests">
+    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="34"/>
+    <instrumentation android:name="com.xcosmos.minivoice.UiRegressionInstrumentation" android:targetPackage="com.xcosmos.minivoice" android:label="MiniVoice UI regression"/>
+    <application android:label="MiniVoice UI tests">
+        <provider android:name="com.xcosmos.minivoice.TestMusicProvider" android:authorities="com.xcosmos.minivoice.uitests.music" android:exported="true" android:grantUriPermissions="true">
+            <intent-filter><action android:name="android.content.action.DOCUMENTS_PROVIDER"/></intent-filter>
+        </provider>
+    </application>
+</manifest>

@@ -141,9 +141,17 @@ final class WallView extends View {
 
         });
     }
-    static final class CameraState {final float x,y,scale;CameraState(float x,float y,float scale){this.x=x;this.y=y;this.scale=scale;}}
-    CameraState cameraState(){return new CameraState(cameraX,cameraY,scale);}
-    void restoreCamera(CameraState value){if(value==null)return;resetExpansion();cancelMotion();focus=null;focusAmount=0;reflowFrom=reflowTo=WallReflow.IDENTITY;cameraX=value.x;cameraY=value.y;scale=WallZoom.clamp(value.scale);cameraReady=true;scaleListener.run();invalidate();}
+    static final class CameraState {
+        final float x,y,scale;final long focused;final int column,row;final boolean expanded;
+        CameraState(float x,float y,float scale){this(x,y,scale,Long.MIN_VALUE,0,0,false);}
+        CameraState(float x,float y,float scale,long focused,int column,int row,boolean expanded){this.x=x;this.y=y;this.scale=scale;this.focused=focused;this.column=column;this.row=row;this.expanded=expanded;}
+    }
+    CameraState cameraState(){return new CameraState(cameraX,cameraY,scale,focus==null?Long.MIN_VALUE:songs.get(focus.tile.index).id,focus==null?0:focus.column,focus==null?0:focus.row,expanded);}
+    void restoreCamera(CameraState value){if(value==null)return;resetExpansion();cancelMotion();focus=null;focusAmount=0;reflowFrom=reflowTo=WallReflow.IDENTITY;cameraX=value.x;cameraY=value.y;scale=WallZoom.clamp(value.scale);cameraReady=true;
+        if(!grouped&&value.focused!=Long.MIN_VALUE)for(WallLayout.Tile tile:scene.tiles)if(songs.get(tile.index).id==value.focused){
+            focus=new WallLayout.Instance(tile,value.column,value.row,tile.x+value.column*scene.width,tile.y+value.row*scene.height);focusAmount=1;reflowFrom=reflowTo=WallReflow.focused(baseFrame(focus),preferredSide(),5*density);expanded=value.expanded;expansionAmount=expanded?1:0;if(cardActions!=null)cardActions.immersive(expanded);break;
+        }
+        scaleListener.run();invalidate();}
     void setGrouped(boolean value){if(grouped==value)return;grouped=value;resetExpansion();card.clear();focus=null;focusAmount=0;reflowFrom=reflowTo=WallReflow.IDENTITY;invalidate();}
     void setSongs(List<Song> value){
         boolean sameOrder=songs.size()==value.size();

@@ -81,9 +81,9 @@ final class PlayerStylePage extends FrameLayout {
     private ImageView lyricsExpandButton;
     private int position,duration,insetLeft,insetTop,insetRight,insetBottom,renderWidth,renderHeight,heroExtent;
     private String lyricStatus="暂无歌词";private ValueAnimator heroMotion;private int transitionEpoch,artGeneration;
-    private final PageScrollMemory scrollMemory=new PageScrollMemory();
-    private final Map<String,android.os.Parcelable> gridScrollStates=new HashMap<>();
-    private final Map<String,List<String>> gridScrollItems=new HashMap<>();
+    private BrowseStateStore browseState(){return new BrowseStateStore(getContext());}
+    private String stateKey(){return (sidebarCatalog?"sidebar:":style+":")+pageKey;}
+    void saveBrowseState(){saveScroll();browseState().expansion(stateKey(),expanded,catalogOpen,lyricsExpanded);}
     private List<Song> navigationSongs;
     private String renderedPageKey;
     private List<String> renderedItems=Collections.emptyList();
@@ -131,8 +131,8 @@ final class PlayerStylePage extends FrameLayout {
     void setTools(Runnable back,Runnable options,Runnable queue,Consumer<Song> favorite){this.back=back;this.options=options;this.queue=queue;this.favorite=favorite;}
     void setFavorites(Set<String> value){if(favorites.equals(value))return;favorites=new HashSet<>(value);adapter.notifyDataSetChanged();updateSelection();updateLandscapeControls();}
     void configure(String value,AppAppearance.Palette palette){
-        boolean changed=!style.equals(value),themeChanged=colors.dark!=palette.dark;saveScroll();style=value;colors=palette;
-        if(changed){lyricsExpanded=false;expanded=false;catalogOpen=false;selecting=false;selection.clear();}if(usesCoverAtmosphere()){atmosphere.theme(colors.dark);setBackground(atmosphere);}else setBackgroundColor(sidebarCatalog?Color.TRANSPARENT:colors.background);
+        boolean changed=!style.equals(value),themeChanged=colors.dark!=palette.dark;saveBrowseState();style=value;colors=palette;
+        if(changed){org.json.JSONObject state=browseState().page(stateKey());lyricsExpanded=state.optBoolean("lyrics");expanded=state.optBoolean("player");catalogOpen=state.optBoolean("catalog");selecting=false;selection.clear();}if(usesCoverAtmosphere()){atmosphere.theme(colors.dark);setBackground(atmosphere);}else setBackgroundColor(sidebarCatalog?Color.TRANSPARENT:colors.background);
         setVisibility(style.equals("wall")?GONE:VISIBLE);
         if(style.equals("wall")){artGeneration++;pending.clear();if(images!=null)images.getQueue().clear();if(detailImages!=null)detailImages.getQueue().clear();}
         if(!style.equals("wall")&&(changed||themeChanged||getChildCount()==0)){render();if(changed)enter(this,14);}
@@ -144,7 +144,7 @@ final class PlayerStylePage extends FrameLayout {
     void setSection(String value){section=value.equals("歌曲")?"音乐库":value.startsWith("歌单:")?value.substring(3):value;updateHeading();}
     void preparePage(String key){
         if(pageKey.equals(key)&&!navigationPending)return;
-        saveScroll();selecting=false;selection.clear();
+        saveBrowseState();selecting=false;selection.clear();
         if(!key.equals(groupParentKey)&&!key.equals(groupChildKey))clearGroupTransition();
         navigationPending=true;
     }
@@ -157,7 +157,8 @@ final class PlayerStylePage extends FrameLayout {
         if(navigationSongs!=null){songs=navigationSongs;navigationSongs=null;grouped=!songs.isEmpty()&&songs.get(0).groupCount>0;selection.retain(visibleIDs());}
         navigationPending=false;pageKey=key;this.group=group;setSection(group==null?section:group);
         if(changed&&!style.equals("wall")){
-            lyricsExpanded=false;if(style.equals("library"))expanded=false;render();
+            org.json.JSONObject state=browseState().page(stateKey());
+            lyricsExpanded=state.optBoolean("lyrics");expanded=state.optBoolean("player");catalogOpen=state.optBoolean("catalog",group!=null);render();
             if(libraryRoot!=null&&libraryRoot.getVisibility()==VISIBLE){
                 if(group!=null&&pageKey.equals(groupChildKey))openGroupTransition();
                 else if(!returningToCard)enter(libraryRoot,group==null?-18:18);
@@ -172,8 +173,8 @@ final class PlayerStylePage extends FrameLayout {
     void setPlayback(int value,int duration,boolean playing){if(sidebarCatalog&&this.playing!=playing)post(()->adapter.notifyDataSetChanged());position=value;this.duration=duration;this.playing=playing;updateLandscapeControls();if(lyricView!=null)lyricView.playback(value,duration,playing);}
     void locate(long id){if(style.equals("library")&&expanded)setExpanded(false);if(list!=null)for(int i=0;i<songs.size();i++)if(songs.get(i).id==id){jumpToSong(i);break;}}
     boolean collapse(){if(lyricsExpanded){toggleLyricsExpanded();return true;}if(selecting){setSelecting(false);return true;}if(group!=null&&(style.equals("library")&&!expanded||style.equals("simple")&&catalogOpen)){closeGroupTransition();return true;}if(style.equals("simple")&&catalogOpen){showPlayer();return true;}if(!expanded)return false;setExpanded(false);return true;}
-    void showCatalog(){if(!style.equals("simple")||catalogOpen)return;catalogOpen=true;detailChanged.run();if(libraryRoot!=null){detailRoot.setVisibility(GONE);libraryRoot.setVisibility(VISIBLE);enter(libraryRoot,18);}}
-    void showPlayer(){if(!style.equals("simple"))return;catalogOpen=false;detailChanged.run();if(detailRoot!=null){libraryRoot.setVisibility(GONE);detailRoot.setVisibility(VISIBLE);enter(detailRoot,-14);updateDetails();}}
+    void showCatalog(){if(!style.equals("simple")||catalogOpen)return;catalogOpen=true;browseState().expansion(stateKey(),expanded,catalogOpen,lyricsExpanded);detailChanged.run();if(libraryRoot!=null){detailRoot.setVisibility(GONE);libraryRoot.setVisibility(VISIBLE);enter(libraryRoot,18);}}
+    void showPlayer(){if(!style.equals("simple"))return;catalogOpen=false;browseState().expansion(stateKey(),expanded,catalogOpen,lyricsExpanded);detailChanged.run();if(detailRoot!=null){libraryRoot.setVisibility(GONE);detailRoot.setVisibility(VISIBLE);enter(detailRoot,-14);updateDetails();}}
     private Runnable detailChanged=()->{};
     void setDetailChanged(Runnable action){detailChanged=action;}
     boolean groupCatalogOpen(){return !sidebarCatalog&&group!=null&&(style.equals("library")&&!expanded||style.equals("simple")&&catalogOpen);}
@@ -250,22 +251,19 @@ final class PlayerStylePage extends FrameLayout {
         List<String> currentItems=new ArrayList<>();
         for(Song song:songs)currentItems.add(grouped?"group:"+song.title:"song:"+song.id);
         if(!PageScrollMemory.canSnapshot(renderedItems,currentItems,list.getFirstVisiblePosition(),list.getLastVisiblePosition()))return;
-        scrollMemory.save(renderedPageKey,renderedItems,list.getFirstVisiblePosition(),list.getChildAt(0).getTop()-list.getPaddingTop());
-        if(list instanceof GridView&&renderedPageKey!=null){
-            gridScrollStates.put(renderedPageKey,list.onSaveInstanceState());
-            gridScrollItems.put(renderedPageKey,new ArrayList<>(renderedItems));
-        }
+        int index=list.getFirstVisiblePosition(),offset=list.getChildAt(0).getTop()-list.getPaddingTop();
+        browseState().scroll((sidebarCatalog?"sidebar:":style+":")+renderedPageKey,renderedItems,index,offset,list instanceof GridView?list.onSaveInstanceState():null);
+
     }
     private void restoreScroll(){
         renderedPageKey=pageKey;renderedItems=new ArrayList<>();
         for(Song song:songs)renderedItems.add(grouped?"group:"+song.title:"song:"+song.id);
         final AbsListView target=list;final String key=pageKey;
-        final PageScrollMemory.Position saved=scrollMemory.restore(key,renderedItems);
+        final PageScrollMemory.Position saved=browseState().scroll(stateKey(),renderedItems);
         if(saved==null)return;pendingScrollRestore=target;
         // GridView inherits AbsListView.setSelectionFromTop, which does not update
         // selection in touch mode. Its saved state restores the first row instead.
-        final android.os.Parcelable gridState=target instanceof GridView
-            &&renderedItems.equals(gridScrollItems.get(key))?gridScrollStates.get(key):null;
+        final android.os.Parcelable gridState=target instanceof GridView?browseState().nativeScroll(stateKey(),renderedItems):null;
         target.post(()->{
             if(list!=target||!key.equals(renderedPageKey))return;
             if(gridState!=null)target.onRestoreInstanceState(gridState);
@@ -275,6 +273,12 @@ final class PlayerStylePage extends FrameLayout {
                     if(list!=target||target.getChildCount()>0){
                         if(target.getViewTreeObserver().isAlive())target.getViewTreeObserver().removeOnPreDrawListener(this);
                         if(pendingScrollRestore==target)pendingScrollRestore=null;
+                        // Framework saved state discards the offset when first position is zero.
+                        // Apply the recorded pixel offset before the restored page is drawn.
+                        if(list==target&&target.getFirstVisiblePosition()==saved.index){
+                            int delta=target.getChildAt(0).getTop()-target.getPaddingTop()-saved.offset;
+                            if(delta!=0){target.scrollListBy(delta);return false;}
+                        }
                     }
                     return true;
                 }
@@ -394,7 +398,7 @@ final class PlayerStylePage extends FrameLayout {
     private void updateLyricsExpandIcon(){if(lyricsExpandButton!=null){lyricsExpandButton.setImageDrawable(new SimplePlayerGlyph(lyricsExpanded?SimplePlayerGlyph.COLLAPSE:SimplePlayerGlyph.EXPAND,colors.secondary,getResources().getDisplayMetrics().density));lyricsExpandButton.setContentDescription(lyricsExpanded?"收起歌词":"展开歌词");}}
     private void toggleLyricsExpanded(){
         if(!style.equals("library")||heroSlot==null)return;
-        lyricsExpanded=!lyricsExpanded;updateLyricsExpandIcon();
+        lyricsExpanded=!lyricsExpanded;browseState().expansion(stateKey(),expanded,catalogOpen,lyricsExpanded);updateLyricsExpandIcon();
         if(heroMotion!=null){heroMotion.cancel();heroMotion=null;}
         if(landscapeLayout()){heroSlot.setVisibility(lyricsExpanded?GONE:VISIBLE);return;}
         LinearLayout.LayoutParams params=(LinearLayout.LayoutParams)heroSlot.getLayoutParams();
@@ -437,7 +441,7 @@ final class PlayerStylePage extends FrameLayout {
         if(cover!=null&&current!=null)bindImage(cover,current,1600);updateLandscapeControls();
     }
     private void setExpanded(boolean value){
-        if(expanded==value||style.equals("wall"))return;if(!value&&lyricsExpanded)toggleLyricsExpanded();expanded=value;detailChanged.run();int epoch=++transitionEpoch;
+        if(expanded==value||style.equals("wall"))return;if(!value&&lyricsExpanded)toggleLyricsExpanded();expanded=value;browseState().expansion(stateKey(),expanded,catalogOpen,lyricsExpanded);detailChanged.run();int epoch=++transitionEpoch;
         if(style.equals("library")){
             if(libraryRoot==null||detailRoot==null)return;View target=value?detailRoot:libraryRoot,source=value?libraryRoot:detailRoot;
             source.animate().cancel();target.animate().cancel();target.setVisibility(VISIBLE);if(value)updateDetails();target.setAlpha(animations()?0:1);target.setTranslationY(animations()?dp(value?28:-16):0);source.setEnabled(false);target.bringToFront();target.setClickable(true);

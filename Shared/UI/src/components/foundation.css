@@ -1,0 +1,39 @@
+/* MiniVoice component contract. Skins stay with the mobile and desktop presentations. */
+[data-mv-component="action-button"]{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+[data-mv-component="action-button"]:disabled{cursor:default}
+[data-input="touch"] [data-mv-component="action-button"]{min-width:var(--mv-minimum-target,44px);min-height:var(--mv-minimum-target,44px)}
+[data-input="touch"] .mv-modal header>button{min-width:44px;min-height:44px}
+[data-dialog-placement="center"] .mv-modal-shade{align-items:center;padding:24px}
+[data-dialog-placement="center"] .mv-modal{max-height:85%;border-radius:24px}
+[data-input="touch"] input[type="checkbox"]{appearance:none;-webkit-appearance:none;width:24px;height:24px;flex-shrink:0;display:grid;place-content:center;border:1.5px solid var(--border);border-radius:6px;background:var(--glass);color:var(--accent)}
+[data-input="touch"] input[type="checkbox"]:checked::after{content:'✓';font-weight:750;line-height:1}
+@media(prefers-reduced-motion:reduce){[data-mv-component="action-button"]{transition:none!important;animation:none!important}}
+.mv-custom-scroll-view{scrollbar-width:none!important;scrollbar-gutter:auto!important}
+.mv-custom-scroll-view::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
+.mv-custom-scroll-rail{position:absolute;width:20px;z-index:8;pointer-events:none;opacity:0;transition:opacity .2s}
+.mv-custom-scroll-rail[hidden]{display:none!important}
+.mv-custom-scroll-rail.is-visible,.mv-custom-scroll-rail:focus-within{opacity:1}
+.mv-custom-scroll-thumb{position:absolute;top:0;right:0;width:20px;border:0;background:none;padding:0;touch-action:none;pointer-events:none;cursor:default;color:inherit}
+.mv-custom-scroll-rail.is-visible .mv-custom-scroll-thumb,.mv-custom-scroll-rail:focus-within .mv-custom-scroll-thumb{pointer-events:auto}
+.mv-custom-scroll-thumb::after{content:'';position:absolute;top:0;bottom:0;right:4px;width:8px;border-radius:8px;background:color-mix(in srgb,var(--text,currentColor) 55%,transparent);border:.5px solid #ffffff40}
+.mv-custom-scroll-thumb:hover::after,.is-dragging .mv-custom-scroll-thumb::after{background:color-mix(in srgb,var(--text,currentColor) 75%,transparent)}
+.mv-custom-scroll-rail[data-input="touch"],.mv-custom-scroll-rail[data-input="touch"] .mv-custom-scroll-thumb{width:28px}
+.mv-custom-scroll-rail[data-input="touch"] .mv-custom-scroll-thumb::after{width:10px;background:var(--accent,#078665)}
+@media(prefers-reduced-motion:reduce){.mv-custom-scroll-rail{transition:none}}
+.mv-slider{position:relative;display:block;min-width:30px;height:24px;flex:1;touch-action:none;user-select:none;cursor:default;outline:none;--mv-slider-color:var(--mint,var(--accent,#078665));--mv-slider-base:#82988c45;--mv-slider-knob-size:12px}
+.mv-slider-track{position:absolute;left:0;right:0;top:50%;height:4px;transform:translateY(-50%);border-radius:8px;overflow:hidden;background:var(--mv-slider-base);pointer-events:none}
+.mv-slider-fill{display:block;height:100%;width:var(--mv-slider-progress);background:var(--mv-slider-color)}
+.mv-slider-knob{position:absolute;left:var(--mv-slider-progress);top:50%;width:var(--mv-slider-knob-size);height:var(--mv-slider-knob-size);transform:translate(-50%,-50%);border-radius:50%;background:var(--mv-slider-color);pointer-events:none;transition:width .15s,height .15s}
+.mv-slider[data-dragging="true"] .mv-slider-knob{width:calc(var(--mv-slider-knob-size) + 3px);height:calc(var(--mv-slider-knob-size) + 3px)}
+.mv-slider:focus-visible{outline:2px solid var(--mv-slider-color);outline-offset:3px;border-radius:7px}
+.mv-slider[aria-disabled="true"]{opacity:.4;pointer-events:none}
+[data-input="touch"] .mv-slider{min-height:44px;--mv-slider-knob-size:13px}
+.mv-wall-focused .mv-slider{--mv-slider-color:#fff;--mv-slider-base:#ffffff50;--mv-slider-knob-size:9px}
+.volume-row .mv-slider{min-width:45px;--mv-slider-knob-size:10px}
+.wall-card-transport>.mv-slider{width:100%;flex:none;--mv-slider-color:#fff;--mv-slider-base:#ffffff45;--mv-slider-knob-size:8px}
+.wall-scale-track>.mv-slider{width:100%;--mv-slider-color:var(--mint,#59d4af)}
+/* Desktop skins retain the established Mac transport geometry. */
+[data-presentation="desktop"] .seek .mv-slider-knob{width:22px;height:14px;border:1px solid #0002;background:#f7f7f7;box-shadow:0 2px 4px #0002}
+[data-presentation="desktop"] .volume-row .mv-slider-knob{width:20px;height:20px;border:1px solid #0002;background:#f7f7f7;box-shadow:0 2px 4px #0002}
+[data-presentation="desktop"] .seek .mv-slider[data-dragging="true"] .mv-slider-knob{width:25px;height:17px}
+[data-presentation="desktop"] .style-wall .seek .mv-slider{--mv-slider-color:#eee}

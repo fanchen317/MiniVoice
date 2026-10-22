@@ -6,7 +6,7 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "vite build",
+    "build": "vite build && node ../../Scripts/package-shared-notices.mjs dist",
     "start": "electron .",
     "test": "node --test test/*.test.mjs",
     "package": "electron-packager . 'MiniVoice' --platform=darwin --arch=arm64 --out=../../.build/staging --asar --overwrite --app-bundle-id=com.xcosmos.MiniVoice.electron --icon=../AppBundle/MiniVoice.icns --electron-zip-dir=../../.build --ignore='^/src|^/test|^/node_modules|^/vite.config'"

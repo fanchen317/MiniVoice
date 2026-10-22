@@ -1,0 +1,12 @@
+[
+ {"request":{"op":"artist.key","value":"  ＪＡＹ　 Chou "},"value":"jay chou"},
+ {"request":{"op":"artist.canonical","value":"JJ","aliases":{"jj":"林俊杰"}},"value":"林俊杰"},
+ {"request":{"op":"scan.reusable","previous":"100:20","current":"100:20"},"value":true},
+ {"request":{"op":"scan.reusable","previous":"0:20","current":"0:20"},"value":false},
+ {"request":{"op":"page.restore","items":["B","A"],"identity":"A","index":0,"offset":-27},"value":{"index":1,"offset":-27}},
+ {"request":{"op":"state.reduce","state":{"pages":{"artists":{"query":"周"}}},"action":{"type":"page","key":"artists","patch":{"identity":"J","index":12,"offset":-9}}},"value":{"version":1,"pages":{"artists":{"query":"周","identity":"J","index":12,"offset":-9}}}},
+ {"request":{"op":"lyrics.parse","raw":"[00:01.000]你好\n[00:01.000]Hello"},"value":[{"ms":1000,"text":"你好","translation":"Hello","words":[]}]},
+ {"request":{"op":"lyrics.sweep","line":{"ms":1000,"text":"你好","words":[]},"next":3000,"position":2000},"value":1.0},
+ {"request":{"version":99,"op":"lyrics.parse"},"ok":false},
+ {"request":{"op":"unavailable"},"ok":false}
+]

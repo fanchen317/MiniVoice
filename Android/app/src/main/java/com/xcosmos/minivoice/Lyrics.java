@@ -29,33 +29,20 @@ final class Lyrics {
             catch(CharacterCodingException ignored){return new String(bytes,Charset.forName("GB18030"));}
         }
     }
-    static final class Word {final long ms;final String text;Word(long ms,String text){this.ms=ms;this.text=text;}}
-    static final class Line { final long ms; final String text;final List<Word> words;Line(long ms,String text){this(ms,text,new ArrayList<>());}Line(long ms,String text,List<Word> words){this.ms=ms;this.text=text;this.words=words;} }
-    private static final Pattern STAMP=Pattern.compile("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?\\]");
-    private static final Pattern WORD=Pattern.compile("<(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?>");
-    private static final Pattern OFFSET=Pattern.compile("(?im)^\\s*\\[offset:([+-]?\\d{1,9})\\]\\s*$");
-    private static long time(Matcher match){
-        String fraction=match.group(3);
-        return Long.parseLong(match.group(1))*60000+Long.parseLong(match.group(2))*1000+
-            (fraction==null?0:Long.parseLong((fraction+"000").substring(0,3)));
+    static final class Word {final long ms,endMs;final String text;Word(long ms,String text){this(ms,-1,text);}Word(long ms,long endMs,String text){this.ms=ms;this.endMs=endMs;this.text=text;}}
+    static final class Line {
+        final long ms;final String text,translation;final List<Word> words;
+        Line(long ms,String text){this(ms,text,new ArrayList<>());}
+        Line(long ms,String text,List<Word> words){this(ms,text,words,"");}
+        Line(long ms,String text,List<Word> words,String translation){this.ms=ms;this.text=text;this.words=words;this.translation=translation;}
+        String displayText(){return translation.isEmpty()?text:text+"\n"+translation;}
     }
-    static List<Line> parse(String raw) {
-        List<Line> result=new ArrayList<>();List<Line> plain=new ArrayList<>();
-        if(raw==null) return result;
-        Matcher offsetMatch=OFFSET.matcher(raw);long offset=offsetMatch.find()?Long.parseLong(offsetMatch.group(1)):0;
-        for(String row:raw.replace("\uFEFF", "").split("\\R")) {
-            Matcher matcher=STAMP.matcher(row); List<Long> times=new ArrayList<>();
-            while(matcher.find()) if(Integer.parseInt(matcher.group(2))<60)times.add(time(matcher));
-            String body=STAMP.matcher(row).replaceAll("");
-            Matcher word=WORD.matcher(body);
-            if(times.isEmpty()&&word.find()&&Integer.parseInt(word.group(2))<60)times.add(time(word));
-            List<Word> words=new ArrayList<>();Matcher tags=WORD.matcher(body);long previous=-1;int from=0;
-            while(tags.find()){String part=body.substring(from,tags.start());if(previous>=0&&!part.isEmpty())words.add(new Word(Math.max(0,previous+offset),part));previous=time(tags);from=tags.end();}
-            String tail=body.substring(from);if(previous>=0&&!tail.isEmpty())words.add(new Word(Math.max(0,previous+offset),tail));
-            String text=WORD.matcher(body).replaceAll("").trim();
-            if(times.isEmpty()&&!text.isEmpty()&&!row.trim().startsWith("[")&&!row.trim().startsWith("<"))plain.add(new Line(-1,text));
-            if(!text.isEmpty()) for(Long timestamp:times){List<Word> shifted=new ArrayList<>();for(Word item:words)shifted.add(new Word(Math.max(0,item.ms+timestamp-times.get(0)),item.text));result.add(new Line(Math.max(0,timestamp+offset),text,shifted));}
+    static List<Line> parse(String raw){
+        List<Line> result=new ArrayList<>();
+        for(SharedCore.Line line:SharedCore.parseLyrics(raw==null?"":raw)){
+            List<Word> words=new ArrayList<>();for(SharedCore.Word word:line.words)words.add(new Word(word.ms,word.endMs,word.text));
+            result.add(new Line(line.ms,line.text,words,line.translation));
         }
-        result.sort(Comparator.comparingLong(line->line.ms)); return result.isEmpty()?plain:result;
+        return result;
     }
 }

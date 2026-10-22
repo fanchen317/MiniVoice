@@ -1,7 +1,7 @@
 package com.xcosmos.minivoice;
 
 import android.app.Activity;
-import android.app.AlertDialog;
+
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -565,7 +565,9 @@ final class HomeScreen {
         });
     }
 
-    void setPageKey(String key){if(key.equals(pageKey))return;stylePage.preparePage(key);if(pageKey!=null)pageCameras.put(pageKey,wall.cameraState());pageKey=key;pendingCamera=pageCameras.get(key);restoringWallState=true;wall.resetCamera();wall.zoomTo(WallZoom.scale(activity.getSharedPreferences("library",0).getInt("wall_zoom_"+key,100)));restoringWallState=false;refreshZoomControls();}
+    void saveBrowseState(){stylePage.saveBrowseState();sidebarPage.saveBrowseState();if(pageKey!=null)new BrowseStateStore(activity).camera(pageKey,wall.cameraState());}
+    void restoreSearch(String query){clearingNavigationSearch=true;try{searchControl.input.setText(query);}finally{clearingNavigationSearch=false;}}
+    void setPageKey(String key){if(key.equals(pageKey))return;stylePage.preparePage(key);if(pageKey!=null){pageCameras.put(pageKey,wall.cameraState());new BrowseStateStore(activity).camera(pageKey,wall.cameraState());}pageKey=key;pendingCamera=pageCameras.get(key);if(pendingCamera==null)pendingCamera=new BrowseStateStore(activity).camera(key);restoringWallState=true;wall.resetCamera();wall.zoomTo(WallZoom.scale(activity.getSharedPreferences("library",0).getInt("wall_zoom_"+key,100)));restoringWallState=false;refreshZoomControls();}
     private void zoomChanged(){refreshZoomControls();if(pageKey!=null&&!restoringWallState)activity.getSharedPreferences("library",0).edit().putInt("wall_zoom_"+pageKey,WallZoom.percent(wall.scale())).apply();}
     void setBrowseContext(String group,String section){browseGroup=group;browseSection=section;browseHeading.setText("‹  "+section+" / "+(group==null?"":group));browseHeading.setVisibility(group!=null&&isWallStyle()&&!chromeHidden&&!searchControl.isOpen()?View.VISIBLE:View.GONE);stylePage.setBrowseContext(group,section);if(sidebarPage!=null)sidebarPage.setBrowseContext(null,drawerSelected);}
     void setSorting(String field,boolean ascending){sortingField=field;sortingAscending=ascending;stylePage.setSorting(field,ascending);sidebarPage.setSorting(field,ascending);}
@@ -600,27 +602,28 @@ final class HomeScreen {
         if(WallSearchDismiss.shouldClose(searchControl.isOpen(),searchInput.length(),bounds.contains((int)screenX,(int)screenY)))searchControl.setOpen(false,true);
     }
     private void showWallOptions() {
+        final AppAppearance.Palette modalColors=DialogSurface.palette(activity);
         final android.app.Dialog[] sheet = {null};
         sheet[0] = BottomSheet.show(activity, (browseGroup==null?browseSection:browseGroup)+" · 页面设置", body -> {
             if(isWallStyle()){
-            TextView ratio = text("显示比例  ·  " + Math.round(wall.scale() * 100) + "%", 15, 0xFFE6F3ED);
+            TextView ratio = text("显示比例  ·  " + Math.round(wall.scale() * 100) + "%", 15, modalColors.text);
             ratio.setPadding(dp(14), dp(12), 0, dp(4));
             body.addView(ratio);
             SeekBar zoom = new SeekBar(activity){
                 private final android.graphics.Paint ticks=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
                 @Override protected synchronized void onDraw(android.graphics.Canvas canvas){
-                    ticks.setColor(0x88FFFFFF);
+                    ticks.setColor(modalColors.line);
                     float start=getPaddingLeft(),length=getWidth()-getPaddingLeft()-getPaddingRight();
                     for(int i=0;i<=6;i++)canvas.drawCircle(start+length*i/6f,getHeight()/2f,dp(2),ticks);
                     super.onDraw(canvas);
                 }
             };
-            styleSeekBar(zoom);
+            styleSeekBar(zoom);zoom.setProgressTintList(android.content.res.ColorStateList.valueOf(modalColors.accent));zoom.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(modalColors.line));zoom.setThumbTintList(android.content.res.ColorStateList.valueOf(modalColors.accent));
             zoom.setMax(WallZoom.MAX-WallZoom.MIN);
             zoom.setProgress(WallZoom.sliderProgress(wall.scale()));zoomLabel=ratio;zoomSlider=zoom;
             body.addView(zoom, new LinearLayout.LayoutParams(-1, dp(48)));
             LinearLayout stops=new LinearLayout(activity);stops.setPadding(dp(16),0,dp(16),0);body.addView(stops);
-            for(int step=0;step<=6;step++){final int target=step;TextView stop=text((60+step*10)+"",12,0xFFCFDCD6);stop.setGravity(Gravity.CENTER);stop.setContentDescription((60+step*10)+"%");stops.addView(stop,new LinearLayout.LayoutParams(0,dp(40),1));stop.setOnClickListener(v->{wall.zoomTo(WallZoom.stepScale(target));refreshZoomControls();});ButtonFeedback.install(stop);}
+            for(int step=0;step<=6;step++){final int target=step;TextView stop=text((60+step*10)+"",12,modalColors.secondary);stop.setGravity(Gravity.CENTER);stop.setContentDescription((60+step*10)+"%");stops.addView(stop,new LinearLayout.LayoutParams(0,dp(40),1));stop.setOnClickListener(v->{wall.zoomTo(WallZoom.stepScale(target));refreshZoomControls();});ButtonFeedback.install(stop);}
             zoom.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
                 public void onProgressChanged(SeekBar bar, int progress, boolean user) {
                     if (user) {wall.zoomTo(WallZoom.sliderScale(progress));refreshZoomControls();}
@@ -642,9 +645,10 @@ final class HomeScreen {
     }
 
     private void showSortingOptions() {
+        final AppAppearance.Palette modalColors=DialogSurface.palette(activity);
         BottomSheet.show(activity, "排序方式", body -> {
             if (sortingField == null) {
-                TextView note = text("最近播放按播放时间排序", 15, 0xFFB9C8C0);
+                TextView note = text("最近播放按播放时间排序", 15, modalColors.secondary);
                 note.setPadding(dp(14), dp(18), dp(14), dp(18));
                 body.addView(note);
             } else addSorting(body);
@@ -652,23 +656,25 @@ final class HomeScreen {
     }
 
     private void addSorting(LinearLayout body){
+        final AppAppearance.Palette modalColors=DialogSurface.palette(activity);
         if(sortingField==null)return;
         String[] fields=groupedWall?LibraryOrdering.GROUP_FIELDS:LibraryOrdering.TRACK_FIELDS;
         String[] names=groupedWall?new String[]{browseSection.equals("歌手")?"歌手姓名":"专辑名称","歌曲数量"}:LibraryOrdering.TRACK_NAMES;
         List<TextView> rows=new ArrayList<>();List<TextView> directions=new ArrayList<>();
-        Runnable refresh=()->{for(int i=0;i<rows.size();i++){boolean selected=fields[i].equals(sortingField);rows.get(i).setText((selected?"✓  ":"    ")+names[i]);rows.get(i).setTextColor(selected?0xFF35D8A6:Color.WHITE);}for(int i=0;i<directions.size();i++){boolean selected=sortingAscending==(i==0);directions.get(i).setText((selected?"✓  ":"    ")+(i==0?"正序":"降序"));directions.get(i).setTextColor(selected?0xFF35D8A6:Color.WHITE);}};
+        Runnable refresh=()->{for(int i=0;i<rows.size();i++){boolean selected=fields[i].equals(sortingField);rows.get(i).setText((selected?"✓  ":"    ")+names[i]);rows.get(i).setTextColor(selected?modalColors.accent:modalColors.text);}for(int i=0;i<directions.size();i++){boolean selected=sortingAscending==(i==0);directions.get(i).setText((selected?"✓  ":"    ")+(i==0?"正序":"降序"));directions.get(i).setTextColor(selected?modalColors.accent:modalColors.text);}};
         for(int i=0;i<fields.length;i++){String field=fields[i];rows.add(BottomSheet.action(activity,body,names[i],()->{actions.sort(field,sortingAscending);refresh.run();}));}
-        View divider=new View(activity);divider.setBackgroundColor(0x22FFFFFF);body.addView(divider,new LinearLayout.LayoutParams(-1,dp(1)));
+        View divider=new View(activity);divider.setBackgroundColor(modalColors.line);body.addView(divider,new LinearLayout.LayoutParams(-1,dp(1)));
         for(int i=0;i<2;i++){boolean ascending=i==0;directions.add(BottomSheet.action(activity,body,i==0?"正序":"降序",()->{actions.sort(sortingField,ascending);refresh.run();}));}refresh.run();
     }
 
     private void addPlaybackModes(LinearLayout body){
-        TextView heading=text("播放模式",15,0xFFB9C8C0);heading.setPadding(dp(14),dp(16),dp(14),dp(8));body.addView(heading);
+        final AppAppearance.Palette modalColors=DialogSurface.palette(activity);
+        TextView heading=text("播放模式",15,modalColors.secondary);heading.setPadding(dp(14),dp(16),dp(14),dp(8));body.addView(heading);
         List<LinearLayout> choices=new ArrayList<>();List<TextView> checks=new ArrayList<>();
-        Runnable refresh=()->{int selected=PlaybackModes.valid(actions.playbackMode());for(int i=0;i<choices.size();i++){choices.get(i).setBackground(round(i==selected?0x3332C89C:0x08FFFFFF,12,0,0));checks.get(i).setText(i==selected?"✓":"○");checks.get(i).setTextColor(i==selected?0xFF35D8A6:0xFF8D9B93);choices.get(i).setSelected(i==selected);}};
+        Runnable refresh=()->{int selected=PlaybackModes.valid(actions.playbackMode());for(int i=0;i<choices.size();i++){choices.get(i).setBackground(round(i==selected?(modalColors.accent&0x00FFFFFF|0x22000000):modalColors.background,12,0,0));checks.get(i).setText(i==selected?"✓":"○");checks.get(i).setTextColor(i==selected?modalColors.accent:modalColors.secondary);choices.get(i).setSelected(i==selected);}};
         for(int i=0;i<PlaybackModes.NAMES.length;i++){int mode=i;LinearLayout row=new LinearLayout(activity);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(14),dp(8),dp(14),dp(8));
-            TextView check=text("",23,Color.WHITE);row.addView(check,new LinearLayout.LayoutParams(dp(36),-1));
-            LinearLayout caption=new LinearLayout(activity);caption.setOrientation(LinearLayout.VERTICAL);caption.addView(text(PlaybackModes.NAMES[i],15,Color.WHITE));caption.addView(text(PlaybackModes.DETAILS[i],11,0xFFAEBDB4));row.addView(caption,new LinearLayout.LayoutParams(0,-2,1));
+            TextView check=text("",23,modalColors.text);row.addView(check,new LinearLayout.LayoutParams(dp(36),-1));
+            LinearLayout caption=new LinearLayout(activity);caption.setOrientation(LinearLayout.VERTICAL);caption.addView(text(PlaybackModes.NAMES[i],15,modalColors.text));caption.addView(text(PlaybackModes.DETAILS[i],11,modalColors.secondary));row.addView(caption,new LinearLayout.LayoutParams(0,-2,1));
             LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.setMargins(0,dp(3),0,dp(3));row.setMinimumHeight(dp(60));body.addView(row,params);choices.add(row);checks.add(check);
             row.setContentDescription(PlaybackModes.NAMES[i]+"，"+PlaybackModes.DETAILS[i]);row.setOnClickListener(view->{actions.selectPlaybackMode(mode);refresh.run();});ButtonFeedback.install(row);
         }refresh.run();

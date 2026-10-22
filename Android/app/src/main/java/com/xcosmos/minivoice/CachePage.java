@@ -235,7 +235,7 @@ final class CachePage extends Dialog {
         if (targets.isEmpty()) return;
         long total = 0;
         for (CacheFiles.Entry e : targets) total += e.bytes;
-        new AlertDialog.Builder(activity).setTitle(everything ? "清理全部缓存？" : "删除选中文件？").setMessage(targets.size() + " 个文件 · " + size(total) + "\n仅删除派生缓存，音乐、设置、收藏和歌单保留。后续使用时可能按需重新生成。").setNegativeButton("取消", null).setPositiveButton("删除", (d, w) -> erase(targets)).show();
+        new AppDialog.Builder(activity).setTitle(everything ? "清理全部缓存？" : "删除选中文件？").setMessage(targets.size() + " 个文件 · " + size(total) + "\n仅删除派生缓存，音乐、设置、收藏和歌单保留。后续使用时可能按需重新生成。").setNegativeButton("取消", null).setPositiveButton("删除", (d, w) -> erase(targets)).show();
     }
 
     private void erase(List<CacheFiles.Entry> targets) {
@@ -269,7 +269,7 @@ final class CachePage extends Dialog {
     }
 
     private void detail(CacheFiles.Entry e) {
-        new AlertDialog.Builder(activity).setTitle(e.file.getName()).setMessage(e.name + "\n\n大小：" + size(e.bytes) + "\n修改时间：" + android.text.format.DateFormat.format("yyyy-MM-dd HH:mm", e.modified) + "\n\n" + e.file.getAbsolutePath()).setNegativeButton("关闭", null).setPositiveButton("删除", (d, w) -> {
+        new AppDialog.Builder(activity).setTitle(e.file.getName()).setMessage(e.name + "\n\n大小：" + size(e.bytes) + "\n修改时间：" + android.text.format.DateFormat.format("yyyy-MM-dd HH:mm", e.modified) + "\n\n" + e.file.getAbsolutePath()).setNegativeButton("关闭", null).setPositiveButton("删除", (d, w) -> {
             selected.clear();
             selected.add(e.file.getAbsolutePath());
             selecting = true;
