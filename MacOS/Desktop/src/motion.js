@@ -25,7 +25,7 @@ export function playerDetailMetrics({width,height,controls}){
 }
 export function wallDockMetrics(width){
   const p=Math.min(1,Math.max(0,(width-340)/100)),detail=p*p*(3-2*p);
-  return {detail,spacing:8+4*detail,padding:12+4*detail,playSide:40+6*detail,playFont:18+3*detail};
+  return {detail,spacing:8+4*detail,padding:12+4*detail,playSide:40+6*detail,playFont:24+2*detail};
 }
 
 export function browseGridMetrics(panelWidth,artist){

@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import MiniVoiceShared
 import Combine
 
@@ -16,6 +17,8 @@ final class DesktopEngine {
     private lazy var panels = DesktopPanels(library: library, lyricsSync: lyricsSync, volume: volume) { [weak self] action in
         self?.send(["event": "shell", "data": action])
     }
+    private var artworkSearches: [String: (UUID, OnlineArtworkResult)] = [:]
+    private var artworkSearchRevision = 0
     private var lastInterfaceStyle: String?
     private var observations = Set<AnyCancellable>()
     private var input = Data()
@@ -132,6 +135,7 @@ final class DesktopEngine {
                 result["backdropColors"] = colors
             }
         }
+        result["canWriteTags"] = track.canWriteTags
         result["lyrics"] = track.lyrics
         result["lyricsLoading"] = track.lyricsAreLoading
         result["lines"] = track.lyricLines.map { line -> [String: Any] in
@@ -208,15 +212,50 @@ final class DesktopEngine {
                     "playlists": collections.playlists.map { list in ["id": list.id.uuidString, "name": list.name, "ids": library.tracks.filter { list.paths.contains($0.url.path) }.map { $0.id.uuidString }] as [String: Any] },
                     "capabilities": ["favorite", "mode", "queueSelect", "createPlaylist", "addToPlaylist", "settings"],
                     "current": library.playingTrack?.id.uuidString as Any? ?? NSNull(), "position": Int(library.playbackTime*1000), "playing": library.isPlaying, "rawLyrics": library.playingTrack?.lyrics ?? ""] as [String: Any]
-        case "openSettings": panels.showSettings(); return true
+        case "openSettings":
+            if AppIdentity.isDebug { send(["event":"uiSurface","data":["type":"settings"]]) } else { panels.showSettings() }; return true
         case "openEditor":
-            let selected = try track(payload); panels.showEditor(selected); return true
+            let selected = try track(payload)
+            if AppIdentity.isDebug { send(["event":"uiSurface","data":["type":"editor","id":selected.id.uuidString]]) } else { panels.showEditor(selected) }; return true
         case "interfaceStyle":
             if let value = payload["value"] as? String, PlayerInterfaceStyle(rawValue: value) != nil {
                 // The renderer already applied this explicit change.
                 lastInterfaceStyle = value; defaults.set(value, forKey: PlayerInterfaceStyle.preferenceKey)
             }
             return true
+        case "desktopSettings":
+            let windowKey = WindowToggleController.preferenceKey
+            let windowShortcut = defaults.data(forKey: windowKey).flatMap { try? JSONDecoder().decode(PlaybackShortcut.self, from: $0) } ?? WindowToggleController.defaultShortcut
+            return ["closeBehavior":defaults.string(forKey:"MiniVoice.closeBehavior") ?? "background",
+                    "statusIconStyle":defaults.string(forKey:StatusBarController.preferenceKey) ?? "colored",
+                    "lyricsModel":defaults.string(forKey:"MiniVoice.lyricsModel") ?? "small",
+                    "windowShortcut":["keyCode":windowShortcut.keyCode,"modifiers":windowShortcut.modifiers,"label":windowShortcut.description],
+                    "shortcuts":PlaybackShortcutAction.allCases.map { action -> [String:Any] in
+                        let shortcut = defaults.data(forKey:"MiniVoice.playbackShortcut.\(action.rawValue)").flatMap { try? JSONDecoder().decode(PlaybackShortcut.self,from:$0) } ?? action.defaultShortcut
+                        return ["action":action.rawValue,"keyCode":shortcut.keyCode,"modifiers":shortcut.modifiers,"label":shortcut.description]
+                    },
+                    "models":LyricsModel.allCases.map { model in ["id":model.rawValue,"name":model.title,"bundled":LyricsAlignment.isBundled(model),"installed":lyricsSync.installedModels.contains(model)] as [String:Any] }] as [String:Any]
+        case "desktopPreference":
+            guard let key = payload["key"] as? String, let value = payload["value"] as? String else { throw CocoaError(.coderInvalidValue) }
+            let allowed = ["closeBehavior":["background","pause","quit"],"statusIconStyle":["hidden","colored","monochrome"],"lyricsModel":["small","medium"]]
+            guard allowed[key]?.contains(value) == true else { throw CocoaError(.coderInvalidValue) }
+            defaults.set(value,forKey:"MiniVoice.\(key)");publishState();return true
+        case "desktopShortcut":
+            guard let action = payload["action"] as? String, let code = payload["keyCode"] as? Int, (0...126).contains(code), let flags = payload["modifiers"] as? UInt else { throw CocoaError(.coderInvalidValue) }
+            let shortcut = PlaybackShortcut(keyCode:UInt16(code),modifiers:NSEvent.ModifierFlags(rawValue:flags))
+            guard PlaybackShortcutAction(rawValue:action) != nil || action == "window" else { throw CocoaError(.coderInvalidValue) }
+            for other in PlaybackShortcutAction.allCases where other.rawValue != action {
+                let existing = defaults.data(forKey:"MiniVoice.playbackShortcut.\(other.rawValue)").flatMap { try? JSONDecoder().decode(PlaybackShortcut.self,from:$0) } ?? other.defaultShortcut
+                if existing == shortcut { throw NSError(domain:"MiniVoice",code:3,userInfo:[NSLocalizedDescriptionKey:"与\(other.title)快捷键冲突"]) }
+            }
+            if action == "window" { guard flags & ((1<<18)|(1<<19)|(1<<20)) != 0 else { throw CocoaError(.coderInvalidValue) };panels.configureWindowShortcut(shortcut) }
+            else { defaults.set(try JSONEncoder().encode(shortcut),forKey:"MiniVoice.playbackShortcut.\(action)") }
+            publishState();return true
+        case "lyricsModel":
+            guard let model = LyricsModel(rawValue:payload["id"] as? String ?? ""),lyricsSync.activeCount == 0,!lyricsSync.downloadingModel else { throw NSError(domain:"MiniVoice",code:4,userInfo:[NSLocalizedDescriptionKey:"请等待当前歌词任务完成"]) }
+            if payload["operation"] as? String == "download" { lyricsSync.download(model) }
+            else if payload["operation"] as? String == "delete" { guard !LyricsAlignment.isBundled(model) else { throw CocoaError(.fileWriteNoPermission) };lyricsSync.deleteModel(model) }
+            else { throw CocoaError(.coderInvalidValue) };return true
         case "sorting":
             let category = payload["category"] as? String ?? "tracks"
             guard ["tracks", "artists", "albums"].contains(category) else { return false }
@@ -295,9 +334,28 @@ final class DesktopEngine {
         case "clearRecent": library.clearRecentPlayback(); return true
         case "detail": return detail(await library.resolveTrack(try track(payload).id))
         case "reveal": NSWorkspace.shared.activateFileViewerSelecting([try track(payload).url]); return true
-        case "desktopLyrics": desktopLyrics.toggle(); return desktopLyrics.isEnabled
+        case "desktopLyrics":
+            if AppIdentity.isDebug { send(["event":"hostSurface","data":["type":"desktopLyrics"]]);return true };desktopLyrics.toggle(); return desktopLyrics.isEnabled
         case "outputDevice": volume.selectOutputDevice(UInt32(max(0, min(Double(UInt32.max), finite(payload, "id"))))); return ["ok": volume.error == nil, "error": volume.error ?? ""] as [String: Any]
         case "clearError": library.errorMessage = nil; return true
+        case "artworkSearch":
+            let item = try track(payload)
+            artworkSearchRevision += 1
+            let revision = artworkSearchRevision
+            let found = try await OnlineArtworkSearch.search(title: String((payload["title"] as? String ?? item.title).prefix(500)), artist: String((payload["artist"] as? String ?? item.artist).prefix(500)), album: String((payload["album"] as? String ?? item.album).prefix(500)))
+            guard revision == artworkSearchRevision else { throw CancellationError() }
+            artworkSearches.removeAll()
+            return found.prefix(80).map { result -> [String:String] in
+                let token = UUID().uuidString
+                artworkSearches[token] = (item.id,result)
+                return ["token":token,"album":result.album,"artist":result.artist,"source":result.source]
+            }
+        case "artworkDownload":
+            let item = try track(payload)
+            guard let token = payload["token"] as? String, let result = artworkSearches[token], result.0 == item.id else { throw NSError(domain:"MiniVoice",code:5,userInfo:[NSLocalizedDescriptionKey:"封面搜索结果已失效，请重新搜索"]) }
+            let downloaded = try await OnlineArtworkSearch.download(result.1)
+            guard let source = CGImageSourceCreateWithData(downloaded.data as CFData,nil), let image = CGImageSourceCreateThumbnailAtIndex(source,0,[kCGImageSourceCreateThumbnailFromImageAlways:true,kCGImageSourceThumbnailMaxPixelSize:1400,kCGImageSourceCreateThumbnailWithTransform:true] as CFDictionary), let bytes = NSBitmapImageRep(cgImage:image).representation(using:.jpeg,properties:[.compressionFactor:0.88]),bytes.count<=2_500_000 else { throw CocoaError(.fileReadCorruptFile) }
+            return "data:image/jpeg;base64," + bytes.base64EncodedString()
         case "lyricsSearch":
             let track = try track(payload)
             return try await OnlineLyricsSearch.search(title: track.title, artist: track.artist, duration: track.duration).map {
@@ -312,6 +370,11 @@ final class DesktopEngine {
             resolved.artist = payload["artist"] as? String ?? resolved.artist
             resolved.album = payload["album"] as? String ?? resolved.album
             resolved.lyrics = payload["lyrics"] as? String ?? resolved.lyrics
+            if let translation = payload["translation"] as? String { resolved.lyrics = LyricsTranslation.attaching(translation,to:resolved.lyrics) }
+            if let artwork = payload["artwork"] as? String {
+                guard artwork.hasPrefix("data:image/"),let separator=artwork.firstIndex(of:","),let data=Data(base64Encoded:String(artwork[artwork.index(after:separator)...])),data.count<=2_500_000,let image=NSImage(data:data),image.size.width>0,image.size.height>0 else { throw CocoaError(.coderInvalidValue) }
+                resolved.artwork=image;resolved.artworkWasEdited=true
+            }
             let destination: LyricsDestination = payload["destination"] as? String == "tags" ? .tags : .sidecar
             try await library.save(resolved, lyricsDestination: destination); return true
         case "deleteTracks":

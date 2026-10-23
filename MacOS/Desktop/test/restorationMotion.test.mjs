@@ -40,8 +40,8 @@ test('simple hero respects the lyric budget and native title-size thresholds',()
 test('wall dock keeps its native endpoint sizes and reveals details continuously',async()=>{
   const {wallDockMetrics}=await import('../src/motion.js');
   const small=wallDockMetrics(240),large=wallDockMetrics(460);
-  assert.deepEqual(small,{detail:0,spacing:8,padding:12,playSide:40,playFont:18});
-  assert.deepEqual(large,{detail:1,spacing:12,padding:16,playSide:46,playFont:21});
+  assert.deepEqual(small,{detail:0,spacing:8,padding:12,playSide:40,playFont:24});
+  assert.deepEqual(large,{detail:1,spacing:12,padding:16,playSide:46,playFont:26});
   let last=0;
   for(let width=240;width<=460;width+=.5){const m=wallDockMetrics(width);assert.ok(m.detail>=last&&m.detail<=1);assert.ok(m.detail-last<.01);assert.ok(width-2*m.padding-m.playSide-2*m.spacing-32-31*m.detail>80);last=m.detail;}
 });

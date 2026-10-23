@@ -1,3 +1,4 @@
+import ActionButton from '../../../Shared/UI/src/components/ActionButton.jsx';
 import {usePopoverPosition} from './usePopoverPosition';
 import React,{useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
@@ -38,7 +39,7 @@ export function BackgroundTasks(){
   return <span ref={root} className="background-tasks-anchor" data-busy={active>0} data-unread={highlighted} data-failed={failed}>
     <IconButton label={active?`后台任务：${active} 项进行中`:'后台任务'} active={open||highlighted} aria-expanded={open} aria-haspopup="dialog" onClick={()=>setOpen(value=>!value)}><Icon name="tasks"/></IconButton>
     {open&&createPortal(<section ref={panel} className="background-tasks-panel" data-empty={!hasRecords} role="dialog" aria-label="后台任务" style={position}>
-      <header><h3>后台任务</h3><div className="task-panel-actions">{canClear&&<button onClick={()=>{action('clearFinished');setHideScan(!state.importing);setUnread(false);}}>一键清理</button>}<IconButton label="关闭后台任务" onClick={()=>{setOpen(false);root.current?.querySelector('button')?.focus();}}><Icon name="close"/></IconButton></div></header>
+      <header><h3>后台任务</h3><div className="task-panel-actions">{canClear&&<ActionButton onClick={()=>{action('clearFinished');setHideScan(!state.importing);setUnread(false);}}>一键清理</ActionButton>}<IconButton label="关闭后台任务" onClick={()=>{setOpen(false);root.current?.querySelector('button')?.focus();}}><Icon name="close"/></IconButton></div></header>
       <p role="status">{active?`${active} 项进行中`:hasRecords?'所有后台任务已结束':'暂无后台任务'}</p>
       {hasRecords&&<div className="background-tasks-scroll">
         {tasks.modelStatus&&<div className="task-row"><Icon name="download"/><div><strong>AI 模型</strong><p>{tasks.modelStatus}</p>{tasks.downloadingModel&&tasks.modelProgress!=null&&<progress aria-label="模型下载进度" max={1} value={tasks.modelProgress}/>}</div>{tasks.downloadingModel?<span className="spinner"/>:<>{tasks.modelFailed&&<IconButton label="重试下载" disabled={active>0} onClick={()=>action('retryModel')}><Icon name="refresh"/></IconButton>}<IconButton label="清理下载记录" onClick={()=>action('clearModel')}><Icon name="close"/></IconButton></>}</div>}

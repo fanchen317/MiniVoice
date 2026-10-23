@@ -3,6 +3,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIGURATION="${1:-release}"
 source "$ROOT/Scripts/desktop-common.sh"
+case "${MINIVOICE_BUILD_CHANNEL:-release}" in
+  release) export MINIVOICE_APP_NAME="MiniVoice" MINIVOICE_APP_IDENTIFIER="com.xcosmos.MiniVoice.electron" ;;
+  debug) export MINIVOICE_APP_NAME="MiniVoice-debug" MINIVOICE_APP_IDENTIFIER="com.xcosmos.MiniVoice.electron.debug" ;;
+  *) echo 'error: unsupported MINIVOICE_BUILD_CHANNEL' >&2; exit 2 ;;
+esac
 # The ZIP extraction dependency can exit with unfinished streams on Node 26.
 # Prefer an installed LTS runtime for this build without changing the user's shell.
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
@@ -30,12 +35,17 @@ npm --prefix MacOS/Desktop run build
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ROOT/.build/native/MiniVoice.app/Contents/Info.plist")"
 BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$ROOT/.build/native/MiniVoice.app/Contents/Info.plist")"
 ELECTRON_CACHE="$ROOT/.build/electron-cache" npm --prefix MacOS/Desktop run package -- --app-version="$VERSION" --build-version="$BUILD"
-APP="$ROOT/.build/staging/MiniVoice-darwin-arm64/MiniVoice.app"
+APP="$ROOT/.build/staging/$MINIVOICE_APP_NAME-darwin-arm64/$MINIVOICE_APP_NAME.app"
 mkdir -p "$APP/Contents/Resources/Native"
 ditto "$ROOT/.build/native/MiniVoice.app" "$APP/Contents/Resources/Native/MiniVoice.app"
+if [[ "${MINIVOICE_BUILD_CHANNEL:-release}" == "debug" ]]; then
+  echo '{"channel":"debug"}' > "$APP/Contents/Resources/build-channel.json"
+  /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier com.xcosmos.MiniVoice.debug' "$APP/Contents/Resources/Native/MiniVoice.app/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Set :CFBundleName MiniVoice-debug' "$APP/Contents/Resources/Native/MiniVoice.app/Contents/Info.plist"
+fi
 sign_desktop_app "$APP"
 verify_desktop_app "$APP"
-# There is one public artifact. The other bundles are private build inputs.
+# Release and debug are separate public artifacts.
 if [[ -e "$DESKTOP_APP_PATH" ]]; then rm -rf "$DESKTOP_APP_PATH"; fi
 mv "$APP" "$DESKTOP_APP_PATH"
 echo "$DESKTOP_APP_PATH"

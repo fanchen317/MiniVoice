@@ -10,6 +10,7 @@ enum CacheStorage {
 
     static func migrateLegacyCaches() throws {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        guard !AppIdentity.isDebug else { return }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("MiniVoice/LibraryIndex", isDirectory: true)
         try mergeDirectory(from: support, to: indexes, backup: root.appendingPathComponent("MigrationBackup/LibraryIndex"))

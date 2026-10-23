@@ -56,6 +56,7 @@ final class WindowToggleController: ObservableObject {
     }
 
     func resetToDefault() { save(Self.defaultShortcut) }
+    func configure(_ shortcut: PlaybackShortcut) { save(shortcut) }
 
     private func save(_ shortcut: PlaybackShortcut) {
         configuredShortcut = shortcut

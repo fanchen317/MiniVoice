@@ -10,7 +10,7 @@ mkdir -p "$output"
 bash "$repo_root/Scripts/build-shared-core.sh"
 export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Djava.library.path=$repo_root/.build/Shared/Core"
 javac -cp "$output" -d "$output" "$source_root/SharedCore.java"
-javac -cp "$android_jar:$output" -d "$output" "$source_root/Lyrics.java" "$source_root/LyricSweep.java" "$source_root/AudioTags.java" "$repo_root/Android/tests/com/xcosmos/minivoice/ParsingTests.java"
+javac -cp "$android_jar:$output" -d "$output" "$source_root/Lyrics.java" "$source_root/LyricSweep.java" "$source_root/AudioTags.java" "$source_root/PortableTagCodec.java" "$source_root/PortableM4aTags.java" "$repo_root/Android/tests/com/xcosmos/minivoice/ParsingTests.java"
 java -cp "$output:$android_jar" com.xcosmos.minivoice.ParsingTests "$@"
 
 javac -cp "$output" -d "$output" "$source_root/FocusCardPresentation.java" "$source_root/PlaybackModes.java" "$source_root/FocusCardMetrics.java" "$repo_root/Android/tests/com/xcosmos/minivoice/FocusCardTests.java"

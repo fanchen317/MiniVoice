@@ -78,6 +78,8 @@ final class DesktopPanels: NSObject, NSWindowDelegate {
         window.attachedSheet?.makeKeyAndOrderFront(nil)
     }
 
+    func configureWindowShortcut(_ shortcut: PlaybackShortcut) { windowToggle.configure(shortcut) }
+
     func showSettings() {
         prepare()
         if let window = settingsWindow { raise(window); return }

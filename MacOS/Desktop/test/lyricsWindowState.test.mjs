@@ -1,0 +1,2 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {lyricsWindowState} from '../electron/lyrics-window-state.cjs';
+test('own lyrics profile bounds rejects nonfinite dimensions and clamps font',()=>{const state=lyricsWindowState({enabled:'true',locked:true,width:Infinity,font:999,height:0,x:NaN});assert.equal(state.enabled,false);assert.equal(state.locked,true);assert.equal(state.width,720);assert.equal(state.font,64);assert.equal(state.height,110);assert.equal(state.x,null);});

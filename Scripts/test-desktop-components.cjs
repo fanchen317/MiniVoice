@@ -29,7 +29,26 @@ app.whenReady().then(async()=>{
   check(await js("document.querySelector('#commits').textContent==='1'"),'Mouse slider release did not commit once');
   await js("document.querySelector('[role=slider]').focus()");await key('Home');
   check(await js("Number(document.querySelector('[role=slider]').getAttribute('aria-valuenow'))===0&&document.querySelector('#commits').textContent==='2'"),'Slider keyboard commit failed');
+  await js("document.querySelector('[data-mv-component=choice]').click()");await sleep(100);await key('End');await key('Enter');
+  check(await js("document.querySelector('#choice-value').textContent==='album'&&!document.querySelector('[data-mv-menu]')"),'Custom choice keyboard selection failed');
+  await js("document.querySelector('[role=checkbox]').focus()");await key('Space');
+  check(await js("document.querySelector('[role=checkbox]').getAttribute('aria-checked')==='true'"),'Custom checkbox keyboard toggle failed');
+  await key('Space');check(await js("document.querySelector('[role=checkbox]').getAttribute('aria-checked')==='false'"),'Custom checkbox toggled twice or failed to clear');
+  const feedbackRect=await js("(()=>{const r=document.querySelector('#feedback').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()");
+  win.webContents.sendInputEvent({type:'mouseMove',...feedbackRect});await sleep(200);
+  check(await js("Number(getComputedStyle(document.querySelector('#feedback')).scale)>1"),'Desktop hover feedback absent');
+  win.webContents.sendInputEvent({type:'mouseDown',...feedbackRect,button:'left',clickCount:1});await sleep(200);
+  check(await js("Number(getComputedStyle(document.querySelector('#feedback')).scale)<1"),'Press feedback absent');
+  win.webContents.sendInputEvent({type:'mouseUp',...feedbackRect,button:'left',clickCount:1});await sleep(200);
+  const beforeBusy=await js("document.querySelector('#commits').textContent");
+  await js("document.querySelector('#busy-feedback').click()");
+  check(await js("document.querySelector('#busy-feedback').disabled&&document.querySelector('#busy-feedback').getAttribute('aria-busy')==='true'"),'Busy action enabled');
+  check(await js("document.querySelector('#commits').textContent")===beforeBusy,'Busy action submitted');
+  await js("document.documentElement.classList.add('reduce-motion')");await sleep(30);
+  check(await js("getComputedStyle(document.querySelector('#feedback')).scale==='1'&&getComputedStyle(document.querySelector('#feedback')).transitionDuration==='0s'"),'Reduced-motion feedback still animates');
+  await js("document.documentElement.classList.remove('reduce-motion')");
+  process.stdout.write('PASS own ActionButton hover/press, busy suppression and reduced motion\n');
   const image=await win.webContents.capturePage();const output=path.resolve(__dirname,'../.build/Shared/Core/desktop-components.png');fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,image.toPNG());
-  process.stdout.write('PASS Electron menu edge placement, disabled skipping, wrap, Escape restore, Enter action; mouse slider hold/release and keyboard commit\n');clearTimeout(timeout);win.destroy();app.exit(0);
+  process.stdout.write('PASS Electron menu edge placement, disabled skipping, wrap, Escape restore, Enter action; mouse slider hold/release and keyboard commit; custom choice and checkbox keyboard selection\n');clearTimeout(timeout);win.destroy();app.exit(0);
  }catch(error){process.stderr.write(error.stack+'\n');clearTimeout(timeout);win?.destroy();app.exit(1);}
 });

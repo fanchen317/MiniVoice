@@ -33,7 +33,31 @@
 .wall-card-transport>.mv-slider{width:100%;flex:none;--mv-slider-color:#fff;--mv-slider-base:#ffffff45;--mv-slider-knob-size:8px}
 .wall-scale-track>.mv-slider{width:100%;--mv-slider-color:var(--mint,#59d4af)}
 /* Desktop skins retain the established Mac transport geometry. */
-[data-presentation="desktop"] .seek .mv-slider-knob{width:22px;height:14px;border:1px solid #0002;background:#f7f7f7;box-shadow:0 2px 4px #0002}
+[data-presentation="desktop"] .seek .mv-slider-knob{width:var(--mv-slider-knob-size);height:var(--mv-slider-knob-size);border:0;background:var(--mv-slider-color);box-shadow:none}
 [data-presentation="desktop"] .volume-row .mv-slider-knob{width:20px;height:20px;border:1px solid #0002;background:#f7f7f7;box-shadow:0 2px 4px #0002}
-[data-presentation="desktop"] .seek .mv-slider[data-dragging="true"] .mv-slider-knob{width:25px;height:17px}
+[data-presentation="desktop"] .seek .mv-slider[data-dragging="true"] .mv-slider-knob{width:calc(var(--mv-slider-knob-size) + 3px);height:calc(var(--mv-slider-knob-size) + 3px)}
 [data-presentation="desktop"] .style-wall .seek .mv-slider{--mv-slider-color:#eee}
+.mv-check-control{display:inline-grid;place-items:center;width:24px;height:24px;padding:0;border:0;background:none;color:var(--mint,var(--accent,#078665));flex-shrink:0;vertical-align:middle;touch-action:manipulation}
+.mv-check-control>span{display:grid;place-items:center;width:18px;height:18px;border:1.5px solid var(--line,var(--border,#82988c80));border-radius:5px;font-size:14px;font-weight:750;background:transparent}
+.mv-check-control[aria-checked="true"]>span{background:var(--mint,var(--accent,#078665));color:var(--bg,#fff);border-color:transparent}
+[data-input="touch"] .mv-check-control{width:44px;height:44px}
+[data-input="touch"] .mv-check-control>span{width:24px;height:24px;font-size:18px}
+.mv-choice{display:inline-flex;align-items:center;justify-content:space-between;gap:12px;min-height:28px;border:1px solid var(--line,#82988c50);border-radius:8px;padding:4px 9px;color:var(--text);background:var(--raised,#263c32)}
+.mv-choice-menu{min-width:160px;padding:6px;border:1px solid var(--line,#82988c50);border-radius:12px;background:var(--raised,#263c32);color:var(--text);box-shadow:var(--shadow,0 10px 30px #0004);z-index:2000}
+.mv-choice-menu>button{display:flex;gap:8px;width:100%;padding:9px 10px;text-align:left;border:0;border-radius:7px;background:none;color:inherit;font:inherit}
+.mv-choice-menu>button:hover,.mv-choice-menu>button:focus-visible{background:color-mix(in srgb,var(--mint,#54d3a9) 15%,transparent)}
+.mv-lyrics-timing{margin:18px 0;border:1px solid var(--line,var(--border,#82988c80));border-radius:12px;padding:12px;color:inherit}.mv-lyrics-timing summary{cursor:pointer;font-weight:600}.mv-lyrics-timing p{font-size:12px;line-height:1.6}.mv-timing-actions{display:flex;gap:8px;flex-wrap:wrap}.mv-timing-actions button,.mv-timing-lines button{color:inherit;background:var(--hover,#82988c18);border:1px solid var(--line,var(--border,#82988c60));padding:9px 12px;border-radius:8px}.mv-timing-lines{max-height:180px;overflow:auto;margin-top:12px}.mv-timing-lines button{display:block;text-align:left;width:100%;margin:4px 0}.mv-timing-lines button[aria-current=step]{border-color:var(--mint,#078665);background:#07866520}.mv-lyrics-timing button:disabled{opacity:.45}
+[data-mv-component="action-button"]{appearance:none;-webkit-appearance:none;touch-action:manipulation}[data-mv-component="action-button"]:focus-visible{outline:2px solid var(--mint,var(--accent,#078665));outline-offset:3px}[data-mv-component="action-button"]:disabled{cursor:default}
+.mv-number-field{display:inline-flex;align-items:stretch;max-width:240px;gap:4px}.mv-number-field>button{width:36px;min-height:36px;flex-shrink:0;border:1px solid var(--line,var(--border));border-radius:8px;background:var(--hover,var(--selected));color:inherit;font-size:20px}.mv-number-field>input{appearance:none;min-width:0;width:92px!important;margin:0!important;border:1px solid var(--line,var(--border));background:var(--hover,var(--glass));border-radius:8px;color:inherit;text-align:center;padding:8px!important;font:inherit}[data-input=touch] .mv-number-field>button{width:44px;min-height:44px}
+
+/* Interaction feedback uses independent scale: it never rewrites positioning transforms.
+   Skins may opt out with feedback="none" when they own a morph/transport animation. */
+:root{--mv-motion-feedback:140ms;--mv-motion-ease:cubic-bezier(.2,.8,.2,1);--mv-feedback-press:.98;--mv-feedback-hover:1.015}
+:where([data-mv-feedback="standard"]){transition:scale var(--mv-motion-feedback) var(--mv-motion-ease);transform-origin:center}
+[data-mv-feedback="standard"]:enabled:active{scale:var(--mv-feedback-press)}
+[data-mv-feedback="standard"]:focus-visible{outline:2px solid var(--accent,var(--mint,#078665));outline-offset:3px}
+@media(hover:hover) and (pointer:fine){
+ [data-mv-feedback="standard"]:enabled:hover:not(:active){scale:var(--mv-feedback-hover)}
+}
+.reduce-motion [data-mv-feedback="standard"]{transition:none!important;scale:1!important}
+@media(prefers-reduced-motion:reduce){[data-mv-feedback="standard"]{transition:none!important;scale:1!important}}

@@ -4,8 +4,8 @@ export function catalogFor(snapshot,section,group,query='',sort='title',descendi
  const favorites=new Set(snapshot.favorites||[]),recent=snapshot.recent||[],playlist=(snapshot.playlists||[]).find(p=>'歌单:'+p.id===section);
  let songs=snapshot.songs||[];
  if(section==='收藏')songs=songs.filter(song=>favorites.has(song.id));
- if(section==='最近播放')songs=recent.map(id=>songs.find(song=>song.id===id)).filter(Boolean);
- if(playlist)songs=songs.filter(song=>playlist.ids.includes(song.id));
+ if(section==='最近播放'){const index=new Map(songs.map(song=>[song.id,song]));songs=recent.map(id=>index.get(id)).filter(Boolean);}
+ if(playlist){const included=new Set(playlist.ids);songs=songs.filter(song=>included.has(song.id));}
  const key=value=>String(value||'').normalize('NFKC').toLocaleLowerCase().trim();
  songs=songs.filter(song=>key(`${song.title} ${song.artist} ${song.album}`).includes(key(query)));
  const grouped=!group&&(section==='歌手'||section==='专辑');

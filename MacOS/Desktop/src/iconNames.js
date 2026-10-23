@@ -1,0 +1,2 @@
+const aliases={all:'music',albums:'album',artists:'artist','artwork-music':'music',favorites:'heart',favoriteFill:'heart',checkCircleFill:'checkCircle',desktopLyricsFill:'desktopLyrics',settingsGear:'settings',sidebar:'menu',previous:'prev',previousOutline:'prev',previousTrack:'prev',nextOutline:'next',nextTrack:'next',repeatAll:'repeat',list:'queue',tasks:'checklist','navigation-queue':'queue'};
+export function desktopIconName(name){const plain=name.replace(/^(transport|navigation|toolbar|wall)-/,'');return aliases[name]||aliases[plain]||plain;}

@@ -34,7 +34,7 @@ export function visibleTiles(scene, camera, viewport, overscan = 400) {
       for (let by = Math.floor(t/640); by <= Math.floor(b/640); by++) for (let bx = Math.floor(l/640); bx <= Math.floor(r/640); bx++)
         for (const tile of buckets.get(`${bx}:${by}`) || []) nearby.add(tile);
       for (const tile of nearby) if (tile.x < r && tile.x+tile.width > l && tile.y < b && tile.y+tile.height > t)
-        output.push({ ...tile, id: `${tile.index}:${cx}:${cy}`, x: tile.x+cx*world.width, y: tile.y+cy*world.height });
+        output.push({ ...tile, column:cx,row:cy,id: `${tile.index}:${cx}:${cy}`, x: tile.x+cx*world.width, y: tile.y+cy*world.height });
     }
   return output;
 }
@@ -79,7 +79,7 @@ export function nearestInstance(scene,index,camera,viewport){
   const tile=scene.tiles[index];if(!tile)return null;
   const cx=Math.round(((viewport.width/2-camera.x)/camera.scale-tile.x-tile.width/2)/scene.world.width);
   const cy=Math.round(((viewport.height/2-camera.y)/camera.scale-tile.y-tile.height/2)/scene.world.height);
-  return {...tile,id:`${index}:${cx}:${cy}`,x:tile.x+cx*scene.world.width,y:tile.y+cy*scene.world.height};
+  return {...tile,column:cx,row:cy,id:`${index}:${cx}:${cy}`,x:tile.x+cx*scene.world.width,y:tile.y+cy*scene.world.height};
 }
 export function wallWorkspaceMetrics(width,sidebar){
   const sidebarWidth=Math.min(260,Math.max(230,width*.25)),overlays=width<sidebarWidth+540+48;
@@ -98,3 +98,17 @@ export function restoredPlayerCamera(saved,target,viewport,leadingInset,scale){
 // Native focus reserves 85% of the vertical card budget. Keep this preference
 // until focus changes; live resizing only clamps it to the available viewport.
 export function wallFocusSide(height){return Math.min(520,Math.max(320,(height-150)*.85));}
+// Reflow moves posters outside their original spatial buckets. Invert the
+// monotonic axis map before querying; otherwise panning a focused wall culls
+// posters which are still on screen and reveals empty strips.
+export function reflowQuery(camera,viewport,focus,size,overscan=220){
+ const inverse=(value,lower,upper,length)=>{const span=upper-lower,target=Math.max(1,length),delta=(target-span)/2;if(value<=lower-delta)return value+delta;if(value>=upper+delta)return value-delta;return lower+(value-lower+delta)*span/target;};
+ let left=(-camera.x-overscan)/camera.scale,right=(viewport.width-camera.x+overscan)/camera.scale,top=(-camera.y-overscan)/camera.scale,bottom=(viewport.height-camera.y+overscan)/camera.scale;
+ if(focus){left=inverse(left,focus.x,focus.x+focus.width+5,size.width+5);right=inverse(right,focus.x,focus.x+focus.width+5,size.width+5);top=inverse(top,focus.y,focus.y+focus.height+5,size.height+5);bottom=inverse(bottom,focus.y,focus.y+focus.height+5,size.height+5);}
+ return {left,right,top,bottom};
+}
+export function visibleReflowTiles(scene,camera,viewport,focus,size,overscan=220,previous=null){
+ const bounds=reflowQuery(camera,viewport,focus,size,overscan);
+ if(previous){const old=reflowQuery(camera,viewport,previous.focus,previous.size,overscan);bounds.left=Math.min(bounds.left,old.left);bounds.right=Math.max(bounds.right,old.right);bounds.top=Math.min(bounds.top,old.top);bounds.bottom=Math.max(bounds.bottom,old.bottom);}
+ return visibleTiles(scene,{x:-bounds.left*camera.scale,y:-bounds.top*camera.scale,scale:camera.scale},{width:(bounds.right-bounds.left)*camera.scale,height:(bounds.bottom-bounds.top)*camera.scale},0);
+}

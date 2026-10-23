@@ -39,6 +39,8 @@ public final class PlaybackService extends Service {
     private long artworkSongId=Long.MIN_VALUE;
     private int artworkGeneration;
     int index=-1, mode=1; // 0 single, 1 list, 2 shuffle, 3 repeat one, 4 repeat list
+    String playbackError="";long playbackErrorToken;
+    private boolean fileEditing;private long editingID;private int editingPosition;private boolean editingPlaying;
     boolean active=false;
     final Random random=new Random();
     private final BroadcastReceiver noisyReceiver=new BroadcastReceiver(){@Override public void onReceive(Context context,Intent intent){if(player!=null&&player.isPlaying()){player.pause();publish();}}};
@@ -64,6 +66,7 @@ public final class PlaybackService extends Service {
     }
     void setMode(int value){mode=PlaybackModes.valid(value);getSharedPreferences("library",MODE_PRIVATE).edit().putInt("playback_mode",mode).apply();publish();}
     void setQueue(List<Song> songs,int selected){
+        if(fileEditing)return;
         queue.clear(); queue.addAll(songs); index=selected; playCurrent();
     }
     void retainLibrary(List<Song> songs){
@@ -84,11 +87,13 @@ public final class PlaybackService extends Service {
     int position(){try{return player==null?0:player.getCurrentPosition();}catch(Exception e){return 0;}}
     void seek(int ms){if(player!=null){player.seekTo(Math.max(0,Math.min(ms,player.getDuration())));publish();}}
     void toggle(){
+        if(fileEditing)return;
         if(player==null){playCurrent();return;}
         if(player.isPlaying()) player.pause(); else {requestFocus();player.start();}
         publish();
     }
     void next(boolean manual){
+        if(fileEditing)return;
         if(queue.isEmpty())return;
         if(!manual && mode==0){stopPlayback();return;}
         if(!manual && mode==3){seek(0);player.start();publish();return;}
@@ -98,16 +103,22 @@ public final class PlaybackService extends Service {
         else {stopPlayback();return;}
         playCurrent();
     }
-    void previous(){if(position()>3000){seek(0);return;}if(queue.isEmpty())return;index=index>0?index-1:queue.size()-1;playCurrent();}
-    private void playCurrent(){
+    void previous(){if(fileEditing)return;if(position()>3000){seek(0);return;}if(queue.isEmpty())return;index=index>0?index-1:queue.size()-1;playCurrent();}
+    void beginFileEdit(long id){
+        if(fileEditing)throw new IllegalStateException("正在保存其他歌曲");fileEditing=true;editingID=id;editingPosition=position();editingPlaying=isPlaying();
+        if(current()!=null&&current().id==id&&player!=null){player.release();player=null;publish();}
+    }
+    void endFileEdit(){if(!fileEditing)return;fileEditing=false;if(current()!=null&&current().id==editingID&&player==null)playCurrent(editingPosition,editingPlaying);}
+    private void playCurrent(){playCurrent(0,true);}
+    private void playCurrent(int start,boolean autoplay){
         Song song=current(); if(song==null)return;
         artwork=null;artworkSongId=song.id;int generation=++artworkGeneration;
         if(player!=null){player.release();player=null;}
         try {
             player=new MediaPlayer(); player.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
             player.setDataSource(this,song.uri); player.setOnCompletionListener(mp->next(false)); player.prepare();
-            requestFocus(); player.start(); active=true; publish();loadArtwork(song,generation);
-        } catch(Exception e){Diagnostics.failure("playback failed",e);android.widget.Toast.makeText(this,"无法播放：文件可能已失效或格式不支持",android.widget.Toast.LENGTH_LONG).show();if(player!=null){player.release();player=null;}active=false;publish();}
+            if(start>0)player.seekTo(Math.min(start,player.getDuration()));if(autoplay){requestFocus();player.start();}active=true;publish();loadArtwork(song,generation);
+        } catch(Exception e){Diagnostics.failure("playback failed",e);playbackError="无法播放：文件可能已失效或格式不支持";playbackErrorToken++;if(player!=null){player.release();player=null;}active=false;publish();}
     }
     private void loadArtwork(Song song,int generation){
         artworkLoader.execute(()->{
@@ -134,7 +145,7 @@ public final class PlaybackService extends Service {
         session.setMetadata(metadata.build());
         session.setPlaybackState(new PlaybackState.Builder().setActions(PlaybackState.ACTION_PLAY|PlaybackState.ACTION_PAUSE|PlaybackState.ACTION_PLAY_PAUSE|PlaybackState.ACTION_SKIP_TO_NEXT|PlaybackState.ACTION_SKIP_TO_PREVIOUS|PlaybackState.ACTION_SEEK_TO)
             .setState(isPlaying()?PlaybackState.STATE_PLAYING:active?PlaybackState.STATE_PAUSED:PlaybackState.STATE_STOPPED,position(),isPlaying()?1f:0f,android.os.SystemClock.elapsedRealtime()).build());
-        Intent open=new Intent(this,MainActivity.class).setAction(MainActivity.ACTION_LOCATE_PLAYING)
+        Intent open=new Intent(this,PortablePlayerActivity.class).setAction(MainActivity.ACTION_LOCATE_PLAYING)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP|Intent.FLAG_ACTIVITY_CLEAR_TOP);
         Notification notification=new Notification.Builder(this,CHANNEL).setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(song.title).setContentText(song.artist).setContentIntent(PendingIntent.getActivity(this,0,open,PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT))

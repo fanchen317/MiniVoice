@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, protocol, net, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, net, dialog, Menu, nativeImage, screen } = require('electron');
 const { spawn } = require('node:child_process');
 const { createInterface } = require('node:readline');
 const fs = require('node:fs');
@@ -6,16 +6,38 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { cachedArtworkFile } = require('./artwork-files.cjs');
 
-// Keep the existing renderer preferences when adopting the shipping app name.
-app.setPath('userData', path.join(app.getPath('appData'), 'minivoice-desktop'));
-app.setName('MiniVoice');
+// The packaged channel controls identity before Chromium creates profiles/locks.
+const {desktopIdentity} = require('./build-identity.cjs');
+let channel = 'release';
+if(app.isPackaged){try{channel=JSON.parse(fs.readFileSync(path.join(process.resourcesPath,'build-channel.json'),'utf8')).channel;}catch{}}
+const identity=desktopIdentity(channel,app.getPath('appData'));
+app.setName(identity.name);
+app.setPath('userData',identity.userData);
+if(identity.debug){app.setPath('sessionData',identity.userData);app.setAppLogsPath(path.join(app.getPath('home'),'Library','Logs',identity.name));}
 if (!app.requestSingleInstanceLock()) app.exit(0);
 app.on('second-instance', () => showMainWindow());
 
 // The privileged shell brokers a narrow command protocol. The renderer has no
 // filesystem/Node access, even while displaying local artwork and audio metadata.
 protocol.registerSchemesAsPrivileged([{ scheme: 'minivoice-art', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
-let window, engine, artworkRoot, quitting = false;
+let window, engine, artworkRoot, lyricsWindow, quitting = false;
+const {lyricsWindowState}=require('./lyrics-window-state.cjs');
+const lyricsFile=path.join(app.getPath('userData'),'own-desktop-lyrics.json');
+let lyricsOptions=lyricsWindowState();try{lyricsOptions=lyricsWindowState(JSON.parse(fs.readFileSync(lyricsFile,'utf8')));}catch{}
+function saveLyricsOptions(){fs.mkdirSync(path.dirname(lyricsFile),{recursive:true});fs.writeFileSync(lyricsFile,JSON.stringify(lyricsOptions));}
+function lyricsState(data){return identity.debug?{...data,desktopLyrics:lyricsOptions.enabled,desktopLyricsLocked:lyricsOptions.locked,desktopLyricsFont:lyricsOptions.font}:data;}
+function refreshLyricsState(){const current=latest.get('state');if(current)emit('state',current);}
+function createLyricsWindow(){
+ if(!identity.debug||!lyricsOptions.enabled||lyricsWindow&&!lyricsWindow.isDestroyed())return;
+ const bounds=lyricsOptions,valid=screen.getAllDisplays().some(display=>bounds.x!==null&&bounds.y!==null&&bounds.x+100>display.workArea.x&&bounds.x<display.workArea.x+display.workArea.width-100&&bounds.y+80>display.workArea.y&&bounds.y<display.workArea.y+display.workArea.height-30);
+ lyricsWindow=new BrowserWindow({width:bounds.width,height:bounds.height,...(valid?{x:bounds.x,y:bounds.y}:{}),minWidth:360,minHeight:110,maxHeight:500,frame:false,transparent:true,alwaysOnTop:true,resizable:true,show:false,skipTaskbar:true,title:'MiniVoice-debug 桌面歌词',webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false}});
+ const target=lyricsWindow;target.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});target.setIgnoreMouseEvents(lyricsOptions.locked,{forward:true});target.webContents.setWindowOpenHandler(()=>({action:'deny'}));target.webContents.on('will-navigate',event=>event.preventDefault());
+ target.webContents.on('did-finish-load',()=>{for(const [event,data]of latest)target.webContents.send('engine:event',{event,data});});
+ target.once('ready-to-show',()=>target.showInactive());target.on('close',()=>{const rect=target.getBounds();lyricsOptions=lyricsWindowState({...lyricsOptions,...rect});if(!quitting)lyricsOptions.enabled=false;saveLyricsOptions();});target.on('closed',()=>{lyricsWindow=null;if(!quitting)refreshLyricsState();});
+ target.loadFile(path.resolve(__dirname,'../dist/index.html'),{query:{surface:'desktopLyrics'}});
+}
+function toggleOwnLyrics(){lyricsOptions.enabled=!lyricsOptions.enabled;saveLyricsOptions();if(lyricsOptions.enabled)createLyricsWindow();else lyricsWindow?.close();refreshLyricsState();return lyricsOptions.enabled;}
+
 function showMainWindow(){
   if(!window||window.isDestroyed())return;
   if(window.isMinimized())window.restore();
@@ -23,21 +45,25 @@ function showMainWindow(){
 }
 const pending = new Map(), latest = new Map();
 let engineRestarts = [], restartTimer;
-const actions = new Set(['sharedCore','portableSnapshot','sorting','tasks','deleteTracks','addManyToPlaylist','removeManyFromPlaylist','openSettings','openEditor','interfaceStyle','orderedTracks','lyricsPresentation','favoriteMany','appearance','snapshot','play','select','toggle','pause','seek','skip','volume','mode','favorite','rescan','removeFolder','recursive','createPlaylist','renamePlaylist','deletePlaylist','addToPlaylist','removeFromPlaylist','clearRecent','detail','reveal','desktopLyrics','outputDevice','clearError','lyricsSearch','syncLyrics','saveMetadata','removeTrack']);
+const actions = new Set(['artworkSearch','artworkDownload','desktopSettings','desktopPreference','desktopShortcut','lyricsModel','sharedCore','portableSnapshot','sorting','tasks','deleteTracks','addManyToPlaylist','removeManyFromPlaylist','openSettings','openEditor','interfaceStyle','orderedTracks','lyricsPresentation','favoriteMany','appearance','snapshot','play','select','toggle','pause','seek','skip','volume','mode','favorite','rescan','removeFolder','recursive','createPlaylist','renamePlaylist','deletePlaylist','addToPlaylist','removeFromPlaylist','clearRecent','detail','reveal','desktopLyrics','outputDevice','clearError','lyricsSearch','syncLyrics','saveMetadata','removeTrack']);
 const stateFile = () => path.join(app.getPath('userData'), 'window.json');
 const packagedEngine = () => path.join(process.resourcesPath, 'Native', 'MiniVoice.app', 'Contents', 'MacOS', 'MiniVoice');
 function request(action, payload = {}) {
   return new Promise((resolve, reject) => {
     if (!engine?.stdin.writable) return reject(new Error('播放后台未连接，请重新打开应用。'));
     const id = require('node:crypto').randomUUID();
-    const timeout = setTimeout(() => { pending.delete(id); reject(new Error('后台响应超时，请检查后台任务。')); }, ['lyricsSearch','saveMetadata'].includes(action) ? 180000 : 30000);
+    const timeout = setTimeout(() => { pending.delete(id); reject(new Error('后台响应超时，请检查后台任务。')); }, ['artworkSearch','artworkDownload','lyricsSearch','saveMetadata'].includes(action) ? 180000 : 30000);
     pending.set(id, { resolve, reject, timeout });
     engine.stdin.write(JSON.stringify({ id, action, payload }) + '\n');
   });
 }
 function emit(event, data) {
+  if(event==='uiSurface')showMainWindow();
+  if(event==='hostSurface'&&data?.type==='desktopLyrics'&&identity.debug){toggleOwnLyrics();return;}
+  if(event==='state'){data=lyricsState(data);if(identity.debug&&lyricsOptions.enabled)createLyricsWindow();}
   latest.set(event, data);
   if (window && !window.isDestroyed()) window.webContents.send('engine:event', { event, data });
+  if(lyricsWindow&&!lyricsWindow.isDestroyed())lyricsWindow.webContents.send('engine:event',{event,data});
 }
 function logEngine(message) {
   try { fs.mkdirSync(app.getPath('logs'), { recursive: true }); fs.appendFileSync(path.join(app.getPath('logs'), 'audio-engine.log'), `${new Date().toISOString()} ${message}\n`); } catch {}
@@ -86,11 +112,12 @@ function createWindow() {
   let bounds = { width: 1280, height: 820 };
   try { const saved = JSON.parse(fs.readFileSync(stateFile())); if (Number.isFinite(saved.width) && Number.isFinite(saved.height) && saved.width >= 304 && saved.height >= 600) bounds = saved; } catch {}
   window = new BrowserWindow({ ...bounds, minWidth: 304, minHeight: 600, show: false,
-    title: 'MiniVoice', titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 9, y: 9 },
+    title: identity.name, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 9, y: 9 },
     // The renderer draws its own glass over artwork. An additional AppKit
     // visual-effect surface needlessly recomposites the whole window on resize.
     backgroundColor: '#111615',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false } });
+  window.webContents.on('page-title-updated',event=>{if(identity.debug){event.preventDefault();window.setTitle(identity.name);}});
   const index = path.resolve(__dirname, '../dist/index.html');
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event, url) => { if (url !== pathToFileURL(index).href) event.preventDefault(); });
@@ -113,7 +140,19 @@ app.whenReady().then(() => {
     return file ? net.fetch(pathToFileURL(file).href) : new Response('', { status: 404 });
   });
   ipcMain.handle('engine:command', async (event, { action, payload = {} } = {}) => {
-    if (event.sender !== window?.webContents || event.senderFrame !== window?.webContents.mainFrame) throw new Error('无效的界面来源');
+    if (![window,lyricsWindow].some(target=>target&&!target.isDestroyed()&&event.sender===target.webContents&&event.senderFrame===target.webContents.mainFrame)) throw new Error('无效的界面来源');
+    if(identity.debug&&action==='desktopLyrics')return toggleOwnLyrics();
+    if(identity.debug&&action==='desktopLyricsConfig'){
+      if(!payload||typeof payload!=='object'||Object.keys(payload).some(key=>!['locked','font'].includes(key))||('locked'in payload&&typeof payload.locked!=='boolean')||('font'in payload&&!Number.isFinite(payload.font)))throw Error('无效的桌面歌词配置');
+      lyricsOptions=lyricsWindowState({...lyricsOptions,...payload});saveLyricsOptions();lyricsWindow?.setIgnoreMouseEvents(lyricsOptions.locked,{forward:true});refreshLyricsState();return true;
+    }
+    if(identity.debug&&['pickEditorArtwork','pickEditorLyrics'].includes(action)){
+      if(event.sender!==window?.webContents)throw Error('请在主窗口编辑歌曲');
+      const image=action==='pickEditorArtwork';const selected=await dialog.showOpenDialog(window,{title:image?'选择歌曲封面':'导入歌词',properties:['openFile'],filters:[{name:image?'图片':'歌词',extensions:image?['png','jpg','jpeg','webp']:['lrc','txt']}]});if(selected.canceled)return null;
+      const file=selected.filePaths[0],stat=fs.statSync(file);if(!stat.isFile()||stat.size>(image?20*1024*1024:1024*1024))throw Error('文件过大');
+      if(image){const bitmap=nativeImage.createFromPath(file);if(bitmap.isEmpty())throw Error('无法读取图片');const size=bitmap.getSize(),scale=Math.min(1,1400/Math.max(size.width,size.height)),bytes=bitmap.resize({width:Math.max(1,Math.round(size.width*scale)),height:Math.max(1,Math.round(size.height*scale))}).toJPEG(88);if(bytes.length>2500000)throw Error('图片仍然过大');return 'data:image/jpeg;base64,'+bytes.toString('base64');}
+      let bytes=fs.readFileSync(file);if(bytes[0]===0xff&&bytes[1]===0xfe)return bytes.subarray(2).toString('utf16le');if(bytes[0]===0xfe&&bytes[1]===0xff)return bytes.subarray(2).swap16().toString('utf16le');return new TextDecoder('utf-8',{fatal:true}).decode(bytes).replace(/^\uFEFF/,'');
+    }
     if (action === 'captureStyle') {
       const image = await window.webContents.capturePage();
       return image.resize({ width: Math.min(1000, image.getSize().width) }).toDataURL();
@@ -123,6 +162,7 @@ app.whenReady().then(() => {
       return selected.canceled ? false : request('addFolders', { paths: selected.filePaths });
     }
     if (action === 'window') {
+      if (payload.action === 'show') showMainWindow();
       if (payload.action === 'minimize') window.minimize();
       if (payload.action === 'fullscreen') window.setFullScreen(!window.isFullScreen());
       return true;
@@ -134,10 +174,10 @@ app.whenReady().then(() => {
   });
   const menuAction = (action, payload) => request(action, payload).catch(error => emit('engineError', error.message));
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: 'MiniVoice', submenu: [{ role: 'about' }, { type: 'separator' }, { label: '设置…', accelerator: 'Cmd+,', click: () => menuAction('openSettings') }, { role: 'hide' }, { role: 'hideOthers' }, { type: 'separator' }, { role: 'quit' }] },
+    { label: identity.name, submenu: [identity.debug?{label:'关于 MiniVoice-debug',click:()=>emit('uiSurface',{type:'about'})}:{role:'about'}, { type: 'separator' }, { label: '设置…', accelerator: 'Cmd+,', click: () => menuAction('openSettings') }, { role: 'hide' }, { role: 'hideOthers' }, { type: 'separator' }, { role: 'quit' }] },
     { role: 'editMenu' },
     { label: '播放', submenu: [{ label: '播放 / 暂停', click: () => menuAction('toggle') }, { label: '上一首', click: () => menuAction('skip', { delta: -1 }) }, { label: '下一首', click: () => menuAction('skip', { delta: 1 }) }] },
-    { label: '显示', submenu: [{label:'桌面界面预览（Mac 布局）',click:()=>window.loadFile(path.resolve(__dirname,'../dist/index.html'),{query:{portable:'1'}})}, {label:'返回当前播放器',click:()=>window.loadFile(path.resolve(__dirname,'../dist/index.html'))}, { role: 'togglefullscreen' }, { label: '简易样式', click: () => emit('style','simple') }, { label: '音乐库样式', click: () => emit('style','library') }, { label: '音乐墙样式', click: () => emit('style','wall') }] },
+    { label: '显示', submenu: [...(identity.debug?[{label:'自有组件设置…',click:()=>menuAction('openSettings')}]:[]), { role: 'togglefullscreen' }, { label: '简易样式', click: () => emit('style','simple') }, { label: '音乐库样式', click: () => emit('style','library') }, { label: '音乐墙样式', click: () => emit('style','wall') }] },
     { role: 'windowMenu' }
   ]));
   createWindow(); startEngine();

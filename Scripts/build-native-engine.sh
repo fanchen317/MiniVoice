@@ -60,9 +60,18 @@ if [[ ! "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
+# Optional reproducible/offline build when the lockfile and cached checkouts exist.
+# Regular builds retain their existing dependency resolution behavior.
+native_swift_build() {
+  if [[ "${MINIVOICE_LOCKED_BUILD:-0}" == "1" ]]; then
+    swift build --skip-update --force-resolved-versions "$@"
+  else
+    swift build "$@"
+  fi
+}
 echo "==> 编译 (${CONFIGURATION})..."
-swift build --package-path "$ROOT/MacOS" --scratch-path "$ROOT/.build" --disable-sandbox -c "$CONFIGURATION"
-EXECUTABLE="$(swift build --package-path "$ROOT/MacOS" --scratch-path "$ROOT/.build" --disable-sandbox -c "$CONFIGURATION" --show-bin-path)/$APP_NAME"
+native_swift_build --package-path "$ROOT/MacOS" --scratch-path "$ROOT/.build" --disable-sandbox -c "$CONFIGURATION"
+EXECUTABLE="$(native_swift_build --package-path "$ROOT/MacOS" --scratch-path "$ROOT/.build" --disable-sandbox -c "$CONFIGURATION" --show-bin-path)/$APP_NAME"
 
 if [[ ! -x "$EXECUTABLE" ]]; then
   echo "error: 未找到编译产物：$EXECUTABLE" >&2

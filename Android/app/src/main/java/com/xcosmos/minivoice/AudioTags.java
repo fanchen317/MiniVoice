@@ -24,6 +24,7 @@ final class AudioTags {
         try{
             if(input==null)return tags;
             DataInputStream stream=new DataInputStream(input);byte[] header=new byte[10];stream.readFully(header);
+            if(header[4]=='f'&&header[5]=='t'&&header[6]=='y'&&header[7]=='p')return PortableM4aTags.read(new java.io.SequenceInputStream(new java.io.ByteArrayInputStream(header),stream));
             if(header[0]=='f'&&header[1]=='L'&&header[2]=='a'&&header[3]=='C'){
                 tags.lyricsChecked=true;readFlac(new DataInputStream(new java.io.SequenceInputStream(new java.io.ByteArrayInputStream(header,4,6),stream)),tags);return tags;
             }

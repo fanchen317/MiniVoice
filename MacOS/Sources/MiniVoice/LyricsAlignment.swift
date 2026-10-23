@@ -33,7 +33,7 @@ final class LyricsAlignment: ObservableObject {
     private static var isBusy = false
     private static let runtimeVersion = "stable-ts-2.19.1-v1"
     private let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("MiniVoice/LyricsAI", isDirectory: true)
+        .appendingPathComponent("\(AppIdentity.storageName)/LyricsAI", isDirectory: true)
 
     var installedModels: [LyricsModel] {
         LyricsModel.allCases.filter {

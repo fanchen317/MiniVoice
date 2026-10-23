@@ -12,7 +12,7 @@ if [[ -n "$serial" && "$serial" != emulator-* ]]; then
   echo 'UI 回归使用合成音乐库，只允许专用 emulator-* 设备。' >&2; exit 2
 fi
 bash "$repo_root/Scripts/build-android.sh"
-"$build_tools/aapt2" link -o "$output/unsigned.apk" -I "$sdk_root/platforms/android-35/android.jar" --manifest "$repo_root/Android/ui-tests/AndroidManifest.xml"
+"$build_tools/aapt2" link -o "$output/unsigned.apk" -I "$sdk_root/platforms/android-35/android.jar" --manifest "$repo_root/Android/ui-tests/AndroidManifest.xml" -A "$repo_root/Android/ui-tests/assets"
 javac -source 17 -target 17 -cp "$sdk_root/platforms/android-35/android.jar:$repo_root/.build/Android/classes" -d "$output/classes" "$repo_root"/Android/ui-tests/com/xcosmos/minivoice/*.java
 "$build_tools/d8" --lib "$sdk_root/platforms/android-35/android.jar" --min-api 29 --output "$output/dex" "$output"/classes/com/xcosmos/minivoice/*.class
 (cd "$output/dex" && zip -q "$output/unsigned.apk" classes.dex)

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Shared artifact contract for build, deployment and disk-image packaging.
 DESKTOP_APP_PATH="$ROOT/.build/MiniVoice.app"
+if [[ "${MINIVOICE_BUILD_CHANNEL:-release}" == "debug" ]]; then DESKTOP_APP_PATH="$ROOT/.build/MiniVoice-debug.app"; fi
 DESKTOP_ENGINE_RELATIVE="Contents/Resources/Native/MiniVoice.app/Contents/MacOS/MiniVoice"
 sign_desktop_app() {
   local candidate="$1"

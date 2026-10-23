@@ -12,6 +12,7 @@ export function mountScrollbar(view,{input='keyboard-mouse',label='滚动内容'
  const measure=()=>{
   if(disposed)return;metric=scrollMetrics(view.clientHeight,view.scrollHeight,view.scrollTop);
   const a=view.getBoundingClientRect(),b=host.getBoundingClientRect(),sx=host.offsetWidth?b.width/host.offsetWidth:1,sy=host.offsetHeight?b.height/host.offsetHeight:1;
+  const layer=parseInt(win.getComputedStyle(view).zIndex,10);rail.style.zIndex=Number.isFinite(layer)?String(layer+1):'8';
   rail.hidden=!metric.overflow||a.width<=0||a.height<=0;
   Object.assign(rail.style,{left:`${(a.right-b.left)/(sx||1)+host.scrollLeft-host.clientLeft-(input==='touch'?28:20)}px`,top:`${(a.top-b.top)/(sy||1)+host.scrollTop-host.clientTop}px`,height:`${metric.viewport}px`});
   Object.assign(thumb.style,{height:`${metric.height}px`,transform:`translateY(${metric.top}px)`});thumb.setAttribute('aria-valuemax',String(Math.round(metric.range)));thumb.setAttribute('aria-valuenow',String(Math.round(metric.position)));

@@ -4,7 +4,7 @@ import ImageIO
 import Combine
 
 enum ResourceCache {
-    static let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("MiniVoice")
+    static let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent(AppIdentity.storageName)
     static let directory = CacheStorage.resources
     private static let lock = NSRecursiveLock()
     static func withDiskLock<T>(_ work: () throws -> T) rethrows -> T {

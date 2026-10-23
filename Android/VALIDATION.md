@@ -119,3 +119,57 @@ Mac 的进度、音量、音乐墙显示比例，以及 Android 共享试用版�
 - `slider-ui-tests.txt`：真实 WebView/PlaybackService 验证拖动保持 700ms 跨轮询不回跳、松手前不 seek、松手后实际播放器位置改变、取消不 seek、键盘 Home 提交；自绘滚动条、弹窗普通键/Tab/Escape、歌单和原有三样式回归通过。截图 `shared-custom-slider.png` 已人工检查。
 
 Mac 滑块的鼠标实机操作仍未由本轮 UI 自动化验证；Android 测试仅涉及共享试用界面，原默认原生界面没有宣称完成替换。其他平台未新增适配。
+
+## 自有操作菜单、选择控件与交互测试
+
+新增 MenuList / MenuPopover、useLongPress、Choice、CheckControl。Mac 歌曲/歌单右键菜单使用实际尺寸定位；排序字段不再使用浏览器 select，删除确认不再使用原生 checkbox 外观。Android 长按操作菜单共用键盘行为，8px 内触摸抖动保留 500ms 长按，滚动/取消/失焦撤销；扫描设置接入自绘 CheckControl。音乐墙长按也不再被任意微小 pointermove 取消。
+
+菜单支持禁用项跳过、上下循环、Home/End、文字查找、Enter/Space、Escape/Tab、触发器焦点恢复。菜单仅滚动自己的内容，避免 scrollIntoView 推动页面；长菜单滑块层级高于面板。当前仍有播放模式、输出设备等独立浮层待迁移，未宣称菜单体系全量完成。
+
+大音乐库：当前歌曲与队列复用歌曲索引；批量操作建立一次 ID 索引；最近播放使用索引，歌单过滤使用 Set。保留长字符串 ID 和既有排序/过滤语义。
+
+- `menus-unit.txt`：22 个共享测试通过，包括菜单禁用/边界/查找，以及 5000 首最近播放避免逐条全库查找。
+- `menus-desktop-tests.txt`：51 个通过、3 个跳过；`menus-desktop-build.txt`、`menus-android-build.txt` 构建通过。
+- `menus-electron-ui-tests.txt`：独立 Electron 合成组件页面发送实际鼠标和键盘事件；检查菜单边缘/禁用项/循环/Enter/Escape恢复、滑块持有与提交，以及自绘排序和复选框。脚本 `bash Scripts/test-desktop-components.sh` 自动启停本地测试服务。它验证共用组件，不代表完整 Mac 音乐库页面全覆盖。
+- `menus-android-ui-tests.txt`：真实触摸长按（含2px抖动）、滑动取消、菜单键盘激活和后续歌单操作；滑块、滚动条、三种样式、主题及恢复回归通过。设置中检查自绘复选框的深浅模式与 44px 热区；浅色截图 `menus-settings-light.png` 已人工检查。
+
+Electron 专项最初发现菜单高度未包含边框，靠近底边会越界；已按完整盒尺寸定位。独立组件测试页不连接用户音乐库，也不包含在生产 Vite 入口中；开发缓存移至 .build，避免测试改写源码目录中的缓存。
+
+Mac 发布构建补充：`menus-mac-app-build.txt` 记录完整 Electron + Swift 应用打包成功，产物 `.build/MiniVoice.app`（Apple Silicon）。构建与 `codesign --verify --deep --strict` 通过；未替换已安装应用，也未用真实音乐库启动本包。本次 Swift 远程更新等待后改用 `MINIVOICE_LOCKED_BUILD=1 bash Scripts/build-app.sh`，仅使用锁文件和缓存依赖；该开关为新增可选路径，常规构建行为保持不变。
+
+## 音乐墙整版（2026-10-22）
+
+- `wall-v2-unit.txt`：24 个共享测试通过；`wall-v2-desktop-tests.txt`：51 个通过、3 个跳过。
+- `wall-v2-electron-ui.txt`：生产手机组件与实际 Mac App 场景通过；包含手机/平板横竖屏、60/100/120%、歌词边界、展开返回、相机恢复、桌面全窗口与音乐墙设置。
+- `wall-v2-android-ui.txt`：专用模拟器真实 WebView/播放服务全部 portable 回归通过。新增检查宿主内容从屏幕 y=0 绘制、原墙设置图标、歌词缩放、展开/返回、旋转、关闭无残影及预览不改变播放。发现并修复挖孔区域仍保留空白，以及返回监听捕获旧展开状态的问题。
+- Android 旋转保留 WebView；安全区域传入共享 CSS，展开可隐藏系统栏。Android 首次进入沉浸模式可能显示系统自带说明，截图中该提示属于系统层。
+- `wall-v2-mac-app-build.txt`：Mac Apple Silicon 打包成功，签名验证通过；APK 已重新构建。未覆盖已安装 Mac 应用，未连接用户音乐库运行合成场景。
+
+局限：模拟器与 Electron 覆盖结构和状态回归，不能代替小米等真机 GPU 的液态玻璃材质验收；Android 默认仍是原界面，新版在“设置 → 实验功能 → 跨平台界面试用”。
+
+## 控件与音乐墙点击修正（2026-10-23）
+
+`wall-v3-electron-ui.txt` 覆盖真实鼠标点击卡片、封面渐隐中间帧、三种样式抽屉的实际命中检测与图标居中、两方向 × 深浅主题切换、简易两入口切换不关闭、音乐墙缩放/展开/恢复，以及实际 Mac 页面回归。`wall-v3-unit.txt` 为 24 项通过，桌面 51 项通过、3 项跳过。
+
+Android 调整窗口配置去重、自绘 SVG 图标、固定控件槽、简易目录结构与行布局、抽屉安全区域。截图检查发现旧方案的嵌套 blur/backdrop 在 WebView 下出现白块，因此改为 DrawerMaterial 自有取样合成，保留静态模糊背景、可交互内容；没有用改为纯色来掩盖问题。背景并非完整 DOM 光学折射，打开期间使用冻结取样。真机 GPU 和触控性能仍需实机验收。
+
+最终 `wall-v3-android-ui.txt` 记录完整 portable 回归（含三样式深浅主题状态断言）；截图输出 `wall-v3-owned-material`。窗口状态配置去重后仅在配置变化请求一次绘制。截图检查已确认自有抽屉背景完整，仍需真机确认连续快速点击的帧率与系统 GPU 差异。
+
+## Android 试用入口音乐墙 v4（2026-10-23）
+
+本次明确针对“跨平台界面试用”，不是 Mac 独立桌面墙，也不替换 Android 默认界面。
+
+- 样式循环集成到侧栏品牌图标，移除底部三按钮；View Transition / WAAPI 回退提供应用内过渡，系统减少动态效果时跳过。
+- 相机以逐帧 DOM transform 绘制，React 只在可见区域变化/缩放阈值/提交时更新；聚焦几何与相机所有权分开，拖动打断相机仍完成卡片展开。固定内部文字布局，避免动画每帧重排歌词。
+- 原封面保留在墙中作为背景层，点击聚焦不销毁已解码图片；播放按钮在所有卡片状态占左下首槽。
+- 显式定位不再误用首次加载的视角恢复路径。
+
+`android-wall-v4-electron.txt`：真实鼠标 40 步拖动测得 3 次 React Profiler 提交，覆盖聚焦中打断拖动、不覆盖手动位置、图片节点保留、左下播放槽、图标循环和动画生命周期。它证明组件重绘次数下降，不代表小米真机帧率。
+`android-wall-v4-native.txt`：Android WebView/真实 WAV/服务回归通过；新增断言图标循环启动动画、封面节点保留、左下播放槽。三样式深浅、横竖屏、返回、队列/集合等回归通过。
+截图：`.build/Android/ui-tests/android-wall-v4-final`。交付 `.build/Android/MiniVoice-android-wall-v4-debug.apk`，与被测试 APK SHA-256 一致。
+
+2026-10-23 自有设置扩展：专用模拟器 portable 整轮验证通过，覆盖自有缓存用量、后台文件可用性检查、双语歌词编辑入口；真实 WAV 播放、三种样式/深浅模式和滚动恢复继续通过。最终复跑另增加应用内歌词保存持久化断言，报告 .build/Shared/Core/own-surfaces-android-ui-tests.txt。音乐文件标签未被此次歌词编辑修改。
+最终复跑结果：UI_PORTABLE_PASS。新增歌词保存断言已通过，并在检查后清理测试覆盖值，避免污染后续音乐墙缩放用的固定歌词数据。
+自有歌词打点扩展复跑：UI_PORTABLE_PASS。覆盖实际试听连接、打点按钮启用、打点后撤销与双语草稿持久化；三种样式、音乐墙缩放和返回滚动恢复保持通过。报告 .build/Shared/Core/own-editing-android-ui-tests.txt。
+默认自有组件版本：UI_PORTABLE_PASS + UI_TAG_EDIT_PASS。覆盖启动器路由、实际 MP3 编辑保存、FLAC 部分写入失败自动恢复、异常中断备份恢复；真实 MP3/FLAC/M4A 另以解码哈希和非编辑标签保留进行格式验证。报告 full-controls-*。目前不把特殊 ID3、分片 M4A 或未知格式标记为可写成功。
+体验版搜索与音乐墙修正：UI_PORTABLE_PASS，覆盖持续存在的搜索控件展开与原有三种样式、歌词、播放、旋转和返回恢复。共享逻辑加入重排坐标逆变换可见区检查，覆盖 4/100/1037 首。实体机视频问题的回验仍需实际手机完成，不以模拟器代替真机 GPU 验收。

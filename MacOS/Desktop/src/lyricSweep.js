@@ -9,7 +9,7 @@ export function paintLyricSweep(surface,time,{reduced=false,wall=false}={}){
   if(!surface||!surface.offsetWidth||!surface.offsetHeight)return;
   const words=[...surface.querySelectorAll('[data-word-start]')];
   if(!words.length){surface.classList.remove('sweep-surface');surface.style.backgroundImage='';return;}
-  const signature=`${surface.clientWidth}:${surface.clientHeight}:${getComputedStyle(surface).fontSize}:${words.map(word=>word.textContent).join('|')}`;
+  const signature=`${wall}:${surface.clientWidth}:${surface.clientHeight}:${getComputedStyle(surface).fontSize}:${words.map(word=>word.textContent).join('|')}`;
   let cached=layouts.get(surface);
   if(!cached||cached.signature!==signature||cached.first!==words[0]){
     const origin=surface.getBoundingClientRect(),scaleX=origin.width/Math.max(1,surface.offsetWidth),scaleY=origin.height/Math.max(1,surface.offsetHeight);

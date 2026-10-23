@@ -1,3 +1,5 @@
+> 当前只完善 Android 与 Mac 体验版，其他平台暂停扩展。开发与交付遵守 [产品标准](Docs/PRODUCT_STANDARD.md)，当前证据与缺口见 [验收台账](Docs/ACCEPTANCE_STATUS.md)。
+
 # MiniVoice
 
 ## 目录结构
@@ -45,7 +47,9 @@ Scripts/deploy.sh
 Scripts/build-dmg.sh
 ```
 
-唯一主应用产物为 `.build/MiniVoice.app`，包含 `app.asar` 主窗口和内置原生音频、设置、歌曲编辑与桌面歌词服务。`Scripts/build-app.sh [debug|release]`、部署和 DMG 都使用同一应用；旧 `build-electron-app.sh` 仅作为兼容别名。`build-native-engine.sh` 是内部组装步骤，生成的服务不会独立打开另一个播放器。
+正式主应用产物为 `.build/MiniVoice.app`，包含 `app.asar` 主窗口和内置原生音频、设置、歌曲编辑与桌面歌词服务。`Scripts/build-app.sh [debug|release]`、部署和 DMG 都使用同一应用；旧 `build-electron-app.sh` 仅作为兼容别名。`build-native-engine.sh` 是内部组装步骤，生成的服务不会独立打开另一个播放器。
+
+需要与正式版并行验证跨平台改写时，使用 `bash Scripts/build-debug-app.sh`，产物为 `.build/MiniVoice-debug.app`（默认仍做优化构建）。它有独立 Electron/Swift bundle identifier、Chromium profile、偏好和缓存目录，不迁移正式版数据。首次启动需单独选择音乐目录；Mac-debug 的设置、歌曲编辑、桌面歌词与关于已默认使用自有组件，不需要额外试用入口。正式版构建及安装位置不变。调试名称不是 Swift 编译配置，`build-app.sh debug` 仍表示原有的 Swift debug 编译配置。
 
 部署默认构建 release、校验完整应用及签名，退出目标位置的旧应用后替换 `/Applications/MiniVoice.app` 并启动；替换或启动命令失败时恢复旧安装。支持复用已构建产物、跳过启动或指定安装位置：
 

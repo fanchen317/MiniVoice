@@ -24,6 +24,10 @@ test('Swift engine starts without a SwiftUI window and keeps JSON request/event 
     assert.equal(state.data.closeBehavior,'background');
     assert.equal(state.data.playbackShortcuts.length,3);
     send('missing-editor','openEditor',{id:'missing'});assert.match((await wait(m=>m.id==='missing-editor')).error,/歌曲已移除/);
+    send('own-settings','desktopSettings');const ownSettings=(await wait(m=>m.id==='own-settings')).result;assert.equal(ownSettings.closeBehavior,'background');assert.equal(ownSettings.shortcuts.length,3);
+    send('bad-preference','desktopPreference',{key:'closeBehavior',value:'invalid'});assert.ok((await wait(m=>m.id==='bad-preference')).error);
+    send('own-preference','desktopPreference',{key:'closeBehavior',value:'pause'});assert.equal((await wait(m=>m.id==='own-preference')).result,true);
+    send('own-read','desktopSettings');assert.equal((await wait(m=>m.id==='own-read')).result.closeBehavior,'pause');
     send('style','interfaceStyle',{value:'library'});assert.equal((await wait(m=>m.id==='style')).result,true);
     assert.deepEqual(state.data.sorting.tracks,{field:'added',ascending:false});
     send('sort-artists','sorting',{category:'artists',field:'count',ascending:false});assert.equal((await wait(m=>m.id==='sort-artists')).result,true);
@@ -77,12 +81,14 @@ test('packaged audio backend plays, advances, seeks and pauses a silent fixture 
     send('wall-repeat','play',{id,preservePosition:true});await wait(m=>m.id==='wall-repeat');
     const repeated=await wait(m=>messages.indexOf(m)>=repeatAt&&m.event==='clock'&&m.data.playing);
     assert.ok(repeated.data.time>=resumed.data.time,'Double-clicking the playing card must not restart it');
+    send('bad-cover','artworkDownload',{id,token:'invalid'});assert.match((await wait(m=>m.id==='bad-cover')).error,/失效/);
     send('panel-editor','openEditor',{id});assert.equal((await wait(m=>m.id==='panel-editor')).result,true);
     send('panel-settings','openSettings');assert.equal((await wait(m=>m.id==='panel-settings')).result,true);
+    await wait(m=>m.event==='uiSurface'&&m.data.type==='settings');await wait(m=>m.event==='uiSurface'&&m.data.type==='editor'&&m.data.id===id);
     const panelAt=messages.length;
     send('panel-snapshot','snapshot');assert.equal((await wait(m=>m.id==='panel-snapshot')).result,true);
     await wait(m=>messages.indexOf(m)>=panelAt&&m.event==='clock');
-    assert.equal(child.exitCode,null,'Opening native editor/settings must keep the audio service alive');
+    assert.equal(child.exitCode,null,'Opening custom editor/settings must keep the audio service alive');
     send('delete-fixture','deleteTracks',{ids:[id],trash:false});assert.equal((await wait(m=>m.id==='delete-fixture')).result,true);
     assert.ok(existsSync(path.join(root,'Silence.wav')),'Removing from the library must preserve the source fixture');
     send('removeFolder','removeFolder',{path:root});await wait(m=>m.id==='removeFolder');

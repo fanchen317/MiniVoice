@@ -15,3 +15,5 @@ export function playbackAction(event, shortcuts=defaults) {
   if(match?.action==='nextTrack')return {action:'skip',payload:{delta:1}};
   return null;
 }
+
+export function capturedShortcut(event){const key=Object.entries(codes).find(([,code])=>code===event.code);if(!key||['Tab','Escape'].includes(event.code))return null;return {keyCode:Number(key[0]),modifiers:(event.shiftKey?1<<17:0)|(event.ctrlKey?1<<18:0)|(event.altKey?1<<19:0)|(event.metaKey?1<<20:0)};}
