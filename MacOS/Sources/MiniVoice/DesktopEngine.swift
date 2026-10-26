@@ -1,3 +1,4 @@
+import UniformTypeIdentifiers
 import AppKit
 import ImageIO
 import MiniVoiceShared
@@ -332,6 +333,29 @@ final class DesktopEngine {
         case "removeFromPlaylist":
             if let id = UUID(uuidString: payload["playlist"] as? String ?? "") { collections.remove(try track(payload).url.path, from: id) }; return true
         case "clearRecent": library.clearRecentPlayback(); return true
+        case "prepareOriginalArtwork":
+            guard let key = payload["key"] as? String, key.count == 64,
+                  let item = library.tracks.first(where: { $0.artworkKey == key }) else { throw CocoaError(.fileReadNoSuchFile) }
+            let target = ResourceCache.url(key, kind: "Artwork/Original")
+            if ResourceCache.isValidArtwork(try? Data(contentsOf: target)) { ResourceCache.touch(target); return true }
+            let sourceURL = item.url
+            let bytes = await Task.detached { () -> Data? in
+                let before = FileStamp.read(sourceURL)
+                guard let data = try? MediaTools.run("ffmpeg", ["-nostdin", "-v", "error", "-i", sourceURL.path, "-map", "0:v:0", "-frames:v", "1", "-c:v", "copy", "-f", "image2pipe", "pipe:1"]),
+                      before == FileStamp.read(sourceURL), ResourceCache.isValidArtwork(data) else { return nil }
+                guard let imageSource = CGImageSourceCreateWithData(data as CFData,nil) else { return nil }
+                let mime = CGImageSourceGetType(imageSource).flatMap { UTType($0 as String)?.preferredMIMEType }
+                if ["image/jpeg","image/png","image/webp","image/gif","image/bmp"].contains(mime ?? "") { return data }
+                guard let image = CGImageSourceCreateImageAtIndex(imageSource,0,nil) else { return nil }
+                return NSBitmapImageRep(cgImage:image).representation(using:.png,properties:[:])
+            }.value
+            var original = bytes
+            if original == nil, let full = await library.resolveTrack(item.id, fullResolution: true),
+               let tiff = full.artwork?.tiffRepresentation, let bitmap = NSBitmapImageRep(data:tiff) {
+                original = bitmap.representation(using:.png,properties:[:])
+            }
+            guard let bytes = original, library.tracks.contains(where: { $0.id == item.id && $0.artworkKey == key }) else { throw CocoaError(.fileReadCorruptFile) }
+            try ResourceCache.atomicWrite(bytes, to: target); return true
         case "detail": return detail(await library.resolveTrack(try track(payload).id))
         case "reveal": NSWorkspace.shared.activateFileViewerSelecting([try track(payload).url]); return true
         case "desktopLyrics":
@@ -354,11 +378,12 @@ final class DesktopEngine {
             let item = try track(payload)
             guard let token = payload["token"] as? String, let result = artworkSearches[token], result.0 == item.id else { throw NSError(domain:"MiniVoice",code:5,userInfo:[NSLocalizedDescriptionKey:"封面搜索结果已失效，请重新搜索"]) }
             let downloaded = try await OnlineArtworkSearch.download(result.1)
-            guard let source = CGImageSourceCreateWithData(downloaded.data as CFData,nil), let image = CGImageSourceCreateThumbnailAtIndex(source,0,[kCGImageSourceCreateThumbnailFromImageAlways:true,kCGImageSourceThumbnailMaxPixelSize:1400,kCGImageSourceCreateThumbnailWithTransform:true] as CFDictionary), let bytes = NSBitmapImageRep(cgImage:image).representation(using:.jpeg,properties:[.compressionFactor:0.88]),bytes.count<=2_500_000 else { throw CocoaError(.fileReadCorruptFile) }
-            return "data:image/jpeg;base64," + bytes.base64EncodedString()
+            guard downloaded.data.count <= 20 * 1024 * 1024, let source = CGImageSourceCreateWithData(downloaded.data as CFData,nil), let type = CGImageSourceGetType(source) else { throw CocoaError(.fileReadCorruptFile) }
+            let mime = UTType(type as String)?.preferredMIMEType ?? "image/png"
+            return "data:\(mime);base64," + downloaded.data.base64EncodedString()
         case "lyricsSearch":
             let track = try track(payload)
-            return try await OnlineLyricsSearch.search(title: track.title, artist: track.artist, duration: track.duration).map {
+            return try await OnlineLyricsSearch.search(title: String((payload["title"] as? String ?? track.title).prefix(500)), artist: String((payload["artist"] as? String ?? track.artist).prefix(500)), duration: track.duration).map {
                 ["id": $0.id, "source": $0.source, "title": $0.trackName, "artist": $0.artistName, "lyrics": $0.usableLyrics ?? ""]
             }
         case "syncLyrics":
@@ -372,7 +397,7 @@ final class DesktopEngine {
             resolved.lyrics = payload["lyrics"] as? String ?? resolved.lyrics
             if let translation = payload["translation"] as? String { resolved.lyrics = LyricsTranslation.attaching(translation,to:resolved.lyrics) }
             if let artwork = payload["artwork"] as? String {
-                guard artwork.hasPrefix("data:image/"),let separator=artwork.firstIndex(of:","),let data=Data(base64Encoded:String(artwork[artwork.index(after:separator)...])),data.count<=2_500_000,let image=NSImage(data:data),image.size.width>0,image.size.height>0 else { throw CocoaError(.coderInvalidValue) }
+                guard artwork.hasPrefix("data:image/"),let separator=artwork.firstIndex(of:","),let data=Data(base64Encoded:String(artwork[artwork.index(after:separator)...])),data.count<=20*1024*1024,let image=NSImage(data:data),image.size.width>0,image.size.height>0 else { throw CocoaError(.coderInvalidValue) }
                 resolved.artwork=image;resolved.artworkWasEdited=true
             }
             let destination: LyricsDestination = payload["destination"] as? String == "tags" ? .tags : .sidecar

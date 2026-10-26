@@ -29,3 +29,10 @@ test('missing caches and invalid protocol paths never escape the artwork root',(
   assert.equal(cachedArtworkFile(null,artwork({artworkKey:key})),null);
   for(const url of [`minivoice-art://cover/${key}/extra`,`minivoice-art://cover/invalid`,`minivoice-art://other/${key}`,`file:///${key}`])assert.equal(cachedArtworkFile('/no-cache',url),null);
 });
+test('detail prefers original source pixels while lists keep their small cached image',t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'minivoice-source-art-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ for(const kind of ['Original','Detail','Browse']){const file=path.join(root,'Artwork',kind,key);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,kind);}
+ assert.equal(cachedArtworkFile(root,artwork({artworkKey:key},true)),path.join(root,'Artwork','Original',key));
+ assert.equal(cachedArtworkFile(root,artwork({artworkKey:key})),path.join(root,'Artwork','Browse',key));
+ assert.match(artwork({artworkKey:key},true),/source=original-v1/);
+});

@@ -20,20 +20,29 @@ app.on('second-instance', () => showMainWindow());
 // The privileged shell brokers a narrow command protocol. The renderer has no
 // filesystem/Node access, even while displaying local artwork and audio metadata.
 protocol.registerSchemesAsPrivileged([{ scheme: 'minivoice-art', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
-let window, engine, artworkRoot, lyricsWindow, quitting = false;
-const {lyricsWindowState}=require('./lyrics-window-state.cjs');
+let window, engine, artworkRoot, lyricsWindow, lyricsUnlockWindow, quitting = false;
+const {lyricsWindowState,lyricsUnlockBounds}=require('./lyrics-window-state.cjs');
 const lyricsFile=path.join(app.getPath('userData'),'own-desktop-lyrics.json');
 let lyricsOptions=lyricsWindowState();try{lyricsOptions=lyricsWindowState(JSON.parse(fs.readFileSync(lyricsFile,'utf8')));}catch{}
 function saveLyricsOptions(){fs.mkdirSync(path.dirname(lyricsFile),{recursive:true});fs.writeFileSync(lyricsFile,JSON.stringify(lyricsOptions));}
 function lyricsState(data){return identity.debug?{...data,desktopLyrics:lyricsOptions.enabled,desktopLyricsLocked:lyricsOptions.locked,desktopLyricsFont:lyricsOptions.font}:data;}
 function refreshLyricsState(){const current=latest.get('state');if(current)emit('state',current);}
+function syncLyricsUnlock(){
+ if(!lyricsOptions.locked||!lyricsWindow||lyricsWindow.isDestroyed()) {lyricsUnlockWindow?.close();lyricsUnlockWindow=null;return;}
+ const bounds=lyricsUnlockBounds(lyricsWindow.getBounds(),screen.getDisplayMatching(lyricsWindow.getBounds()).workArea);
+ if(lyricsUnlockWindow&&!lyricsUnlockWindow.isDestroyed()){lyricsUnlockWindow.setBounds(bounds);return;}
+ const target=new BrowserWindow({...bounds,minWidth:32,minHeight:32,maxWidth:32,maxHeight:32,frame:false,transparent:true,alwaysOnTop:true,resizable:false,movable:false,show:false,skipTaskbar:true,title:'解锁桌面歌词',webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false}});
+ lyricsUnlockWindow=target;target.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});target.webContents.setWindowOpenHandler(()=>({action:'deny'}));target.webContents.on('will-navigate',event=>event.preventDefault());
+ target.webContents.on('did-finish-load',()=>{for(const [event,data]of latest)target.webContents.send('engine:event',{event,data});});target.once('ready-to-show',()=>target.showInactive());target.on('closed',()=>{if(lyricsUnlockWindow===target)lyricsUnlockWindow=null;});
+ target.loadFile(path.resolve(__dirname,'../dist/index.html'),{query:{surface:'desktopLyricsUnlock'}});
+}
 function createLyricsWindow(){
  if(!identity.debug||!lyricsOptions.enabled||lyricsWindow&&!lyricsWindow.isDestroyed())return;
  const bounds=lyricsOptions,valid=screen.getAllDisplays().some(display=>bounds.x!==null&&bounds.y!==null&&bounds.x+100>display.workArea.x&&bounds.x<display.workArea.x+display.workArea.width-100&&bounds.y+80>display.workArea.y&&bounds.y<display.workArea.y+display.workArea.height-30);
  lyricsWindow=new BrowserWindow({width:bounds.width,height:bounds.height,...(valid?{x:bounds.x,y:bounds.y}:{}),minWidth:360,minHeight:110,maxHeight:500,frame:false,transparent:true,alwaysOnTop:true,resizable:true,show:false,skipTaskbar:true,title:'MiniVoice-debug 桌面歌词',webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false}});
  const target=lyricsWindow;target.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});target.setIgnoreMouseEvents(lyricsOptions.locked,{forward:true});target.webContents.setWindowOpenHandler(()=>({action:'deny'}));target.webContents.on('will-navigate',event=>event.preventDefault());
  target.webContents.on('did-finish-load',()=>{for(const [event,data]of latest)target.webContents.send('engine:event',{event,data});});
- target.once('ready-to-show',()=>target.showInactive());target.on('close',()=>{const rect=target.getBounds();lyricsOptions=lyricsWindowState({...lyricsOptions,...rect});if(!quitting)lyricsOptions.enabled=false;saveLyricsOptions();});target.on('closed',()=>{lyricsWindow=null;if(!quitting)refreshLyricsState();});
+ target.once('ready-to-show',()=>{target.showInactive();syncLyricsUnlock();});target.on('move',syncLyricsUnlock);target.on('resize',syncLyricsUnlock);target.on('close',()=>{const rect=target.getBounds();lyricsOptions=lyricsWindowState({...lyricsOptions,...rect});if(!quitting)lyricsOptions.enabled=false;saveLyricsOptions();});target.on('closed',()=>{lyricsUnlockWindow?.close();lyricsUnlockWindow=null;lyricsWindow=null;if(!quitting)refreshLyricsState();});
  target.loadFile(path.resolve(__dirname,'../dist/index.html'),{query:{surface:'desktopLyrics'}});
 }
 function toggleOwnLyrics(){lyricsOptions.enabled=!lyricsOptions.enabled;saveLyricsOptions();if(lyricsOptions.enabled)createLyricsWindow();else lyricsWindow?.close();refreshLyricsState();return lyricsOptions.enabled;}
@@ -45,7 +54,7 @@ function showMainWindow(){
 }
 const pending = new Map(), latest = new Map();
 let engineRestarts = [], restartTimer;
-const actions = new Set(['artworkSearch','artworkDownload','desktopSettings','desktopPreference','desktopShortcut','lyricsModel','sharedCore','portableSnapshot','sorting','tasks','deleteTracks','addManyToPlaylist','removeManyFromPlaylist','openSettings','openEditor','interfaceStyle','orderedTracks','lyricsPresentation','favoriteMany','appearance','snapshot','play','select','toggle','pause','seek','skip','volume','mode','favorite','rescan','removeFolder','recursive','createPlaylist','renamePlaylist','deletePlaylist','addToPlaylist','removeFromPlaylist','clearRecent','detail','reveal','desktopLyrics','outputDevice','clearError','lyricsSearch','syncLyrics','saveMetadata','removeTrack']);
+const actions = new Set(['prepareOriginalArtwork','artworkSearch','artworkDownload','desktopSettings','desktopPreference','desktopShortcut','lyricsModel','sharedCore','portableSnapshot','sorting','tasks','deleteTracks','addManyToPlaylist','removeManyFromPlaylist','openSettings','openEditor','interfaceStyle','orderedTracks','lyricsPresentation','favoriteMany','appearance','snapshot','play','select','toggle','pause','seek','skip','volume','mode','favorite','rescan','removeFolder','recursive','createPlaylist','renamePlaylist','deletePlaylist','addToPlaylist','removeFromPlaylist','clearRecent','detail','reveal','desktopLyrics','outputDevice','clearError','lyricsSearch','syncLyrics','saveMetadata','removeTrack']);
 const stateFile = () => path.join(app.getPath('userData'), 'window.json');
 const packagedEngine = () => path.join(process.resourcesPath, 'Native', 'MiniVoice.app', 'Contents', 'MacOS', 'MiniVoice');
 function request(action, payload = {}) {
@@ -64,6 +73,7 @@ function emit(event, data) {
   latest.set(event, data);
   if (window && !window.isDestroyed()) window.webContents.send('engine:event', { event, data });
   if(lyricsWindow&&!lyricsWindow.isDestroyed())lyricsWindow.webContents.send('engine:event',{event,data});
+  if(lyricsUnlockWindow&&!lyricsUnlockWindow.isDestroyed())lyricsUnlockWindow.webContents.send('engine:event',{event,data});
 }
 function logEngine(message) {
   try { fs.mkdirSync(app.getPath('logs'), { recursive: true }); fs.appendFileSync(path.join(app.getPath('logs'), 'audio-engine.log'), `${new Date().toISOString()} ${message}\n`); } catch {}
@@ -135,22 +145,29 @@ function createWindow() {
   window.loadFile(index);
 }
 app.whenReady().then(() => {
-  protocol.handle('minivoice-art', async request => {
-    const file = cachedArtworkFile(artworkRoot, request.url);
+  const originalRequests=new Map(),verifiedOriginals=new Set();
+  protocol.handle('minivoice-art', async resource => {
+    const url=new URL(resource.url),key=url.pathname.slice(1);
+    if(artworkRoot&&url.hostname==='detail'&&/^[0-9a-f]{64}$/.test(key)&&(!verifiedOriginals.has(key)||!fs.existsSync(path.join(artworkRoot,'Artwork','Original',key)))){
+      if(!originalRequests.has(key))originalRequests.set(key,request('prepareOriginalArtwork',{key}).then(value=>{if(value===true)verifiedOriginals.add(key);return value;}).catch(()=>null).finally(()=>originalRequests.delete(key)));
+      await originalRequests.get(key);
+    }
+    const file = cachedArtworkFile(artworkRoot, resource.url);
     return file ? net.fetch(pathToFileURL(file).href) : new Response('', { status: 404 });
   });
   ipcMain.handle('engine:command', async (event, { action, payload = {} } = {}) => {
-    if (![window,lyricsWindow].some(target=>target&&!target.isDestroyed()&&event.sender===target.webContents&&event.senderFrame===target.webContents.mainFrame)) throw new Error('无效的界面来源');
+    if (![window,lyricsWindow,lyricsUnlockWindow].some(target=>target&&!target.isDestroyed()&&event.sender===target.webContents&&event.senderFrame===target.webContents.mainFrame)) throw new Error('无效的界面来源');
+    if(event.sender===lyricsUnlockWindow?.webContents&&!(action==='snapshot'||action==='desktopLyricsConfig'&&payload?.locked===false&&Object.keys(payload).length===1))throw Error('无效的解锁操作');
     if(identity.debug&&action==='desktopLyrics')return toggleOwnLyrics();
     if(identity.debug&&action==='desktopLyricsConfig'){
       if(!payload||typeof payload!=='object'||Object.keys(payload).some(key=>!['locked','font'].includes(key))||('locked'in payload&&typeof payload.locked!=='boolean')||('font'in payload&&!Number.isFinite(payload.font)))throw Error('无效的桌面歌词配置');
-      lyricsOptions=lyricsWindowState({...lyricsOptions,...payload});saveLyricsOptions();lyricsWindow?.setIgnoreMouseEvents(lyricsOptions.locked,{forward:true});refreshLyricsState();return true;
+      lyricsOptions=lyricsWindowState({...lyricsOptions,...payload});saveLyricsOptions();lyricsWindow?.setIgnoreMouseEvents(lyricsOptions.locked,{forward:true});syncLyricsUnlock();refreshLyricsState();return true;
     }
     if(identity.debug&&['pickEditorArtwork','pickEditorLyrics'].includes(action)){
       if(event.sender!==window?.webContents)throw Error('请在主窗口编辑歌曲');
       const image=action==='pickEditorArtwork';const selected=await dialog.showOpenDialog(window,{title:image?'选择歌曲封面':'导入歌词',properties:['openFile'],filters:[{name:image?'图片':'歌词',extensions:image?['png','jpg','jpeg','webp']:['lrc','txt']}]});if(selected.canceled)return null;
       const file=selected.filePaths[0],stat=fs.statSync(file);if(!stat.isFile()||stat.size>(image?20*1024*1024:1024*1024))throw Error('文件过大');
-      if(image){const bitmap=nativeImage.createFromPath(file);if(bitmap.isEmpty())throw Error('无法读取图片');const size=bitmap.getSize(),scale=Math.min(1,1400/Math.max(size.width,size.height)),bytes=bitmap.resize({width:Math.max(1,Math.round(size.width*scale)),height:Math.max(1,Math.round(size.height*scale))}).toJPEG(88);if(bytes.length>2500000)throw Error('图片仍然过大');return 'data:image/jpeg;base64,'+bytes.toString('base64');}
+      if(image){const bitmap=nativeImage.createFromPath(file);if(bitmap.isEmpty())throw Error('无法读取图片');const bytes=fs.readFileSync(file),extension=path.extname(file).toLowerCase(),mime=extension==='.png'?'image/png':extension==='.webp'?'image/webp':'image/jpeg';return 'data:'+mime+';base64,'+bytes.toString('base64');}
       let bytes=fs.readFileSync(file);if(bytes[0]===0xff&&bytes[1]===0xfe)return bytes.subarray(2).toString('utf16le');if(bytes[0]===0xfe&&bytes[1]===0xff)return bytes.subarray(2).swap16().toString('utf16le');return new TextDecoder('utf-8',{fatal:true}).decode(bytes).replace(/^\uFEFF/,'');
     }
     if (action === 'captureStyle') {

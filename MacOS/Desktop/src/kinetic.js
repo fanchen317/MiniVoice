@@ -1,13 +1,5 @@
 // Presentation estimates follow LyricsDisplayTiming; source lyrics remain untouched.
-export function displayLine(line,nextStart,duration){
-  if(line.words?.length||!Number.isFinite(line.time)||line.time<0||!line.text?.trim())return line;
-  const characters=[...new Intl.Segmenter('zh',{granularity:'grapheme'}).segment(line.text)].map(part=>part.segment),start=line.time;
-  const bounds=[line.end,nextStart,duration].filter(value=>Number.isFinite(value)&&value>start),nearest=bounds.length?Math.min(...bounds):null;
-  let end=nearest!==null&&nearest-start<=12?nearest:start+Math.min(10,Math.max(2,characters.length*.28));
-  if(Number.isFinite(nextStart)&&nextStart>start)end=Math.min(end,nextStart-Math.min(.3,(nextStart-start)*.12));
-  const step=(end-start)/characters.length;
-  return {...line,words:characters.map((text,index)=>({text,start:start+index*step,end:start+(index+1)*step}))};
-}
+export {displayLine,wallLyricsMetrics} from '../../../Shared/UI/src/components/lyricPresentation.js';
 export function kineticCharacters(line,nextStart){
   const segmenter=new Intl.Segmenter('zh',{granularity:'grapheme'});
   return (line.words||[]).flatMap((word,index,words)=>{
@@ -36,11 +28,6 @@ export function kineticInk(word,index,time,fontSize){
   const entrance=progress(time,word.start,word.start+.34),p=progress(time,word.start,Math.max(word.start+.24,word.end??word.start+.5));
   const pulse=time>=word.start?Math.max(0,Math.sin(p*Math.PI)):0,bounce=Math.sin(entrance*Math.PI)*(1-entrance)*fontSize*.19;
   return {opacity:time < word.start ? .26 : .82+.18*entrance,y:(1-entrance)*fontSize*.12-bounce-pulse*fontSize*.08,rotation:Math.sin(index*1.7)*3*Math.sin(entrance*Math.PI)*Math.PI/180,scale:.94+.06*entrance+.12*pulse,color:`rgb(${(1-.45*pulse)*255},${(1-.12*pulse)*255},255)`,shadow:pulse*.6,shadowRadius:10*pulse};
-}
-export function wallLyricsMetrics(width,height){
-  const singleLine=height<60,fontSize=Math.min(58,Math.max(12,Math.min(width*.062,height/(singleLine?2.8:11))));
-  const rowHeight=singleLine?height:Math.min(height/3,fontSize*2.15+8);
-  return {singleLine,fontSize,rowHeight,visibleRadius:singleLine?0:Math.max(4,Math.ceil(height/Math.max(1,rowHeight)))};
 }
 export function wallCardSizing(width,height){
   const scale=Math.min(1,Math.max(.65,Math.min(width/430,height/430)));

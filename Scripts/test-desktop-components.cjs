@@ -5,7 +5,7 @@ const path=require('node:path');
 let win;const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const check=(condition,message)=>{if(!condition)throw Error(message);};
 async function js(source){return win.webContents.executeJavaScript(source,true);}
-async function key(keyCode){win.webContents.sendInputEvent({type:'keyDown',keyCode});win.webContents.sendInputEvent({type:'keyUp',keyCode});await sleep(80);}
+async function key(keyCode){win.webContents.sendInputEvent({type:'keyDown',keyCode});if(keyCode==='Enter'||keyCode==='Space')win.webContents.sendInputEvent({type:'char',keyCode:keyCode==='Enter'?'\r':' '});win.webContents.sendInputEvent({type:'keyUp',keyCode});await sleep(80);}
 const timeout=setTimeout(()=>{process.stderr.write('Component test timed out\n');app.exit(1);},30000);
 app.whenReady().then(async()=>{
  try{
@@ -20,6 +20,16 @@ app.whenReady().then(async()=>{
   await key('Escape');check(await js("!document.querySelector('[data-mv-menu]')&&document.activeElement.id==='launch'"),'Menu Escape did not restore trigger');
   await js("document.querySelector('#launch').click()");await sleep(100);await key('Down');await key('Enter');
   check(await js("document.querySelector('#chosen').textContent==='加入歌单'&&!document.querySelector('[data-mv-menu]')"),'Menu Enter action failed');
+  await sleep(200);
+  await js("document.querySelector('[data-mv-component=disclosure] button').focus()");await key('Enter');
+  check(await js("document.querySelector('[data-mv-component=disclosure] button').getAttribute('aria-expanded')==='true'&&!document.querySelector('.mv-disclosure-content').hidden"),'Disclosure Enter did not expand');
+  await js("document.querySelector('[aria-label=折叠草稿]').value='未保存的打点草稿'");
+  await key('Space');
+  check(await js("document.querySelector('.mv-disclosure-content').hidden"),'Disclosure Space did not collapse');
+  await key('Enter');
+  check(await js("document.querySelector('[aria-label=折叠草稿]').value==='未保存的打点草稿'"),'Disclosure discarded draft');
+  await js("document.querySelectorAll('[data-mv-component=disclosure] button')[1].click()");
+  check(await js("document.querySelectorAll('[data-mv-component=disclosure] button')[1].getAttribute('aria-expanded')==='false'"),'Disabled disclosure opened');
   const rect=await js("(()=>{const r=document.querySelector('[role=slider]').getBoundingClientRect();return {x:Math.round(r.x),y:Math.round(r.y+r.height/2),width:Math.round(r.width)}})()");
   win.webContents.sendInputEvent({type:'mouseDown',x:rect.x+Math.round(rect.width*.25),y:rect.y,button:'left',clickCount:1});
   win.webContents.sendInputEvent({type:'mouseMove',x:rect.x+Math.round(rect.width*.75),y:rect.y,modifiers:['leftButtonDown']});await sleep(120);
@@ -34,20 +44,25 @@ app.whenReady().then(async()=>{
   await js("document.querySelector('[role=checkbox]').focus()");await key('Space');
   check(await js("document.querySelector('[role=checkbox]').getAttribute('aria-checked')==='true'"),'Custom checkbox keyboard toggle failed');
   await key('Space');check(await js("document.querySelector('[role=checkbox]').getAttribute('aria-checked')==='false'"),'Custom checkbox toggled twice or failed to clear');
+  await js("document.activeElement.blur();window.scrollTo(0,0)");await sleep(100);
+  const initialFeedback=await js("window.feedbackCount||0");
   const feedbackRect=await js("(()=>{const r=document.querySelector('#feedback').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()");
   win.webContents.sendInputEvent({type:'mouseMove',...feedbackRect});await sleep(200);
   check(await js("Number(getComputedStyle(document.querySelector('#feedback')).scale)>1"),'Desktop hover feedback absent');
   win.webContents.sendInputEvent({type:'mouseDown',...feedbackRect,button:'left',clickCount:1});await sleep(200);
   check(await js("Number(getComputedStyle(document.querySelector('#feedback')).scale)<1"),'Press feedback absent');
   win.webContents.sendInputEvent({type:'mouseUp',...feedbackRect,button:'left',clickCount:1});await sleep(200);
+  check((await js("window.feedbackCount"))===initialFeedback+1,'Native activation feedback fired more than once');
   const beforeBusy=await js("document.querySelector('#commits').textContent");
   await js("document.querySelector('#busy-feedback').click()");
   check(await js("document.querySelector('#busy-feedback').disabled&&document.querySelector('#busy-feedback').getAttribute('aria-busy')==='true'"),'Busy action enabled');
   check(await js("document.querySelector('#commits').textContent")===beforeBusy,'Busy action submitted');
+  check((await js("window.feedbackCount"))===initialFeedback+1,'Busy action emitted feedback');
   await js("document.documentElement.classList.add('reduce-motion')");await sleep(30);
   check(await js("getComputedStyle(document.querySelector('#feedback')).scale==='1'&&getComputedStyle(document.querySelector('#feedback')).transitionDuration==='0s'"),'Reduced-motion feedback still animates');
   await js("document.documentElement.classList.remove('reduce-motion')");
   process.stdout.write('PASS own ActionButton hover/press, busy suppression and reduced motion\n');
+  process.stdout.write('PASS Disclosure Enter/Space, retained draft and disabled state\n');
   const image=await win.webContents.capturePage();const output=path.resolve(__dirname,'../.build/Shared/Core/desktop-components.png');fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,image.toPNG());
   process.stdout.write('PASS Electron menu edge placement, disabled skipping, wrap, Escape restore, Enter action; mouse slider hold/release and keyboard commit; custom choice and checkbox keyboard selection\n');clearTimeout(timeout);win.destroy();app.exit(0);
  }catch(error){process.stderr.write(error.stack+'\n');clearTimeout(timeout);win?.destroy();app.exit(1);}

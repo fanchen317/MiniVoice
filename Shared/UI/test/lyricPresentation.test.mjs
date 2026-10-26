@@ -1,0 +1,6 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {normalizeLyrics,displayLine,lyricRowOffsets,wallLyricsMetrics} from '../src/components/lyricPresentation.js';
+test('phone millisecond lyrics and Mac second lyrics use identical display timing',()=>{const phone=normalizeLyrics([{ms:1200,text:'你好',translation:'Hello',words:[{ms:1200,endMs:1800,text:'你好'}]}]);const mac=normalizeLyrics([{time:1.2,text:'你好',translation:'Hello',words:[{start:1.2,end:1.8,text:'你好'}]}]);assert.equal(phone[0].time,mac[0].time);assert.deepEqual(phone[0].words,mac[0].words);assert.equal(phone[0].translation,'Hello');});
+test('centered bilingual rows account for full wrapped height',()=>{const heights=[28,82,40],offsets=lyricRowOffsets(heights,1);assert.equal(offsets[1]+heights[1]/2,0);assert.ok(offsets[0]+heights[0]<offsets[1]);assert.ok(offsets[2]>offsets[1]+heights[1]);});
+test('untimed text remains untimed and graphemes receive bounded estimated timing',()=>{assert.equal(displayLine({time:null,text:'无时间歌词'},null,100).words,undefined);const line=displayLine({time:1,text:'你好👨‍👩‍👧‍👦'},4,10);assert.equal(line.words.length,3);assert.equal(line.words[0].start,1);assert.ok(line.words.at(-1).end<=4);assert.ok(wallLyricsMetrics(390,200).fontSize>=12);});

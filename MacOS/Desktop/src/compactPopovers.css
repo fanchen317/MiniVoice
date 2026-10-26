@@ -23,7 +23,7 @@ body:has(.app.style-wall) :is(.background-tasks-panel,.playback-mode-popover,.wa
 .task-row strong{font-size:12px;line-height:18px}
 .task-row p{font-size:12px;line-height:1.45;margin-top:2px}
 .task-row small{margin-top:2px;line-height:16px}
-.task-row details{margin-top:4px}
+.task-row .mv-disclosure{margin-top:4px}
 .playback-mode-popover{width:min(208px,calc(100vw - 16px));overflow:auto}
 .playback-mode-popover>strong{font-size:13px;line-height:20px;margin-bottom:6px}
 .playback-mode-popover>button{height:28px;gap:8px;font-size:13px;padding:3px 8px}

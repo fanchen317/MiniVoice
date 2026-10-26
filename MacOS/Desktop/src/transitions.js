@@ -1,5 +1,6 @@
+import {paintFragments,prepareFragments} from '../../../Shared/UI/src/fragmentMotion.js';
 import { flushSync } from 'react-dom';
-import { fragmentCells, fragmentProgress, springEasing } from './motion';
+import { springEasing } from './motion';
 
 export const reducedMotion=()=>document.documentElement.classList.contains('reduce-motion');
 const active=new WeakMap();
@@ -25,7 +26,7 @@ export function springLayout(update,selectors,response=.46,damping=.9){layoutTra
 
 let sweeping=false,queued=null;
 export async function styleTransition(update){
-  if(sweeping){queued=queued?null:update;return;}
+  if(sweeping){queued=update;return;}
   if(reducedMotion()){flushSync(update);return;}
   sweeping=true;
   const icon=document.querySelector('.brand-logo')?.getBoundingClientRect();
@@ -39,24 +40,16 @@ export async function styleTransition(update){
       canvas=document.createElement('canvas');canvas.className='style-fragment-sweep';canvas.setAttribute('aria-hidden','true');
       const width=innerWidth,height=innerHeight,scale=Math.min(1,1000/width);
       canvas.width=Math.ceil(width*scale);canvas.height=Math.ceil(height*scale);canvas.style.width=`${width}px`;canvas.style.height=`${height}px`;
-      const context=canvas.getContext('2d'),cells=fragmentCells(width,height),began=performance.now();
+      const context=canvas.getContext('2d'),plan=prepareFragments(width,height,origin),began=performance.now();
       document.body.append(canvas);
       const paint=now=>{
         context.setTransform(scale,0,0,scale,0,0);context.clearRect(0,0,width,height);
-        cells.forEach((cell,index)=>{
-          const center={x:cell.x+cell.width/2,y:cell.y+cell.height/2};
-          const p=fragmentProgress(now-began,center,origin,{width,height});if(p>=1)return;
-          const eased=p*p*(3-2*p),angle=Math.atan2(center.y-origin.y,center.x-origin.x),curl=Math.sin(p*Math.PI)*(index%7-3)*6,distance=eased*140;
-          context.save();context.globalAlpha=1-eased;
-          context.translate(center.x+Math.cos(angle)*distance-Math.sin(angle)*curl,center.y+Math.sin(angle)*distance+Math.cos(angle)*curl);
-          context.rotate((index%9-4)*eased*8*Math.PI/180);context.scale(1-eased*.65,1-eased*.65);
-          context.drawImage(bitmap,cell.x/width*bitmap.width,cell.y/height*bitmap.height,cell.width/width*bitmap.width,cell.height/height*bitmap.height,-cell.width/2,-cell.height/2,cell.width,cell.height);context.restore();
-        });
+        paintFragments(context,bitmap,width,height,origin,now-began,plan);
         if(now-began<680)frame=requestAnimationFrame(paint);
       };
       paint(began);flushSync(update);
       await new Promise(resolve=>setTimeout(resolve,690));
-    }else flushSync(update);
+    }else{flushSync(update);await document.querySelector('.app')?.animate([{opacity:.75,transform:'translateY(6px)'},{opacity:1,transform:'none'}],{duration:260,easing:springEasing(.32,.92,260)}).finished.catch(()=>{});}
   }catch{flushSync(update);}
   finally{cancelAnimationFrame(frame);canvas?.remove();sweeping=false;const next=queued;queued=null;if(next)requestAnimationFrame(()=>styleTransition(next));}
 }

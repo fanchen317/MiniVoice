@@ -1,3 +1,4 @@
+import ScrollingLyrics from '../../../Shared/UI/src/components/ScrollingLyrics.jsx';
 import ActionButton from '../../../Shared/UI/src/components/ActionButton.jsx';
 import {lyricRowOffsets} from './lyricRowLayout';
 import {paintLyricSweep} from './lyricSweep';
@@ -10,32 +11,10 @@ const interpolation=clock=>clock.time+(clock.playing?Math.min(.24,Math.max(0,(pe
 function useSize(ref){const [size,setSize]=useState({width:1,height:1});useEffect(()=>{const observer=new ResizeObserver(entries=>{const rect=entries[0].contentRect;setSize(previous=>previous.width===rect.width&&previous.height===rect.height?previous:{width:rect.width,height:rect.height});});observer.observe(ref.current);return()=>observer.disconnect();},[]);return size;}
 const activeAt=(lines,time)=>{let active=-1;for(let i=0;i<lines.length;i++)if(lines[i].time!==null&&lines[i].time<=time)active=i;return active;};
 export function WallLyrics({track,kinetic=false}){
-  const clock=useClock(),state=usePlayback(),root=useRef(),size=useSize(root),lines=track.lyrics?.trim()?(track.lines||[]):[];
-  const active=activeAt(lines,clock.time),index=Math.max(0,active),layout=wallLyricsMetrics(size.width,size.height),showTranslation=state.showLyricsTranslation!==false,reduced=document.documentElement.classList.contains('reduce-motion');
-  useLayoutEffect(()=>{
-    if(kinetic)return;
-    const rows=[...root.current.querySelectorAll('.wall-lyric-line')];
-    const current=rows.findIndex(row=>row.classList.contains('current'));
-    const place=()=>{
-      const heights=rows.map(row=>row.offsetHeight),offsets=lyricRowOffsets(heights,current);
-      rows.forEach((row,i)=>{row.style.top='50%';row.style.transform=`translateY(${offsets[i]}px) scale(${i===current?1:.94})`;});
-    };
-    place();const observer=new ResizeObserver(place);rows.forEach(row=>observer.observe(row));
-    return()=>observer.disconnect();
-  },[kinetic,index,lines,showTranslation,size.width,size.height,layout.fontSize]);
-  const clockRef=useRef(clock);clockRef.current=clock;
-  useEffect(()=>{
-    const el=root.current;if(!el||kinetic)return;let frame=0;
-    function tick(){const now=interpolation(clockRef.current),reduced=document.documentElement.classList.contains('reduce-motion');paintLyricSweep(el.querySelector('.wall-lyric-line.current.timed-active>.lyric-content'),now,{reduced,wall:true});if(clockRef.current.playing&&!reduced)frame=requestAnimationFrame(tick);}
-    tick();return()=>cancelAnimationFrame(frame);
-  },[clock.playing,clock.playing?null:clock.time,index,kinetic,lines,reduced,size.width,size.height,layout.fontSize]);
-  return <div ref={root} className={`wall-lyrics ${kinetic?'kinetic-mode':''}`} aria-label="歌词" style={{'--wall-lyric-font':`${layout.fontSize}px`,'--wall-lyric-row':`${layout.rowHeight}px`,'--wall-lyric-spring':springEasing(.48,.9)}}>
-    {track.lyricsLoading?<div className="wall-lyrics-loading" role="status"><span className="spinner"/><span>正在加载歌词…</span></div>:!lines.length?<div className="wall-no-lyrics"><strong>{track.title}</strong><small>暂无歌词</small></div>:kinetic?<KineticLyrics track={track} size={size} showTranslation={showTranslation}/>:<div className="wall-lyric-rows">{lines.slice(Math.max(0,index-layout.visibleRadius),Math.min(lines.length,index+layout.visibleRadius+1)).map((line,offset)=>{
-      const i=Math.max(0,index-layout.visibleRadius)+offset,relative=i-index,current=relative===0;line=displayLine(line,lines.slice(i+1).find(l=>l.time>line.time)?.time,track.duration);
-      return <ActionButton key={`${track.id}:${i}`} className={`wall-lyric-line ${current?'current':''} ${current&&active>=0?'timed-active':''}`} style={{transform:`translateY(${relative*layout.rowHeight}px) scale(${current?1:.94})`,opacity:current?1:Math.abs(relative)===1?.5:Math.abs(relative)===2?.32:.2}} onClick={()=>line.time!==null&&command('seek',{time:line.time})}><span className="lyric-content">{line.words?.length?line.words.map((word,n)=><span className="lyric-word" key={n} data-word-start={word.start} data-word-end={word.end??line.words[n+1]?.start??line.end??lines[i+1]?.time??word.start+1}>{word.text}</span>):line.text||'•••'}</span>{showTranslation&&line.translation&&!layout.singleLine&&<small>{line.translation}</small>}</ActionButton>;
-    })}</div>}
-  </div>;
+ const clock=useClock(),state=usePlayback(),lines=track.lyrics?.trim()?(track.lines||[]):[],showTranslation=state.showLyricsTranslation!==false;
+ return kinetic?<KineticSurface track={track} showTranslation={showTranslation}/>:<ScrollingLyrics className="wall-lyrics" lineClass="wall-lyric-line" lines={lines} time={clock.time} duration={track.duration} playing={clock.playing} showTranslation={showTranslation} onSeek={time=>command('seek',{time})}/>;
 }
+function KineticSurface({track,showTranslation}){const root=useRef(),size=useSize(root);return <div ref={root} className="wall-lyrics kinetic-mode" aria-label="歌词"><KineticLyrics track={track} size={size} showTranslation={showTranslation}/></div>;}
 function KineticLyrics({track,size,showTranslation}){
   const clock=useClock(),ref=useRef(),lines=track.lines||[],active=activeAt(lines,clock.time),index=Math.max(0,active),line=lines[index]||{text:'',words:[]},waiting=active<0&&lines.some(l=>l.time!==null);
   const next=lines.slice(index+1).find(l=>l.time>line.time)?.time;

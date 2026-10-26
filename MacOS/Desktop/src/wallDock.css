@@ -1,0 +1,33 @@
+/* Mac reference: 64pt glass capsule, white playback disc and native spring.
+   The same shell becomes a 38pt tool; its contents keep their expanded layout. */
+.app.style-wall .player.compact{
+ display:flex;align-items:center;gap:0!important;box-sizing:border-box;
+ left:var(--wall-dock-left);right:auto;transform:none;
+ width:var(--wall-dock-width);height:64px;min-width:0;
+ padding:8px var(--dock-padding)!important;border-radius:999px;overflow:clip;
+ --dock-morph:600ms var(--chrome-spring);
+ transition:left var(--dock-morph),width var(--dock-morph),height var(--dock-morph),padding var(--dock-morph),opacity .2s;
+}
+.app.style-wall .player.compact>.play-main{
+ flex:0 0 auto;width:var(--dock-play-side);height:var(--dock-play-side);
+ padding:0;margin:0;border-radius:50%;color:#171717;background:#fffffff0;
+ box-shadow:none;--mv-icon-size:24px;
+ transition:width var(--dock-morph),height var(--dock-morph),background .25s,color .25s,transform .6s var(--float-hover);
+}
+.app.style-wall .player.compact>.play-main:hover{transform:translateY(-2px) scale(1.16)}
+.app.style-wall .player.compact>.play-main:active{transform:scale(.88);transition-timing-function:var(--float-press)}
+.app.style-wall .player.compact .dock-middle{flex:0 0 var(--dock-middle-width);width:var(--dock-middle-width);margin-left:var(--dock-gap)}
+.app.style-wall .player.compact :is(.dock-middle,.dock-mode-slot,.dock-queue-slot){
+ opacity:1;translate:0;transition:opacity .18s .08s,translate .4s var(--chrome-spring);
+}
+.app.style-wall .player.compact .dock-mode-slot{flex-shrink:0;margin-left:var(--dock-gap)}
+.app.style-wall .player.compact[data-idle-collapsed=true]{width:38px;height:38px;padding:0!important}
+.app.style-wall .player.compact[data-idle-collapsed=true]>.play-main{width:36px;height:36px;background:transparent;color:white}
+.app.style-wall .player.compact[data-idle-collapsed=true] :is(.dock-middle,.dock-mode-slot,.dock-queue-slot){
+ opacity:0;translate:8px 0;pointer-events:none;transition-delay:0s;
+}
+.app.style-wall .player.compact .play-main .glyph{--mv-icon-size:24px;transition:width var(--dock-morph),height var(--dock-morph)}
+.app.style-wall .player.compact[data-idle-collapsed=true] .play-main .glyph{--mv-icon-size:20px}
+.app.style-wall .wall-settings{bottom:var(--wall-tools-bottom);transition:bottom .6s var(--chrome-spring),opacity .2s}
+.reduce-motion .app.style-wall :is(.player.compact,.player.compact>.play-main,.dock-middle,.dock-mode-slot,.dock-queue-slot,.wall-settings){transition:none!important}
+@media(prefers-reduced-motion:reduce){.app.style-wall :is(.player.compact,.player.compact>.play-main,.dock-middle,.dock-mode-slot,.dock-queue-slot,.wall-settings){transition:none!important}}

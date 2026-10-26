@@ -1,0 +1,12 @@
+const {app,BrowserWindow}=require('electron'),fs=require('node:fs'),path=require('node:path');
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms)),check=(ok,msg)=>{if(!ok)throw Error(msg);};
+app.whenReady().then(async()=>{let win;try{
+ win=new BrowserWindow({show:false,width:580,height:140,webPreferences:{backgroundThrottling:false}});
+ const base=process.env.MINIVOICE_WALL_TEST_URL||'http://127.0.0.1:5196';await win.loadURL(base+'/tests/desktop-lyrics.html');const js=source=>win.webContents.executeJavaScript(source,true);await wait(800);
+ for(const size of [[580,140],[360,110],[1050,200]]){win.setContentSize(...size);await wait(250);check(await js("(()=>{const c=document.querySelector('.own-desktop-lyrics-text').getBoundingClientRect();return [...document.querySelectorAll('.own-desktop-line,.own-desktop-lyrics-text>p')].every(n=>{const r=n.getBoundingClientRect();return r.top>=c.top-1&&r.bottom<=c.bottom+1&&r.left>=c.left-1&&r.right<=c.right+1&&n.scrollWidth<=n.clientWidth+1})})()"),'Long original/translation clipped at '+size);}
+ await js("window.lyricsFixture.theme('light')");await wait(100);const light=await js("getComputedStyle(document.querySelector('.own-desktop-lyrics')).backgroundColor");await js("window.lyricsFixture.theme('dark')");await wait(100);check((await js("getComputedStyle(document.querySelector('.own-desktop-lyrics')).backgroundColor"))!==light,'Dark lyrics background did not change');
+ fs.writeFileSync(path.resolve(__dirname,'../.build/Shared/Core/desktop-lyrics-fit-dark.png'),(await win.webContents.capturePage()).toPNG());
+ await js("window.lyricsFixture.lock(true)");await wait(200);check(await js("getComputedStyle(document.querySelector('.own-desktop-lyrics header')).display==='none'"),'Locked toolbar did not collapse');
+ await win.loadURL(base+'/tests/desktop-lyrics.html?unlock=1');win.setContentSize(32,32);await wait(300);win.webContents.sendInputEvent({type:'mouseDown',button:'left',x:16,y:16,clickCount:1});win.webContents.sendInputEvent({type:'mouseUp',button:'left',x:16,y:16,clickCount:1});await wait(100);check(await js("window.lyricsFixture.calls.some(c=>c.name==='desktopLyricsConfig'&&c.payload.locked===false)"),'Visible unlock button did not unlock');
+ console.log('PASS desktop lyrics long-line fitting, translation, dark/light, compact toolbar and real unlock click');win.destroy();app.quit();
+ }catch(error){console.error(error);win?.destroy();app.exit(1);}});

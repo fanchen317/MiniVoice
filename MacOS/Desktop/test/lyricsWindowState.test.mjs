@@ -1,2 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {lyricsWindowState} from '../electron/lyrics-window-state.cjs';
 test('own lyrics profile bounds rejects nonfinite dimensions and clamps font',()=>{const state=lyricsWindowState({enabled:'true',locked:true,width:Infinity,font:999,height:0,x:NaN});assert.equal(state.enabled,false);assert.equal(state.locked,true);assert.equal(state.width,720);assert.equal(state.font,64);assert.equal(state.height,110);assert.equal(state.x,null);});
+test('locked lyrics keeps a small unlock target inside the current window corner',async()=>{const {lyricsUnlockBounds}=await import('../electron/lyrics-window-state.cjs');assert.deepEqual(lyricsUnlockBounds({x:100,y:200,width:720,height:200}),{x:782,y:206,width:32,height:32});});
+
+test('unlock stays visible when the locked lyrics window extends beyond a screen edge',async()=>{const {lyricsUnlockBounds}=await import('../electron/lyrics-window-state.cjs');assert.deepEqual(lyricsUnlockBounds({x:900,y:-80,width:720,height:200},{x:0,y:0,width:1200,height:800}),{x:1168,y:0,width:32,height:32});});

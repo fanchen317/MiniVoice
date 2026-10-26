@@ -43,7 +43,7 @@ public final class PortablePlayerActivity extends Activity {
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){return true;}
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
                 Uri uri=request.getUrl();String path=uri.getPath();
-                if("https".equals(uri.getScheme())&&"minivoice.local".equals(uri.getHost())&&path!=null&&path.matches("/art/-?[0-9]+")&&"GET".equals(request.getMethod())){for(Song song:songs)if(Long.toString(song.id).equals(path.substring(5)))try{android.graphics.Bitmap bitmap=ArtworkCache.load(PortablePlayerActivity.this,song,512);if(bitmap==null)return denied();ByteArrayOutputStream bytes=new ByteArrayOutputStream();bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG,88,bytes);return new WebResourceResponse("image/jpeg",null,new ByteArrayInputStream(bytes.toByteArray()));}catch(Exception ignored){return denied();}return denied();}
+                if("https".equals(uri.getScheme())&&"minivoice.local".equals(uri.getHost())&&path!=null&&path.matches("/art/-?[0-9]+")&&"GET".equals(request.getMethod())){for(Song song:songs)if(Long.toString(song.id).equals(path.substring(5)))try{if("original".equals(uri.getQueryParameter("quality"))){byte[] original=Artwork.original(PortablePlayerActivity.this,song);if(original==null)return denied();android.graphics.BitmapFactory.Options info=new android.graphics.BitmapFactory.Options();info.inJustDecodeBounds=true;android.graphics.BitmapFactory.decodeByteArray(original,0,original.length,info);return new WebResourceResponse(info.outMimeType==null?"image/jpeg":info.outMimeType,null,new ByteArrayInputStream(original));}android.graphics.Bitmap bitmap=ArtworkCache.load(PortablePlayerActivity.this,song,512);if(bitmap==null)return denied();ByteArrayOutputStream bytes=new ByteArrayOutputStream();bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG,88,bytes);return new WebResourceResponse("image/jpeg",null,new ByteArrayInputStream(bytes.toByteArray()));}catch(Exception ignored){return denied();}return denied();}
                 if(!"https".equals(uri.getScheme())||!"minivoice.local".equals(uri.getHost())||path==null||!"GET".equals(request.getMethod())||path.contains("..")||!(path.equals("/index.html")||path.startsWith("/assets/")))return denied();
                 try{String mime=path.endsWith(".js")?"application/javascript":path.endsWith(".css")?"text/css":path.endsWith(".png")?"image/png":"text/html";
                     return new WebResourceResponse(mime,"UTF-8",200,"OK",Collections.singletonMap("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-src 'none'"),getAssets().open(path.substring(1)));
@@ -60,16 +60,25 @@ public final class PortablePlayerActivity extends Activity {
     private void notice(String message){nativeNotice=message;noticeToken++;}
     private void readLibrary()throws Exception{
         SharedPreferences prefs=getSharedPreferences("library",MODE_PRIVATE);List<Song> cached=LibrarySnapshot.read(this,"folders\n"+LibrarySnapshot.source(prefs.getStringSet("music_folders",Collections.emptySet()),prefs.getBoolean("scan_recursive",true)));
-        List<Song> next=cached;if(next==null){next=new ArrayList<>();Set<String> selected=prefs.getStringSet("music_folders",Collections.emptySet());for(Song song:songs)if(authorized(song,selected))next.add(song);}Map<String,String> aliases=PortableSettingsTools.aliases(getSharedPreferences("library",0));Map<String,String> canonical=new HashMap<>();JSONArray nextRows=new JSONArray();for(Song song:next)nextRows.put(new JSONObject().put("id",Long.toString(song.id)).put("title",song.title).put("artist",canonical.computeIfAbsent(song.artist,value->ArtistNames.canonical(value,aliases))).put("album",song.album).put("duration",song.duration).put("path",song.path).put("size",song.fileSize).put("artwork",ORIGIN+"/art/"+song.id+"?v="+Uri.encode(song.artworkVersion)));songs=next;if(!nextRows.toString().equals(rows.toString())){rows=nextRows;catalogRevision++;List<Song> allowed=new ArrayList<>(next);main.post(()->{if(!closed&&playback!=null)playback.retainLibrary(allowed);});}
+        List<Song> next=cached;if(next==null){next=new ArrayList<>();Set<String> selected=prefs.getStringSet("music_folders",Collections.emptySet());for(Song song:songs)if(authorized(song,selected))next.add(song);}Map<String,String> aliases=PortableSettingsTools.aliases(getSharedPreferences("library",0));Map<String,String> canonical=new HashMap<>();JSONArray nextRows=new JSONArray();for(Song song:next)nextRows.put(new JSONObject().put("id",Long.toString(song.id)).put("title",song.title).put("artist",canonical.computeIfAbsent(song.artist,value->ArtistNames.canonical(value,aliases))).put("album",song.album).put("duration",song.duration).put("sourceAdded",song.sourceAdded).put("added",song.updated).put("path",song.path).put("size",song.fileSize).put("artwork",ORIGIN+"/art/"+song.id+"?v="+Uri.encode(song.artworkVersion)).put("artworkDetail",ORIGIN+"/art/"+song.id+"?quality=original&v="+Uri.encode(song.artworkVersion)));songs=next;if(!nextRows.toString().equals(rows.toString())){rows=nextRows;catalogRevision++;List<Song> allowed=new ArrayList<>(next);main.post(()->{if(!closed&&playback!=null)playback.retainLibrary(allowed);});}
     }
     private static boolean authorized(Song song,Set<String> folders){for(String value:folders)try{Uri tree=Uri.parse(value);if(!Objects.equals(tree.getAuthority(),song.uri.getAuthority()))continue;String parent=android.provider.DocumentsContract.getTreeDocumentId(tree),child=android.provider.DocumentsContract.getDocumentId(song.uri);if(android.provider.DocumentsContract.isTreeUri(song.uri)&&parent.equals(android.provider.DocumentsContract.getTreeDocumentId(song.uri)))return true;if(child.equals(parent)||child.startsWith(parent+"/"))return true;}catch(Exception ignored){}return false;}
     @Override protected void onResume(){super.onResume();if(!closed)try{worker.execute(()->{try{readLibrary();}catch(Exception ignored){}});}catch(RejectedExecutionException ignored){}}
     private static WebResourceResponse denied(){return new WebResourceResponse("text/plain","UTF-8",403,"Forbidden",Collections.emptyMap(),new ByteArrayInputStream(new byte[0]));}
+    private long lastHaptic;
     private final class Host {
+        @JavascriptInterface public void haptic(){main.post(()->{
+            if(closed||web==null||!web.hasWindowFocus())return;
+            long now=SystemClock.uptimeMillis();if(now-lastHaptic<45)return;lastHaptic=now;
+            // View feedback respects the user's system touch-feedback setting.
+            web.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK);
+        });}
+
         @JavascriptInterface public void request(String id,String raw){
             if(closed||id==null||!id.matches("[0-9]{1,12}")||raw==null||raw.length()>4*1024*1024)return;
             try{worker.execute(()->{try{JSONObject request=new JSONObject(raw);if(request.optInt("version")!=1)throw new IllegalArgumentException("不支持的协议版本");String kind=request.getString("kind");
                 switch(kind){
+                    case "captureStyle":main.post(()->captureStyle(id));return;
                     case "core":JSONObject result=new JSONObject(SharedCore.execute(request.getJSONObject("request").toString()));if(!result.optBoolean("ok"))throw new IllegalArgumentException(result.optString("error"));reply(id,result.opt("value"),null);return;
                     case "readState":JSONObject saved=new JSONObject(getSharedPreferences("portable",0).getString("workspace","{\"version\":1,\"pages\":{}}"));main.post(()->applyChrome(saved));reply(id,saved,null);return;
                     case "writeState":JSONObject value=request.getJSONObject("state");if(value.optInt("version")!=1)throw new IllegalArgumentException("无效的页面状态");if(!getSharedPreferences("portable",0).edit().putString("workspace",value.toString()).commit())throw new IOException("页面状态保存失败");main.post(()->applyChrome(value));reply(id,true,null);return;
@@ -79,6 +88,21 @@ public final class PortablePlayerActivity extends Activity {
                 }
             }catch(Exception failure){reply(id,null,failure.getMessage());}});}catch(RejectedExecutionException ignored){}
         }
+    }
+    // Copies only this Activity's WebView surface; no display capture permission.
+    private void captureStyle(String id){
+        if(closed||web==null||web.getWidth()<1||web.getHeight()<1){reply(id,null,"页面尚未就绪");return;}
+        final android.graphics.Bitmap bitmap;
+        try{
+            int width=web.getWidth(),height=web.getHeight();float scale=Math.min(1f,Math.min(2560f/Math.max(width,height),(float)Math.sqrt(3000000d/(width*(double)height))));
+            bitmap=android.graphics.Bitmap.createBitmap(Math.max(1,Math.round(width*scale)),Math.max(1,Math.round(height*scale)),android.graphics.Bitmap.Config.ARGB_8888);
+            int[] location=new int[2];web.getLocationInWindow(location);
+            android.graphics.Rect rect=new android.graphics.Rect(location[0],location[1],location[0]+width,location[1]+height);
+            android.view.PixelCopy.request(getWindow(),rect,bitmap,result->{
+                if(result!=android.view.PixelCopy.SUCCESS||closed){bitmap.recycle();reply(id,null,"页面画面暂不可用");return;}
+                try{worker.execute(()->{try{ByteArrayOutputStream bytes=new ByteArrayOutputStream();bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,bytes);reply(id,"data:image/png;base64,"+android.util.Base64.encodeToString(bytes.toByteArray(),android.util.Base64.NO_WRAP),null);}catch(Exception error){reply(id,null,error.getMessage());}finally{bitmap.recycle();}});}catch(RejectedExecutionException ignored){bitmap.recycle();}
+            },main);
+        }catch(Exception error){reply(id,null,error.getMessage());}
     }
     private Object metadataAction(String action,JSONObject payload)throws Exception{
         if(action.equals("metadataDetail"))return PortableMetadataActions.execute(this,songs,action,payload);
@@ -101,18 +125,19 @@ public final class PortablePlayerActivity extends Activity {
         if(workspace!=null)lastWorkspace=workspace;
         SharedPreferences prefs=getSharedPreferences("library",0);JSONObject pages=lastWorkspace==null?null:lastWorkspace.optJSONObject("pages"),appearance=pages==null?null:pages.optJSONObject("appearance");String theme=appearance==null?AppAppearance.theme(prefs):appearance.optString("theme",AppAppearance.theme(prefs));String style=appearance==null?AppAppearance.style(prefs):appearance.optString("style",AppAppearance.style(prefs));boolean dark=AppAppearance.darkValue(theme,(getResources().getConfiguration().uiMode&android.content.res.Configuration.UI_MODE_NIGHT_MASK)==android.content.res.Configuration.UI_MODE_NIGHT_YES);wallChrome=style.equals("wall");if(!wallChrome)immersiveChrome=false;
         String chromeKey=style+":"+dark+":"+immersiveChrome+":"+getResources().getConfiguration().orientation;if(chromeKey.equals(appliedChrome))return;appliedChrome=chromeKey;
-        int color=wallChrome?(dark?0xFF10241A:0xFFDCEADE):(dark?0xFF182720:0xFFEAF0EE);android.view.Window window=getWindow();window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);window.setStatusBarColor(wallChrome?android.graphics.Color.TRANSPARENT:color);window.setNavigationBarColor(wallChrome?android.graphics.Color.TRANSPARENT:color);if(Build.VERSION.SDK_INT>=29)window.setNavigationBarContrastEnforced(!wallChrome);
+        int color=wallChrome?(dark?0xFF10241A:0xFFDCEADE):(dark?0xFF182720:0xFFEAF0EE);android.view.Window window=getWindow();window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);window.setStatusBarColor(android.graphics.Color.TRANSPARENT);window.setNavigationBarColor(android.graphics.Color.TRANSPARENT);if(Build.VERSION.SDK_INT>=29)window.setNavigationBarContrastEnforced(!wallChrome);
 
-        int flags=wallChrome?android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE|android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION:dark?0:android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        int flags=android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE|android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
+        if(!dark)flags|=android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
         if(wallChrome&&immersiveChrome)flags|=android.view.View.SYSTEM_UI_FLAG_FULLSCREEN|android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
         window.getDecorView().setSystemUiVisibility(flags);if(Build.VERSION.SDK_INT>=30&&window.getInsetsController()!=null){android.view.WindowInsetsController control=window.getInsetsController();control.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);if(wallChrome&&immersiveChrome)control.hide(android.view.WindowInsets.Type.systemBars());else control.show(android.view.WindowInsets.Type.systemBars());}
         android.view.WindowManager.LayoutParams attributes=window.getAttributes();attributes.layoutInDisplayCutoutMode=wallChrome?android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES:android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;window.setAttributes(attributes);
-        if(Build.VERSION.SDK_INT>=30)window.setDecorFitsSystemWindows(!wallChrome);
-        android.view.View content=window.findViewById(android.R.id.content);if(content!=null){content.setFitsSystemWindows(!wallChrome);if(wallChrome)content.setPadding(0,0,0,0);content.requestLayout();}web.setFitsSystemWindows(false);
+        if(Build.VERSION.SDK_INT>=30)window.setDecorFitsSystemWindows(false);
+        android.view.View content=window.findViewById(android.R.id.content);if(content!=null){content.setFitsSystemWindows(false);content.setPadding(0,0,0,0);content.requestLayout();}web.setFitsSystemWindows(false);
         web.setBackgroundColor(color);web.requestApplyInsets();web.postInvalidateOnAnimation();publishInsets(web.getRootWindowInsets());
     }
     private void publishInsets(android.view.WindowInsets insets){
-        if(web==null||closed)return;int left=0,top=0,right=0,bottom=0;if(wallChrome&&insets!=null){if(Build.VERSION.SDK_INT>=30){android.graphics.Insets safe=insets.getInsets(android.view.WindowInsets.Type.systemBars()|android.view.WindowInsets.Type.displayCutout());left=safe.left;top=safe.top;right=safe.right;bottom=safe.bottom;}else{left=insets.getSystemWindowInsetLeft();top=insets.getSystemWindowInsetTop();right=insets.getSystemWindowInsetRight();bottom=insets.getSystemWindowInsetBottom();}}
+        if(web==null||closed)return;int left=0,top=0,right=0,bottom=0;if(insets!=null){if(Build.VERSION.SDK_INT>=30){android.graphics.Insets safe=insets.getInsets(android.view.WindowInsets.Type.systemBars()|android.view.WindowInsets.Type.displayCutout());left=safe.left;top=safe.top;right=safe.right;bottom=safe.bottom;}else{left=insets.getSystemWindowInsetLeft();top=insets.getSystemWindowInsetTop();right=insets.getSystemWindowInsetRight();bottom=Math.min(insets.getSystemWindowInsetBottom(),insets.getStableInsetBottom());}}
         float d=getResources().getDisplayMetrics().density;String script="(()=>{const s=document.documentElement.style;s.setProperty('--mv-safe-left','"+(left/d)+"px');s.setProperty('--mv-safe-top','"+(top/d)+"px');s.setProperty('--mv-safe-right','"+(right/d)+"px');s.setProperty('--mv-safe-bottom','"+(bottom/d)+"px');window.dispatchEvent(new Event('minivoice-insets'));})()";web.evaluateJavascript(script,null);
     }
     @Override public void onConfigurationChanged(android.content.res.Configuration value){super.onConfigurationChanged(value);applyChrome(lastWorkspace);}

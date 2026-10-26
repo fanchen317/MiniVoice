@@ -9,6 +9,16 @@ import android.net.Uri;
 import java.io.InputStream;
 
 final class Artwork {
+    /** Original encoded source bytes, without thumbnail resize, crop or JPEG recompression. */
+    static byte[] original(Context context,Song song){
+        byte[] bytes=AudioTags.read(context,song.uri,true).picture;
+        if(validOriginal(bytes))return bytes;
+        MediaMetadataRetriever retriever=new MediaMetadataRetriever();
+        try{retriever.setDataSource(context,song.uri);bytes=retriever.getEmbeddedPicture();if(validOriginal(bytes))return bytes;}catch(Exception ignored){}finally{try{retriever.release();}catch(Exception ignored){}}
+        if(song.artworkUri!=null)try(InputStream input=context.getContentResolver().openInputStream(song.artworkUri);java.io.ByteArrayOutputStream output=new java.io.ByteArrayOutputStream()){byte[] buffer=new byte[16384];int count;while((count=input.read(buffer))>=0){if(output.size()+count>32*1024*1024)return null;output.write(buffer,0,count);}bytes=output.toByteArray();if(validOriginal(bytes))return bytes;}catch(Exception ignored){}
+        return null;
+    }
+    private static boolean validOriginal(byte[] bytes){if(bytes==null||bytes.length>32*1024*1024)return false;BitmapFactory.Options options=new BitmapFactory.Options();options.inJustDecodeBounds=true;BitmapFactory.decodeByteArray(bytes,0,bytes.length,options);return options.outWidth>0&&options.outHeight>0;}
     static Bitmap load(Context context,Song song,int size){
         byte[] bytes=null;MediaMetadataRetriever retriever=new MediaMetadataRetriever();
         try{retriever.setDataSource(context,song.uri);bytes=retriever.getEmbeddedPicture();}

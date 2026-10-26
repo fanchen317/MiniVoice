@@ -52,10 +52,10 @@ test('packaged audio backend plays, advances, seeks and pauses a silent fixture 
   wav.write('RIFF');wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(rate,24);wav.writeUInt32LE(rate*2,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(samples*2,40);
   await fs.writeFile(path.join(root,'Silence.wav'),wav);await fs.mkdir(path.join(root,'lrc'));await fs.writeFile(path.join(root,'lrc','Silence.lrc'),'[00:00.00]<00:00.00>第一<00:00.50>句\n[00:01.00]第二句');
   const child=spawn(executable,['--desktop-engine'],{env:{...process.env,MINIVOICE_ENGINE_TEST_DOMAIN:`MiniVoice.Test.Audio.${Date.now()}`},stdio:['pipe','pipe','pipe']});
-  const messages=[],waiters=new Set();let errors='';child.stderr.on('data',data=>errors+=data);
+  const messages=[],waiters=new Set();let errors='',lastAction='ready';child.stderr.on('data',data=>errors+=data);
   createInterface({input:child.stdout}).on('line',line=>{messages.push(JSON.parse(line));for(const listener of waiters)listener();});
-  function wait(predicate){return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{waiters.delete(check);reject(new Error(`Audio bridge timeout: ${errors}\n${JSON.stringify(messages.slice(-5))}`));},12000);function check(){const found=messages.find(predicate);if(found){clearTimeout(timer);waiters.delete(check);resolve(found);}}waiters.add(check);check();});}
-  const send=(id,action,payload={})=>child.stdin.write(JSON.stringify({id,action,payload})+'\n');
+  function wait(predicate){return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{waiters.delete(check);reject(new Error(`Audio bridge timeout after ${lastAction}: ${errors}\n${JSON.stringify(messages.slice(-5))}`));},12000);function check(){const found=messages.find(predicate);if(found){clearTimeout(timer);waiters.delete(check);resolve(found);}}waiters.add(check);check();});}
+  const send=(id,action,payload={})=>{lastAction=action;return child.stdin.write(JSON.stringify({id,action,payload})+'\n');};
   try{
     await wait(m=>m.event==='ready');send('folder','addFolders',{paths:[root]});
     const catalog=await wait(m=>m.event==='catalog'&&m.data.length===1),id=catalog.data[0].id;
@@ -107,4 +107,22 @@ test('bundled engine starts when its preferences domain equals its own bundle ID
   const child=spawn(binary,['--desktop-engine'],{env:{...process.env,MINIVOICE_ENGINE_TEST_DOMAIN:domain},stdio:['pipe','pipe','pipe']});let errors='';child.stderr.on('data',data=>errors+=data);
   try{await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error(`Bundled startup timed out: ${errors}`)),10000);createInterface({input:child.stdout}).on('line',line=>{const message=JSON.parse(line);if(message.event==='ready'){clearTimeout(timer);resolve();}});child.once('exit',code=>{clearTimeout(timer);reject(new Error(`Bundled engine exited ${code}: ${errors}`));});});}
   finally{child.stdin.end();await new Promise(resolve=>{child.once('exit',resolve);setTimeout(()=>{child.kill();resolve();},1000).unref();});await fs.rm(root,{recursive:true,force:true});}
+});
+
+test('large embedded artwork is served from source bytes, without thumbnail resize or crop',{skip:!executable,timeout:45000},async()=>{
+ const fs=await import('node:fs/promises'),os=await import('node:os'),{spawnSync}=await import('node:child_process');
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'MiniVoice-OriginalArt-')),cover=path.join(root,'source.png'),audio=path.join(root,'Original.flac'),ffmpeg=existsSync(path.resolve(path.dirname(executable),'../Helpers/ffmpeg'))?path.resolve(path.dirname(executable),'../Helpers/ffmpeg'):'/opt/homebrew/bin/ffmpeg';
+ const run=args=>{const result=spawnSync(ffmpeg,['-nostdin','-v','error',...args],{encoding:'utf8'});assert.equal(result.status,0,result.stderr);};
+ run(['-f','lavfi','-i',`color=c=0x${(Date.now()%0xffffff).toString(16).padStart(6,'0')}:s=2200x1800`,'-frames:v','1',cover]);
+ run(['-f','lavfi','-i','anullsrc=r=44100:cl=mono','-i',cover,'-t','1','-map','0:a:0','-map','1:v:0','-c:a','flac','-c:v','copy','-disposition:v:0','attached_pic',audio]);
+ const child=spawn(executable,['--desktop-engine'],{env:{...process.env,MINIVOICE_ENGINE_TEST_DOMAIN:`MiniVoice.Test.Original.${Date.now()}`},stdio:['pipe','pipe','pipe']}),messages=[],waiters=new Set();let errors='';child.stderr.on('data',data=>errors+=data);createInterface({input:child.stdout}).on('line',line=>{messages.push(JSON.parse(line));for(const check of waiters)check();});
+ const wait=predicate=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>{waiters.delete(check);reject(Error(errors||'Original artwork timed out'));},20000);function check(){const message=messages.find(predicate);if(message){clearTimeout(timer);waiters.delete(check);resolve(message);}}waiters.add(check);check();});
+ try{const ready=await wait(m=>m.event==='ready');child.stdin.write(JSON.stringify({id:'folder',action:'addFolders',payload:{paths:[root]}})+'\n');const catalog=await wait(m=>m.event==='catalog'&&m.data.length===1&&m.data[0].artworkKey),key=catalog.data[0].artworkKey;
+  child.stdin.write(JSON.stringify({id:'original',action:'prepareOriginalArtwork',payload:{key}})+'\n');const reply=await wait(m=>m.id==='original');assert.equal(reply.result,true,reply.error);
+  const bytes=await fs.readFile(path.join(ready.data.artworkRoot,'Artwork','Original',key));assert.deepEqual(bytes,await fs.readFile(cover));assert.equal(bytes.readUInt32BE(16),2200);assert.equal(bytes.readUInt32BE(20),1800);
+  child.stdin.write(JSON.stringify({id:'save-source',action:'saveMetadata',payload:{id:catalog.data[0].id,title:'保存原图测试',artist:'测试歌手',album:'测试专辑',lyrics:'[00:00.000]保存歌词原文',translation:'[00:00.000]Saved translation',destination:'sidecar',artwork:'data:image/png;base64,'+bytes.toString('base64')}})+'\n');const saved=await wait(m=>m.id==='save-source');assert.equal(saved.result,true,saved.error);
+  const embedded=spawnSync(ffmpeg,['-nostdin','-v','error','-i',audio,'-map','0:v:0','-frames:v','1','-c:v','copy','-f','image2pipe','pipe:1'],{maxBuffer:32*1024*1024});assert.equal(embedded.status,0);assert.equal(embedded.stdout.readUInt32BE(16),2200);assert.equal(embedded.stdout.readUInt32BE(20),1800);
+  child.stdin.write(JSON.stringify({id:'saved-detail',action:'detail',payload:{id:catalog.data[0].id}})+'\n');const savedDetail=await wait(m=>m.id==='saved-detail');assert.equal(savedDetail.result.title,'保存原图测试');assert.ok(savedDetail.result.lines.some(line=>line.translation==='Saved translation'));
+  child.stdin.write(JSON.stringify({id:'invalid-source',action:'prepareOriginalArtwork',payload:{key:'../outside'}})+'\n');assert.ok((await wait(m=>m.id==='invalid-source')).error);
+ }finally{child.stdin.end();await new Promise(resolve=>{child.once('exit',resolve);setTimeout(()=>{child.kill();resolve();},1000).unref();});await fs.rm(root,{recursive:true,force:true});}
 });

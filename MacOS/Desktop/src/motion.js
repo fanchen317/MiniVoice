@@ -9,15 +9,7 @@ export function springProgress(elapsed, response=.46, damping=.9) {
 export function springEasing(response=.46,damping=.9,duration=600){
   return `linear(${Array.from({length:61},(_,i)=>`${(i===60?1:springProgress(i/60*duration,response,damping)).toFixed(5)} ${(i/60*100).toFixed(2)}%`).join(',')})`;
 }
-export function fragmentProgress(elapsed,center,origin,size){
-  const delay=Math.min(1,Math.hypot(center.x-origin.x,center.y-origin.y)/Math.max(1,Math.hypot(size.width,size.height)))*200;
-  return Math.min(1,Math.max(0,(elapsed-delay)/480));
-}
-export function fragmentCells(width,height){
-  if(width<=0||height<=0)return[];
-  const columns=Math.max(6,Math.min(16,Math.ceil(width/72))),rows=Math.max(6,Math.min(14,Math.ceil(height/72)));
-  return Array.from({length:rows*columns},(_,i)=>({x:i%columns*width/columns,y:Math.floor(i/columns)*height/rows,width:width/columns,height:height/rows}));
-}
+export {fragmentCells,fragmentProgress} from '../../../Shared/UI/src/fragmentMotion.js';
 export function playerDetailMetrics({width,height,controls}){
   const panelHeight=height-46,budget=panelHeight-38-controls-12*3-150;
   const artworkSize=Math.max(88,Math.min(260,width*.34,panelHeight*.23,budget));
@@ -46,4 +38,11 @@ export function posterArtworkMotion(from,to,ratio,progressAt,samples=53){
     return {offset,transform:`translate(-50%,-50%) scale(${fill/sx},${fill/sy})`};
   });
   return {width,height,frames};
+}
+
+// Center the expanded dock in the wall's available region. Lift tools only
+// when their bottom-right hit target would collide with that dock plus a gap.
+export function wallDockPlacement(width,leadingInset,dockWidth){
+  const left=(width+leadingInset-dockWidth)/2;
+  return {left,toolsBottom:left+dockWidth+12>width-16-38?94:18};
 }
