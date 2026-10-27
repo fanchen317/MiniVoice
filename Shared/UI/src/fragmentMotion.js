@@ -21,3 +21,8 @@ export function paintFragments(context,bitmap,width,height,origin,elapsed,plan=p
   context.drawImage(bitmap,cell.x/width*bitmap.width,cell.y/height*bitmap.height,cell.width/width*bitmap.width,cell.height/height*bitmap.height,-cell.width/2,-cell.height/2,cell.width,cell.height);context.restore();
  }
 }
+
+/** Samples the same curl as paintFragments; only transform/opacity animate. */
+export function fragmentKeyframes(cell){
+ return Array.from({length:17},(_,i)=>{const p=i/16,eased=p*p*(3-2*p),curl=Math.sin(p*Math.PI)*(cell.index%7-3)*6,distance=eased*140;return {offset:p,opacity:1-eased,transform:`translate(${cell.cos*distance-cell.sin*curl}px,${cell.sin*distance+cell.cos*curl}px) rotate(${(cell.index%9-4)*eased*8}deg) scale(${1-eased*.65})`};});
+}

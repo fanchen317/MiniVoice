@@ -128,22 +128,15 @@
 
 /* Mobile drawer: the artwork stays edge-to-edge behind a recessed content sheet.
    Only transforms move; inner strokes never read as extra floating panels. */
-[data-presentation=mobile]>.mv-scene{transition:transform 320ms cubic-bezier(.22,1,.36,1);border-radius:24px}
+[data-presentation=mobile]>.mv-scene{transition:transform 320ms cubic-bezier(.22,1,.36,1);border-radius:0}
 [data-presentation=mobile]>.mv-scene.is-drawer-behind{transform:translate(10px,8px) scale(.96);box-shadow:none}
 [data-presentation=mobile]>.mv-scene.is-drawer-behind :is(.mv-glass,.mv-library,.mv-lyrics,.mv-dock,.mv-search-control,.mv-button,.mv-wall-focused,.mv-wall-dock){border-color:transparent!important;box-shadow:none!important;outline:none!important}
 [data-presentation=mobile]>.mv-scene.is-drawer-behind .mv-wall-current-outline{visibility:hidden}
-.mv-drawer-wall-backdrop{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:-1;background:var(--bg)}
-.mv-drawer-wall-backdrop>img{object-fit:cover;border-radius:0}
-.mv-drawer-wall-backdrop::after{content:'';position:absolute;inset:0;background:#0005}
 [data-presentation=mobile] .mv-drawer-material{contain:paint}
 [data-presentation=mobile] .mv-drawer>header{border:0;margin-bottom:12px;padding:0 2px 14px}
 [data-presentation=mobile] .mv-drawer>nav{border-radius:18px;background:linear-gradient(145deg,#ffffff24,#ffffff08);box-shadow:inset 0 1px 0 #ffffff38,0 4px 12px #0000000a;padding:8px;min-height:0}
 [data-presentation=mobile] .mv-sidebar-catalog{border:0;border-radius:18px;margin-top:12px;padding:8px;background:linear-gradient(145deg,#ffffff30,#ffffff10);box-shadow:inset 0 1px 0 #ffffff40,0 6px 16px #00000012}
 [data-presentation=mobile].theme-dark .mv-drawer>nav,[data-presentation=mobile].theme-dark .mv-sidebar-catalog{background:linear-gradient(145deg,#ffffff0c,#00000014);box-shadow:inset 0 1px 0 #ffffff20,0 6px 16px #00000024}
-[data-style-busy=true] .mv-brand-switch{animation:mv-style-working 650ms linear infinite}
-@keyframes mv-style-working{to{transform:rotate(360deg)}}
-@media(prefers-reduced-motion:reduce){[data-style-busy=true] .mv-brand-switch{animation:none}}
-.reduce-motion [data-style-busy=true] .mv-brand-switch{animation:none}
 /* Fade the scrim independently: fading a drawer ancestor rasterizes/blends the
    entire glass + virtual list twice on Android during each entrance frame. */
 [data-presentation=mobile] .mv-drawer-shade{background:transparent}
@@ -176,5 +169,27 @@
 [data-presentation=mobile] .mv-queue-list .mv-favorite{width:44px;height:44px;display:grid;place-items:center}
 .mv-mobile-settings .mv-option>.mv-icon,.mv-mobile-settings .mv-option>span>.mv-icon{width:20px;height:20px}
 /* Wall chrome can retain its cover treatment; sheets follow the selected theme. */
-.mv-workspace.theme-light .mv-modal{--bg:#eaf0ee;--text:#172c26;--muted:#617b6d;--accent:#078665;--glass:#f8fffc70;--border:#738c8260;--selected:#0786651c;color:var(--text);background:var(--bg)}
-.mv-workspace.theme-dark .mv-modal{--bg:#182720;--text:#ebf4ef;--muted:#a0b4a9;--accent:#54d3a9;--glass:#152c256e;--border:#c0ead535;--selected:#54d3a924;color:var(--text);background:var(--bg)}
+.mv-workspace.theme-light .mv-modal{--bg:#eaf0ee;--text:#172c26;--muted:#617b6d;--accent:#078665;--glass:#f8fffc70;--border:#738c8260;--selected:#0786651c;color:var(--text)}
+.mv-workspace.theme-dark .mv-modal{--bg:#182720;--text:#ebf4ef;--muted:#a0b4a9;--accent:#54d3a9;--glass:#152c256e;--border:#c0ead535;--selected:#54d3a924;color:var(--text)}
+
+/* Recess ordinary pages, while the wall renders a wider camera view all the
+   way to the screen edges. Neither mode adds a duplicate wallpaper layer. */
+[data-presentation=mobile]>.mv-scene.is-drawer-behind{border-radius:24px}
+[data-presentation=mobile].style-wall>.mv-scene.is-drawer-behind{transform:none;border-radius:0;overflow:hidden}
+[data-presentation=mobile]:not(.style-wall)>.mv-scene.is-drawer-behind :is(.mv-glass,.mv-library,.mv-lyrics,.mv-dock,.mv-search-control,.mv-button){background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;border-color:transparent!important;box-shadow:none!important;outline:none!important}
+.wp-scale-controls .mv-slider{--mv-slider-knob-size:16px}
+/* One actual backdrop sample + one tint, matching the wall toolbar material. */
+[data-presentation=mobile].style-wall .mv-drawer,[data-presentation=mobile] .mv-modal{background:var(--mv-material-shine),var(--mv-material-tint)!important;backdrop-filter:blur(var(--mv-material-blur)) saturate(1.4)!important;-webkit-backdrop-filter:blur(var(--mv-material-blur)) saturate(1.4)!important}
+[data-presentation=mobile] .mv-modal{position:relative;isolation:isolate;overflow:hidden}
+/* Queue detents share one virtual-list scroll owner. Zero flex bases keep the
+   list spacer out of the sheet's preferred height during a resize. */
+[data-presentation=mobile] .mv-modal[data-sheet-resizable=true]{height:min(68dvh,100%);max-height:100%;transition:height 240ms cubic-bezier(.2,.8,.2,1)}
+[data-presentation=mobile] .mv-modal[data-sheet-expanded=true]{height:calc(100dvh - var(--mv-safe-top,0px) - var(--mv-safe-bottom,0px) - 24px);max-height:100%}
+[data-presentation=mobile] .mv-modal[data-sheet-dragging=true]{transition:none}
+[data-presentation=mobile] .mv-modal[data-sheet-resizable=true] :is(.mv-modal-scroll,.mv-modal-content,.mv-queue-list,.mv-list-shell){flex:1 1 0px;height:0;min-height:0}
+[data-presentation=mobile] .mv-modal[data-sheet-resizable=true] :is(.mv-modal-content,.mv-queue-list){display:flex;flex-direction:column;overflow:hidden}
+.reduce-motion [data-presentation=mobile] .mv-modal{transition:none!important}
+@media(prefers-reduced-motion:reduce){[data-presentation=mobile] .mv-modal{transition:none!important}}
+
+/* Atmosphere belongs to the full viewport, not the recessed content raster. */
+[data-presentation=mobile].mv-workspace{isolation:isolate}

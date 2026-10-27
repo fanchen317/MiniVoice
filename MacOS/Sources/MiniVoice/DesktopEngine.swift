@@ -383,8 +383,8 @@ final class DesktopEngine {
             return "data:\(mime);base64," + downloaded.data.base64EncodedString()
         case "lyricsSearch":
             let track = try track(payload)
-            return try await OnlineLyricsSearch.search(title: String((payload["title"] as? String ?? track.title).prefix(500)), artist: String((payload["artist"] as? String ?? track.artist).prefix(500)), duration: track.duration).map {
-                ["id": $0.id, "source": $0.source, "title": $0.trackName, "artist": $0.artistName, "lyrics": $0.usableLyrics ?? ""]
+            return try await OnlineLyricsSearch.search(title: String((payload["title"] as? String ?? track.title).prefix(500)), artist: String((payload["artist"] as? String ?? track.artist).prefix(500)), duration: track.duration).map { result -> [String: Any] in
+                ["id": result.id, "source": result.source, "title": result.trackName, "artist": result.artistName, "album": result.albumName ?? "", "duration": result.duration ?? 0, "timingKind": result.timingKind.rawValue, "hasTranslation": result.hasTranslation, "lyrics": result.usableLyrics ?? ""]
             }
         case "syncLyrics":
             if let resolved = await library.resolveTrack(try track(payload).id) { lyricsSync.start(track: resolved, destination: .sidecar, library: library) }; return true

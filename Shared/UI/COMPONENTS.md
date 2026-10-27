@@ -199,3 +199,37 @@ Mac 普通页搜索框宽度由内容区约束，flex 容器和 input 必须允�
 Mac 用户指定焦点外观：按钮、滑条、选项等非文本输入保留焦点与键盘语义，但不绘制 focus-visible 轮廓；仅输入框/textarea/contenteditable 保留。规则限制到 desktop presentation，不改变 Android。桌面歌词的窗口控制为横竖切换、锁定、关闭；独立解锁目标静止透明、悬浮才出现底框。横竖状态保存于体验版独立歌词配置，窗口宽高限值随方向切换。墙面收起播放按钮播放时复用四音柱指示器，点击仍展开播放条。
 
 双端页面图标沿用共享 iconPaths/24 点 SVG，页面操作不得用系统字体里的定位、排序或清除符号代替。手机播放队列不继承音乐墙卡片材质；三样式保持相同行间距、收藏触摸目标和选中态，主题只影响配色。手机外观选择可先反馈当前意图，状态仍按 controller 队列保存；回调完成只清理自身版本的临时选择，失败恢复持久化状态并报告。弹窗主题 token 明确覆盖墙面局部材质。
+
+
+2026-10-27 本轮定向修复契约：手机音乐墙仍由 `.mv-cover-wall` 持有相机、聚焦和展开状态；展开卡片及收缩过程隐藏播放轮廓，不创建全墙黑色遮罩。侧栏只缩放持续存在的 `.mv-scene`，外侧使用主题背景，不复制封面填缝；DrawerMaterial 的克隆图片只用于侧栏内部模糊采样，色罩/模糊参数复用 material token。WallDock 恢复同排歌曲信息与五个 44px 控制按钮，下一行进度，长标题省略但保留完整辅助名称。缩放仍为受控连续 Slider，去掉手机可见刻度圆点，键盘/拖动/取消沿用原契约。
+
+Android 宿主快照携带原生 configuration 的 systemDark，跟随系统不依赖 WebView 可能固定为浅色的 media query；普通网页预览继续使用 media query。手机 Modal 仅运动面板，不同时淡入整个玻璃祖先，避免设置入口合成闪烁；退出清理及焦点规则沿用 SurfaceMotion。Mac 与手机音乐墙配置图标共用 wallSettings 路径，设置齿轮采用中心对称 24px SVG。
+
+Mac 桌面歌词竖置时整个 header 转为纵向，歌曲/歌手跟随 writing-mode，控制目标保持 28px。默认横向 600×112、竖向 110×600，迁移旧默认预设但保留自定义尺寸；字体仍由可用空间拟合。独立解锁窗口保留 32px 命中区，默认内容透明，悬浮或键盘焦点显示，锁定语义和异步错误处理不变。验证证据见 Docs/ACCEPTANCE_STATUS.md 本轮条目。
+
+2026-10-27 补充：WallDock 以自身 useIdleCollapse 的 compact 状态为唯一来源，useLayoutEffect 在首次挂载及每次状态变更时同步 onCompact；样式切走卸载后再进入音乐墙，也必须在首帧前报告默认展开状态。外层不沿用上次卸载前的收起值来定位配置按钮。新增真实页面回归覆盖空闲收起→音乐墙/简易/音乐库循环→展开播放栏重挂载，并检查配置按钮在播放栏上方至少 12px。
+
+2026-10-27 按用户截图纠正解锁外观：取代此前“默认内容透明”的规则，独立解锁窗口的图标始终可见，只有背景、边框、阴影在未悬浮时透明；按钮自身始终透明且无阴影，避免额外嵌套轮廓。悬浮背景显式使用桌面歌词的浅色 #e7f1ebed / 深色 #11231ce0，边框和图标也随主题切换，不再依赖可能来自其他页面的 --surface 回退色。32px 命中区与点击解锁语义不变。
+
+2026-10-27 解锁宿主与控制区修正：透明 BrowserWindow 明确 hasShadow=false、roundedCorners=false、backgroundColor=#00000000，acceptFirstMouse=true；CSS 不能代替宿主阴影开关。32px 透明宿主内为与原锁按钮一致的 28px/6px 圆角控制，默认图标常显且无背景/边框/阴影，悬浮仅按钮使用原控制区轻色罩与 currentColor 描边，宿主本身始终透明。feedback=none 避免独立小窗口内额外缩放。横/竖模式的宿主坐标分别与原锁按钮中心对齐（偏差≤1px），不再跳到关闭按钮的位置。旧的完整歌词底色悬浮面板及其 CSS 叠加已删除。
+
+2026-10-27 手机侧栏/墙面/队列按用户最新截图修正（取代此前删刻度、缩小整个墙面页面和克隆墙图的说明）：
+- Wall 新增仅用于呈现的 recessed；临时显示相机在完整 viewport 内以中心缩放到 .92，渲染和可见块选择使用显示相机，持久相机及用户缩放不改。开合动画可打断；关闭恢复原相机，不复制墙图、不裁小整个画布、不填黑边。普通页 atmosphere 提到 workspace 直属层，避免随内容缩放形成大圆角底板；侧栏背后普通信息面板仅保留内容，不绘制额外背景/边框/阴影。
+- 音乐墙侧栏与 Modal 直接 backdrop-filter 采样当前页面，使用与按钮相同的材质 tint/shine/blur；音乐墙不再挂载 DrawerMaterial 或创建静态墙面样本。非墙侧栏保留既有独立采样实现。主题文字/选择色继续独立受控。样式切换 badge 保留静态箭头及 aria-busy，取消旋转动画。
+- 缩放 Slider 恢复与 Mac 相同的 60/70/80/90/100/110/120 刻度；1% 连续拖动、键盘步进、端点和取消规则保留。手机手柄为 16px，刻度命中区仍来自 Slider。
+- Modal expandable 只为手机队列启用。初始 68dvh，上拉到安全区域内接近全屏；下拉先回到初始高度，普通状态再下拉可关闭；点击/键盘激活手柄切换高度，关闭按钮与返回仍关闭弹窗。Modal 用局部 ref 保存临时展开值及 aria-expanded，useSheetDrag 通过 options 的 expanded/onExpandedChange 管理预览和释放，取消/旋转/失焦恢复当前档位，卸载清理捕获、帧与动画。拖动中直接更新高度，释放 CSS 过渡到真实布局，减弱动态时禁用过渡。队列仅由 SongList 管理一个滚动区，弹窗外层不再创建第二条 ScrollRail。
+- 构建发现 CSS minifier 折叠前缀后，Android APK 对关键玻璃规则只剩 -webkit-backdrop-filter，WebView124 实测 unprefixed computed backdropFilter=none。Shared/UI 的 chrome100 JS 兼容目标不变，关闭 CSS minification 保留原声明；build-shared-ui 检查生成产物必须保留不带前缀的材质 blur 声明。运行验收检查安装 APK 的实际 computed filter，不能用 dev 页面替代。
+
+### 2026-10-27 Mac 编辑搜索工作区与桌面歌词字号
+- SearchWorkspace（data-mv-component=editor-search）是受控编辑搜索呈现层：query/artist/rows/selected/busy/disabled/error 由页面持有；onQuery/onArtist/onSearch/onSelect/onBack 为语义事件，children/footer 注入详情和草稿应用操作，kind 默认 lyrics，可选 artwork。局部仅持有滚动容器引用，不访问宿主、网络或存储。所有按钮使用 ActionButton；表单支持 Enter，忙碌时禁止重复搜索/选择，返回仍可取消。焦点与 Escape 由外层 Modal 管理。
+- rows=null 或 busy 时显示详情区居中、aria-live 的加载指示；减弱动态关闭旋转。浅深配色由宿主明确提供 token，布局在桌面窄窗内部重排，不改变设备家族。Mac OwnSearchBrowser 仅负责 Modal 外壳；搜索、下载、解析与版本号取消仍由页面适配层负责。未来其他桌面宿主可复用呈现组件，但本轮未接入 Windows。
+- searchResultModel 是纯格式模型：未知时长/专辑/图片字节明确表示未提供；歌词区分纯文本、逐行、逐字，字节只统计实际图片数据。LyricsPreview 的 showTiming 默认 false；在线搜索启用后显示行时间和实际词时间渐变，不从逐行歌词伪造逐字时间。解析与试听由调用方注入，卸载清理异步回调。
+- Mac 歌词/插图搜索进入即查询当前歌曲，失败保留重试；返回递增请求版本，迟到结果不应用。选中结果仅填草稿，仍需保存。插图编辑和在线预览扩大图片，保留 contain，并显示 naturalWidth/Height 与真实字节；原图协议的读取由 Mac 页面承担并在切换/卸载时中止。
+- 桌面歌词设置为 18–44px、1px 步进并显示数值。实际字体按窗口可用区域及整首歌曲最长候选/译文拟合，按 .25px 量化；同歌切句不重新跳字号。紧急小窗可缩到 8px，工具区与歌词区独立限界，横竖文字均不得盖住按钮。验证覆盖浅深×横竖×18/32/44、最小窗口、长短句稳定和解锁原位置。
+- 验证：test-editor-search-workspace 覆盖自动查询、居中忙碌、全元信息、逐行/逐字实际预览、原图和在线图尺寸/字节；test-editor-panels 覆盖错误重试、草稿、焦点、Escape 和窄窗；共享纯模型测试与 desktop-lyrics 回归。真实在线服务的可用字段以提供方返回为准。
+
+### 2026-10-27 手机样式切换合成与音乐墙薄玻璃
+transitionStyle 的业务提交、截图失败回退、最新意图串行提交保持不变。碎片仍为原网格/图标原点/680ms 卷曲散开：每个 canvas 碎片仅在准备时绘制截图一次，之后使用 Web Animations 的 transform/opacity，取消每帧全屏 2D 重画和反复截图裁切。总栅格上限 120 万像素、倍率上限 1.5；结束、resize、运行中减弱动态都取消动画、移除容器，释放临时层。fragmentKeyframes 为纯模型，17 个采样点保持原卷曲轨迹；不改变 Mac 宿主。回退/减弱动态仍提交真实状态。
+手机音乐墙 toolbar、配置按钮、播放栏、侧栏显式使用薄玻璃：10px 模糊，浅色 tint .18、深色 .24，同一高光/色罩/模糊 token。覆盖只在这些容器内生效；设置、队列等 Modal 保留普通页面的可读性材质，不继承薄玻璃。侧栏仍直接采样真实墙面，无克隆填边。
+WallPlayer 当前曲目 wp-status 改成 Mac 同款 #00dac3 18% 背景/60% 轮廓的胶囊，三根音柱暂停静止、播放按 transform 缩放；紧凑卡片保留更小标签，预览不显示假播放状态。role=status 提供状态语义；标签不是按钮，不增加命中区；减弱动态取消音柱运动。
+验证：test-mobile-style-glass 检查浅深真实主题切换、按钮/侧栏相同计算材质、暂停/播放标签、72 碎片一次绘制且运动期间 drawImage 计数不增加、连续样式意图及清理；纯模型测试检查覆盖/端点/延迟边界。Android 仪器检查实际纹理非空和碎片 transform 中间值，不再把容器假定为单一 canvas。

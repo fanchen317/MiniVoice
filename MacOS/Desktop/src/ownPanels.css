@@ -66,10 +66,13 @@ html:has(.own-desktop-lyrics),body:has(.own-desktop-lyrics),#root:has(.own-deskt
 .own-desktop-lyrics-text>p{font-size:calc(var(--desktop-lyrics-fit,32px)*.58);line-height:1.25;margin:0;white-space:normal;overflow-wrap:anywhere;flex:none}
 .own-desktop-lyrics[data-locked=true]{padding-right:44px;-webkit-app-region:no-drag}.own-desktop-lyrics[data-locked=true] header{display:none}
 html:has(.own-lyrics-unlock),body:has(.own-lyrics-unlock),#root:has(.own-lyrics-unlock){background:transparent!important;overflow:hidden}
-.own-lyrics-unlock{height:32px;width:32px;background:#11231ce0;border:1px solid #ffffff55;border-radius:10px;color:#f0fff7;display:grid;place-items:center}
-.own-lyrics-unlock>button{height:30px;width:30px;display:grid;place-items:center;padding:7px;border:0;background:none;color:inherit}
-.own-lyrics-unlock .glyph{--mv-icon-size:16px}
-:root[data-theme=light] .own-lyrics-unlock{background:#e7f1ebed;color:#142b20;border-color:#183a2a50}
+/* Transparent host; the visible control shares the lyric toolbar skin. */
+.own-lyrics-unlock{height:32px;width:32px;display:grid;place-items:center;background:transparent;border:0 solid transparent;box-shadow:none;color:white;--unlock-hover:#ffffff25}
+.own-lyrics-unlock>button{width:28px;height:28px;padding:4px;display:grid;place-items:center;border:1px solid transparent;border-radius:6px;background:transparent;color:inherit;box-shadow:none}
+.own-lyrics-unlock .glyph{width:18px;height:18px;--mv-icon-size:16px}
+:root[data-theme=light] .own-lyrics-unlock{color:#183a2a;--unlock-hover:#183a2a18}
+.own-lyrics-unlock>button:hover{background:var(--unlock-hover);border-color:currentColor}
+
 
 /* Desktop editor/settings: a deliberate side rail and independently scrolling workspaces. */
 .own-panel{--own-control-height:34px;--own-card:color-mix(in srgb,var(--bg) 78%,var(--text) 3%)}
@@ -171,10 +174,40 @@ html:has(.own-lyrics-unlock),body:has(.own-lyrics-unlock),#root:has(.own-lyrics-
 /* Content focus keeps its semantics without drawing a persistent action ring.
    Only editable text fields expose the keyboard outline requested for Mac. */
 :root[data-presentation=desktop] :focus-visible:not(input):not(textarea):not([contenteditable=true]){outline:none!important}
-.own-lyrics-unlock{background:transparent!important;border-color:transparent!important;box-shadow:none}
-.own-lyrics-unlock:hover{background:var(--surface,#e7f1ebed)!important;border-color:var(--line,#183a2a50)!important;box-shadow:0 2px 8px #0002}
 .own-desktop-lyrics header button{border:1px solid transparent;background:transparent;box-shadow:none}
 .own-desktop-lyrics header button:hover{border-color:currentColor}
 .own-desktop-lyrics[data-vertical=true] .own-desktop-lyrics-text{writing-mode:vertical-rl;text-orientation:mixed;align-items:center;justify-content:center}
 .player.compact[data-idle-collapsed=true] .play-main .now-playing-indicator{position:static;width:24px;height:26px;padding:0;gap:3px;background:none;display:flex;align-items:center;justify-content:center;border-radius:0;color:inherit}
 .player.compact[data-idle-collapsed=true] .play-main .now-playing-indicator i{width:3px;flex:none;background:currentColor;border-radius:3px}
+
+.own-desktop-lyrics{padding:6px 10px;gap:2px}
+.own-desktop-lyrics header button{width:28px;height:28px}
+.own-desktop-lyrics[data-vertical=true]{flex-direction:row-reverse;gap:6px}
+.own-desktop-lyrics[data-vertical=true] header{flex-direction:column;min-width:28px;max-width:28px;align-items:center}
+.own-desktop-lyrics[data-vertical=true] header>span{writing-mode:vertical-rl;text-orientation:mixed;order:1;white-space:nowrap;max-height:100%;padding-top:6px}
+.own-desktop-lyrics[data-vertical=true] header>div{flex-direction:column}
+.own-desktop-lyrics[data-vertical=true] .own-desktop-lyrics-text{width:auto;flex:1;min-width:0;height:100%}
+.own-desktop-lyrics[data-vertical=true][data-locked=true]{padding-right:10px;padding-top:38px}
+/* Search portals own explicit theme tokens; no parent wall skin or inherited
+   white text can leak into the light search surface. */
+.own-panel.own-search-modal{--bg:#17211d;--text:#edf5ef;--muted:#a7baaf;--line:#bfd9ca30;--hover:#ffffff09;--mint:#74dfb3;--selected:#74dfb320;color:var(--text);background:var(--bg)}
+:root[data-theme=light] .own-panel.own-search-modal{--bg:#f3f6f3;--text:#203b2d;--muted:#526c5e;--line:#254f3830;--hover:#214c2e08;--mint:#087653;--selected:#08765318}
+.own-panel.own-search-modal .own-search-query{background:var(--bg)}
+.own-panel.own-search-modal .own-search-query input{color:var(--text);background:var(--hover);opacity:1}
+.own-panel.own-search-modal .own-search-detail{background:var(--bg)}
+.own-panel.own-search-modal .own-search-result:disabled{opacity:1}
+.own-panel .own-artwork-editor .own-editor-art{width:min(100%,520px);max-height:min(62vh,560px);padding:14px}
+.own-panel .own-search-detail-scroll>.own-artwork-preview>img{min-height:180px;border-radius:12px}
+.own-panel .own-artwork-caption{font-size:12px;font-variant-numeric:tabular-nums;line-height:1.7}
+.own-font-value{min-width:46px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums;color:var(--muted)}
+/* The toolbar and lyric viewport have independent, bounded layout regions. */
+.own-desktop-lyrics-text{position:relative;overflow:hidden;min-width:0;min-height:0;gap:6px}
+.own-desktop-line{max-inline-size:100%;max-block-size:100%;line-height:1.2;overflow:hidden}
+.own-desktop-lyrics-text>p{max-inline-size:100%;max-block-size:100%;overflow:hidden}
+.own-desktop-lyrics header{min-height:28px;flex-shrink:0}
+.own-desktop-lyrics[data-vertical=true] header{min-height:0}
+.own-artwork-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;text-align:left}
+.own-artwork-heading .own-artwork-search{flex:none;margin:0}
+.own-panel .own-artwork-heading+.own-artwork-caption{margin:0 0 14px;text-align:left}
+.own-panel .own-artwork-editor .own-editor-art{height:clamp(200px,calc(100dvh - 450px),460px);max-height:none;aspect-ratio:auto}
+@media(max-width:720px){.own-artwork-heading{flex-wrap:wrap;gap:8px}.own-artwork-heading .own-artwork-search{margin-bottom:8px}}

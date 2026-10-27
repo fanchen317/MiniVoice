@@ -1,10 +1,10 @@
 import React from 'react';
 import {createRoot} from 'react-dom/client';
-let listener;const calls=[];
+let listener;let position=4;const calls=[];
 const state={appearance:'dark',desktopLyricsFont:64,desktopLyricsLocked:false,showLyricsTranslation:true,isPlaying:false,playing:{title:'Blueming',artist:'IU',lines:[{time:0,text:'단어를 고르는 일은 우리의 마음을 말해 주는 길고 완전한 문장 good timing',translation:'不断变化的微妙心理，希望这句长原文和完整译文都能够在小窗口中清楚显示。'}]}};
-const emit=()=>{listener?.({event:'state',data:{...state}});listener?.({event:'clock',data:{time:4,playing:false,duration:180}});};
+const emit=()=>{listener?.({event:'state',data:{...state}});listener?.({event:'clock',data:{time:position,playing:false,duration:180}});};
 window.miniVoice={subscribe:callback=>{listener=callback;return()=>{};},command:async(name,payload)=>{calls.push({name,payload});if(name==='desktopLyricsConfig')Object.assign(state,{desktopLyricsLocked:payload.locked});emit();return true;}};
 const {default:OwnDesktopLyrics,DesktopLyricsUnlock}=await import('../../../MacOS/Desktop/src/OwnDesktopLyrics.jsx');
 await import('../../../MacOS/Desktop/src/style.css');await import('../../../MacOS/Desktop/src/ownPanels.css');await import('../src/components/foundation.css');
-window.lyricsFixture={calls,theme:value=>{state.appearance=value;emit();},lock:value=>{state.desktopLyricsLocked=value;emit();},text:(text,translation)=>{state.playing={...state.playing,lines:[{time:0,text,translation}]};emit();}};
+window.lyricsFixture={calls,time:value=>{position=value;emit();},lines:value=>{state.playing={...state.playing,lines:value};emit();},font:value=>{state.desktopLyricsFont=value;emit();},vertical:value=>{state.desktopLyricsVertical=value;emit();},theme:value=>{state.appearance=value;emit();},lock:value=>{state.desktopLyricsLocked=value;emit();},text:(text,translation)=>{state.playing={...state.playing,lines:[{time:0,text,translation}]};emit();}};
 createRoot(document.getElementById('root')).render(new URLSearchParams(location.search).has('unlock')?<DesktopLyricsUnlock/>:<OwnDesktopLyrics/>);emit();

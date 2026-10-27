@@ -1,12 +1,13 @@
-import {paintFragments,prepareFragments} from './fragmentMotion.js';
+import {fragmentKeyframes,prepareFragments} from './fragmentMotion.js';
 const reduced=()=>document.documentElement.classList.contains('reduce-motion')||matchMedia('(prefers-reduced-motion:reduce)').matches;
 const frames=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
 /** Same fragment grid, outward curl/rotation, 680ms sweep and icon origin as Mac. */
 export async function transitionStyle(update,root=document.querySelector('.mv-workspace'),capture){
  if(reduced()||!root){await update();return;}
  let canvas,frame=0,timer=0,animation,stopWait,updated=false,updateFailure,interrupted=false;
+ const fragments=[];
  const commit=async()=>{if(!updated){updated=true;try{await update();}catch(error){updateFailure=error;throw error;}}};
- const cleanup=()=>{cancelAnimationFrame(frame);canvas?.remove();animation?.cancel();stopWait?.();};
+ const cleanup=()=>{cancelAnimationFrame(frame);canvas?.remove();fragments.forEach(value=>value.cancel());animation?.cancel();stopWait?.();};
  const abort=()=>{interrupted=true;cleanup();};
  const finish=()=>{if(reduced())abort();};
  const media=matchMedia('(prefers-reduced-motion:reduce)'),observer=new MutationObserver(finish);
@@ -19,17 +20,22 @@ export async function transitionStyle(update,root=document.querySelector('.mv-wo
    const bitmap=new Image();bitmap.src=snapshot;
    await Promise.race([bitmap.decode(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('页面画面解码超时')),1000);})]);clearTimeout(timer);
    if(reduced()||interrupted||!root.isConnected){await commit();return;}
-   const width=innerWidth,height=innerHeight,scale=Math.min(devicePixelRatio||1,2.5,bitmap.width/width,Math.sqrt(2500000/(width*height)));
-   canvas=document.createElement('canvas');canvas.className='mv-style-fragment-sweep';canvas.dataset.mvComponent='style-transition';canvas.setAttribute('aria-hidden','true');canvas.inert=true;
-   canvas.width=Math.ceil(width*scale);canvas.height=Math.ceil(height*scale);canvas.style.width=`${width}px`;canvas.style.height=`${height}px`;
-   const plan=prepareFragments(width,height,origin),context=canvas.getContext('2d');if(!context)throw Error('页面动画画布暂不可用');
-   context.imageSmoothingEnabled=true;context.imageSmoothingQuality='high';document.body.append(canvas);
-   const paint=elapsed=>{context.setTransform(scale,0,0,scale,0,0);context.clearRect(0,0,width,height);paintFragments(context,bitmap,width,height,origin,elapsed,plan);canvas.dataset.elapsed=String(Math.round(elapsed));};
-   paint(0);await commit();await frames();
+   const width=innerWidth,height=innerHeight,scale=Math.min(devicePixelRatio||1,1.5,bitmap.width/width,Math.sqrt(1200000/(width*height)));
+   canvas=document.createElement('div');canvas.className='mv-style-fragment-sweep';canvas.dataset.mvComponent='style-transition';canvas.dataset.renderer='compositor';canvas.dataset.elapsed='0';canvas.setAttribute('aria-hidden','true');canvas.inert=true;
+   const plan=prepareFragments(width,height,origin),tiles=document.createDocumentFragment();
+   // Rasterize each region once. Animation frames never recrop the full-screen
+   // JPEG or upload a newly painted full-screen canvas to the compositor.
+   for(const cell of plan){
+    const tile=document.createElement('canvas');tile.width=Math.ceil(cell.width*scale);tile.height=Math.ceil(cell.height*scale);
+    Object.assign(tile.style,{position:'absolute',left:`${cell.x}px`,top:`${cell.y}px`,width:`${cell.width}px`,height:`${cell.height}px`,transformOrigin:'center',willChange:'transform,opacity'});
+    const context=tile.getContext('2d');if(!context)throw Error('页面动画画布暂不可用');
+    context.drawImage(bitmap,cell.x/width*bitmap.width,cell.y/height*bitmap.height,cell.width/width*bitmap.width,cell.height/height*bitmap.height,0,0,tile.width,tile.height);
+    tiles.append(tile);cell.tile=tile;
+   }
+   canvas.append(tiles);document.body.append(canvas);await commit();await frames();
    if(canvas.isConnected&&!reduced()&&!interrupted){
-    const began=performance.now();
-    const tick=now=>{paint(now-began);if(now-began<680)frame=requestAnimationFrame(tick);};
-    frame=requestAnimationFrame(tick);
+    for(const cell of plan)fragments.push(cell.tile.animate(fragmentKeyframes(cell),{duration:480,delay:cell.delay,easing:'linear',fill:'both'}));
+    frame=requestAnimationFrame(()=>{if(canvas?.isConnected)canvas.dataset.elapsed='1';});
     await new Promise(resolve=>{stopWait=resolve;timer=setTimeout(resolve,690);});
    }
   }else{

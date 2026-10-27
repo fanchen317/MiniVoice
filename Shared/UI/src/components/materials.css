@@ -11,3 +11,8 @@
 }
 .app.style-wall :is(.window-tools .icon-button,.simple-info-button,.wall-search-field,.wall-settings,.player.compact){color:#fff}
 .app.style-wall .player.compact :is(.dock-title>.icon-button,.mode-menu-anchor>.icon-button,.dock-queue-slot>.icon-button,.seek>span){color:#fff}
+
+/* Mobile wall uses thin glass. Keep the drawer and controls on identical
+   sampling/tint tokens instead of the ordinary page's frosted surface. */
+.mv-workspace[data-presentation=mobile].style-wall :is(.mv-toolbar,[data-wall-control=settings],.mv-wall-dock,.mv-drawer){--mv-material-tint:rgba(235,246,240,.18);--mv-material-blur:10px;--mv-material-line:#ffffff75;--mv-material-shine:linear-gradient(135deg,#ffffff16,transparent 65%)}
+.mv-workspace[data-presentation=mobile].style-wall.theme-dark :is(.mv-toolbar,[data-wall-control=settings],.mv-wall-dock,.mv-drawer){--mv-material-tint:rgba(20,35,29,.24);--mv-material-line:#ffffff50}
