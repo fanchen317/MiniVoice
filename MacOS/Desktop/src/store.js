@@ -14,9 +14,9 @@ export const signals = new EventTarget();
 export const useCatalog = () => useSyncExternalStore(catalog.subscribe, catalog.get);
 export const usePlayback = () => useSyncExternalStore(state.subscribe, state.get);
 export const useClock = () => useSyncExternalStore(clock.subscribe, clock.get);
-export async function command(action, payload = {}) {
+export async function command(action, payload = {}, {reportError=true} = {}) {
   try { return await window.miniVoice.command(action, payload); }
-  catch (error) { signals.dispatchEvent(new CustomEvent('error', { detail: error.message })); throw error; }
+  catch (error) { if(reportError)signals.dispatchEvent(new CustomEvent('error', { detail: error.message })); throw error; }
 }
 window.miniVoice.subscribe(({ event, data }) => {
   if (event === 'catalog') catalog.set(data);
@@ -28,5 +28,5 @@ window.miniVoice.subscribe(({ event, data }) => {
   else if (event === 'clock') clock.set({ ...data, sampledAt: performance.now() });
   else signals.dispatchEvent(new CustomEvent(event, { detail: data }));
 });
-export {artwork} from './artworkUrl';
+export {artwork} from './artworkUrl.js';
 export const seconds = value => `${Math.floor((value || 0) / 60)}:${String(Math.floor((value || 0) % 60)).padStart(2, '0')}`;

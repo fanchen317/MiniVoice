@@ -108,3 +108,10 @@
 .mv-synced-empty{color:#ffffffa0;margin:auto;text-align:center}
 .reduce-motion .mv-synced-line{transition:none!important}
 @media(prefers-reduced-motion:reduce){.mv-synced-lyrics .mv-synced-line{transition:none}}
+/* Touch release mirrors the Mac wall's visible hover amplitude; one gesture
+   still activates once. Independent scale never changes hit-test layout. */
+[data-presentation=mobile]{--mv-feedback-press:.88;--mv-feedback-release:1.16}
+[data-presentation=mobile] [data-mv-feedback=standard]:enabled:active{scale:var(--mv-feedback-press)}
+.reduce-motion [data-presentation=mobile] [data-mv-feedback=standard],.reduce-motion [data-presentation=mobile].style-wall [data-mv-feedback=standard]{scale:1!important}
+@media(prefers-reduced-motion:reduce){[data-presentation=mobile] [data-mv-feedback=standard]{scale:1!important}}
+[data-presentation=mobile] .mv-button:active{transform:none}

@@ -25,7 +25,7 @@ const {lyricsWindowState,lyricsUnlockBounds}=require('./lyrics-window-state.cjs'
 const lyricsFile=path.join(app.getPath('userData'),'own-desktop-lyrics.json');
 let lyricsOptions=lyricsWindowState();try{lyricsOptions=lyricsWindowState(JSON.parse(fs.readFileSync(lyricsFile,'utf8')));}catch{}
 function saveLyricsOptions(){fs.mkdirSync(path.dirname(lyricsFile),{recursive:true});fs.writeFileSync(lyricsFile,JSON.stringify(lyricsOptions));}
-function lyricsState(data){return identity.debug?{...data,desktopLyrics:lyricsOptions.enabled,desktopLyricsLocked:lyricsOptions.locked,desktopLyricsFont:lyricsOptions.font}:data;}
+function lyricsState(data){return identity.debug?{...data,desktopLyrics:lyricsOptions.enabled,desktopLyricsLocked:lyricsOptions.locked,desktopLyricsFont:lyricsOptions.font,desktopLyricsVertical:lyricsOptions.vertical}:data;}
 function refreshLyricsState(){const current=latest.get('state');if(current)emit('state',current);}
 function syncLyricsUnlock(){
  if(!lyricsOptions.locked||!lyricsWindow||lyricsWindow.isDestroyed()) {lyricsUnlockWindow?.close();lyricsUnlockWindow=null;return;}
@@ -39,7 +39,7 @@ function syncLyricsUnlock(){
 function createLyricsWindow(){
  if(!identity.debug||!lyricsOptions.enabled||lyricsWindow&&!lyricsWindow.isDestroyed())return;
  const bounds=lyricsOptions,valid=screen.getAllDisplays().some(display=>bounds.x!==null&&bounds.y!==null&&bounds.x+100>display.workArea.x&&bounds.x<display.workArea.x+display.workArea.width-100&&bounds.y+80>display.workArea.y&&bounds.y<display.workArea.y+display.workArea.height-30);
- lyricsWindow=new BrowserWindow({width:bounds.width,height:bounds.height,...(valid?{x:bounds.x,y:bounds.y}:{}),minWidth:360,minHeight:110,maxHeight:500,frame:false,transparent:true,alwaysOnTop:true,resizable:true,show:false,skipTaskbar:true,title:'MiniVoice-debug 桌面歌词',webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false}});
+ lyricsWindow=new BrowserWindow({width:bounds.width,height:bounds.height,...(valid?{x:bounds.x,y:bounds.y}:{}),minWidth:bounds.vertical?180:360,minHeight:bounds.vertical?360:110,maxWidth:bounds.vertical?500:2000,maxHeight:bounds.vertical?1600:500,frame:false,transparent:true,alwaysOnTop:true,resizable:true,show:false,skipTaskbar:true,title:'MiniVoice-debug 桌面歌词',webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false}});
  const target=lyricsWindow;target.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});target.setIgnoreMouseEvents(lyricsOptions.locked,{forward:true});target.webContents.setWindowOpenHandler(()=>({action:'deny'}));target.webContents.on('will-navigate',event=>event.preventDefault());
  target.webContents.on('did-finish-load',()=>{for(const [event,data]of latest)target.webContents.send('engine:event',{event,data});});
  target.once('ready-to-show',()=>{target.showInactive();syncLyricsUnlock();});target.on('move',syncLyricsUnlock);target.on('resize',syncLyricsUnlock);target.on('close',()=>{const rect=target.getBounds();lyricsOptions=lyricsWindowState({...lyricsOptions,...rect});if(!quitting)lyricsOptions.enabled=false;saveLyricsOptions();});target.on('closed',()=>{lyricsUnlockWindow?.close();lyricsUnlockWindow=null;lyricsWindow=null;if(!quitting)refreshLyricsState();});
@@ -160,8 +160,9 @@ app.whenReady().then(() => {
     if(event.sender===lyricsUnlockWindow?.webContents&&!(action==='snapshot'||action==='desktopLyricsConfig'&&payload?.locked===false&&Object.keys(payload).length===1))throw Error('无效的解锁操作');
     if(identity.debug&&action==='desktopLyrics')return toggleOwnLyrics();
     if(identity.debug&&action==='desktopLyricsConfig'){
-      if(!payload||typeof payload!=='object'||Object.keys(payload).some(key=>!['locked','font'].includes(key))||('locked'in payload&&typeof payload.locked!=='boolean')||('font'in payload&&!Number.isFinite(payload.font)))throw Error('无效的桌面歌词配置');
-      lyricsOptions=lyricsWindowState({...lyricsOptions,...payload});saveLyricsOptions();lyricsWindow?.setIgnoreMouseEvents(lyricsOptions.locked,{forward:true});syncLyricsUnlock();refreshLyricsState();return true;
+      if(!payload||typeof payload!=='object'||Object.keys(payload).some(key=>!['locked','font','vertical'].includes(key))||('locked'in payload&&typeof payload.locked!=='boolean')||('font'in payload&&!Number.isFinite(payload.font))||('vertical'in payload&&typeof payload.vertical!=='boolean'))throw Error('无效的桌面歌词配置');
+      let resize=null;if('vertical'in payload&&payload.vertical!==lyricsOptions.vertical){const old=lyricsWindow?.getBounds()||{...lyricsOptions,x:lyricsOptions.x??0,y:lyricsOptions.y??0},area=screen.getDisplayMatching(old).workArea;resize=lyricsWindowState({...lyricsOptions,...payload,width:old.height,height:old.width});resize.width=Math.min(resize.width,area.width);resize.height=Math.min(resize.height,area.height);resize.x=Math.round(Math.max(area.x,Math.min(area.x+area.width-resize.width,(old.x??area.x)+old.width/2-resize.width/2)));resize.y=Math.round(Math.max(area.y,Math.min(area.y+area.height-resize.height,(old.y??area.y)+old.height/2-resize.height/2)));}
+      lyricsOptions=resize||lyricsWindowState({...lyricsOptions,...payload});if(resize&&lyricsWindow){lyricsWindow.setMinimumSize(resize.vertical?180:360,resize.vertical?360:110);lyricsWindow.setMaximumSize(resize.vertical?500:2000,resize.vertical?1600:500);lyricsWindow.setBounds({x:resize.x,y:resize.y,width:resize.width,height:resize.height},true);}saveLyricsOptions();lyricsWindow?.setIgnoreMouseEvents(lyricsOptions.locked,{forward:true});syncLyricsUnlock();refreshLyricsState();return true;
     }
     if(identity.debug&&['pickEditorArtwork','pickEditorLyrics'].includes(action)){
       if(event.sender!==window?.webContents)throw Error('请在主窗口编辑歌曲');

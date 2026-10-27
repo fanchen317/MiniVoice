@@ -28,14 +28,15 @@ export function useSurfaceMotion(ref,open,{modal=false,surface=modal?'modal':'po
     const node=ref.current;if(!open||!node)return;
     for(const ghost of closing)if(ghost.dataset.surfaceExit===surface){ghost.remove();closing.delete(ghost);}
     const target=surface==='drawer'?node.querySelector('.mv-drawer'):modal?node.querySelector('.name-dialog,.mv-modal'):node;
+    const mobileDrawer=surface==='drawer'&&node.closest('[data-presentation=mobile]');
     let animation,fade,last=snapshot(node);
     const sample=()=>{if(node.isConnected)last=snapshot(node);};
     const frame=requestAnimationFrame(sample),observer=new ResizeObserver(sample);observer.observe(node);
     window.addEventListener('resize',sample);
     if(!reduced()){
       const travel=Math.min(10,Math.max(3,target.offsetHeight*.025)),origin=getComputedStyle(target).getPropertyValue('--surface-origin-y'),originY=origin.endsWith('%')?target.offsetHeight*parseFloat(origin)/100:parseFloat(origin)||0,shift=modal||originY>=target.offsetHeight/2?travel:-travel;
-      animation=target.animate([{opacity:0,transform:surface==='drawer'?`translateX(-${target.getBoundingClientRect().right+16}px)`:`translateY(${shift}px) scale(.975)`},{opacity:1,transform:'none'}],{duration:surface==='drawer'?360:260,easing});
-      if(modal||surface==='drawer')fade=node.animate([{opacity:0},{opacity:1}],{duration:180,easing:'ease-out'});
+      animation=target.animate([{opacity:mobileDrawer?1:0,transform:surface==='drawer'?`translateX(-${target.getBoundingClientRect().right+16}px)`:`translateY(${shift}px) scale(.975)`},{opacity:1,transform:'none'}],{duration:surface==='drawer'?360:260,easing});
+      if(modal||surface==='drawer'&&!mobileDrawer)fade=node.animate([{opacity:0},{opacity:1}],{duration:180,easing:'ease-out'});
     }
     animation?.finished.then(sample).catch(()=>{});
     const finish=()=>{animation?.finish();fade?.finish();};

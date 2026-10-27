@@ -22,6 +22,8 @@ public final class PortablePlayerActivity extends Activity {
     private volatile boolean closed;
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
+    // Raster encoding must not block workspace writes, lyrics or playback requests.
+    private final ExecutorService rasterWorker=Executors.newSingleThreadExecutor();
     private volatile List<Song> songs=Collections.emptyList();
     private volatile JSONArray rows=new JSONArray();
     private volatile long catalogRevision;
@@ -100,7 +102,7 @@ public final class PortablePlayerActivity extends Activity {
             android.graphics.Rect rect=new android.graphics.Rect(location[0],location[1],location[0]+width,location[1]+height);
             android.view.PixelCopy.request(getWindow(),rect,bitmap,result->{
                 if(result!=android.view.PixelCopy.SUCCESS||closed){bitmap.recycle();reply(id,null,"页面画面暂不可用");return;}
-                try{worker.execute(()->{try{ByteArrayOutputStream bytes=new ByteArrayOutputStream();bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,bytes);reply(id,"data:image/png;base64,"+android.util.Base64.encodeToString(bytes.toByteArray(),android.util.Base64.NO_WRAP),null);}catch(Exception error){reply(id,null,error.getMessage());}finally{bitmap.recycle();}});}catch(RejectedExecutionException ignored){bitmap.recycle();}
+                try{rasterWorker.execute(()->{try{ByteArrayOutputStream bytes=new ByteArrayOutputStream();bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG,95,bytes);reply(id,"data:image/jpeg;base64,"+android.util.Base64.encodeToString(bytes.toByteArray(),android.util.Base64.NO_WRAP),null);}catch(Exception error){reply(id,null,error.getMessage());}finally{bitmap.recycle();}});}catch(RejectedExecutionException ignored){bitmap.recycle();}
             },main);
         }catch(Exception error){reply(id,null,error.getMessage());}
     }
@@ -157,5 +159,5 @@ public final class PortablePlayerActivity extends Activity {
     private void reply(String id,Object value,String error){try{JSONObject envelope=new JSONObject().put("ok",error==null);if(error==null)envelope.put("value",value==null?JSONObject.NULL:value);else envelope.put("error",error);String script="globalThis.MiniVoiceTransport?.receive("+JSONObject.quote(id)+","+envelope+")";main.post(()->{if(!closed)web.evaluateJavascript(script,null);});}catch(JSONException ignored){}}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(result!=RESULT_OK||data==null||data.getData()==null)return;Uri uri=data.getData();if(request==81){try{getContentResolver().takePersistableUriPermission(uri,data.getFlags()&(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION));SharedPreferences prefs=getSharedPreferences("library",0);Set<String> folders=new HashSet<>(prefs.getStringSet("music_folders",Collections.emptySet()));folders.add(uri.toString());prefs.edit().putStringSet("music_folders",folders).putBoolean("folder_library",true).commit();LibraryScanService.request(this,false,false,true);}catch(Exception failure){notice("无法授权文件夹，请重新选择并允许读写权限");}}else if(request==82)worker.execute(()->{String message="诊断报告已导出";try(java.io.OutputStream out=getContentResolver().openOutputStream(uri,"wt")){if(out==null)throw new IOException();Diagnostics.export(this,out);}catch(Exception failure){message="导出失败，请重试";}String status=message;main.post(()->{if(!closed)notice(status);});});}
     @Override public void onBackPressed(){if(web!=null&&web.getProgress()==100)web.evaluateJavascript("globalThis.dispatchEvent(new Event('minivoice-back'))",null);else super.onBackPressed();}
-    @Override public void onDestroy(){closed=true;LibraryScanService.remove(scanObserver);if(bound)unbindService(connection);worker.shutdownNow();if(web!=null){web.removeJavascriptInterface("MiniVoiceHost");web.destroy();}super.onDestroy();}
+    @Override public void onDestroy(){closed=true;LibraryScanService.remove(scanObserver);if(bound)unbindService(connection);worker.shutdownNow();rasterWorker.shutdownNow();if(web!=null){web.removeJavascriptInterface("MiniVoiceHost");web.destroy();}super.onDestroy();}
 }

@@ -1,5 +1,6 @@
 import ActionButton from './components/ActionButton.jsx';
 import MobileLibraryTools from './MobileLibraryTools.jsx';
+import {Icon} from './components/PlayerControls.jsx';
 import CheckControl from './components/CheckControl.jsx';
 import React,{useEffect,useState} from 'react';
 
@@ -13,9 +14,9 @@ export default function MobileSettings({adapter,snapshot,style,theme,appearance,
   {error&&<p role="alert" className="mv-inline-error">{error}</p>}{notice&&<p role="status" className="mv-settings-note">{notice}</p>}
   {confirm?<><h3>{confirm.name==='removeFolder'?'移除音乐文件夹？':'清空最近播放记录？'}</h3><p>{confirm.name==='removeFolder'?`移除“${confirm.label}”的授权和音乐库索引，音乐文件会保留。`:'只清空播放记录，歌曲、收藏和歌单会保留。'}</p><div className="mv-confirm-actions"><ActionButton disabled={pending} onClick={()=>setConfirm(null)}>取消</ActionButton><ActionButton className="mv-danger" disabled={pending} onClick={()=>perform(confirm.name,confirm.payload)}>确认</ActionButton></div></>:<>
    <h3>外观与样式</h3><div className="mv-style-picker">{[['simple','简易'],['library','音乐库'],['wall','音乐墙']].map(([value,label])=><ActionButton key={value} aria-pressed={style===value} onClick={()=>onAppearance({style:value})}>{label}</ActionButton>)}</div>
-   { [['system','跟随系统'],['light','浅色模式'],['dark','深色模式']].map(([value,label])=><ActionButton key={value} className="mv-option" onClick={()=>onAppearance({theme:value})}>{label}<span>{(appearance.theme||'system')===value?'✓':''}</span></ActionButton>)}
+   { [['system','跟随系统'],['light','浅色模式'],['dark','深色模式']].map(([value,label])=><ActionButton key={value} className="mv-option" aria-pressed={(appearance.theme||'system')===value} onClick={()=>onAppearance({theme:value})}>{label}<span>{(appearance.theme||'system')===value?<Icon name="checkCircle"/>:null}</span></ActionButton>)}
    <h3>音乐文件夹</h3>{!settings?<p role="status">正在读取设置…</p>:settings.folders.length===0?<p className="mv-settings-note">尚未添加音乐文件夹</p>:settings.folders.map(folder=><div className="mv-folder-row" key={folder.id}><span><strong>{folder.name}</strong><small>{folder.path}</small></span>{supports('removeFolder')&&<ActionButton aria-label={`移除文件夹 ${folder.name}`} disabled={pending} onClick={()=>setConfirm({name:'removeFolder',label:folder.name,payload:{folder:folder.id}})}>移除</ActionButton>}</div>)}
-   {supports('chooseFolder')&&<ActionButton className="mv-option" disabled={pending} onClick={()=>perform('chooseFolder')}>添加音乐文件夹 <span>＋</span></ActionButton>}
+   {supports('chooseFolder')&&<ActionButton className="mv-option" disabled={pending} onClick={()=>perform('chooseFolder')}>添加音乐文件夹 <Icon name="plus"/></ActionButton>}
    <h3>音乐库</h3><p className="mv-settings-note">{snapshot.songs.length} 首歌曲{snapshot.scanning?' · 正在扫描':''}</p>
    {supports('recursive')&&<label className="mv-option">包含子文件夹<CheckControl label="包含子文件夹" checked={settings.recursive} disabled={pending} onCheckedChange={value=>perform('recursive',{value})}/></label>}
    {supports('rescan')&&<ActionButton className="mv-option" disabled={pending||snapshot.scanning} onClick={()=>perform('rescan')}>{snapshot.scanning?snapshot.scanDetail||'正在扫描…':'重新扫描音乐库'}</ActionButton>}

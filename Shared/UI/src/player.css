@@ -125,3 +125,56 @@
 .mv-lyric-lines button[data-active=true]>.lyric-content.sweep-surface{color:transparent!important;background-repeat:no-repeat;background-clip:text;-webkit-background-clip:text}
 .mv-lyric-lines .sweep-surface>.lyric-word{color:inherit!important;background:none!important}
 .mv-lyric-lines button:not([data-active=true])>.lyric-content{background-image:none!important;color:var(--muted)!important}
+
+/* Mobile drawer: the artwork stays edge-to-edge behind a recessed content sheet.
+   Only transforms move; inner strokes never read as extra floating panels. */
+[data-presentation=mobile]>.mv-scene{transition:transform 320ms cubic-bezier(.22,1,.36,1);border-radius:24px}
+[data-presentation=mobile]>.mv-scene.is-drawer-behind{transform:translate(10px,8px) scale(.96);box-shadow:none}
+[data-presentation=mobile]>.mv-scene.is-drawer-behind :is(.mv-glass,.mv-library,.mv-lyrics,.mv-dock,.mv-search-control,.mv-button,.mv-wall-focused,.mv-wall-dock){border-color:transparent!important;box-shadow:none!important;outline:none!important}
+[data-presentation=mobile]>.mv-scene.is-drawer-behind .mv-wall-current-outline{visibility:hidden}
+.mv-drawer-wall-backdrop{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:-1;background:var(--bg)}
+.mv-drawer-wall-backdrop>img{object-fit:cover;border-radius:0}
+.mv-drawer-wall-backdrop::after{content:'';position:absolute;inset:0;background:#0005}
+[data-presentation=mobile] .mv-drawer-material{contain:paint}
+[data-presentation=mobile] .mv-drawer>header{border:0;margin-bottom:12px;padding:0 2px 14px}
+[data-presentation=mobile] .mv-drawer>nav{border-radius:18px;background:linear-gradient(145deg,#ffffff24,#ffffff08);box-shadow:inset 0 1px 0 #ffffff38,0 4px 12px #0000000a;padding:8px;min-height:0}
+[data-presentation=mobile] .mv-sidebar-catalog{border:0;border-radius:18px;margin-top:12px;padding:8px;background:linear-gradient(145deg,#ffffff30,#ffffff10);box-shadow:inset 0 1px 0 #ffffff40,0 6px 16px #00000012}
+[data-presentation=mobile].theme-dark .mv-drawer>nav,[data-presentation=mobile].theme-dark .mv-sidebar-catalog{background:linear-gradient(145deg,#ffffff0c,#00000014);box-shadow:inset 0 1px 0 #ffffff20,0 6px 16px #00000024}
+[data-style-busy=true] .mv-brand-switch{animation:mv-style-working 650ms linear infinite}
+@keyframes mv-style-working{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){[data-style-busy=true] .mv-brand-switch{animation:none}}
+.reduce-motion [data-style-busy=true] .mv-brand-switch{animation:none}
+/* Fade the scrim independently: fading a drawer ancestor rasterizes/blends the
+   entire glass + virtual list twice on Android during each entrance frame. */
+[data-presentation=mobile] .mv-drawer-shade{background:transparent}
+[data-presentation=mobile] .mv-drawer-shade::before{content:'';position:absolute;inset:0;z-index:-1;background:#0005;pointer-events:none;animation:mv-drawer-scrim 180ms ease-out both}
+@keyframes mv-drawer-scrim{from{opacity:0}to{opacity:1}}
+[data-presentation=mobile]>.mv-scene.is-drawer-behind .mv-wall-card.active::after{visibility:hidden}
+
+/* The main library shares one horizontal gutter. The overlay scrollbar does
+   not need both list padding and a second reserved strip inside every row. */
+[data-presentation=mobile] .mv-library>.mv-list-shell>.mv-song-list{padding-right:0}
+[data-presentation=mobile] .mv-library .mv-song:not(.grouped){left:8px;right:8px;width:calc(100% - 16px);padding:8px 0 8px 10px;gap:10px}
+[data-presentation=mobile] .mv-library .mv-section-title{padding-inline:18px}
+[data-presentation=mobile] .mv-library .mv-song-duration{flex:0 0 auto;font-variant-numeric:tabular-nums;white-space:nowrap}
+[data-presentation=mobile] .mv-library .mv-favorite{width:44px;height:44px;min-width:44px;display:grid;place-items:center}
+
+/* Match the desktop lyric viewport: fixed edge fades, height-based lead/trail
+   space, and the same emphasis falloff around the current line. */
+.mv-lyric-lines{padding:var(--mv-lyric-padding,0px) 28px;mask-image:linear-gradient(to bottom,transparent,#000 min(7%,28px),#000 calc(100% - min(7%,28px)),transparent);-webkit-mask-image:linear-gradient(to bottom,transparent,#000 min(7%,28px),#000 calc(100% - min(7%,28px)),transparent)}
+.mv-lyric-lines button{padding:10px 4px;transition:opacity 220ms ease,filter 220ms ease}
+.mv-lyric-lines button[data-emphasis="1"]{opacity:.54;filter:blur(.2px)}
+.mv-lyric-lines button[data-emphasis="2"]{opacity:.36;filter:blur(.6px)}
+.mv-lyric-lines button[data-active=true]{opacity:1;filter:none}
+
+.mv-lyric-shell{height:100%;margin-top:0}
+
+/* A queue is the same sheet in all three styles, with no wall-card material. */
+[data-presentation=mobile] .mv-queue-list .mv-song-list{padding:0}
+[data-presentation=mobile] .mv-queue-list .mv-song{left:4px;right:4px;width:calc(100% - 8px);padding:8px 6px;gap:10px;background:transparent;border-color:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}
+[data-presentation=mobile] .mv-queue-list .mv-song.active{background:var(--selected);border-color:var(--border)}
+[data-presentation=mobile] .mv-queue-list .mv-favorite{width:44px;height:44px;display:grid;place-items:center}
+.mv-mobile-settings .mv-option>.mv-icon,.mv-mobile-settings .mv-option>span>.mv-icon{width:20px;height:20px}
+/* Wall chrome can retain its cover treatment; sheets follow the selected theme. */
+.mv-workspace.theme-light .mv-modal{--bg:#eaf0ee;--text:#172c26;--muted:#617b6d;--accent:#078665;--glass:#f8fffc70;--border:#738c8260;--selected:#0786651c;color:var(--text);background:var(--bg)}
+.mv-workspace.theme-dark .mv-modal{--bg:#182720;--text:#ebf4ef;--muted:#a0b4a9;--accent:#54d3a9;--glass:#152c256e;--border:#c0ead535;--selected:#54d3a924;color:var(--text);background:var(--bg)}

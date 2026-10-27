@@ -123,3 +123,40 @@
 .wp-header-actions .wp-translation-toggle{background:#ffffff18;border:1px solid #ffffff30}
 .mv-wall-dock.mv-dock:not(.is-compact){padding-left:10px;padding-right:10px}
 .wp-dock-row>.mv-now{gap:6px}
+
+/* Keep the scene unpromoted at rest: forcing a retained ancestor texture
+   corrupts Android backdrop-filter sampling. Drawer depth uses the existing
+   transient surface animation; camera and decoded artwork remain stable. */
+.mv-wall-card::before{content:'';position:absolute;inset:0;background:#00000057;z-index:1;pointer-events:none}
+.mv-wall-card.is-focus-underlay::before{background:transparent}
+.mv-wall-caption{z-index:2}
+.mv-wall-focused.is-preview::after{background:linear-gradient(transparent 35%,#0002 65%,#0008)}
+.mv-wall-focused.is-current::after{background:linear-gradient(#0005,#0006 40%,#000b)}
+/* Separate the contour from cover/lyric shading so it always draws on top. */
+.mv-wall-focused.is-current{outline:0;box-shadow:none}
+.mv-cover-wall.is-playing .mv-wall-focused.is-current{box-shadow:none}
+.mv-wall-current-outline{position:absolute;inset:0;border:3px solid #32d8b5;box-shadow:inset 0 0 18px #32d8b555;z-index:5;pointer-events:none;opacity:.8}
+.mv-cover-wall.is-playing .mv-wall-current-outline{opacity:1}
+.mv-wall-card.active::after{z-index:3;border:3px solid #32d8b5;box-shadow:inset 0 0 18px #32d8b555;opacity:.8}
+.mv-cover-wall.is-playing .mv-wall-card.active::after{animation:none}
+.wp-player.is-preview .wp-header{margin-top:auto}.wp-player.is-preview .wp-preview-space{display:none}
+.mv-cover-wall[data-dragging=true] button{scale:1!important}
+[data-presentation=mobile].style-wall{--mv-feedback-press:.88;--mv-feedback-release:1.16;--mv-feedback-hover:1.16}
+[data-presentation=mobile].style-wall [data-mv-feedback=standard]:enabled:active{scale:.88}
+[data-presentation=mobile].style-wall .wp-translation-toggle{min-width:44px;min-height:44px;padding:6px 10px;border-radius:12px;color:#fff;font-size:12px}
+/* Give metadata its own full-width row rather than squeezing it behind five controls. */
+.mv-wall-dock.mv-dock:not(.is-compact){height:112px;padding:6px 12px}
+.wp-dock-content{display:grid;grid-template-rows:36px 44px 20px;gap:0}
+.wp-dock-row{display:contents}
+.wp-dock-row>.mv-now{display:flex;width:100%;min-width:0;gap:9px;text-align:left;align-items:center;padding:0}
+.wp-dock-row .mv-now>img,.wp-dock-row .mv-now>.mv-art-fallback,.wp-dock-row .mv-now>.mv-small-art{width:32px;height:32px;border-radius:8px}
+.wp-dock-row>.mv-now>span:last-child{display:flex;flex-direction:column;min-width:0;flex:1;gap:2px}
+.wp-dock-row .mv-now strong{display:block;width:100%;font-size:14px;font-weight:650;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.01em}
+.wp-dock-row .mv-now span span{display:block;font-size:11px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.72}
+.wp-dock-controls{display:flex;align-items:center;justify-content:space-between;gap:0;width:100%}
+.style-wall[data-dock-compact=false] [data-wall-control=settings]{bottom:calc(var(--mv-safe-bottom,0px) + 140px)}
+@media(orientation:landscape){.style-wall .mv-wall-dock.mv-dock:not(.is-compact){width:min(440px,48vw)}}
+.reduce-motion .mv-wall-card::before{transition:none}
+@media(prefers-reduced-motion:reduce){.mv-wall-card::before{transition:none}}
+.wp-dock-row .mv-now strong{color:var(--wall-chrome-text)}
+.mv-wall-dock .wp-dock-content{grid-template-rows:32px 44px minmax(20px,1fr)}
