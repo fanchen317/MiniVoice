@@ -1,6 +1,7 @@
 .DS_Store
 .build/
-build/
+# Only the repository-root build output; Scripts/build/ holds tracked scripts.
+/build/
 .idea/
 .claude/
 

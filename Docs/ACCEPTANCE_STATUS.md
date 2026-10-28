@@ -426,3 +426,10 @@ Android 专用 emulator-5554：portable 完整回归通过 UI_PORTABLE_PASS；�
 - 已确认包版本差异：当前 Android 体验版包比现有 iOS Debug 包多四项视觉规则与侧栏/弹窗退出几何更新。源码共用不代表两份旧包的资源一致。
 - 既有用户定制保留：iOS 展开长条竖屏居中、圆形左下、iPad 无碰撞时设置按钮不移动；不列为应回退的偏差。
 - 本轮静态门禁、45 项共享 JS 单测、iOS LRC/旧墙几何测试通过。未重跑双平台完整 UI/真机矩阵，不把尚未验证的横屏、键盘、触控或 GPU 效果写成通过；未修改产品运行逻辑。
+
+## 2026-10-28 打包脚本层恢复（iOS 构建失败修复）
+
+- 原因：`.gitignore` 的 `build/` 规则匹配任意层级同名目录，重构后的 `Scripts/build/` 整个目录被静默忽略、从未入库。Xcode 构建阶段 `Package shared mobile UI` 引用的 `Scripts/build/build-ios-ui.sh` 因此不存在，iOS 编译在脚本阶段即失败（`No such file or directory`）。Android `build.gradle` 与四个公开打包部署入口引用同一目录，同样失效。
+- 修正：`build/` 改为 `/build/`，只忽略仓库根构建输出；按 `Scripts/README.md` 与 `Docs/PROJECT_STRUCTURE.md` 的目录职责恢复 `Scripts/build/` 的 15 个脚本，适配新目录层级与 `.build/{cache,work,reports,dist}` 布局（`.build/work/shared-ui`、`.build/work/android`、`.build/work/native`、`.build/cache/ios/DerivedData`）；新增 `Scripts/build/build-ios-ui.sh`（把共享 UI 打包进 App bundle 的 `SharedPlayer/`，并附带模拟器冒烟脚本）与 `Scripts/common/node-runtime.sh`（Xcode 构建阶段的最小 PATH 只解析到 `/usr/local/bin/node` v16，缺少 `node:util` 的 `styleText`，统一按仓库既有规则选择 Node 20/22/24 LTS）。
+- 通过：`bash Scripts/build/build-ios.sh simulator Debug`（Debug 模拟器构建成功，产物含 `SharedPlayer/index.html`、assets 与 `shared-host-smoke.js`）；`bash Scripts/tests/test-ios.sh`；`node --test Shared/UI/test/*.test.mjs`（45 项）；`python3 Scripts/tests/test-package-workflows.py`；`python3 Scripts/tests/test-shared-ui-independent.py`（异目录、无 `MacOS/Desktop/node_modules` 的离线构建）；`bash Scripts/build/build-app.sh release`（Mac 正式包重建到 `.build/dist/MiniVoice.app`，`codesign --verify --deep --strict` 通过）。
+- 未验证：Android 打包缺本机 Android SDK 与 `Android/signing-certificate.sha256`，脚本已运行到 SDK 发现步骤即按预期拒绝；`package-ios.sh` 的签名 IPA 导出仍缺开发团队与导出配置；iOS 专用模拟器的 WKWebView 集成冒烟本轮未运行。
