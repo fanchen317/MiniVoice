@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[2]
-base = root / '.build/lyrics-lite'
+base = root / '.build/work/experiments/lyrics-lite'
 checks = []
 with tempfile.TemporaryDirectory(prefix='lyrics-reliability-') as directory:
     work = Path(directory)

@@ -1,1 +1,17 @@
-{"name":"minivoice-shared-ui","private":true,"type":"module","scripts":{"test":"node --test test/*.test.mjs"}}
+{
+  "name": "minivoice-shared-ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bash ../../Scripts/build/build-shared-ui.sh",
+    "dev": "vite",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "vite": "8.3.4"
+  }
+}

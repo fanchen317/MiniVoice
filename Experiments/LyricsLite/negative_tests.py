@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 
 root=Path(__file__).resolve().parents[2]
-base=root/'.build/lyrics-lite'
+base=root/'.build/work/experiments/lyrics-lite'
 folder=base/'negative'
 folder.mkdir(exist_ok=True)
 template=json.loads((base/'benchmark/chinese/request.json').read_text())

@@ -8,13 +8,13 @@ V3 增加语言感知的 Unicode 规范化、跨 token 组合字符重组、语�
 
 ## 复现
 
-1. 安装 CMake，或用独立环境 `python3 -m venv .build/lyrics-lite-tools`、`.build/lyrics-lite-tools/bin/pip install cmake`。Python 仅用于构建工具和基准测试，原型运行程序不需要 Python。
-2. 克隆 <https://github.com/ggml-org/whisper.cpp> 到 `.build/whisper-lite-source`，检出 `0c7be696371069e0baa2515ed7aa08d5a5473aa6`。
-3. 准备 [small-q5_1 模型](https://huggingface.co/ggerganov/whisper.cpp/blob/5359861/ggml-small-q5_1.bin) 到 `.build/lyrics-lite/models/ggml-small-q5_1.bin`。SHA-256：`ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb`。本次文件来自 hf-mirror，字节校验与模型仓库 LFS 元数据一致。
-4. 执行 `bash Experiments/LyricsLite/build.sh`。实验包生成于 `.build/lyrics-lite/package`，包含原生二进制、动态库、模型及许可。没有将实验大文件加入正式 Vendor 或发行包。
+1. 安装 CMake，或用独立环境 `python3 -m venv .build/cache/lyrics-lite-tools`、`.build/cache/lyrics-lite-tools/bin/pip install cmake`。Python 仅用于构建工具和基准测试，原型运行程序不需要 Python。
+2. 克隆 <https://github.com/ggml-org/whisper.cpp> 到 `.build/cache/whisper-lite-source`，检出 `0c7be696371069e0baa2515ed7aa08d5a5473aa6`。
+3. 准备 [small-q5_1 模型](https://huggingface.co/ggerganov/whisper.cpp/blob/5359861/ggml-small-q5_1.bin) 到 `.build/work/experiments/lyrics-lite/models/ggml-small-q5_1.bin`。SHA-256：`ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb`。本次文件来自 hf-mirror，字节校验与模型仓库 LFS 元数据一致。
+4. 执行 `bash Experiments/LyricsLite/build.sh`。实验包生成于 `.build/work/experiments/lyrics-lite/package`，包含原生二进制、动态库、模型及许可。没有将实验大文件加入正式 Vendor 或发行包。
 5. `python3 Experiments/LyricsLite/benchmark.py` 对当前本地曲库四个指定片段做只读测试；自定义目录使用 `MINIVOICE_LITE_MUSIC`。脚本中的曲目序号对应本机测试集，其他曲库需先调整 fixtures。`--resume` 可以复用已经完成的结果。
 
-正式版本的比较基线是 `.build/native/MiniVoice.app/Contents/Resources` 中的 worker 与 small 模型；请先准备正式应用产物。
+正式版本的比较基线是 `.build/work/native/MiniVoice.app/Contents/Resources` 中的 worker 与 small 模型；请先准备正式应用产物。
 
 ## 输入和输出
 

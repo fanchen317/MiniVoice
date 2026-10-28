@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const desktop=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const root=path.resolve(desktop,'../..'), module=path.join(desktop,'node_modules/electron');
 const version=JSON.parse(fs.readFileSync(path.join(module,'package.json'))).version;
-const filename=`electron-v${version}-darwin-arm64.zip`, zip=path.join(root,'.build',filename);
+const filename=`electron-v${version}-darwin-arm64.zip`, zip=path.join(root,'.build/cache/electron',filename);
 const checksums=JSON.parse(fs.readFileSync(path.join(module,'checksums.json')));
 function valid(){return fs.existsSync(zip)&&crypto.createHash('sha256').update(fs.readFileSync(zip)).digest('hex')===checksums[filename];}
 if(!valid()){

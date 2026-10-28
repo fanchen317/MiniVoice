@@ -44,7 +44,7 @@
 
 ## 组件交互验证
 
-`bash Scripts/test-desktop-components.sh` 启动独立的本地组件测试页并在 Electron 中发送鼠标和键盘事件，结束自动清理服务器。测试页是合成数据，不连接真实音乐库，也不被生产 Vite 入口打包。覆盖菜单边缘、禁用项、焦点/键盘选择，进度拖动与轮询，以及 Choice/CheckControl。它是组件集成测试，不等于完整 Mac 播放器所有页面已经完成实际 UI 验收。Android 的真实长按、滑动取消、歌单和播放行为由 instrumentation 验证。
+`bash Scripts/tests/test-desktop-components.sh` 启动独立的本地组件测试页并在 Electron 中发送鼠标和键盘事件，结束自动清理服务器。测试页是合成数据，不连接真实音乐库，也不被生产 Vite 入口打包。覆盖菜单边缘、禁用项、焦点/键盘选择，进度拖动与轮询，以及 Choice/CheckControl。它是组件集成测试，不等于完整 Mac 播放器所有页面已经完成实际 UI 验收。Android 的真实长按、滑动取消、歌单和播放行为由 instrumentation 验证。
 
 ## 按样式修正（2026-10-23）
 

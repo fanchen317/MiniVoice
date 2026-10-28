@@ -50,15 +50,17 @@ MiniVoice 是本地音乐播放器，包含 macOS、Android 和 iOS 三个独立
 
 默认处理 mac、android、ios；可用 `--platforms mac,android` 只构建当前已接入的平台。部署默认启动应用，`--no-launch` 只替换。任何平台失败最终返回非零，其余平台继续处理；旧包保留不代表本轮成功。四个入口共用互斥锁，避免同时写入构建缓存。
 
-历史散落安装包自动归档到 `.build/archive/installers/`，保留可恢复副本。发布目录统一为 `.build/dist/`，固定名称覆盖更新：`MiniVoice-android.apk`、`MiniVoice-android-experience.apk`、`MiniVoice-mac.dmg`、`MiniVoice-mac-experience.dmg`、`MiniVoice-ios.ipa`。Mac app 保留 `.build/MiniVoice.app` 和 `.build/MiniVoice-debug.app`，体验版身份、偏好及音乐库授权保持独立。正式 Mac 按用户确认保留现有 Electron + Swift 主界面及原生设置、编辑、桌面歌词路径；体验版使用自有组件窗口，不恢复更早的纯 SwiftUI 主窗口。Android 正式版启动旧原生 MainActivity，体验版启动 PortablePlayerActivity；两者延续现有包标识和证书，安装会互相替换。
+历史散落安装包自动归档到 `.build/archive/installers/`，保留可恢复副本。发布目录统一为 `.build/dist/`，固定名称覆盖更新：`MiniVoice-android.apk`、`MiniVoice-android-experience.apk`、`MiniVoice-mac.dmg`、`MiniVoice-mac-experience.dmg`、`MiniVoice-ios.ipa`。Mac app 保留 `.build/dist/MiniVoice.app` 和 `.build/dist/MiniVoice-debug.app`，体验版身份、偏好及音乐库授权保持独立。正式 Mac 按用户确认保留现有 Electron + Swift 主界面及原生设置、编辑、桌面歌词路径；体验版使用自有组件窗口，不恢复更早的纯 SwiftUI 主窗口。Android 正式版启动旧原生 MainActivity，体验版启动 PortablePlayerActivity；两者延续现有包标识和证书，安装会互相替换。
 
-Android 的签名前 APK、DEX、资源包只写临时组装目录，失败或成功均清理；测试兼容链接 `.build/Android/MiniVoice-debug.apk` 指向体验发布包。内部平台脚本仍可用于定向开发，`install-mac.sh` 只负责经过校验的 Mac 应用替换。
+目录与脚本职责见 [项目结构与构建文件管理](Docs/PROJECT_STRUCTURE.md) 和 [脚本入口](Scripts/README.md)。
+
+Android 的签名前 APK、DEX、资源包只写临时组装目录，失败或成功均清理；测试兼容链接 `.build/work/android/MiniVoice-debug.apk` 指向体验发布包。内部平台脚本仍可用于定向开发，`install-mac.sh` 只负责经过校验的 Mac 应用替换。
 
 iOS 正式 IPA 使用 Xcode archive + exportArchive，需设置 `MINIVOICE_IOS_TEAM`（开发团队）和 `MINIVOICE_IOS_EXPORT_OPTIONS`（有效 ExportOptions.plist 路径），并在本机准备对应证书和描述文件。缺失配置时明确失败，不导出无法安装的未签名压缩包。`build-ios.sh` 仍用于模拟器或未签名编译检查，不是 IPA 发布入口。
 
 需要 Node.js LTS / npm、Xcode、Android SDK/NDK 及仓库 Git LFS 资源。Android 默认仍使用仓库固定开发签名，本文“正式”指旧界面版本，不代表已配置商店发行证书。
 
-当前版本 **2.7.0**（构建号 9），Electron 外层和 Swift 后台版本在打包时同步。DMG 输出 `.build/dist/MiniVoice-mac.dmg`（体验版为 `MiniVoice-mac-experience.dmg`）。安装布局由脚本直接写入 `.DS_Store`，无需 Finder 自动化权限；首次运行会在 `.build/dmg-tools` 中建立独立 Python 环境并安装 `Scripts/dmg-requirements.txt` 固定版本依赖。仍支持 `--reuse-layout` 或 `--layout-from /absolute/path/previous.dmg` 复用布局。
+当前版本 **2.7.0**（构建号 9），Electron 外层和 Swift 后台版本在打包时同步。DMG 输出 `.build/dist/MiniVoice-mac.dmg`（体验版为 `MiniVoice-mac-experience.dmg`）。安装布局由脚本直接写入 `.DS_Store`，无需 Finder 自动化权限；首次运行会在 `.build/cache/dmg-tools` 中建立独立 Python 环境并安装 `Scripts/assets/dmg-requirements.txt` 固定版本依赖。仍支持 `--reuse-layout` 或 `--layout-from /absolute/path/previous.dmg` 复用布局。
 
 唯一主应用继续使用已安装版本的标识 `com.xcosmos.MiniVoice.electron`，保留现有签名身份与 `~/Library/Application Support/minivoice-desktop/` 前端偏好路径。内置服务保留 `com.xcosmos.MiniVoice` 偏好域，沿用音乐库、收藏、歌单及原生设置；这两个内部标识不代表两套可运行的主窗口。更早的 `local.fanchen.MiniVoice` / `com.local.minivoice` 配置由后台迁移，已有新配置优先。原生资源目录 `~/Library/Application Support/MiniVoice/` 及缓存目录保持不变。
 
@@ -68,7 +70,7 @@ arm64 完整应用内置固定版本的 ffmpeg / ffprobe、歌词 AI 运行环�
 
 本地构建的 Electron 外层使用固定应用标识的 designated requirement，避免默认 ad-hoc 签名按每次构建的 cdhash 识别应用而反复请求文件夹权限。首次访问“下载”等受保护目录仍需允许；从旧签名切换后也可能再确认一次。撤销权限、系统重置权限或改变签名身份后仍可能重新提示，不能通过应用内的“已授权”标记跳过。此方式仅用于本地构建，不验证发布者身份；对外分发应固定使用开发者证书，可设置 `MINIVOICE_CODESIGN_IDENTITY` 指定签名身份。权限是否跨更新保留需在系统弹窗上实际验收。
 
-前端验证使用 `npm --prefix MacOS/Desktop test`，原生后台验证使用 `swift test --package-path MacOS --scratch-path .build`。正式入口、还原实施和验收边界见 [单一应用与还原实施记录](Docs/UnifiedApp-2026-10-18.md)。
+前端验证使用 `npm --prefix MacOS/Desktop test`，原生后台验证使用 `swift test --package-path MacOS --scratch-path .build/cache/swift`。正式入口、还原实施和验收边界见 [单一应用与还原实施记录](Docs/UnifiedApp-2026-10-18.md)。
 
 ## 当前边界
 
@@ -93,7 +95,7 @@ arm64 完整应用内置固定版本的 ffmpeg / ffprobe、歌词 AI 运行环�
 
 ## 验证
 
-`swift test --package-path MacOS --scratch-path .build` 包含缓存启动不扫描、损坏缓存重建、SRT/LRC 识别、原始封面保留、文件夹递归/去重/移除安全、播放模式边界、随机历史、实际播放结束自动切歌及停止，以及 MP3/FLAC/M4A 文件往返测试：中文标签、多歌手、歌词、封面添加和删除、备份、AVAudioPlayer 可读取，以及保存前后音频码流 SHA-256 一致。
+`swift test --package-path MacOS --scratch-path .build/cache/swift` 包含缓存启动不扫描、损坏缓存重建、SRT/LRC 识别、原始封面保留、文件夹递归/去重/移除安全、播放模式边界、随机历史、实际播放结束自动切歌及停止，以及 MP3/FLAC/M4A 文件往返测试：中文标签、多歌手、歌词、封面添加和删除、备份、AVAudioPlayer 可读取，以及保存前后音频码流 SHA-256 一致。
 
 ## AI 歌词自动跟随
 
@@ -103,7 +105,7 @@ arm64 完整应用内置固定版本的 ffmpeg / ffprobe、歌词 AI 运行环�
 - 歌名、常见作词/作曲等信息和段落标记保存在 LRC 的 `[note:...]` 元数据中，不参与演唱对齐。歌词正文保留输入顺序和重复段落；已有手动时间点保留，时间冲突时会提示。
 - 处理时编辑窗口保持打开，取消后保留输入。只有对齐成功后才写文件；失败可选“仅保存原歌词”。仅保存的纯文本不会自动滚动，可再次打开编辑器保存重试。
 - 应输入完整、与当前音频版本一致的歌词。复杂伴奏、现场版、漏句或副歌省略可能导致失败或偏移；可手动打点校正。本地 AI 匹配生成逐行时间轴；已有有效逐字时间片段会保留。
-- `swift test --package-path MacOS --scratch-path .build` 覆盖格式分流、原文/时间轴校验、重复歌词、说明文字、取消和分钟进位。`MINIVOICE_TEST_AI=1 swift test --package-path MacOS --scratch-path .build` 额外用系统语音生成短音频，运行实际本地模型集成验证（首次运行需下载模型）。
+- `swift test --package-path MacOS --scratch-path .build/cache/swift` 覆盖格式分流、原文/时间轴校验、重复歌词、说明文字、取消和分钟进位。`MINIVOICE_TEST_AI=1 swift test --package-path MacOS --scratch-path .build/cache/swift` 额外用系统语音生成短音频，运行实际本地模型集成验证（首次运行需下载模型）。
 
 ### 歌词显示与导入修复
 
@@ -141,7 +143,7 @@ arm64 完整应用内置固定版本的 ffmpeg / ffprobe、歌词 AI 运行环�
 
 ### 图标资源
 
-应用图标固定保存在 `MacOS/AppBundle/MiniVoice.icns`，打包直接复制，不再每次编译图标生成器或生成 iconset。修改 `BrandIcon.swift` 后，显式运行 `Scripts/generate-icon.sh` 更新应用图标。菜单栏和设置页的小图标仍由 `BrandIcon` 绘制。
+应用图标固定保存在 `MacOS/AppBundle/MiniVoice.icns`，打包直接复制，不再每次编译图标生成器或生成 iconset。修改 `BrandIcon.swift` 后，显式运行 `Scripts/tools/generate-icon.sh` 更新应用图标。菜单栏和设置页的小图标仍由 `BrandIcon` 绘制。
 
 ### 可再生构建文件
 

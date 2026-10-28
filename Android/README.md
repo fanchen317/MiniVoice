@@ -4,12 +4,12 @@
 
 这是独立的 Android 本地播放器工程，复用 MiniVoice 的产品名称与播放模式。首页提供基于本机歌曲封面的音乐墙、可开合的深色侧栏及底部播放条；左下角设置按钮打开音乐库设置。当前包含用户明确授权的指定文件夹扫描、子文件夹开关、重新扫描、歌曲数量、缓存清理、搜索、歌手与专辑浏览、后台播放及系统媒体控制、五种播放模式、收藏、最近播放、歌单和 LRC 文件导入。收藏、歌单及应用内歌词保存在应用数据中；自有歌曲编辑器另提供 MP3、FLAC、非分片 M4A 原文件标签写入，保存前需在应用内确认。
 
-执行 `Scripts/build-android.sh experience` 生成 `.build/dist/MiniVoice-android-experience.apk`；`Scripts/build-android.sh release` 生成旧原生入口正式包 `.build/dist/MiniVoice-android.apk`。测试路径 `.build/Android/MiniVoice-debug.apk` 为体验包兼容链接。也可在 Android Studio 打开 `Android/`，安装 Android SDK 35 和 Build Tools 35.0.0 后运行 `:app:assembleDebug`。支持 Android 10 及以上。
+执行 `Scripts/build/build-android.sh experience` 生成 `.build/dist/MiniVoice-android-experience.apk`；`Scripts/build/build-android.sh release` 生成旧原生入口正式包 `.build/dist/MiniVoice-android.apk`。测试路径 `.build/work/android/MiniVoice-debug.apk` 为体验包兼容链接。也可在 Android Studio 打开 `Android/`，安装 Android SDK 35 和 Build Tools 35.0.0 后运行 `:app:assembleDebug`。支持 Android 10 及以上。
 
 脚本会依次查找 `ANDROID_HOME`、`ANDROID_SDK_ROOT`、`Android/local.properties` 的 `sdk.dir`，然后查找 Android Studio 常用 SDK 目录、Homebrew 路径和项目的 `.build/android-sdk`。优先使用 Build Tools 35.0.0，也支持更新的稳定版本。显式配置的 SDK 不完整时会给出缺少组件的提示，不会删除已有 APK。自定义路径可这样运行：
 
 ```bash
-ANDROID_HOME="/你的/Android/sdk" ./Scripts/build-android.sh
+ANDROID_HOME="/你的/Android/sdk" ./Scripts/build/build-android.sh
 ```
 
 
@@ -31,7 +31,7 @@ ANDROID_HOME="/你的/Android/sdk" ./Scripts/build-android.sh
 
 歌曲优先使用音频标签，增加 ID3v2.2/v2.3/v2.4（含 UTF-16 中文标签）的直接读取，避免部分安卓设备将文件名当作歌曲标题。标签缺失时，`026 - 许嵩 - 安琪.mp3` 会回退为歌名“安琪”、歌手“许嵩”。封面依次尝试系统内嵌图片、直接解析 ID3 图片、同目录同名图片或 `cover/folder/front/album` 图片，以及系统专辑封面；音乐墙和系统播放器使用相同的封面读取逻辑。歌词支持 `lrc/` 目录中的同名文件、增强 LRC 的 `<分:秒.毫秒>` 逐字标记及 `[offset:]`；逐字标记用于还原干净的行文字，当前仍按行同步显示。
 
-执行 `Scripts/test-android.sh` 运行 JVM 解析回归测试；需要 Android SDK 35，可通过 `ANDROID_HOME` 指定 SDK。可额外传入测试样本“026 - 许嵩 - 安琪.mp3”的路径，验证真实文件的 UTF-16 标签及内嵌图片读取。
+执行 `Scripts/tests/test-android.sh` 运行 JVM 解析回归测试；需要 Android SDK 35，可通过 `ANDROID_HOME` 指定 SDK。可额外传入测试样本“026 - 许嵩 - 安琪.mp3”的路径，验证真实文件的 UTF-16 标签及内嵌图片读取。
 
 聚焦卡片沿用 Mac 的上下布局：全宽连续遮罩，顶部歌曲信息，播放状态胶囊，中部自动换行的同步歌词，底部上一首、播放/暂停、下一首、收藏、展开/收起、时间与白色细进度条。预览未播放歌曲时只显示信息和播放按钮；点击卡片空白处不会切换播放。窄屏时间独立成行，控制按钮保留 44 dp 触控区域；进度条支持点按和拖动，拖动时不会移动音乐墙。展开后隐藏浮动工具和底部播放条，返回键或收起按钮恢复。
 
@@ -52,10 +52,10 @@ d014c3673246e0a038e1e0c36fc1a8990f4fa313c713160a13eda5d10bd01223
 
 统一仓库签名能避免后续两台 Mac 再次产生不同签名，但当前手机上的旧版必须与上述证书相同才能直接覆盖。先在旧 Mac 使用 Android SDK 的 `apksigner verify --print-certs /旧版.apk` 比较 `Signer #1 certificate SHA-256 digest`。**暂时不要卸载手机应用。**
 
-若旧版证书不同，应以旧 Mac 实际打包所用的原始私钥作为统一开发密钥。检查旧项目的 `Android/signing/debug.keystore`、`.build/Android/debug.keystore` 或 `~/.android/debug.keystore`。确认原始私钥后，手动移走项目的 `Android/signing-certificate.sha256`（这是一次有意更换统一身份的操作），再执行：
+若旧版证书不同，应以旧 Mac 实际打包所用的原始私钥作为统一开发密钥。检查旧项目的 `Android/signing/debug.keystore`、`.build/work/android/debug.keystore` 或 `~/.android/debug.keystore`。确认原始私钥后，手动移走项目的 `Android/signing-certificate.sha256`（这是一次有意更换统一身份的操作），再执行：
 
 ```bash
-bash Scripts/import-android-signing.sh /旧Mac原始密钥的绝对路径/debug.keystore
+bash Scripts/tools/import-android-signing.sh /旧Mac原始密钥的绝对路径/debug.keystore
 ```
 
 将更新后的密钥和证书指纹一起提交、同步到两台 Mac。导入脚本会备份已有本地密钥，备份不会进入 Git。非默认别名/密码需要通过 `MINIVOICE_KEY_ALIAS`、`MINIVOICE_STORE_PASSWORD`、`MINIVOICE_KEY_PASSWORD` 在两台 Mac 同样配置。
@@ -172,9 +172,9 @@ Android/data/com.xcosmos.minivoice/
 
 ```sh
 # 构建独立 instrumentation APK，不安装或改变手机数据
-bash Scripts/test-android-ui.sh
+bash Scripts/tests/test-android-ui.sh
 # 仅限专用模拟器！测试会替换应用中的音乐库为合成数据，并故意触发一次崩溃
-bash Scripts/test-android-ui.sh emulator-5554
+bash Scripts/tests/test-android-ui.sh emulator-5554
 ```
 
-测试通过真实 Android Activity、控件布局和注入的点击/滑动运行：三种样式 × 深浅主题、歌手与专辑进入/返回（每种网格重复三次，另测第一行的部分像素滚动）、滚动像素偏移、父页搜索恢复、侧边栏开关和开着侧边栏切样式、Activity 重建、强制停止后的进程重启、播放器/歌词展开与双语文本、真实未捕获异常写盘及 ZIP 导出。独立测试 ContentProvider 按 DocumentsContract 协议提供可修改/删除的合成 WAV，校验未变化扫描不打开音频、修改只重读一个文件、删除产生失效提示。测试截图与结果在 `.build/Android/ui-tests/`；截图用于目视检查，自动断言不代表所有 GPU/厂商材质效果都已验证。脚本拒绝物理设备 serial，避免将合成库写入日常使用的手机。
+测试通过真实 Android Activity、控件布局和注入的点击/滑动运行：三种样式 × 深浅主题、歌手与专辑进入/返回（每种网格重复三次，另测第一行的部分像素滚动）、滚动像素偏移、父页搜索恢复、侧边栏开关和开着侧边栏切样式、Activity 重建、强制停止后的进程重启、播放器/歌词展开与双语文本、真实未捕获异常写盘及 ZIP 导出。独立测试 ContentProvider 按 DocumentsContract 协议提供可修改/删除的合成 WAV，校验未变化扫描不打开音频、修改只重读一个文件、删除产生失效提示。测试截图与结果在 `.build/reports/android/ui-tests/`；截图用于目视检查，自动断言不代表所有 GPU/厂商材质效果都已验证。脚本拒绝物理设备 serial，避免将合成库写入日常使用的手机。

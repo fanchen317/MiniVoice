@@ -2,10 +2,10 @@ plugins { id 'com.android.application' }
 android {
     namespace 'com.xcosmos.minivoice'
     compileSdk 35
-    sourceSets.main.assets.srcDirs = ['../../.build/Shared/UI']
+    sourceSets.main.assets.srcDirs = ['../../.build/work/shared-ui']
     def sharedUI = tasks.register('buildSharedPlayer', Exec) {
         workingDir rootProject.projectDir.parentFile
-        commandLine 'bash', 'Scripts/build-shared-ui.sh'
+        commandLine 'bash', 'Scripts/build/build-shared-ui.sh'
     }
     tasks.configureEach { task -> if (task.name == 'preBuild') task.dependsOn(sharedUI) }
     ndkVersion '27.2.12479018'
@@ -25,7 +25,7 @@ android {
     def verifyIdentity = tasks.register('verifyMiniVoiceSigning') {
         doLast {
             if (!localKey.isFile() || !fingerprintFile.isFile()) {
-                throw new GradleException('缺少统一签名，请先运行 Scripts/import-android-signing.sh 导入旧 Mac 原始密钥。')
+                throw new GradleException('缺少统一签名，请先运行 Scripts/tools/import-android-signing.sh 导入旧 Mac 原始密钥。')
             }
             def config = signingConfigs.debug
             def store = java.security.KeyStore.getInstance(localKey, config.storePassword.toCharArray())

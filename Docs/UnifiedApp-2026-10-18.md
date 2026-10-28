@@ -2,9 +2,9 @@
 
 ## 正式入口
 
-- 构建：`Scripts/build-app.sh [debug|release]`。
-- 唯一正式应用：`.build/MiniVoice.app`。
-- 安装：`Scripts/deploy.sh`；安装镜像：`Scripts/build-dmg.sh`。
+- 构建：`Scripts/build/build-app.sh [debug|release]`。
+- 唯一正式应用：`.build/dist/MiniVoice.app`。
+- 安装：`Scripts/deploy.sh`；安装镜像：`Scripts/build/build-dmg.sh`。
 - `build-electron-app.sh` 仅调用同一构建，不再产出另一种应用版本。
 - Swift 可执行文件仅在 `--desktop-engine` 下运行音频、曲库与原生辅助窗口；普通运行只提示统一应用入口。原 SwiftUI 主窗口不再是可启动的发行路径。
 - 主应用与内置服务保留已有标识、签名和偏好域，避免因为统一名称而更换用户身份；前端样式、曲库、收藏、歌单和原生设置继续沿用。

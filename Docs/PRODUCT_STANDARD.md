@@ -73,16 +73,16 @@
 
 ## 7. 执行入口
 
-构建前运行 `node Scripts/check-ui-standards.mjs`，违规立即失败。它负责内容控件与原生回退入口的静态边界，不代替视觉和运行验收。
+构建前运行 `node Scripts/checks/check-ui-standards.mjs`，违规立即失败。它负责内容控件与原生回退入口的静态边界，不代替视觉和运行验收。
 
 按修改范围运行：
 
 - 共享逻辑：`node --test Shared/UI/test/*.test.mjs`
 - 桌面逻辑：`npm --prefix MacOS/Desktop test`
-- 自有组件交互：`bash Scripts/test-desktop-components.sh`
-- 实际页面/音乐墙：`bash Scripts/test-wall-version.sh`
+- 自有组件交互：`bash Scripts/tests/test-desktop-components.sh`
+- 实际页面/音乐墙：`bash Scripts/tests/test-wall-version.sh`
 - Android：构建测试 APK，并在专用模拟器执行 portable；数据写入改动另执行 tags。测试不得覆盖用户手机或真实音乐库。
-- 音频标签：`bash Scripts/test-audio-tag-writes.sh`
+- 音频标签：`bash Scripts/tests/test-audio-tag-writes.sh`
 - Mac：使用隔离测试偏好域验证打包后台；包签名校验。
 
 只有文档修改不要求重跑全部界面测试。修改、失败或未解决风险出现后，再扩大验证范围；已通过且未受影响的检查不反复空跑。

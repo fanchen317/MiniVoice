@@ -10,11 +10,11 @@ import statistics
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-WORK = Path(os.environ.get('MINIVOICE_LITE_BENCHMARK_DIR',str(ROOT / ('.build/lyrics-lite/full-benchmark' if '--full' in sys.argv else '.build/lyrics-lite/benchmark'))))
+WORK = Path(os.environ.get('MINIVOICE_LITE_BENCHMARK_DIR',str(ROOT / ('.build/work/experiments/lyrics-lite/full-benchmark' if '--full' in sys.argv else '.build/work/experiments/lyrics-lite/benchmark'))))
 WORK.mkdir(parents=True, exist_ok=True)
 MUSIC = Path(os.environ.get('MINIVOICE_LITE_MUSIC', str(Path.home()/'Downloads/01通用格式歌曲(完整)')))
 FFMPEG = shutil.which('ffmpeg')
-NATIVE = ROOT / '.build/native/MiniVoice.app/Contents/Resources'
+NATIVE = ROOT / '.build/work/native/MiniVoice.app/Contents/Resources'
 fixtures = [('chinese', '014', 10, 65, 'zh'), ('chorus', '852', 65, 125, 'zh'),
             ('mixed', '992', 38, 98, 'zh'), ('english', '968', 0, 60, 'en')]
 if '--full' in sys.argv:
@@ -43,8 +43,8 @@ for label, serial, left, right, language in fixtures:
                     '-vn', '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', str(clip)], check=True)
     request = dict(audioPath=str(clip), duration=right-left, lines=[r['text'] for r in reference], language=language,
                    model='small', modelDirectory=str(NATIVE/'LyricsModels'),
-                   modelPath=str(ROOT/'.build/lyrics-lite/models/ggml-small-q5_1.bin'),
-                   cliPath=str(ROOT/'.build/lyrics-lite/build/bin/whisper-cli'), ffmpegPath=FFMPEG)
+                   modelPath=str(ROOT/'.build/work/experiments/lyrics-lite/models/ggml-small-q5_1.bin'),
+                   cliPath=str(ROOT/'.build/work/experiments/lyrics-lite/build/bin/whisper-cli'), ffmpegPath=FFMPEG)
     request_path = folder/'request.json'
     request_path.write_text(json.dumps(request, ensure_ascii=False))
     (folder/'reference.json').write_text(json.dumps(reference, ensure_ascii=False, indent=2))
@@ -53,10 +53,10 @@ for label, serial, left, right, language in fixtures:
         if any(r['fixture']==label and r['engine']==engine for r in results):
             continue
         request['useLyricsPrompt'] = engine in ['lite-guided','lite-forced']
-        request['forceAlignerPath'] = str(ROOT/'.build/lyrics-lite/bin/lyrics-force') if engine=='lite-forced' else None
+        request['forceAlignerPath'] = str(ROOT/'.build/work/experiments/lyrics-lite/bin/lyrics-force') if engine=='lite-forced' else None
         request_path.write_text(json.dumps(request, ensure_ascii=False))
         output = folder/f'{engine}.json'
-        command = ([str(ROOT/'.build/lyrics-lite/bin/lyrics-lite'), str(request_path), str(output)] if engine.startswith('lite') else
+        command = ([str(ROOT/'.build/work/experiments/lyrics-lite/bin/lyrics-lite'), str(request_path), str(output)] if engine.startswith('lite') else
                    [str(NATIVE/'lyrics-worker/lyrics-worker'), str(request_path), str(output), str(folder/'status.txt')])
         began = time.monotonic()
         with (folder/f'{engine}.log').open('w') as log:

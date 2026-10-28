@@ -11,7 +11,7 @@ import subprocess
 import time
 
 ROOT=Path(__file__).resolve().parents[2]
-BASE=ROOT/'.build/lyrics-lite'
+BASE=ROOT/'.build/work/experiments/lyrics-lite'
 WORK=BASE/'multilingual-benchmark'
 WORK.mkdir(exist_ok=True)
 FFMPEG=shutil.which('ffmpeg')

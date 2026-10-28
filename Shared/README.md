@@ -26,12 +26,12 @@ macOS 菜单“显示 → 桌面界面预览（Mac 布局）”。复用现有 M
 开发浏览器（明确使用合成音乐库与模拟播放时钟，无音频）：
 
 ```sh
-bash Scripts/build-shared-core.sh
-bash Scripts/build-shared-ui.sh
-node Scripts/preview-shared-ui.mjs
+bash Scripts/build/build-shared-core.sh
+bash Scripts/build/build-shared-ui.sh
+node Scripts/tools/preview-shared-ui.mjs
 ```
 
-构建前先按 MacOS/Desktop/package-lock.json 安装现有 npm 依赖。共享 UI 复用该依赖版本，不额外引入第二套 React。Android 仍需 Android SDK/NDK 27.2.12479018；新增库包含 arm64、armv7、x86_64、x86 四种架构，16KB 链接页对齐。
+共享 UI 拥有独立锁文件，可执行 `npm --prefix Shared/UI ci` 后 `npm --prefix Shared/UI run build`。打包脚本自动通过 `Shared/Tooling/prepare-dependencies.mjs shared-ui` 离线准备依赖，无需安装 Mac 前端。两个前端固定使用一致的 React/Vite 版本，每个页面只解析一份 React。Android 仍需 Android SDK/NDK 27.2.12479018；新增库包含 arm64、armv7、x86_64、x86 四种架构，16KB 链接页对齐。
 
 ## 边界与后续迁移顺序
 
@@ -43,10 +43,10 @@ node Scripts/preview-shared-ui.mjs
 ## 验证
 
 ```sh
-bash Scripts/test-shared-core.sh  # C ABI / JNI / Swift 同一组协议金样 + Swift/JS 测试
-bash Scripts/test-android.sh
-bash Scripts/test-ios.sh
-bash Scripts/test-android-ui.sh emulator-5554
+bash Scripts/tests/test-shared-core.sh  # C ABI / JNI / Swift 同一组协议金样 + Swift/JS 测试
+bash Scripts/tests/test-android.sh
+bash Scripts/tests/test-ios.sh
+bash Scripts/tests/test-android-ui.sh emulator-5554
 # 专用模拟器，测试会替换音乐库及页面状态，不允许实体手机
 adb -s emulator-5554 shell am instrument -w -e mode portable \
   com.xcosmos.minivoice.uitests/com.xcosmos.minivoice.UiRegressionInstrumentation

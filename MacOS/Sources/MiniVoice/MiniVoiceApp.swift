@@ -6,7 +6,7 @@ import AppKit
 struct MiniVoiceEntry {
     @MainActor static func main() {
         guard CommandLine.arguments.contains("--desktop-engine") else {
-            print("MiniVoice 原生服务由主应用启动。请运行 Scripts/build-app.sh，再打开 .build/MiniVoice.app。")
+            print("MiniVoice 原生服务由主应用启动。请运行 Scripts/build/build-app.sh，再打开 .build/dist/MiniVoice.app。")
             return
         }
         if ProcessInfo.processInfo.environment["MINIVOICE_ENGINE_TEST_DOMAIN"] == nil {

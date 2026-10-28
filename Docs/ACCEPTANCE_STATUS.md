@@ -16,13 +16,13 @@
 | 组件契约 v1 | 规则已建立，存量逐项收敛 | 规则已建立，存量逐项收敛 | 组件直接依赖门禁及正反例通过；CSS token、作用域、disclosure 和完整契约用例仍待收敛 |
 | 全量产品标准 v1 | 未整体验收 | 未整体验收 | 新标准执行边界已建立；对比度、材质、连续操作及实体设备矩阵是后续重点 |
 
-当前报告目录：`.build/Shared/Core/`。重点报告 `experience-search-*`、`full-controls-*`。历史报告证明当时对应改动，不自动视作未来改动仍通过。
+当前报告目录：`.build/reports/ui/`。重点报告 `experience-search-*`、`full-controls-*`。历史报告证明当时对应改动，不自动视作未来改动仍通过。
 
 ## 当前交付
 
-Android 定向体验包：`.build/Android/MiniVoice-android-experience.apk`。包含音乐墙可见区修正和搜索变形动画；实体手机视频场景仍需回验。
+Android 定向体验包：`.build/work/android/MiniVoice-android-experience.apk`。包含音乐墙可见区修正和搜索变形动画；实体手机视频场景仍需回验。
 
-Mac 体验包：`.build/MiniVoice-debug.app`，继续与正式版隔离。
+Mac 体验包：`.build/dist/MiniVoice-debug.app`，继续与正式版隔离。
 
 产品标准执行入口：组件静态边界检查通过（85 个源文件）；规则正反例测试 2 项通过；Android/桌面前端经新增构建门禁均构建通过。此结果不改变上表真机与全量视觉验收的待验收状态。
 
@@ -60,11 +60,11 @@ Mac 音乐墙播放条位置更正：移除底部居中的 left/translateX 规�
 
 验证通过：87 个生产源文件组件边界；共享逻辑 29 项；桌面测试 54 项通过、3 项跳过；Electron 组件键盘开合/禁用/草稿保留及既有菜单、滑块、按钮反馈；两端实际页面回归（音乐墙、三样式主题、连续切卡、搜索、横竖布局、Mac 设置/编辑器和歌词打点），已查看设置、编辑器和组件截图。报告 parity-disclosure-components.txt、parity-updated-render.txt。Android 与 Mac-debug 已重新构建，Mac 深度严格签名校验通过。真机材质、对比度、连续动画和正式版同步视觉比对仍待验收。
 
-本轮 Android 专用 MiniVoiceRegression 模拟器 portable 回归通过（UI_PORTABLE_PASS，parity-android-portable.txt）：真实 WAV 播放、三样式主题、歌词、触控滑块/滚动条、长按取消、横竖屏、设置及重启锚点。测试仅使用合成音乐库；截图已拉取至 .build/Android/ui-tests/parity-screenshots。实体手机/GPU 与正式版 1:1 对照继续待验收。
+本轮 Android 专用 MiniVoiceRegression 模拟器 portable 回归通过（UI_PORTABLE_PASS，parity-android-portable.txt）：真实 WAV 播放、三样式主题、歌词、触控滑块/滚动条、长按取消、横竖屏、设置及重启锚点。测试仅使用合成音乐库；截图已拉取至 .build/reports/android/ui-tests/parity-screenshots。实体手机/GPU 与正式版 1:1 对照继续待验收。
 
 ## 2026-10-23 用户截图按钮 / Android 整墙闪屏专项
 
-输入证据：用户 Screenrecorder-2026-10-23-14-42-19-67.mp4（约 6.78 秒）及四张标注截图。抽帧显示切卡过程中整片墙面短暂消失，悬浮工具仍在，不能归结为单张封面解码。原视频抽帧 contact.png 位于 .build/Shared/Core/user-flash/。本机未稳定复现用户实体 GPU 的相同故障，唯一根因仍待真机诊断。
+输入证据：用户 Screenrecorder-2026-10-23-14-42-19-67.mp4（约 6.78 秒）及四张标注截图。抽帧显示切卡过程中整片墙面短暂消失，悬浮工具仍在，不能归结为单张封面解码。原视频抽帧 contact.png 位于 .build/reports/ui/user-flash/。本机未稳定复现用户实体 GPU 的相同故障，唯一根因仍待真机诊断。
 
 已修正：Mac 音乐墙收起播放按钮外径 38px，与菜单/搜索/设置工具一致；去除内层白圆。桌面 SVG 从旧位图尺寸隔离，缩小工具栏、播放副控件、顶部与输出设备绘制框；简化侧栏图形，修复搜索绝对定位导致的中心偏移。Android 将世界平面公共 translate3d/scale 提升改为视口内逐卡投影，保留已加载图片、相机和可见区；画布/聚焦区使用不可滚动裁切，增加焦点滚动检查。
 
@@ -112,7 +112,7 @@ Mac 音乐墙播放条位置更正：移除底部居中的 left/translateX 规�
 
 弹窗顶部自有拖动条提供 44px 触摸区域，支持跟手下拉、距离/速度判定关闭、短拉回弹、取消复位；仅手柄接管手势，正文保留滚动。关闭仍走原页面回调。使用 window 捕获跟踪，动画帧合并写入位移，减弱动态时直接复位；拖动后的键盘激活仍可关闭。
 
-验证：组件边界 91 源文件通过，共享逻辑 30 项通过，git diff --check 通过。Electron 页面全套回归通过，包含四边安全区、拖动跟手/回弹/取消/关闭及拖动后 Enter 激活（insets-sheet-render.txt）。专用 MiniVoiceRegression 模拟器分别在手势导航、三键导航执行完整 portable 回归，均 UI_PORTABLE_PASS；真实 Activity 横竖屏系统 inset 与页面比较、真实触摸注入拖动/取消均通过（insets-sheet-android-gesture.txt、insets-sheet-android-threebutton.txt）。已恢复模拟器手势导航。最终键盘兼容修正后重新构建 Android 体验 APK，路径 .build/Android/MiniVoice-android-experience.apk。实体手机触感、用户设备 GPU 流畅度仍待实机验收；本轮没有修改 Mac。
+验证：组件边界 91 源文件通过，共享逻辑 30 项通过，git diff --check 通过。Electron 页面全套回归通过，包含四边安全区、拖动跟手/回弹/取消/关闭及拖动后 Enter 激活（insets-sheet-render.txt）。专用 MiniVoiceRegression 模拟器分别在手势导航、三键导航执行完整 portable 回归，均 UI_PORTABLE_PASS；真实 Activity 横竖屏系统 inset 与页面比较、真实触摸注入拖动/取消均通过（insets-sheet-android-gesture.txt、insets-sheet-android-threebutton.txt）。已恢复模拟器手势导航。最终键盘兼容修正后重新构建 Android 体验 APK，路径 .build/work/android/MiniVoice-android-experience.apk。实体手机触感、用户设备 GPU 流畅度仍待实机验收；本轮没有修改 Mac。
 
 ## 2026-10-26 手机侧栏宽度和可见动画纠正
 
@@ -120,7 +120,7 @@ Mac 音乐墙播放条位置更正：移除底部居中的 left/translateX 规�
 
 已通过：组件边界 91 源文件、共享逻辑 30 项、Electron 页面回归，包括侧栏实际宽度/中间位移、退出保留/清理/快速重开、三种样式根节点的运行中动画，以及原系统安全区和弹窗拖动条。专用 MiniVoiceRegression Android 模拟器 portable 完整回归 UI_PORTABLE_PASS（drawer-slide-android.txt），通过 requestAnimationFrame 采样验证侧栏从屏外到最终位置的多个中间帧、样式切换存在多个不同的非单位变换，包含真实系统栏横竖屏及其他原功能回归。最终退出副本布局修正后重新构建并复测结果另记。实体手机 GPU 流畅度继续待实机体验确认，未将模拟器采样称为实机 FPS。
 
-最终复核：drawer-slide-android-final.txt 再次 UI_PORTABLE_PASS；drawer-slide-render-final.txt 增加连续三次切换以最新意图落位、结束后 transform 归零、减弱动态直接更新状态的页面验证通过，原 Mac 页面回归通过。已查看 drawer-narrow-final.png 确认收窄后标题与按钮可容纳、右侧页面留白可见。Android 最终 APK 已更新至 .build/Android/MiniVoice-android-experience.apk。
+最终复核：drawer-slide-android-final.txt 再次 UI_PORTABLE_PASS；drawer-slide-render-final.txt 增加连续三次切换以最新意图落位、结束后 transform 归零、减弱动态直接更新状态的页面验证通过，原 Mac 页面回归通过。已查看 drawer-narrow-final.png 确认收窄后标题与按钮可容纳、右侧页面留白可见。Android 最终 APK 已更新至 .build/work/android/MiniVoice-android-experience.apk。
 
 ## 2026-10-26 手机侧栏前后与上下分区层次
 
@@ -130,7 +130,7 @@ Mac 音乐墙播放条位置更正：移除底部居中的 left/translateX 规�
 
 补充复核过程：初始固定时长的滚动断言在歌手页异步 page.restore 返回前读取了 0；随后返回音乐库的断言也早于恢复完成。SongList 增加 aria-busy 恢复标记和卸载帧保护，可见性回调不再在恢复请求未完成时提前标记就绪；原始像素锚点断言保留，测试等待明确就绪。动画检查同样从宿主固定时间点轮询改为页面 RAF 记录开始至结束，仍要求多个不同的中间变换，未放宽为“存在动画对象即通过”。
 
-最终 Android 完整 portable 回归 UI_PORTABLE_PASS（drawer-depth-android-complete.txt）：三种样式层次及复位、侧栏真实进出中间帧、样式切换、原像素滚动锚点/分组返回/重启、系统安全区、触控等全部通过。共享逻辑 30 项通过；最终组件边界及差异空白检查通过。体验 APK 已更新为 .build/Android/MiniVoice-android-experience.apk。
+最终 Android 完整 portable 回归 UI_PORTABLE_PASS（drawer-depth-android-complete.txt）：三种样式层次及复位、侧栏真实进出中间帧、样式切换、原像素滚动锚点/分组返回/重启、系统安全区、触控等全部通过。共享逻辑 30 项通过；最终组件边界及差异空白检查通过。体验 APK 已更新为 .build/work/android/MiniVoice-android-experience.apk。
 
 ## 2026-10-26 手机样式切换对齐 Mac 碎片扩散
 
@@ -140,7 +140,7 @@ Android 增加自身 Activity WebView 区域 PixelCopy 快照能力（不录屏�
 
 已通过：组件边界 92 源文件，共享逻辑 30 项，Mac 逻辑 55 项（3 项跳过）。Electron 实际页面回归通过（fragment-render-final.txt），包含真实页面截图作为碎片纹理、多个碎片中间帧、连续切换最终状态、运行时减弱动态、动画中 resize 清理，以及三种样式、深浅、侧栏层次/安全区/弹窗拖动和原 Mac 页面回归。已查看 phone-mac-style-fragments.png 确认旧画面碎片实际旋转散开。Android 最终结果另记；实体手机 GPU 流畅度仍待实机验收。
 
-Android 最终完整 portable 回归 UI_PORTABLE_PASS（fragment-android.txt）：三种样式切换经真实 PixelCopy 宿主链路，RAF 要求多个不同碎片时间帧且绘制纹理具有多个非透明颜色，确认没有走无快照兜底；原安全区、层次/侧栏开关、实际触摸、滚动锚点/重启等回归通过。最终组件边界与 git diff --check 通过，Android 体验 APK 已更新至 .build/Android/MiniVoice-android-experience.apk。
+Android 最终完整 portable 回归 UI_PORTABLE_PASS（fragment-android.txt）：三种样式切换经真实 PixelCopy 宿主链路，RAF 要求多个不同碎片时间帧且绘制纹理具有多个非透明颜色，确认没有走无快照兜底；原安全区、层次/侧栏开关、实际触摸、滚动锚点/重启等回归通过。最终组件边界与 git diff --check 通过，Android 体验 APK 已更新至 .build/work/android/MiniVoice-android-experience.apk。
 
 ## 2026-10-26 双端缩放刻度、手机材质/回弹/译文优化
 
@@ -192,11 +192,11 @@ editor-redesign-render-final.txt 完整页面回归通过，覆盖四设置页�
 
 验证通过：mobile-wall-final-touch-android.txt 完整 UI_PORTABLE_PASS（包含真实 WAV 播放、双语歌词、三样式/主题/系统栏、原图、触觉调用、侧栏真实进出帧、滑条/拖动取消、歌单与分组返回/重启锚点）；mobile-wall-edge-android.txt UI_WALL_PASS，额外覆盖边缘有效点按和真实手指在播放/收藏/歌词上拖动后单次打开侧栏、不触发业务/触感、相机冻结、图片节点逐帧保留、60/100/120 缩放、62% 连续值、展开/系统返回、横竖屏和快速切卡画面。mobile-wall-final-touch-render.txt 页面与原 Mac 页面回归通过，mobile-wall-final-touch-components.txt 自有组件交互通过；共享单元 33 项通过，Mac 单元 59 项通过、4 项后端条件用例跳过，组件边界 98 源文件及 git diff --check 通过。
 
-过程与限制：仪器输入已修正为 SOURCE_TOUCHSCREEN/TOOL_TYPE_FINGER 和实际 Down/Up 间隔；之前未知工具类型会产生空 pointerType 而没有 click，不能作为真实手指的通过证据。长时运行模拟器曾出现旧图块，冷启动 host/OpenGL 后端（本轮关闭 Vulkan）并按真实手指事件重新完整验证；已查看 mobile-wall-final-android.png 和 mobile-wall-native-touchend.png，未再见早轮残留块。常驻整页合成、全墙 Canvas、强制 WebView 硬件层等未改善的实验均已撤销，交付不包含这些尝试。实体手机的 GPU 流畅度、偶发闪屏和物理震感仍需实机体验，不宣称所有设备均已消除闪屏。Android 体验 APK 已更新至 .build/Android/MiniVoice-android-experience.apk。
+过程与限制：仪器输入已修正为 SOURCE_TOUCHSCREEN/TOOL_TYPE_FINGER 和实际 Down/Up 间隔；之前未知工具类型会产生空 pointerType 而没有 click，不能作为真实手指的通过证据。长时运行模拟器曾出现旧图块，冷启动 host/OpenGL 后端（本轮关闭 Vulkan）并按真实手指事件重新完整验证；已查看 mobile-wall-final-android.png 和 mobile-wall-native-touchend.png，未再见早轮残留块。常驻整页合成、全墙 Canvas、强制 WebView 硬件层等未改善的实验均已撤销，交付不包含这些尝试。实体手机的 GPU 流畅度、偶发闪屏和物理震感仍需实机体验，不宣称所有设备均已消除闪屏。Android 体验 APK 已更新至 .build/work/android/MiniVoice-android-experience.apk。
 
 ### 2026-10-27 手机实机截图反馈：侧栏背景边线、露底和响应
 已实现：后方卡片/播放栏边框与阴影在侧栏打开期间隐藏并恢复；导航与歌曲列表增加分层材质；音乐墙增加冻结封面的全幅背景，保留前景内容后退而不露出纯色底。打开侧栏不再连续读取墙面，前景平移与遮罩渐入分开合成。切换按钮立即提供工作中反馈，截图准备不再等待状态 flush，提交仍序列保存。Android 维持截图分辨率上限，独立线程编码 JPEG 95，减少无损 PNG 的体积与编码负担。
-验证：mobile-drawer-layer-android.txt 完整 UI_PORTABLE_PASS；含实际手指输入、侧栏真实进入/退出帧、背景边框隐藏/导航层次/墙面全幅背景、三样式与主题、系统栏、横竖屏、滑动取消和返回还原。mobile-drawer-layer-render.txt 原三样式与 Mac 页面回归通过；共享单元 mobile-drawer-layer-unit.txt 33 项通过。截图与日志位于 .build/Shared/Core。
+验证：mobile-drawer-layer-android.txt 完整 UI_PORTABLE_PASS；含实际手指输入、侧栏真实进入/退出帧、背景边框隐藏/导航层次/墙面全幅背景、三样式与主题、系统栏、横竖屏、滑动取消和返回还原。mobile-drawer-layer-render.txt 原三样式与 Mac 页面回归通过；共享单元 mobile-drawer-layer-unit.txt 33 项通过。截图与日志位于 .build/reports/ui。
 待验收：用户实体手机的帧稳定性与截图链路时延；本次未测量实机 FPS，不以模拟器或静态截图宣称所有设备均无卡顿。截图编码已改变格式但未降低原有分辨率上限，需要实机确认细字与碎片边缘观感。
 补充验证：mobile-drawer-layer-touch.txt 覆盖简易/音乐墙分层、全幅背景、关闭动画过程中保留背景且完成后释放、延迟 700ms 返回截图时按钮立即出现工作动画、切换完成后清理碎片画布；mobile-drawer-layer-components.txt 自有组件键鼠/忙碌/减弱动态回归通过。最终 Android 包的 targeted mobile-drawer-layer-final-android.txt 为 UI_WALL_PASS。
 
@@ -206,15 +206,15 @@ editor-redesign-render-final.txt 完整页面回归通过，覆盖四设置页�
 
 ### 2026-10-27 双端普通歌词滚动与边缘渐隐
 已实现：手机普通歌词补齐与 Mac 相同的上下渐隐（各为视口 7%，最多 28px），当前行及邻行使用一致的距离强调；手机去掉歌词 shell 顶部 40px 保留区，Mac 简易歌词控制条改为浮动，去掉独占顶部行。手机首尾留白改按实际歌词视口高度计算，Mac 末尾补齐对称留白，最后一句亦可居中；Mac 用行/视口实际坐标定位，尺寸变化尊重手动滚动保护。音乐墙自己的歌词呈现保持原逻辑。
-验证通过：Scripts/test-lyrics-viewport.cjs，日志 lyrics-viewport-geometry.txt，检查手机/Mac 首、中、尾行可居中、渐隐存在、顶部控制条浮动、歌词视口不超出卡片；过程发现手机默认 50vh 留白导致内层撑高，已改为初始零留白、测量后设置像素值，并重新检查实际 436px 视口。lyrics-viewport-final-android.txt 完整 UI_PORTABLE_PASS；lyrics-viewport-render.txt 现有双端页面回归通过；lyrics-viewport-unit.txt 共享 33 项通过。截图已查看，组件边界、diff 空白检查及 Mac codesign --verify --deep --strict 通过。Android 体验 APK 和 .build/MiniVoice-debug.app 已重建。实机滚动观感待用户验收。
+验证通过：Scripts/tests/test-lyrics-viewport.cjs，日志 lyrics-viewport-geometry.txt，检查手机/Mac 首、中、尾行可居中、渐隐存在、顶部控制条浮动、歌词视口不超出卡片；过程发现手机默认 50vh 留白导致内层撑高，已改为初始零留白、测量后设置像素值，并重新检查实际 436px 视口。lyrics-viewport-final-android.txt 完整 UI_PORTABLE_PASS；lyrics-viewport-render.txt 现有双端页面回归通过；lyrics-viewport-unit.txt 共享 33 项通过。截图已查看，组件边界、diff 空白检查及 Mac codesign --verify --deep --strict 通过。Android 体验 APK 和 .build/dist/MiniVoice-debug.app 已重建。实机滚动观感待用户验收。
 
 ### 2026-10-27 Mac 搜索栏边界与信息按钮材质
 已实现：音乐库搜索栏从窗口固定宽度改为在 workspace-header 可用宽度内收缩，browse-tools/input 允许 flex 收缩，搜索图标保持尺寸；侧栏覆盖/并排、窄窗口不再把搜索框挤出右边界。简易样式右上角歌曲信息按钮纳入与侧栏按钮相同的共享玻璃材质，沿用统一的圆形 38px 布局与图标组件。
-验证通过：mac-search-layout-geometry.txt，304/486/770/1100px 窗口侧栏开/关全部检查搜索框在标题栏和窗口边界内、输入区宽度为正；信息/侧栏按钮计算背景、尺寸、圆角一致。mac-search-layout-render.txt 原双端页面回归通过；已查看 mac-search-layout.png。组件边界、diff 空白及 Mac 体验包签名验证通过。新包为 .build/MiniVoice-debug.app；实机外观待验收。
+验证通过：mac-search-layout-geometry.txt，304/486/770/1100px 窗口侧栏开/关全部检查搜索框在标题栏和窗口边界内、输入区宽度为正；信息/侧栏按钮计算背景、尺寸、圆角一致。mac-search-layout-render.txt 原双端页面回归通过；已查看 mac-search-layout.png。组件边界、diff 空白及 Mac 体验包签名验证通过。新包为 .build/dist/MiniVoice-debug.app；实机外观待验收。
 
 ### 2026-10-27 Mac 桌面歌词按钮、横竖布局与焦点轮廓
 按用户明确要求，Mac 非输入控件取消 focus-visible 轮廓（保留焦点、Tab 与 Enter/Space 操作），仅输入框/文本编辑区域保留轮廓；这是本轮对原通用键盘轮廓规范的用户指定外观例外，不改变手机组件默认规则。桌面歌词移除显示播放器/播放暂停两个按钮，新增横竖切换；保留窗口内锁定与关闭，移除设置里的锁定开关。解锁悬浮按钮默认透明无边框，悬浮出现材质与轮廓，歌词窗口内按钮亦只在悬浮显示轮廓。横竖布局经专用配置协议保存，按显示器可用范围调整窗口与独立尺寸限制，竖排原文/译文继续自适应字号。音乐墙收起状态在播放时复用 NowPlayingIndicator 持续四音柱律动，展开后的暂停控制保持原语义。
-验证通过：mac-lyrics-actions-geometry.txt 覆盖三按钮/移除旧控件、横竖切换命令和竖向 writing-mode、解锁默认透明、键盘聚焦图标无轮廓、设置锁定项移除及收起播放音柱在两个采样时刻确实变化；mac-lyrics-actions-render.txt 原双端页面回归通过。mac-lyrics-actions-unit.txt 60 项通过、4 项后端条件跳过，含新增竖向配置持久化尺寸约束；组件边界、main.cjs 语法、diff 空白和体验包签名校验通过。新包 .build/MiniVoice-debug.app。窗口在实际多显示器间的旋转、竖排长歌词观感待实机验收。
+验证通过：mac-lyrics-actions-geometry.txt 覆盖三按钮/移除旧控件、横竖切换命令和竖向 writing-mode、解锁默认透明、键盘聚焦图标无轮廓、设置锁定项移除及收起播放音柱在两个采样时刻确实变化；mac-lyrics-actions-render.txt 原双端页面回归通过。mac-lyrics-actions-unit.txt 60 项通过、4 项后端条件跳过，含新增竖向配置持久化尺寸约束；组件边界、main.cjs 语法、diff 空白和体验包签名校验通过。新包 .build/dist/MiniVoice-debug.app。窗口在实际多显示器间的旋转、竖排长歌词观感待实机验收。
 
 ### 2026-10-27 双端图标与手机队列、主题切换
 已实现：Mac 音乐库定位/排序/清除搜索改用共享 SVG，手机设置的主题选中与添加文件夹也使用共享图标，保持 24 点画布与既有语义映射；静态审计两端 103 处 Icon/icon 引用均能解析到共享真实路径。手机三样式的队列统一行边距、10px 间隔、44px 收藏操作与选中态，取消音乐墙对队列行的玻璃卡片/背景模糊污染。手机主题选择立即显示并保存，失败恢复原状态并显示错误，后续写入不会清除更新的选择；缺少偏好时跟随系统。弹窗独立按选定主题取色，避免墙面样式覆盖设置/队列配色。
@@ -228,7 +228,7 @@ Mac：解锁命中区闲置时包括图标与底框均透明，悬浮/焦点可�
 
 通过：组件边界；共享逻辑 33 项；桌面逻辑 61 项、4 项宿主测试在普通运行跳过；打包后台以独立 MiniVoice.Test.* 偏好域额外运行 4 项全部通过；Mac codesign --verify --deep --strict；自有组件交互、test-wall-version 实际页面回归（1037 首、三种样式/深浅、打断、缩放/拖动、展开返回、窗口边界）；test-mobile-wall-touch（真实播放/收藏/歌词区域拖动、不误触、侧栏相机与实际页面缩放、原紧凑播放栏、展开无轮廓、收缩中间帧无黑遮罩）；test-desktop-lyrics（600×112/360×88 长句和译文拟合、110×600 竖向元信息、默认透明解锁及真实点击）。上述截图已检查。
 
-Android 专用 emulator-5554：portable 完整回归通过 UI_PORTABLE_PASS；新增系统主题用例在设置页保持打开时通过 cmd uimode night yes/no，原生 configuration 驱动 WebView 分别到 dark/light，结束恢复模拟器原夜间设置。覆盖横竖屏、安全区域、三种样式深浅、播放/队列/设置/返回、缩放与歌词。日志 `.build/review/`，定向包 `.build/Android/MiniVoice-android-experience.apk` 和 `.build/MiniVoice-mac-experience.zip`；Mac 体验版身份/数据域隔离保留。
+Android 专用 emulator-5554：portable 完整回归通过 UI_PORTABLE_PASS；新增系统主题用例在设置页保持打开时通过 cmd uimode night yes/no，原生 configuration 驱动 WebView 分别到 dark/light，结束恢复模拟器原夜间设置。覆盖横竖屏、安全区域、三种样式深浅、播放/队列/设置/返回、缩放与歌词。日志 `.build/review/`，定向包 `.build/work/android/MiniVoice-android-experience.apk` 和 `.build/MiniVoice-mac-experience.zip`；Mac 体验版身份/数据域隔离保留。
 
 待实体设备验收：用户手机 GPU 上的设置闪烁、玻璃采样与快速连续展开/收缩观感，真实封面下的两端材质一致性及对比度；本轮没有实机 FPS 或对比度测量。此为定向体验包，不代表整个产品矩阵全部签收。先前要求存在静态拼接层、手机七个圆点的断言已改为验证本次明确要求的实际场景缩放和连续滑块，未放宽组件标准。
 
@@ -249,7 +249,7 @@ Android 专用 emulator-5554：portable 完整回归通过 UI_PORTABLE_PASS；�
 按用户新截图重新核查并修正：恢复七个 Mac 同款缩放刻度；墙面侧栏景深从“缩小/裁切整个页面”改为完整屏幕内临时相机缩放，边缘显示真实已解码封面、关闭恢复持久相机；清除普通页背后内容的面板材质，并将 atmosphere 移出缩放内容容器，去掉大圆角底板；取消样式 badge 旋转。音乐墙侧栏和所有手机 Modal 直接采样当前内容，用按钮同款色罩/模糊；队列可上拉到安全区域内接近全屏，下拉回半屏，取消不改变档位，保留单一歌曲列表滚动区。
 重要根因：此前 dev 预览通过不代表 APK 正常。模拟器实测已安装包的墙面侧栏 backdropFilter=none；生成 CSS 经 minifier 后只剩部分 WebKit 前缀声明。现关闭共享 UI 的 CSS minify，保留双声明并添加产物门禁。修复后安装 APK 的真实 filter 检查通过。此为渲染修正，JS 平台目标与身份/数据隔离不变。
 通过证据：组件边界、diff 检查、共享逻辑 33 项；自有组件回归、实际双端页面 test-wall-version；新增 test-mobile-wall-surfaces（完整画布、各边缘≥75%真实封面覆盖且保留自然间隙、原相机恢复、七刻度、共享单层材质、无 badge 旋转、队列上拉/下拉/取消、深浅截图、普通页无嵌套底框）。开发页面 1037 首规模；Android 专用 emulator-5554 安装最终 APK，portable 测试包含实际玻璃 filter、三种样式深浅、横竖与安全区域、返回和系统主题、真手指队列展开/收起/取消和单滚动条；首次完整 UI_PORTABLE_PASS 后补充 atmosphere 外移检查并重跑最终包，最终日志见 .build/review/mobile-rework-android-final.txt。
-截图：mobile-full-wall-drawer-light/dark、mobile-wall-scale-marks、mobile-queue-half/full-dark、mobile-queue-full-light、mobile-simple-drawer-unframed 已检查；实际 APK 截图保存于 .build/review/mobile-rework-android-shots，已检查墙面浅色侧栏、简易浅色侧栏和真实手指展开队列。最终包 .build/Android/MiniVoice-android-wall-glass-20261027.apk（同时更新 experience.apk）。
+截图：mobile-full-wall-drawer-light/dark、mobile-wall-scale-marks、mobile-queue-half/full-dark、mobile-queue-full-light、mobile-simple-drawer-unframed 已检查；实际 APK 截图保存于 .build/review/mobile-rework-android-shots，已检查墙面浅色侧栏、简易浅色侧栏和真实手指展开队列。最终包 .build/work/android/MiniVoice-android-wall-glass-20261027.apk（同时更新 experience.apk）。
 待验收：用户实体手机的实际 GPU 合成、连续操作流畅度与真实封面下的对比度；未测量 FPS，不把模拟器通过称为整体验收完成。本轮未修改 Mac 页面实现。
 最终补充：atmosphere 外移后的最终 APK 也已重跑得到 UI_PORTABLE_PASS；最后一轮真实截图位于 `.build/review/mobile-rework-android-shots/ui-regression/`，已重新查看简易浅色侧栏，背后不再有页面大小的圆角底板。最终体验 APK 两个交付文件均从此轮构建复制。
 
@@ -267,7 +267,7 @@ Android 专用 emulator-5554：portable 完整回归通过 UI_PORTABLE_PASS；�
 通过：组件门禁、共享逻辑 37 项、test-wall-version 实际双端页面、test-mobile-wall-surfaces、test-mobile-wall-touch；新增 test-mobile-style-glass 覆盖真实浅深设置、状态语义、同材质、72 碎片单次绘制与动画期间无新增 drawImage、快速连续切换及无残留。截图 mobile-thin-status-paused/playing、mobile-thin-drawer-light/dark、mobile-thin-fragments 已检查。Android 最终打包与专用 emulator-5554 portable 结果见 .build/review/mobile-thin-android-final.txt。
 待验收：用户实体手机 GPU 的连续切换流畅度，以及真实封面组合下薄透明侧栏的文字对比；未测量真机 FPS 或整套动态封面对比度，不宣称所有手机均无卡顿。Mac 页面未改动。
 
-最终补充：最终 APK 在 emulator-5554 得到 UI_PORTABLE_PASS，含实际截图纹理、碎片变换中间值、三样式深浅、横竖/返回、原生系统主题和真实手指队列手势。最终 Android 截图保存在 `.build/review/mobile-thin-android-shots/`；交付 `.build/Android/MiniVoice-android-thin-glass-20261027.apk`，并更新 experience.apk。
+最终补充：最终 APK 在 emulator-5554 得到 UI_PORTABLE_PASS，含实际截图纹理、碎片变换中间值、三样式深浅、横竖/返回、原生系统主题和真实手指队列手势。最终 Android 截图保存在 `.build/review/mobile-thin-android-shots/`；交付 `.build/work/android/MiniVoice-android-thin-glass-20261027.apk`，并更新 experience.apk。
 
 ### 2026-10-28 Mac 独立设置/编辑窗口与大图操作
 按用户截图调整：设置、歌曲编辑从主窗口内覆盖层改为独立原生窗口，主窗口缩放不影响其内容区域；设置复用一个窗口，编辑按歌曲复用以保留草稿。仍由自有组件绘制内容，窗口关闭、搜索层返回、忙碌与未保存确认保持一致。设置各分类标题下概述移除。
@@ -283,7 +283,7 @@ Android 专用 emulator-5554：portable 完整回归通过 UI_PORTABLE_PASS；�
 通过：组件门禁、共享逻辑 37 项、test-wall-version 双端实际页面、自有组件测试、test-mobile-wall-surfaces；新增 test-mobile-landscape 覆盖深浅、横屏普通/目录/墙面与歌词展开、侧栏选中/文字、圆形缩放反馈及恢复。实际截图 mobile-native-landscape-simple-light/wall-dark、mobile-sidebar-type-light 等已检查。最终 APK 的 emulator-5554 portable 验证及日志见 .build/review/landscape-android-final.txt；包含实际 systemBars 方向可见性、手指按住刻度的无方块反馈、横竖/返回/系统主题、队列手势与真实音频。
 待用户回验：实体手机切口/系统导航模式、透明封面下字体观感与横屏操作舒适度；本轮按原生分区对齐，未宣称所有屏幕逐像素一致或真机 GPU 流畅度已测量。Mac 源码与打包不在本轮修改范围（工作区仍保留上一轮 Mac 独立窗口改动）。
 
-本轮最终补充：重新打包后的最终 APK 在 emulator-5554 再次通过 UI_PORTABLE_PASS；真手指按住节点截图和横屏截图位于 `.build/review/landscape-android-final-shots/`。交付 `.build/Android/MiniVoice-android-landscape-20261028.apk`，同步更新 experience.apk。测试会关闭首次沉浸系统说明以检查实际页面，不将系统引导当作应用内容。
+本轮最终补充：重新打包后的最终 APK 在 emulator-5554 再次通过 UI_PORTABLE_PASS；真手指按住节点截图和横屏截图位于 `.build/review/landscape-android-final-shots/`。交付 `.build/work/android/MiniVoice-android-landscape-20261028.apk`，同步更新 experience.apk。测试会关闭首次沉浸系统说明以检查实际页面，不将系统引导当作应用内容。
 
 ## 2026-10-28 打包入口整理
 
@@ -295,3 +295,13 @@ Android 专用 emulator-5554：portable 完整回归通过 UI_PORTABLE_PASS；�
 - 待验收：本轮未执行真实 Applications 替换或设备安装回归；Android 两版沿用相同包名和开发证书，互相覆盖，不能宣称可并行安装或商店发行已配置。
 
 打包实测补充：正式、体验 Mac `.app` 均通过新入口完成重建和 codesign 深度严格校验；两个固定名称 DMG 均完成生成与 hdiutil verify。发布目录现有两 APK、两 DMG；没有生成 IPA。未执行 `/Applications` 实际替换或真机安装，iOS 导出配置缺失拒绝路径已验证。
+
+## 2026-10-28 项目目录与前端构建依赖整理
+
+- 已实现：`.build` 顶层只保留 cache、work、reports、archive、dist；既有安装包、历史项目副本、实验资源和验收证据保留并迁移。App 及安装包统一在 dist；迁移清单保存在 reports/build-layout-migration.json。旧 Clang/Swift 编译缓存与需要重建的实验 Python 环境保留在 legacy 目录，新路径不复用包含旧绝对路径的编译模块。
+- 已实现：Scripts 只保留 build、build-experience、deploy、deploy-experience 四个公开脚本；内部实现按 build/common/checks/tests/tools/assets 分类，仓库引用和说明同步更新。正式原生窗口与体验自有组件身份边界未改变。
+- 已实现：9 个 Shared/UI Vite 缓存文件移出 Git 跟踪；所有层级 node_modules 与 Vite 缓存加入忽略规则。共享 UI 有独立锁文件和构建入口，两个前端共用 Shared/Tooling 下的离线依赖工具与 LFS 归档，桌面仍显式使用自身 React，避免页面双实例。
+- 验证通过：临时隔离项目不含 MacOS/Desktop/node_modules，从不同工作目录离线安装 19 个包并完成共享 UI 构建；npm Shared/UI 构建入口通过。共享 UI 37 项测试、桌面 64 项测试通过（另 4 项按环境跳过）；核心 Swift 2 项和 C/JNI/Swift 10 组协议金样通过；Android JVM 测试通过。
+- 验证通过：四入口路由及失败传播、迁移预览/重名归档/重复执行/构建锁保护，组件边界及脚本语法。Electron 自有组件交互、音乐墙页面回归通过。两版 Android APK、两版 Mac App 与 DMG 已在新目录完成构建、签名或镜像校验。
+- 环境记录：Mac 首次验证发现搬迁 Clang 缓存包含旧绝对路径，已归入 legacy 并重新生成；GitHub 依赖更新网络失败，最终使用本地依赖与 MINIVOICE_LOCKED_BUILD=1 完成构建，不修改依赖版本。
+- 未执行：缓存清空、用户 Applications 替换、真实设备安装或全量视觉矩阵。本轮整理不增加 iOS 体验宿主或 IPA 签名配置，不改变此前未接入结论。

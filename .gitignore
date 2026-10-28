@@ -21,3 +21,8 @@ Android/app/build/
 *.jks
 Android/signing/*
 !Android/signing/debug.keystore
+
+# Dependencies and tool caches at any package depth
+node_modules/
+.vite/
+.vite-temp/

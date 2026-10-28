@@ -14,11 +14,11 @@
 在仓库根目录运行：
 
 ```sh
-Scripts/build-ios.sh simulator Debug
+Scripts/build/build-ios.sh simulator Debug
 ```
 
-脚本生成未签名的模拟器应用，位于 `.build/iOS/DerivedData/Build/Products/Debug-iphonesimulator/MiniVoice.app`。也可以在 Xcode 中打开 `iOS/MiniVoice.xcodeproj`，选择自己的开发团队后安装到 iPhone。使用 `Scripts/build-ios.sh device Release` 可检查未签名的设备 Release 编译；安装与分发需要开发团队签名。
+脚本生成未签名的模拟器应用，位于 `.build/cache/ios/DerivedData/Build/Products/Debug-iphonesimulator/MiniVoice.app`。也可以在 Xcode 中打开 `iOS/MiniVoice.xcodeproj`，选择自己的开发团队后安装到 iPhone。使用 `Scripts/build/build-ios.sh device Release` 可检查未签名的设备 Release 编译；安装与分发需要开发团队签名。
 
-运行 `Scripts/test-ios.sh` 检查 LRC 时间轴和加权音乐墙布局。
+运行 `Scripts/tests/test-ios.sh` 检查 LRC 时间轴和加权音乐墙布局。
 
 iOS 的“文件”目录访问受系统授权及文件提供方状态限制。云端文件应先下载到设备；目录被移动或授权失效后，需要在设置中重新选择。音乐墙支持双向拖动、双指缩放、周期重复和墙内聚焦卡片。聚焦时可播放、收藏、切歌并展开歌词页；Android 版的周边封面回流动画尚待移植。

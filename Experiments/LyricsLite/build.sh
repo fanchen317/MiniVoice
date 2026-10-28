@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SOURCE="$ROOT/.build/whisper-lite-source"
-DEST="$ROOT/.build/lyrics-lite"
+SOURCE="$ROOT/.build/cache/whisper-lite-source"
+DEST="$ROOT/.build/work/experiments/lyrics-lite"
 COMMIT=0c7be696371069e0baa2515ed7aa08d5a5473aa6
 MODEL_SHA=ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb
 if [[ ! -d "$SOURCE/.git" || "$(git -C "$SOURCE" rev-parse HEAD)" != "$COMMIT" ]]; then
@@ -12,7 +12,7 @@ MODEL="$DEST/models/ggml-small-q5_1.bin"
 if [[ ! -f "$MODEL" || "$(shasum -a 256 "$MODEL" | awk '{print $1}')" != "$MODEL_SHA" ]]; then
   echo "缺少正确的 small-q5_1 模型，见 Experiments/LyricsLite/README.md" >&2; exit 1
 fi
-CMAKE="${CMAKE_BIN:-$ROOT/.build/lyrics-lite-tools/bin/cmake}"
+CMAKE="${CMAKE_BIN:-$ROOT/.build/cache/lyrics-lite-tools/bin/cmake}"
 "$CMAKE" -S "$SOURCE" -B "$DEST/build" -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DGGML_METAL=ON -DGGML_NATIVE=OFF
 "$CMAKE" --build "$DEST/build" --config Release --target whisper-cli -j 4
 mkdir -p "$DEST/bin" "$DEST/package/bin" "$DEST/package/models"

@@ -27,9 +27,9 @@
 ## 验证
 
 ```sh
-swift test --package-path MacOS --scratch-path .build --disable-sandbox --filter 'MusicWall|DisplaySynchronizedMotionTests|PreparedBrowseArtworkTests'
-swift test --package-path MacOS --scratch-path .build --disable-sandbox
-Scripts/build-app.sh release
+swift test --package-path MacOS --scratch-path .build/cache/swift --disable-sandbox --filter 'MusicWall|DisplaySynchronizedMotionTests|PreparedBrowseArtworkTests'
+swift test --package-path MacOS --scratch-path .build/cache/swift --disable-sandbox
+Scripts/build/build-app.sh release
 ```
 
 运动测试通过注入单调时钟模拟显示帧，避免依赖锁屏状态、屏幕刷新率及 XCTest 调度。覆盖 60/120Hz 一致性、丢帧、方向反转、速度限幅、打断、窗口缩放和精确收尾。原生视图测试验证连续 120 次位移不重新计算海报视图，以及远距离世界坐标的实际像素、原生命中坐标和可见内容更新时的位置一致性。
@@ -38,4 +38,4 @@ Scripts/build-app.sh release
 
 本次自动化结果：上述专项测试 73 项全部通过。全量 246 项中 10 项跳过，235 项通过，`BugAuditTests.testLyricsSyncComparisonHydratesLightweightTrack` 一项失败；已在独立目录构建未修改的 HEAD，复现相同失败，确认是基线已有问题。
 
-解锁后补充界面验证：启动 `.build/MiniVoice.app` 的 Release 进程，在实际 1,040 首曲库上操作纵向滚动、横向滚动指令与反向、斜向拖拽、海报聚焦、83%/100% 缩放、三种样式切换、简易/音乐库列表滚动、歌手卡片滚动及打开/返回。观测到内容更新、聚焦后播放器对齐和缩放比例正确，验收结束恢复音乐墙。该验证通过界面自动化操作并检查状态/截图，没有采集连续显示帧，不能据此宣称帧率或主观手感已追平 Folia。
+解锁后补充界面验证：启动 `.build/dist/MiniVoice.app` 的 Release 进程，在实际 1,040 首曲库上操作纵向滚动、横向滚动指令与反向、斜向拖拽、海报聚焦、83%/100% 缩放、三种样式切换、简易/音乐库列表滚动、歌手卡片滚动及打开/返回。观测到内容更新、聚焦后播放器对齐和缩放比例正确，验收结束恢复音乐墙。该验证通过界面自动化操作并检查状态/截图，没有采集连续显示帧，不能据此宣称帧率或主观手感已追平 Folia。

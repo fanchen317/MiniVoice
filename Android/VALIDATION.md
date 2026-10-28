@@ -4,8 +4,8 @@
 
 ## 已执行
 
-- `bash Scripts/test-android.sh`：全部通过，包括增量失效策略、歌手归并/循环映射、疑似重复判定、双语时间合并、增强 LRC 结束时间和 YRC 停顿。
-- `bash Scripts/test-android-ui.sh emulator-5554`：Android 15 / API 35、ARM64 专用模拟器，完整通过。
+- `bash Scripts/tests/test-android.sh`：全部通过，包括增量失效策略、歌手归并/循环映射、疑似重复判定、双语时间合并、增强 LRC 结束时间和 YRC 停顿。
+- `bash Scripts/tests/test-android-ui.sh emulator-5554`：Android 15 / API 35、ARM64 专用模拟器，完整通过。
   - 音乐库、简易、音乐墙三种样式 × light/dark。
   - 歌手、专辑卡片的真实点击进入/返回，网格重复三次并另测第一行部分滚动，行号和像素偏移恢复。
   - 父页搜索过滤及文本恢复、侧边栏重复打开/关闭、侧边栏打开期间切换样式。
@@ -15,7 +15,7 @@
   - 测试 ContentProvider 按 DocumentsContract 协议提供实际 WAV 文件：未变化扫描不重新打开音频，修改仅重读一个文件，删除产生未找到文件提示。
 - APK 签名校验与 `git diff --check`：通过。
 
-完整运行结果：`.build/Android/ui-tests/results.txt`、`restart-results.txt`；界面截图：`.build/Android/ui-tests/screenshots/`。普通逻辑测试结果：`.build/Android/capability-test-results.txt`。
+完整运行结果：`.build/reports/android/ui-tests/results.txt`、`restart-results.txt`；界面截图：`.build/reports/android/ui-tests/screenshots/`。普通逻辑测试结果：`.build/work/android/capability-test-results.txt`。
 
 ## 修复中发现的实际问题
 
@@ -33,7 +33,7 @@
 
 新增 `Shared/Core`（C++17/C ABI，Android JNI + Swift Package）和 `Shared/UI`（React/CSS）。Android 主播放器的歌词解析、逐字进度、歌手规范化、扫描版本复用、锚点恢复已走共享核心。设置新增“新版播放器预览”，仅作为逐步迁移入口。
 
-本轮验证记录在 `.build/Shared/Core/`：
+本轮验证记录在 `.build/reports/ui/`：
 
 - `parity-tests.txt`：同一组 10 个协议用例经 C CLI、Java JNI、Swift CLI 输出一致；Swift 核心测试、JS 并发状态/桥接/轮询稳定性测试通过。
 - `android-tests.txt`：现有 Java 单元回归经 JNI 路径通过，包括双语/YRC/滚动锚点/增量扫描规则。
@@ -50,7 +50,7 @@ APK 包含四个 CPU ABI 与共享页面，体积约 2.5 MiB；仍使用系统 W
 
 确认、输入、单选、菜单、歌词详情、文件检查、缓存删除等入口已从系统 AlertDialog 转到 AppDialog 自定义内容。AppDialog 与 BottomSheet 共用 DialogSurface 的深浅色背景、描边、文字与强调色；统一底部弹出和遮罩。短操作菜单按内容收缩，长列表仍保留滚动和面板拖动。
 
-模拟器 `-e mode modals` 检查记录见 `.build/Shared/Core/ui-modals.txt`：深浅模式输入文字颜色、空名称保留弹窗、成功回调只执行一次、单选菜单、长内容与底部操作列表均通过。截图 `modal-choice-light/dark.png`、`modal-actions-light/dark.png`；构建与原有单元回归记录见 `modal-ui-build.txt` 和 `modal-unit-tests.txt`。
+模拟器 `-e mode modals` 检查记录见 `.build/reports/ui/ui-modals.txt`：深浅模式输入文字颜色、空名称保留弹窗、成功回调只执行一次、单选菜单、长内容与底部操作列表均通过。截图 `modal-choice-light/dark.png`、`modal-actions-light/dark.png`；构建与原有单元回归记录见 `modal-ui-build.txt` 和 `modal-unit-tests.txt`。
 
 “新版播放器预览”更名为“实验功能 → 跨平台界面试用”，明确部分功能未迁移，并保留返回当前播放器的说明。
 
@@ -58,10 +58,10 @@ APK 包含四个 CPU ABI 与共享页面，体积约 2.5 MiB；仍使用系统 W
 
 以现有 Android 主界面为参照，共用原 PNG 图标和应用图标；共享界面补齐简易/音乐库布局、可缩放拖动封面墙与聚焦、真实封面与缺失占位、收藏/最近/歌单创建、歌手专辑网格、当前列表播放顺序、五种模式与队列、统一共享弹窗、主题与状态栏颜色。设置入口仍可打开原设置的文件夹/扫描/缓存/诊断功能。完整差异清单见 `Shared/UI/PARITY.md`，未将本阶段宣称为 100% 复刻。
 
-- `.build/Shared/Core/parity-ui-tests.txt`：专用 Android 35 模拟器真实 WebView + PlaybackService。验证授权封面实际解码、真实 WAV、双语、收藏落盘、模式值、队列/创建歌单弹窗、三种样式 × 深浅截图、隐藏列表/重开/网格返回锚点、封面墙缩放聚焦。封面为测试程序生成的合成图片。
-- `.build/Shared/Core/parity-unit-tests.txt`：7 个共享 JS 测试通过，包含长 ID、页面过滤和排序、墙可见单元、串行状态、桥接、版本化快照复用。
-- `.build/Shared/Core/parity-desktop-build.txt` / `parity-macos-build.txt`：共享前端与 Swift 引擎构建通过。
-- `.build/Shared/Core/parity-desktop-tests.txt`：现有桌面测试 50 通过、3 跳过。
+- `.build/reports/ui/parity-ui-tests.txt`：专用 Android 35 模拟器真实 WebView + PlaybackService。验证授权封面实际解码、真实 WAV、双语、收藏落盘、模式值、队列/创建歌单弹窗、三种样式 × 深浅截图、隐藏列表/重开/网格返回锚点、封面墙缩放聚焦。封面为测试程序生成的合成图片。
+- `.build/reports/ui/parity-unit-tests.txt`：7 个共享 JS 测试通过，包含长 ID、页面过滤和排序、墙可见单元、串行状态、桥接、版本化快照复用。
+- `.build/reports/ui/parity-desktop-build.txt` / `parity-macos-build.txt`：共享前端与 Swift 引擎构建通过。
+- `.build/reports/ui/parity-desktop-tests.txt`：现有桌面测试 50 通过、3 跳过。
 
 Android 使用 catalogRevision 增量传输：音乐库未变化时进度轮询不再重复发完整歌曲数组；只传媒体状态/队列等动态字段。平台封面接口按当前已授权索引的字符串 ID 查找，不暴露任意文件路径。播放上下文中的队列 ID 逐个验证授权后才交给服务。
 
@@ -130,12 +130,12 @@ Mac 滑块的鼠标实机操作仍未由本轮 UI 自动化验证；Android 测�
 
 - `menus-unit.txt`：22 个共享测试通过，包括菜单禁用/边界/查找，以及 5000 首最近播放避免逐条全库查找。
 - `menus-desktop-tests.txt`：51 个通过、3 个跳过；`menus-desktop-build.txt`、`menus-android-build.txt` 构建通过。
-- `menus-electron-ui-tests.txt`：独立 Electron 合成组件页面发送实际鼠标和键盘事件；检查菜单边缘/禁用项/循环/Enter/Escape恢复、滑块持有与提交，以及自绘排序和复选框。脚本 `bash Scripts/test-desktop-components.sh` 自动启停本地测试服务。它验证共用组件，不代表完整 Mac 音乐库页面全覆盖。
+- `menus-electron-ui-tests.txt`：独立 Electron 合成组件页面发送实际鼠标和键盘事件；检查菜单边缘/禁用项/循环/Enter/Escape恢复、滑块持有与提交，以及自绘排序和复选框。脚本 `bash Scripts/tests/test-desktop-components.sh` 自动启停本地测试服务。它验证共用组件，不代表完整 Mac 音乐库页面全覆盖。
 - `menus-android-ui-tests.txt`：真实触摸长按（含2px抖动）、滑动取消、菜单键盘激活和后续歌单操作；滑块、滚动条、三种样式、主题及恢复回归通过。设置中检查自绘复选框的深浅模式与 44px 热区；浅色截图 `menus-settings-light.png` 已人工检查。
 
 Electron 专项最初发现菜单高度未包含边框，靠近底边会越界；已按完整盒尺寸定位。独立组件测试页不连接用户音乐库，也不包含在生产 Vite 入口中；开发缓存移至 .build，避免测试改写源码目录中的缓存。
 
-Mac 发布构建补充：`menus-mac-app-build.txt` 记录完整 Electron + Swift 应用打包成功，产物 `.build/MiniVoice.app`（Apple Silicon）。构建与 `codesign --verify --deep --strict` 通过；未替换已安装应用，也未用真实音乐库启动本包。本次 Swift 远程更新等待后改用 `MINIVOICE_LOCKED_BUILD=1 bash Scripts/build-app.sh`，仅使用锁文件和缓存依赖；该开关为新增可选路径，常规构建行为保持不变。
+Mac 发布构建补充：`menus-mac-app-build.txt` 记录完整 Electron + Swift 应用打包成功，产物 `.build/dist/MiniVoice.app`（Apple Silicon）。构建与 `codesign --verify --deep --strict` 通过；未替换已安装应用，也未用真实音乐库启动本包。本次 Swift 远程更新等待后改用 `MINIVOICE_LOCKED_BUILD=1 bash Scripts/build/build-app.sh`，仅使用锁文件和缓存依赖；该开关为新增可选路径，常规构建行为保持不变。
 
 ## 音乐墙整版（2026-10-22）
 
@@ -166,10 +166,10 @@ Android 调整窗口配置去重、自绘 SVG 图标、固定控件槽、简易�
 
 `android-wall-v4-electron.txt`：真实鼠标 40 步拖动测得 3 次 React Profiler 提交，覆盖聚焦中打断拖动、不覆盖手动位置、图片节点保留、左下播放槽、图标循环和动画生命周期。它证明组件重绘次数下降，不代表小米真机帧率。
 `android-wall-v4-native.txt`：Android WebView/真实 WAV/服务回归通过；新增断言图标循环启动动画、封面节点保留、左下播放槽。三样式深浅、横竖屏、返回、队列/集合等回归通过。
-截图：`.build/Android/ui-tests/android-wall-v4-final`。交付 `.build/Android/MiniVoice-android-wall-v4-debug.apk`，与被测试 APK SHA-256 一致。
+截图：`.build/reports/android/ui-tests/android-wall-v4-final`。交付 `.build/work/android/MiniVoice-android-wall-v4-debug.apk`，与被测试 APK SHA-256 一致。
 
-2026-10-23 自有设置扩展：专用模拟器 portable 整轮验证通过，覆盖自有缓存用量、后台文件可用性检查、双语歌词编辑入口；真实 WAV 播放、三种样式/深浅模式和滚动恢复继续通过。最终复跑另增加应用内歌词保存持久化断言，报告 .build/Shared/Core/own-surfaces-android-ui-tests.txt。音乐文件标签未被此次歌词编辑修改。
+2026-10-23 自有设置扩展：专用模拟器 portable 整轮验证通过，覆盖自有缓存用量、后台文件可用性检查、双语歌词编辑入口；真实 WAV 播放、三种样式/深浅模式和滚动恢复继续通过。最终复跑另增加应用内歌词保存持久化断言，报告 .build/reports/ui/own-surfaces-android-ui-tests.txt。音乐文件标签未被此次歌词编辑修改。
 最终复跑结果：UI_PORTABLE_PASS。新增歌词保存断言已通过，并在检查后清理测试覆盖值，避免污染后续音乐墙缩放用的固定歌词数据。
-自有歌词打点扩展复跑：UI_PORTABLE_PASS。覆盖实际试听连接、打点按钮启用、打点后撤销与双语草稿持久化；三种样式、音乐墙缩放和返回滚动恢复保持通过。报告 .build/Shared/Core/own-editing-android-ui-tests.txt。
+自有歌词打点扩展复跑：UI_PORTABLE_PASS。覆盖实际试听连接、打点按钮启用、打点后撤销与双语草稿持久化；三种样式、音乐墙缩放和返回滚动恢复保持通过。报告 .build/reports/ui/own-editing-android-ui-tests.txt。
 默认自有组件版本：UI_PORTABLE_PASS + UI_TAG_EDIT_PASS。覆盖启动器路由、实际 MP3 编辑保存、FLAC 部分写入失败自动恢复、异常中断备份恢复；真实 MP3/FLAC/M4A 另以解码哈希和非编辑标签保留进行格式验证。报告 full-controls-*。目前不把特殊 ID3、分片 M4A 或未知格式标记为可写成功。
 体验版搜索与音乐墙修正：UI_PORTABLE_PASS，覆盖持续存在的搜索控件展开与原有三种样式、歌词、播放、旋转和返回恢复。共享逻辑加入重排坐标逆变换可见区检查，覆盖 4/100/1037 首。实体机视频问题的回验仍需实际手机完成，不以模拟器代替真机 GPU 验收。
