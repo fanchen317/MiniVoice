@@ -46,7 +46,6 @@ private struct SharedPlayerWebView: UIViewRepresentable {
         let configuration = WKWebViewConfiguration()
         configuration.setURLSchemeHandler(host, forURLScheme: "minivoice")
         configuration.userContentController.add(host, name: "MiniVoice")
-        configuration.userContentController.add(host, name: "MiniVoiceDiag")
         configuration.userContentController.addUserScript(WKUserScript(source: """
         addEventListener('DOMContentLoaded', () => {
           for (const side of ['top','right','bottom','left'])
@@ -57,16 +56,6 @@ private struct SharedPlayerWebView: UIViewRepresentable {
           request(id, raw) { webkit.messageHandlers.MiniVoice.postMessage({id, raw}); },
           haptic() { webkit.messageHandlers.MiniVoice.postMessage({haptic:true}); }
         };
-        (() => {
-          const post = (kind, text) => { try { webkit.messageHandlers.MiniVoiceDiag.postMessage(kind + ': ' + text); } catch (e) {} };
-          addEventListener('error', (e) => post('error', (e.message || '') + ' @ ' + (e.filename || '') + ':' + (e.lineno || '')), true);
-          addEventListener('unhandledrejection', (e) => post('rejection', String((e.reason && e.reason.stack) || e.reason)), true);
-          for (const level of ['error', 'warn']) {
-            const original = console[level].bind(console);
-            console[level] = (...args) => { post(level, args.map(String).join(' ')); original(...args); };
-          }
-          post('boot', location.href + ' | ua=' + navigator.userAgent);
-        })();
         """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let web = SharedContentWebView(frame: .zero, configuration: configuration)
         web.navigationDelegate = host
@@ -79,13 +68,6 @@ private struct SharedPlayerWebView: UIViewRepresentable {
         web.isInspectable = true
         #endif
         host.web = web
-        SharedPlayerHost.diag("resourceURL=\(Bundle.main.resourceURL?.path ?? "nil")")
-        let shared = Bundle.main.resourceURL?.appendingPathComponent("SharedPlayer")
-        SharedPlayerHost.diag("shared=\(shared?.path ?? "nil") exists=\(FileManager.default.fileExists(atPath: shared?.path ?? ""))")
-        if let shared {
-            let items = (try? FileManager.default.contentsOfDirectory(atPath: shared.path)) ?? []
-            SharedPlayerHost.diag("shared items=\(items.sorted())")
-        }
         web.load(URLRequest(url: URL(string: "minivoice://app/index.html")!))
         return web
     }
@@ -101,7 +83,6 @@ private struct SharedPlayerWebView: UIViewRepresentable {
 
 @MainActor
 private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSchemeHandler, WKNavigationDelegate {
-    nonisolated static func diag(_ message: String) { FileHandle.standardError.write("[MiniVoiceDiag] \(message)\n".data(using: .utf8)!) }
     weak var web: WKWebView?
     let library: MusicLibrary
     let player: MusicPlayer
@@ -140,10 +121,6 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        if message.name == "MiniVoiceDiag" {
-            SharedPlayerHost.diag("js \(message.body)")
-            return
-        }
         guard message.frameInfo.isMainFrame, message.frameInfo.request.url?.scheme == "minivoice",
               message.frameInfo.request.url?.host == "app", let body = message.body as? [String: Any] else { return }
         if body["haptic"] as? Bool == true {
@@ -304,7 +281,6 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
         let identifier = ObjectIdentifier(urlSchemeTask)
         activeLoads.insert(identifier)
-        SharedPlayerHost.diag("request \(urlSchemeTask.request.url?.absoluteString ?? "nil")")
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -333,10 +309,8 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
                 } else { mime = ["html": "text/html", "js": "application/javascript", "css": "text/css", "png": "image/png", "svg": "image/svg+xml", "json": "application/json"][file.pathExtension] ?? "application/octet-stream" }
                 let response = HTTPURLResponse(url: urlSchemeTask.request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": mime, "Access-Control-Allow-Origin": "*", "Cache-Control": "no-cache"])!
                 urlSchemeTask.didReceive(response); urlSchemeTask.didReceive(data); urlSchemeTask.didFinish()
-                SharedPlayerHost.diag("served \(url.lastPathComponent) bytes=\(data.count)")
             } catch {
                 guard self.activeLoads.remove(identifier) != nil else { return }
-                SharedPlayerHost.diag("failed \(urlSchemeTask.request.url?.absoluteString ?? "?") error=\(error.localizedDescription)")
                 urlSchemeTask.didFailWithError(error)
             }
         }
@@ -350,7 +324,6 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        SharedPlayerHost.diag("didFinish")
         (webView as? SharedContentWebView)?.publishInsets()
         #if targetEnvironment(simulator)
         guard ProcessInfo.processInfo.arguments.contains("--mv-ui-smoke"),
@@ -375,21 +348,7 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         // Shared workspace is already persisted atomically; transient panels start closed.
-        SharedPlayerHost.diag("webContentTerminated")
         webView.reload()
-    }
-
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        SharedPlayerHost.diag("didFail \(error.localizedDescription)")
-    }
-
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        SharedPlayerHost.diag("didFailProvisional \(error.localizedDescription)")
-    }
-
-    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        SharedPlayerHost.diag("response \(navigationResponse.response.url?.absoluteString ?? "nil") status=\((navigationResponse.response as? HTTPURLResponse)?.statusCode ?? -1) mime=\(navigationResponse.response.mimeType ?? "?")")
-        decisionHandler(.allow)
     }
 
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) { activeLoads.remove(ObjectIdentifier(urlSchemeTask)) }
