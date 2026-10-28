@@ -6,6 +6,7 @@ from ds_store import DSStore
 from mac_alias import Alias
 
 volume = Path(sys.argv[1]).resolve()
+app_name = sys.argv[2] if len(sys.argv) > 2 else 'MiniVoice.app'
 background = volume / '.background' / 'install.png'
 with DSStore.open(str(volume / '.DS_Store'), 'w+') as store:
     store['.']['bwsp'] = {
@@ -22,10 +23,10 @@ with DSStore.open(str(volume / '.DS_Store'), 'w+') as store:
         'scrollPositionX': 0.0, 'scrollPositionY': 0.0,
     }
     store['.']['vstl'] = ('type', b'icnv')
-    store['MiniVoice.app']['Iloc'] = (170, 160)
+    store[app_name]['Iloc'] = (170, 160)
     store['Applications']['Iloc'] = (470, 160)
 # Do not publish an installer if the persisted layout is incomplete.
 with DSStore.open(str(volume / '.DS_Store'), 'r') as store:
-    assert store['MiniVoice.app']['Iloc'] == (170, 160)
+    assert store[app_name]['Iloc'] == (170, 160)
     assert store['Applications']['Iloc'] == (470, 160)
     assert store['.']['icvp']['backgroundType'] == 2

@@ -268,3 +268,30 @@ Android 专用 emulator-5554：portable 完整回归通过 UI_PORTABLE_PASS；�
 待验收：用户实体手机 GPU 的连续切换流畅度，以及真实封面组合下薄透明侧栏的文字对比；未测量真机 FPS 或整套动态封面对比度，不宣称所有手机均无卡顿。Mac 页面未改动。
 
 最终补充：最终 APK 在 emulator-5554 得到 UI_PORTABLE_PASS，含实际截图纹理、碎片变换中间值、三样式深浅、横竖/返回、原生系统主题和真实手指队列手势。最终 Android 截图保存在 `.build/review/mobile-thin-android-shots/`；交付 `.build/Android/MiniVoice-android-thin-glass-20261027.apk`，并更新 experience.apk。
+
+### 2026-10-28 Mac 独立设置/编辑窗口与大图操作
+按用户截图调整：设置、歌曲编辑从主窗口内覆盖层改为独立原生窗口，主窗口缩放不影响其内容区域；设置复用一个窗口，编辑按歌曲复用以保留草稿。仍由自有组件绘制内容，窗口关闭、搜索层返回、忙碌与未保存确认保持一致。设置各分类标题下概述移除。
+插图只保留“歌曲插图”标题及复制/更换/查找操作，去掉截图标记的说明与图片信息。大图完整铺满剩余预览区域、保留比例；点击图片不打开文件选择器，仅“更换”按钮选文件。支持图片复制、Command/Ctrl+C/V、单图拖入成为草稿和原尺寸 PNG 拖出，明确保存后才改歌曲。同步处理所属窗口授权、图片格式/大小验证、临时导出清理和迟到读取。
+验证：组件门禁；共享逻辑 37 项；Mac 逻辑 64 项、常规运行 4 项后台用例另行验证；test-editor-panels、test-editor-search-workspace、test-wall-version、自有组件交互回归通过。test-panel-windows 使用真实 Electron BrowserWindow 和生产 renderer/preload：设置单实例、父窗口改为 400×650 后子窗尺寸不变、原生关闭/草稿保护、深浅主题、大图区域、点击图片不选图/更换按钮选图、1600×1200 图片复制和 PNG 导出尺寸、File drop 和键盘粘贴验证通过。原图测试为合成图，剪贴板与 startDrag 注入测试替身，不写用户剪贴板或伪称 Finder 实际落点已验证。截图 independent-settings-light、independent-editor-light/dark 与更新后的 editor-large-source-light 已检查。构建和签名、隔离后台结果见 .build/review/panel-window-*。
+待回验：用户 macOS 桌面上的拖出到 Finder/其他软件、其他软件图片粘贴和多显示器窗口观感；本轮没有更改手机端。
+
+本轮最终产物：`.build/MiniVoice-mac-experience.zip` 已由最终构建更新；打包后台在独立 MiniVoice.Test.* 偏好域运行 4 项全部通过，codesign --verify --deep --strict、组件门禁及 git diff --check 通过。
+
+### 2026-10-28 手机缩放节点反馈、侧栏字体和横屏布局
+缩放节点的方框反馈修正：移动 Slider 及内部节点取消 WebView tap highlight，触摸只保留圆形滑块反馈；键盘焦点也改为圆形光环，桌面规则不变。侧栏调整字号/字重/行距、14px 圆角选中细框与 aria-current，浅色文字加强层级，保留上一轮薄透明玻璃，不给每个未选中项新增底板。
+对照非体验版原生 PlayerStylePage、HomeScreen、WallViewport 的布局代码，普通横屏采用左侧封面/元信息/进度/控制与右侧歌词，列表保留全宽目录和底部播放栏；歌词展开改为全幅歌词和底部横排控制，墙面聚焦左侧、播放栏右下。保留当前自有按钮和玻璃皮肤，不切回旧原生内容界面。Android 横屏三种样式全部隐藏状态栏/导航栏，竖屏恢复；保留刘海与临时轻扫系统栏。
+通过：组件门禁、共享逻辑 37 项、test-wall-version 双端实际页面、自有组件测试、test-mobile-wall-surfaces；新增 test-mobile-landscape 覆盖深浅、横屏普通/目录/墙面与歌词展开、侧栏选中/文字、圆形缩放反馈及恢复。实际截图 mobile-native-landscape-simple-light/wall-dark、mobile-sidebar-type-light 等已检查。最终 APK 的 emulator-5554 portable 验证及日志见 .build/review/landscape-android-final.txt；包含实际 systemBars 方向可见性、手指按住刻度的无方块反馈、横竖/返回/系统主题、队列手势与真实音频。
+待用户回验：实体手机切口/系统导航模式、透明封面下字体观感与横屏操作舒适度；本轮按原生分区对齐，未宣称所有屏幕逐像素一致或真机 GPU 流畅度已测量。Mac 源码与打包不在本轮修改范围（工作区仍保留上一轮 Mac 独立窗口改动）。
+
+本轮最终补充：重新打包后的最终 APK 在 emulator-5554 再次通过 UI_PORTABLE_PASS；真手指按住节点截图和横屏截图位于 `.build/review/landscape-android-final-shots/`。交付 `.build/Android/MiniVoice-android-landscape-20261028.apk`，同步更新 experience.apk。测试会关闭首次沉浸系统说明以检查实际页面，不将系统引导当作应用内容。
+
+## 2026-10-28 打包入口整理
+
+- 已实现：`build.sh` / `build-experience.sh` 统一构建安装包；`deploy.sh` / `deploy-experience.sh` 生成移动安装包并事务式替换对应 Mac 应用，不制作 DMG。正式、体验 Mac 身份和数据隔离保持不变。
+- 已验证：两种 Android APK 实际构建、签名校验通过；aapt2 确认正式启动 MainActivity、体验启动 PortablePlayerActivity。媒体/扫描通知改为跟随当前包的启动器入口。四入口路由、单平台失败继续处理且整体非零、未知平台拒绝、工作锁释放的隔离测试通过；Shell 语法和 101 源文件组件边界通过。
+- 产物规范：`.build/dist` 固定文件名覆盖；历史 APK/DMG 转移到 `.build/archive/installers`，不删除。临时 APK 和签名伴随文件在组装目录退出时清理。
+- 版本边界已由用户确认：保留原生设置等窗口的现有 Mac 正式实现为正式版，自有组件窗口实现为体验版；继续共用已有底层及组件，不恢复历史纯 SwiftUI 主窗口。
+- 未接入：iOS 体验版宿主；入口会明确失败，不能用正式 IPA 冒充。iOS 正式 archive/export 流程已编写，缺少团队/导出配置时拒绝生成，尚未验证签名 IPA。
+- 待验收：本轮未执行真实 Applications 替换或设备安装回归；Android 两版沿用相同包名和开发证书，互相覆盖，不能宣称可并行安装或商店发行已配置。
+
+打包实测补充：正式、体验 Mac `.app` 均通过新入口完成重建和 codesign 深度严格校验；两个固定名称 DMG 均完成生成与 hdiutil verify。发布目录现有两 APK、两 DMG；没有生成 IPA。未执行 `/Applications` 实际替换或真机安装，iOS 导出配置缺失拒绝路径已验证。

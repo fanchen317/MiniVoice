@@ -113,6 +113,7 @@ export default function App(){
   }
   function toggleSidebar(){cancelPlayerReflow();layoutTransition(()=>setSidebar(v=>!v),'.app:not(.style-wall) .workspace,.app:not(.style-wall)>.player,.app:not(.style-wall) .window-tools',360);}
   function toggleAlbum(){cancelPlayerReflow();springLayout(()=>setExpanded(v=>!v),'.player .mini-cover',.38,.9);}
+  useEffect(()=>{if(state.interfaceStyle)setStyle(state.interfaceStyle);},[state.interfaceStyle]);
   function go(destination){cancelPlayerReflow();if(destination==='settings'){command('openSettings');return;}immersiveWall(false);setWallChromeHidden(false);setWallPreview(null);if((style==='wall'&&wallMetrics.overlays)||(style==='library'&&sidebarOverlap>0))setSidebar(false);setMultiple(false);setSelection(new Set());setDestination(destination);setGroup(null);setQuery('');setContext(null);setExpanded(false);setLocation(previous=>({id:state.playing?.id,token:previous.token+1,animated:false}));}
   function onMenu(event,track){event.preventDefault();setContext({x:event.clientX,y:event.clientY,origin:event.currentTarget,track});}
   function locatePlaying(){const id=state.playing?.id||state.selected?.id;if((style!=='simple'&&['artists','albums'].includes(destination)&&!group)||!filtered.some(t=>t.id===id))go('all');if(id)command('select',{id});setExpanded(false);setLocation(previous=>({id,token:previous.token+1,animated:true}));}

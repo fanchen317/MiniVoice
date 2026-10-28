@@ -108,7 +108,7 @@ public final class LibraryScanService extends Service {
         if(!stale&&(!request.restore||!restored||error!=null))notifications.notify(RESULT,notification(state,false));
         stopSelf();
     }
-    private PendingIntent openIntent(){return PendingIntent.getActivity(this,2,new Intent(this,PortablePlayerActivity.class).setAction(MainActivity.ACTION_SHOW_SCAN).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP|Intent.FLAG_ACTIVITY_CLEAR_TOP),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
+    private PendingIntent openIntent(){return PendingIntent.getActivity(this,2,getPackageManager().getLaunchIntentForPackage(getPackageName()).setAction(MainActivity.ACTION_SHOW_SCAN).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP|Intent.FLAG_ACTIVITY_CLEAR_TOP),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
     private Notification notification(State value,boolean ongoing){
         String title=value.stage+(ongoing&&value.total>0?" · "+ScanStatusText.percent(value.completed,value.total)+"%":"");
         String detail=value.detail+(ongoing&&value.total>0?"\n已处理 "+value.completed+" / "+value.total+" 首":"");

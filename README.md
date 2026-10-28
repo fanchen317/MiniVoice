@@ -39,26 +39,26 @@ MiniVoice 是本地音乐播放器，包含 macOS、Android 和 iOS 三个独立
 
 ## 运行与部署
 
-需要 Node.js / npm、Xcode 命令行工具及仓库内的 Git LFS 资源。正式构建、部署和 DMG 统一使用 Electron + Swift 架构：
+统一打包入口（从项目根目录运行）：
 
-```sh
-Scripts/build-app.sh release
-Scripts/deploy.sh
-Scripts/build-dmg.sh
-```
+| 命令 | 版本 | 行为 |
+| --- | --- | --- |
+| `Scripts/build.sh` | 正式 | Mac `.app` + DMG、Android APK、iOS 签名 IPA |
+| `Scripts/build-experience.sh` | 体验 | Mac `.app` + DMG、Android APK；iOS 体验宿主尚未接入，会报错 |
+| `Scripts/deploy.sh` | 正式 | APK、签名 IPA，并替换 `/Applications/MiniVoice.app` |
+| `Scripts/deploy-experience.sh` | 体验 | APK，并替换 `/Applications/MiniVoice-debug.app`；iOS 体验宿主尚未接入，会报错 |
 
-正式主应用产物为 `.build/MiniVoice.app`，包含 `app.asar` 主窗口和内置原生音频、设置、歌曲编辑与桌面歌词服务。`Scripts/build-app.sh [debug|release]`、部署和 DMG 都使用同一应用；旧 `build-electron-app.sh` 仅作为兼容别名。`build-native-engine.sh` 是内部组装步骤，生成的服务不会独立打开另一个播放器。
+默认处理 mac、android、ios；可用 `--platforms mac,android` 只构建当前已接入的平台。部署默认启动应用，`--no-launch` 只替换。任何平台失败最终返回非零，其余平台继续处理；旧包保留不代表本轮成功。四个入口共用互斥锁，避免同时写入构建缓存。
 
-需要与正式版并行验证跨平台改写时，使用 `bash Scripts/build-debug-app.sh`，产物为 `.build/MiniVoice-debug.app`（默认仍做优化构建）。它有独立 Electron/Swift bundle identifier、Chromium profile、偏好和缓存目录，不迁移正式版数据。首次启动需单独选择音乐目录；Mac-debug 的设置、歌曲编辑、桌面歌词与关于已默认使用自有组件，不需要额外试用入口。正式版构建及安装位置不变。调试名称不是 Swift 编译配置，`build-app.sh debug` 仍表示原有的 Swift debug 编译配置。
+历史散落安装包自动归档到 `.build/archive/installers/`，保留可恢复副本。发布目录统一为 `.build/dist/`，固定名称覆盖更新：`MiniVoice-android.apk`、`MiniVoice-android-experience.apk`、`MiniVoice-mac.dmg`、`MiniVoice-mac-experience.dmg`、`MiniVoice-ios.ipa`。Mac app 保留 `.build/MiniVoice.app` 和 `.build/MiniVoice-debug.app`，体验版身份、偏好及音乐库授权保持独立。正式 Mac 按用户确认保留现有 Electron + Swift 主界面及原生设置、编辑、桌面歌词路径；体验版使用自有组件窗口，不恢复更早的纯 SwiftUI 主窗口。Android 正式版启动旧原生 MainActivity，体验版启动 PortablePlayerActivity；两者延续现有包标识和证书，安装会互相替换。
 
-部署默认构建 release、校验完整应用及签名，退出目标位置的旧应用后替换 `/Applications/MiniVoice.app` 并启动；替换或启动命令失败时恢复旧安装。支持复用已构建产物、跳过启动或指定安装位置：
+Android 的签名前 APK、DEX、资源包只写临时组装目录，失败或成功均清理；测试兼容链接 `.build/Android/MiniVoice-debug.apk` 指向体验发布包。内部平台脚本仍可用于定向开发，`install-mac.sh` 只负责经过校验的 Mac 应用替换。
 
-```sh
-Scripts/deploy.sh --skip-build --no-launch --target /absolute/path/MiniVoice.app
-Scripts/build-dmg.sh --skip-build
-```
+iOS 正式 IPA 使用 Xcode archive + exportArchive，需设置 `MINIVOICE_IOS_TEAM`（开发团队）和 `MINIVOICE_IOS_EXPORT_OPTIONS`（有效 ExportOptions.plist 路径），并在本机准备对应证书和描述文件。缺失配置时明确失败，不导出无法安装的未签名压缩包。`build-ios.sh` 仍用于模拟器或未签名编译检查，不是 IPA 发布入口。
 
-当前版本 **2.7.0**（构建号 9），Electron 外层和 Swift 后台版本在打包时同步。DMG 输出 `.build/dist/MiniVoice-2.7.0-arm64.dmg`。安装布局由脚本直接写入 `.DS_Store`，无需 Finder 自动化权限；首次运行会在 `.build/dmg-tools` 中建立独立 Python 环境并安装 `Scripts/dmg-requirements.txt` 固定版本依赖。仍支持 `--reuse-layout` 或 `--layout-from /absolute/path/previous.dmg` 复用布局。
+需要 Node.js LTS / npm、Xcode、Android SDK/NDK 及仓库 Git LFS 资源。Android 默认仍使用仓库固定开发签名，本文“正式”指旧界面版本，不代表已配置商店发行证书。
+
+当前版本 **2.7.0**（构建号 9），Electron 外层和 Swift 后台版本在打包时同步。DMG 输出 `.build/dist/MiniVoice-mac.dmg`（体验版为 `MiniVoice-mac-experience.dmg`）。安装布局由脚本直接写入 `.DS_Store`，无需 Finder 自动化权限；首次运行会在 `.build/dmg-tools` 中建立独立 Python 环境并安装 `Scripts/dmg-requirements.txt` 固定版本依赖。仍支持 `--reuse-layout` 或 `--layout-from /absolute/path/previous.dmg` 复用布局。
 
 唯一主应用继续使用已安装版本的标识 `com.xcosmos.MiniVoice.electron`，保留现有签名身份与 `~/Library/Application Support/minivoice-desktop/` 前端偏好路径。内置服务保留 `com.xcosmos.MiniVoice` 偏好域，沿用音乐库、收藏、歌单及原生设置；这两个内部标识不代表两套可运行的主窗口。更早的 `local.fanchen.MiniVoice` / `com.local.minivoice` 配置由后台迁移，已有新配置优先。原生资源目录 `~/Library/Application Support/MiniVoice/` 及缓存目录保持不变。
 

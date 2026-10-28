@@ -193,3 +193,57 @@
 
 /* Atmosphere belongs to the full viewport, not the recessed content raster. */
 [data-presentation=mobile].mv-workspace{isolation:isolate}
+/* A touch on a zoom stop must not flash WebView's rectangular tap highlight.
+   Keyboard focus remains visible as a circular thumb halo. */
+[data-presentation=mobile] .mv-slider,[data-presentation=mobile] .mv-slider *{-webkit-tap-highlight-color:transparent}
+[data-presentation=mobile] .mv-slider:focus-visible{outline:none}
+[data-presentation=mobile] .mv-slider:not([data-focus-input=pointer]):focus-visible .mv-slider-knob,[data-presentation=mobile] .mv-slider[data-focus-input=keyboard] .mv-slider-knob{box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--mv-slider-color)}
+/* Legible, measured sidebar type and a rounded selection instead of a heavy
+   full-width block. Keep the existing thin-glass sampling intact. */
+[data-presentation=mobile] .mv-drawer{font-family:system-ui,-apple-system,"Roboto","Noto Sans",sans-serif;line-height:1.4}
+[data-presentation=mobile] .mv-drawer header strong{font-size:21px;font-weight:650;letter-spacing:0}
+[data-presentation=mobile] .mv-drawer header small{font-size:12px;line-height:1.5;font-weight:450}
+[data-presentation=mobile] .mv-drawer nav>button{font-size:17px;font-weight:550;line-height:1.4;min-height:48px;padding:11px 16px;gap:16px;border:1px solid transparent;border-radius:14px;margin-bottom:6px}
+[data-presentation=mobile] .mv-drawer nav>button[aria-current=page]{font-weight:650;background:var(--selected);border-color:color-mix(in srgb,var(--accent) 24%,transparent)}
+[data-presentation=mobile] .mv-drawer nav h3{font-size:12px;font-weight:600;line-height:1.5;padding:16px 16px 8px}
+[data-presentation=mobile].style-wall.theme-light .mv-drawer{--text:#142f25;--muted:#304b3e;--selected:#07866524;text-shadow:none}
+[data-presentation=mobile].style-wall.theme-dark .mv-drawer{text-shadow:none}
+[data-presentation=mobile].style-wall .mv-drawer nav>button[aria-current=page]{text-shadow:none}
+/* Match native landscape workspaces: artwork/metadata and transport on the
+   left, full-height lyrics on the right; a catalog keeps its bottom bar. */
+@media(orientation:landscape){
+ [data-presentation=mobile]:not(.style-wall){--mv-page-x:16px;--mv-page-y:8px;padding-top:calc(var(--mv-safe-top,0px) + 8px);padding-bottom:calc(var(--mv-safe-bottom,0px) + 8px);gap:8px}
+ [data-presentation=mobile]:not(.style-wall) .mv-toolbar{display:flex!important;height:48px;flex:0 0 48px}
+ [data-presentation=mobile]:not(.style-wall) .mv-toolbar>.mv-button{width:48px;height:48px}
+ [data-presentation=mobile]:not(.style-wall):not(.is-player) .mv-player-page{display:none!important}
+ [data-presentation=mobile]:not(.style-wall):not(.is-player) .mv-library{display:flex!important}
+ [data-presentation=mobile]:not(.style-wall):not(.is-player) .mv-dock{display:grid;grid-template-columns:minmax(80px,1fr) auto minmax(100px,1fr);height:76px;padding:8px 12px;align-items:center;gap:8px}
+ [data-presentation=mobile]:not(.style-wall):not(.is-player) .mv-dock .mv-seek{grid-column:3}
+ [data-presentation=mobile]:not(.style-wall).is-player>.mv-scene{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:48px minmax(0,1fr) auto;gap:8px 16px}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-toolbar{grid-column:1/-1;grid-row:1}
+ [data-presentation=mobile]:not(.style-wall).is-player :is(.mv-body,.mv-player-page){display:contents!important}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-library{display:none!important}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-hero{grid-column:1;grid-row:2;display:grid;grid-template-columns:minmax(0,1fr) 44px;grid-template-rows:minmax(0,1fr) auto;gap:6px 4px;padding:0;min-height:0;width:min(100%,320px);justify-self:center;align-self:stretch;align-items:center}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-cover{grid-column:1/-1;grid-row:1;width:100%;height:100%;min-height:0;max-height:none;aspect-ratio:auto;border-radius:16px}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-cover img{width:100%;height:100%;object-fit:contain}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-track-meta{grid-column:1;grid-row:2;min-width:0;text-align:left}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-track-meta h1{font-size:16px;line-height:1.35;margin:0;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-track-meta p{font-size:12px;line-height:1.4;margin:2px 0 0}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-track-meta small{font-size:11px;line-height:1.4}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-track-meta :is(p,small){display:block;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-hero>.mv-button{position:static;grid-column:2;grid-row:2;min-width:44px;min-height:44px;width:44px;height:44px}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-lyrics{grid-column:2;grid-row:2/4;height:auto;min-height:0;width:100%;margin:0}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-dock{grid-column:1;grid-row:3;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:32px 48px;gap:0;width:min(100%,320px);justify-self:center;padding:0;border:0;background:none!important;box-shadow:none;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;min-height:80px}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-dock>.mv-now{display:none}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-dock .mv-seek{grid-row:1;grid-column:1;width:100%;min-width:0;gap:6px;font-size:10px}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-transport{grid-row:2;width:100%;justify-content:space-between;gap:0}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-transport .mv-button{display:grid;width:44px;height:44px}
+ [data-presentation=mobile]:not(.style-wall).is-player .mv-transport .selected{width:48px;height:48px}
+ [data-presentation=mobile]:not(.style-wall).is-player .lyrics-expanded .mv-hero{display:none!important}
+ [data-presentation=mobile]:not(.style-wall).is-player:has(.lyrics-expanded) .mv-lyrics{grid-column:1/-1}
+ [data-presentation=mobile]:not(.style-wall).is-player:has(.lyrics-expanded) .mv-dock{grid-column:1/-1;grid-row:4;width:100%;grid-template-columns:minmax(140px,1fr) minmax(200px,1fr);grid-template-rows:48px;min-height:48px;gap:24px}
+ [data-presentation=mobile]:not(.style-wall).is-player:has(.lyrics-expanded) .mv-dock .mv-seek{grid-column:1;grid-row:1}
+ [data-presentation=mobile]:not(.style-wall).is-player:has(.lyrics-expanded) .mv-transport{grid-column:2;grid-row:1}
+ [data-presentation=mobile] .mv-drawer-shade{display:flex;align-items:stretch}
+ [data-presentation=mobile] .mv-drawer{height:100%;max-width:360px}
+}

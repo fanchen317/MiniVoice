@@ -36,7 +36,9 @@ fi
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
 ARCH="$(uname -m)"
 OUTPUT_DIR="$ROOT/.build/dist"
-OUTPUT="$OUTPUT_DIR/MiniVoice-${VERSION}-${ARCH}.dmg"
+APP_NAME="$(basename "$APP_PATH" .app)"
+OUTPUT="$OUTPUT_DIR/MiniVoice-mac.dmg"
+if [[ "${MINIVOICE_BUILD_CHANNEL:-release}" == debug ]]; then OUTPUT="$OUTPUT_DIR/MiniVoice-mac-experience.dmg"; fi
 if [[ "$REUSE_LAYOUT" == true ]]; then
   LAYOUT_SOURCE="${LAYOUT_SOURCE:-$OUTPUT}"
   if [[ ! -f "$LAYOUT_SOURCE" ]]; then
@@ -60,7 +62,7 @@ cleanup() {
 }
 trap cleanup EXIT
 mkdir -p "$OUTPUT_DIR" "$WORK_DIR/content/.background" "$MOUNT_POINT"
-ditto "$APP_PATH" "$WORK_DIR/content/MiniVoice.app"
+ditto "$APP_PATH" "$WORK_DIR/content/$APP_NAME.app"
 ln -s /Applications "$WORK_DIR/content/Applications"
 swiftc "$ROOT/Scripts/DMGBackground.swift" -o "$WORK_DIR/dmg-background" -framework AppKit
 "$WORK_DIR/dmg-background" "$WORK_DIR/content/.background/install.png"
@@ -83,7 +85,7 @@ if [[ "$REUSE_LAYOUT" == true ]]; then
   cp "$PREVIOUS_MOUNT/.DS_Store" "$MOUNT_POINT/.DS_Store"
   hdiutil detach -quiet "$PREVIOUS_MOUNT"
 else
-  "$DMG_PYTHON" "$ROOT/Scripts/write-dmg-layout.py" "$MOUNT_POINT"
+  "$DMG_PYTHON" "$ROOT/Scripts/write-dmg-layout.py" "$MOUNT_POINT" "$APP_NAME.app"
 fi
 
 if [[ ! -f "$MOUNT_POINT/.DS_Store" ]]; then

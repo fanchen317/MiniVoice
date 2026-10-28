@@ -211,3 +211,19 @@ html:has(.own-lyrics-unlock),body:has(.own-lyrics-unlock),#root:has(.own-lyrics-
 .own-panel .own-artwork-heading+.own-artwork-caption{margin:0 0 14px;text-align:left}
 .own-panel .own-artwork-editor .own-editor-art{height:clamp(200px,calc(100dvh - 450px),460px);max-height:none;aspect-ratio:auto}
 @media(max-width:720px){.own-artwork-heading{flex-wrap:wrap;gap:8px}.own-artwork-heading .own-artwork-search{margin-bottom:8px}}
+/* Dedicated desktop settings/editor windows own their content size. */
+.own-panel-window body>.modal-backdrop:has(>.own-panel:not(.own-search-modal)){padding:0;background:none;backdrop-filter:none}
+.own-panel-window body>.modal-backdrop>.own-panel:not(.own-search-modal){width:100vw;height:100dvh;max-height:none;border:0;border-radius:0}
+.own-panel-window .mv-panel-heading{-webkit-app-region:drag}
+.own-panel-window .mv-panel-heading button{-webkit-app-region:no-drag}
+.own-artwork-editor{display:flex;flex-direction:column;flex:1;min-height:0;height:100%;gap:12px}
+.own-editor [data-editor-tab=artwork] .mv-panel-content{display:flex;flex-direction:column;overflow:hidden;padding:16px 20px}
+.own-artwork-editor .own-artwork-heading{flex:0 0 auto;gap:12px;align-items:center;margin:0}
+.own-artwork-editor .own-section-title{margin:0}.own-artwork-editor .own-section-title h3{margin:0}
+.own-artwork-editor .own-artwork-stage{flex:1;min-height:0;width:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:12px;background:var(--hover);border:1px solid var(--line)}
+.own-artwork-stage img{display:block;width:100%;height:100%;min-height:0;object-fit:contain;cursor:grab;user-select:none;-webkit-user-drag:element}
+.own-artwork-stage img:active{cursor:grabbing}
+.own-artwork-editor[data-dropping=true] .own-artwork-stage{outline:2px solid var(--mint);outline-offset:-2px;background:var(--selected)}
+.own-artwork-editor .own-editor-tools{gap:8px;justify-content:flex-end}
+.own-artwork-editor .own-editor-tools>button{padding:8px 12px;min-height:34px;border:1px solid var(--line);background:var(--hover);border-radius:9px}
+.own-artwork-editor .own-artwork-search{margin:0}

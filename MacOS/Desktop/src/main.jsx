@@ -1,3 +1,4 @@
+import OwnPanelWindow from './OwnPanelWindow';
 import OwnDesktopLyrics,{DesktopLyricsUnlock} from './OwnDesktopLyrics';
 import '../../../Shared/UI/src/components/foundation.css';
 import {usePresentation} from '../../../Shared/UI/src/components/usePresentation.js';
@@ -28,4 +29,4 @@ document.documentElement.dataset.presentation=presentation.family;
 document.documentElement.dataset.reference=presentation.reference;
 const desktopRoot=()=>document.documentElement;
 function DesktopApplication(){usePresentation(desktopRoot,presentation);return <App/>;}
-const surface=new URLSearchParams(location.search).get('surface');root.render(surface==='desktopLyrics'?<OwnDesktopLyrics/>:surface==='desktopLyricsUnlock'?<DesktopLyricsUnlock/>:<DesktopApplication/>);
+const surface=new URLSearchParams(location.search).get('surface');root.render(surface==='panel'?<OwnPanelWindow/>:surface==='desktopLyrics'?<OwnDesktopLyrics/>:surface==='desktopLyricsUnlock'?<DesktopLyricsUnlock/>:<DesktopApplication/>);

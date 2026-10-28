@@ -166,3 +166,9 @@
 @keyframes wp-status-wave{to{transform:scaleY(1)}}
 @media(prefers-reduced-motion:reduce){[data-presentation=mobile] .wp-status .wp-bars i{animation:none!important}}
 .reduce-motion [data-presentation=mobile] .wp-status .wp-bars i{animation:none!important}
+@media(orientation:landscape){
+ [data-presentation=mobile].style-wall .mv-wall-dock.mv-dock{left:auto;right:calc(var(--mv-safe-right,0px) + 16px);width:min(440px,calc(100dvh - 28px),48vw)}
+ [data-presentation=mobile].style-wall .mv-wall-dock.mv-dock.is-compact{width:56px}
+ [data-presentation=mobile].style-wall [data-wall-control=settings]{bottom:calc(var(--mv-safe-bottom,0px) + 112px)}
+ [data-presentation=mobile].style-wall[data-dock-compact=true] [data-wall-control=settings]{right:calc(var(--mv-safe-right,0px) + 88px);bottom:calc(var(--mv-safe-bottom,0px) + 14px)}
+}

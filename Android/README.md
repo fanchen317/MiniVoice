@@ -4,7 +4,7 @@
 
 这是独立的 Android 本地播放器工程，复用 MiniVoice 的产品名称与播放模式。首页提供基于本机歌曲封面的音乐墙、可开合的深色侧栏及底部播放条；左下角设置按钮打开音乐库设置。当前包含用户明确授权的指定文件夹扫描、子文件夹开关、重新扫描、歌曲数量、缓存清理、搜索、歌手与专辑浏览、后台播放及系统媒体控制、五种播放模式、收藏、最近播放、歌单和 LRC 文件导入。收藏、歌单及应用内歌词保存在应用数据中；自有歌曲编辑器另提供 MP3、FLAC、非分片 M4A 原文件标签写入，保存前需在应用内确认。
 
-执行 `Scripts/build-android.sh` 可直接生成 `.build/Android/MiniVoice-debug.apk`。也可在 Android Studio 打开 `Android/`，安装 Android SDK 35 和 Build Tools 35.0.0 后运行 `:app:assembleDebug`。支持 Android 10 及以上。
+执行 `Scripts/build-android.sh experience` 生成 `.build/dist/MiniVoice-android-experience.apk`；`Scripts/build-android.sh release` 生成旧原生入口正式包 `.build/dist/MiniVoice-android.apk`。测试路径 `.build/Android/MiniVoice-debug.apk` 为体验包兼容链接。也可在 Android Studio 打开 `Android/`，安装 Android SDK 35 和 Build Tools 35.0.0 后运行 `:app:assembleDebug`。支持 Android 10 及以上。
 
 脚本会依次查找 `ANDROID_HOME`、`ANDROID_SDK_ROOT`、`Android/local.properties` 的 `sdk.dir`，然后查找 Android Studio 常用 SDK 目录、Homebrew 路径和项目的 `.build/android-sdk`。优先使用 Build Tools 35.0.0，也支持更新的稳定版本。显式配置的 SDK 不完整时会给出缺少组件的提示，不会删除已有 APK。自定义路径可这样运行：
 
