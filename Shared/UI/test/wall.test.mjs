@@ -14,7 +14,7 @@ test('focused cover reserves a square and pushes neighboring shared edges',()=>{
 import {mobileWallViewport,wallCardMetrics,lyricWindow,clampZoom} from '../src/wallLayout.js';
 test('mobile wall focus and dock budgets fit phone and tablet rotations',()=>{
  for(const [width,height]of [[390,844],[844,390],[1024,1366],[1366,1024],[640,360]]){
-  const v=mobileWallViewport(width,height,{top:26,bottom:24});assert(v.side>=120);assert(v.x-v.side/2>=0);assert(v.x+v.side/2<=width);assert(v.y-v.side/2>=26);assert(v.y+v.side/2<=height-24);if(width>height)assert(v.x+v.side/2<width-v.dockWidth-14);
+  const v=mobileWallViewport(width,height,{top:26,bottom:24});assert(v.side>=120);assert(v.x-v.side/2>=0);assert(v.x+v.side/2<=width);assert(v.y-v.side/2>=26);assert(v.y+v.side/2<=height-24);if(width>height)assert(v.x-v.side/2>v.dockWidth+16);
  }
  assert.equal(clampZoom(9),1.2);assert.equal(clampZoom(.1),.6);
 });

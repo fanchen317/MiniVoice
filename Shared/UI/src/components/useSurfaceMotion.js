@@ -3,7 +3,7 @@ import {useLayoutEffect} from 'react';
 const reduced=()=>document.documentElement.classList.contains('reduce-motion')||matchMedia('(prefers-reduced-motion: reduce)').matches;
 const closing=new Set();
 function snapshot(node){
-  const style=getComputedStyle(node);return {rect:node.getBoundingClientRect(),opacity:style.opacity,zIndex:style.zIndex,variables:Object.fromEntries(['--bg','--text','--muted','--line','--border','--accent','--selected','--glass','--glass-line','--surface','--panel','--mint'].map(name=>[name,style.getPropertyValue(name)]))};
+  const style=getComputedStyle(node);return {rect:node.getBoundingClientRect(),opacity:style.opacity,zIndex:style.zIndex,variables:Object.fromEntries(['--bg','--text','--muted','--line','--border','--accent','--selected','--glass','--glass-line','--surface','--panel','--mint','--mv-safe-left','--mv-safe-right','--mv-safe-top','--mv-safe-bottom'].map(name=>[name,style.getPropertyValue(name)]))};
 }
 function exitSurface(node,modal,last,surface){
   if(reduced()||!node)return;
@@ -12,8 +12,14 @@ function exitSurface(node,modal,last,surface){
   ghost.dataset.surfaceExit=surface;ghost.setAttribute('aria-hidden','true');ghost.inert=true;
   for(const el of [ghost,...ghost.querySelectorAll('[role],[aria-modal],[id]')]){el.removeAttribute('role');el.removeAttribute('aria-modal');el.removeAttribute('id');}
   const workspace=node.closest('.mv-workspace');if(workspace?.dataset.presentation)ghost.dataset.presentation=workspace.dataset.presentation;if(workspace)for(const token of workspace.classList)if(token.startsWith('theme-')||token.startsWith('style-'))ghost.classList.add(token);
+  if(workspace?.dataset.presentation==='mobile'){ghost.classList.add('mv-workspace');ghost.style.flexDirection='row';ghost.style.gap='0';}
   for(const [name,value] of Object.entries(sample.variables))ghost.style.setProperty(name,value);
   Object.assign(ghost.style,{position:'fixed',left:`${rect.left}px`,top:`${rect.top}px`,width:`${rect.width}px`,height:`${rect.height}px`,right:'auto',bottom:'auto',margin:'0',pointerEvents:'none',animation:'none',transform:'none',zIndex:sample.zIndex==='auto'?'70':sample.zIndex});
+  // Pin the exit panel to its measured opening layout. The detached portal
+  // no longer inherits every ancestor selector, so recomputing flex/padding
+  // here would move its origin (especially with phone cutout insets).
+  const panelSelector=surface==='drawer'?'.mv-drawer':'.name-dialog,.mv-modal',sourcePanel=node.querySelector(panelSelector),exitPanel=ghost.querySelector(panelSelector);
+  if(sourcePanel&&exitPanel){const bounds=sourcePanel.getBoundingClientRect(),matrix=new DOMMatrixReadOnly(getComputedStyle(sourcePanel).transform);Object.assign(exitPanel.style,{position:'absolute',left:`${bounds.left-rect.left-matrix.m41}px`,top:`${bounds.top-rect.top-matrix.m42}px`,width:`${bounds.width}px`,height:`${bounds.height}px`,maxWidth:'none',maxHeight:'none',margin:'0',boxSizing:'border-box'});}
   ghost.classList.add('glass-in-motion');document.body.append(ghost);closing.add(ghost);
   const fade=ghost.animate([{opacity:Number.isFinite(Number(sample.opacity))?Number(sample.opacity):1},{opacity:0}],{duration:surface==='drawer'?280:180,easing:'ease-out',fill:'forwards'});
   const selector=surface==='drawer'?'.mv-drawer':'.name-dialog,.mv-modal',target=ghost.querySelector(selector),original=node.querySelector(selector);

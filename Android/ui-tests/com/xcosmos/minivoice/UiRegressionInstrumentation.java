@@ -20,6 +20,8 @@ public final class UiRegressionInstrumentation extends Instrumentation {
     @Override public void onStart(){Bundle result=new Bundle();try{
         if("crash".equals(arguments.getString("mode"))){new Thread(()->{throw new IllegalStateException("UI_CRASH_PROBE");},"diagnostic-crash-probe").start();SystemClock.sleep(10000);throw new AssertionError("Crash handler did not terminate process");}
         if("tags".equals(arguments.getString("mode"))){tagEditing();result.putString("stream",report+"UI_TAG_EDIT_PASS\n");finish(Activity.RESULT_OK,result);return;}
+        if("playerFlow".equals(arguments.getString("mode"))){portablePlayer();result.putString("stream",report+"UI_PLAYER_FLOW_PASS\n");finish(Activity.RESULT_OK,result);return;}
+        if("surfaces".equals(arguments.getString("mode"))){portablePlayer();result.putString("stream",report+"UI_SURFACES_PASS\n");finish(Activity.RESULT_OK,result);return;}
         if("wall".equals(arguments.getString("mode"))){portablePlayer();result.putString("stream",report+"UI_WALL_PASS\n");finish(Activity.RESULT_OK,result);return;}
         if("portable".equals(arguments.getString("mode"))){portablePlayer();result.putString("stream",report+"UI_PORTABLE_PASS\n");finish(Activity.RESULT_OK,result);return;}
         if("modals".equals(arguments.getString("mode"))){launch();modalPresentation();result.putString("stream",report+"UI_MODALS_PASS\n");finish(Activity.RESULT_OK,result);return;}
@@ -368,6 +370,49 @@ public final class UiRegressionInstrumentation extends Instrumentation {
             report.append("PASS Android native system dark/light updates while settings remains mounted\n");
         }finally{getUiAutomation().executeShellCommand("cmd uimode night "+(previous==android.app.UiModeManager.MODE_NIGHT_YES?"yes":previous==android.app.UiModeManager.MODE_NIGHT_NO?"no":"auto")).close();}
     }
+    private void mobilePlayerFlow(android.webkit.WebView web,PortablePlayerActivity preview)throws Exception{
+        webClick(web,"[aria-label=打开侧边栏]");webStyle(web,"音乐墙");webClick(web,"[aria-label=关闭侧边栏]");
+        webClick(web,".wp-dock-content .mv-now");SystemClock.sleep(700);webClick(web,".wp-controls [aria-label=展开播放器]");SystemClock.sleep(500);
+        for(int wait=0;wait<40&&!"true".equals(javascript(web,"[...document.querySelectorAll('.mv-wall-focused-art')].some(n=>n.naturalWidth>0&&getComputedStyle(n).visibility==='visible')"));wait++)SystemClock.sleep(100);
+        javascript(web,"window.nativeExpandedNode=document.querySelector('.mv-wall-focused');window.nativeSwapFrames=[];window.nativeBaseDecode=HTMLImageElement.prototype.decode;HTMLImageElement.prototype.decode=function(){return this.classList.contains('mv-wall-focused-art')?new Promise(resolve=>setTimeout(()=>window.nativeBaseDecode.call(this).then(resolve),700)):window.nativeBaseDecode.call(this)};window.nativeSwapUntil=performance.now()+1300;requestAnimationFrame(function sample(){const n=document.querySelector('.mv-wall-focused'),r=n?.getBoundingClientRect();window.nativeSwapFrames.push(!!n&&n===window.nativeExpandedNode&&Math.abs(r.x)<1&&Math.abs(r.y)<1&&Math.abs(r.width-innerWidth)<1&&Math.abs(r.height-innerHeight)<1&&Number(n.style.getPropertyValue('--wall-surface-opacity'))===1&&[...n.querySelectorAll('.mv-wall-focused-art')].some(a=>a.naturalWidth>0&&getComputedStyle(a).visibility==='visible'));if(performance.now()<window.nativeSwapUntil)requestAnimationFrame(sample)});true");
+        String before=javascript(web,"document.querySelector('.mv-wall-focused').dataset.wallId");webTap(web,".wp-controls [aria-label=下一首]");
+        boolean followed=false;for(int i=0;i<40;i++){String after=javascript(web,"document.querySelector('.mv-wall-focused')?.dataset.wallId");if(!after.equals(before)&&"true".equals(javascript(web,"!!document.querySelector('.mv-wall-focused.is-expanded.is-current')"))){followed=true;break;}SystemClock.sleep(100);}check(followed,"Expanded card did not follow actual native next song");SystemClock.sleep(1400);check("true".equals(javascript(web,"window.nativeSwapFrames.length>2&&window.nativeSwapFrames.every(Boolean)")),"Native expanded handoff exposed a small/blank card");javascript(web,"HTMLImageElement.prototype.decode=window.nativeBaseDecode;true");
+        webClick(web,"[aria-label=切换到大字歌词]");check("true".equals(javascript(web,"!!document.querySelector('[data-mv-component=kinetic-lyrics]')")),"Native kinetic surface missing");screenshot("android-flow-native-kinetic");
+        main(()->preview.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE));SystemClock.sleep(1000);
+        javascript(web,"for(const [k,v] of Object.entries({left:42,right:26,top:0,bottom:8}))document.documentElement.style.setProperty('--mv-safe-'+k,v+'px');dispatchEvent(new Event('minivoice-insets'));true");SystemClock.sleep(400);
+        check("true".equals(javascript(web,"(()=>{const h=document.querySelector('.wp-header').getBoundingClientRect(),f=document.querySelector('.wp-footer').getBoundingClientRect();return h.left>=41.9&&h.right<=innerWidth-25.9&&f.left>=41.9&&f.right<=innerWidth-25.9&&f.bottom<=innerHeight-7.9})()")),"Native expanded content ignores cutout insets");screenshot("android-flow-native-landscape-safe");
+        webClick(web,"[aria-label=收起播放器]");SystemClock.sleep(500);check("true".equals(javascript(web,"(()=>{const a=document.querySelector('[data-wall-control=settings]').getBoundingClientRect(),b=document.querySelector('[aria-label=打开侧边栏]').getBoundingClientRect();return Math.abs(a.left-b.left)<1&&a.top>innerHeight/2})()")),"Native landscape settings not aligned");
+        webClick(web,"[aria-label=打开侧边栏]");webStyle(web,"音乐库");webClick(web,"[aria-label=关闭侧边栏]");SystemClock.sleep(600);
+        check("true".equals(javascript(web,"!document.querySelector('main').classList.contains('is-player')&&getComputedStyle(document.querySelector('.mv-library')).display!=='none'")),"Native library style opened player instead of list");
+        screenshot("android-flow-native-library");report.append("PASS native next-song expanded follow, lyric mode, landscape safe content/settings and list style entry; timings "+javascript(web,"document.querySelector('main').dataset.styleTimings")+"\n");
+        main(()->preview.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));
+    }
+
+    private void mobileSurfaceContracts(android.webkit.WebView web,PortablePlayerActivity preview)throws Exception{
+        webClick(web,"[aria-label=打开侧边栏]");
+        for(String style:new String[]{"音乐墙","简易","音乐库"}){
+            webStyle(web,style);
+            for(String theme:new String[]{"light","dark"}){
+                webTheme(web,theme);
+                check("true".equals(javascript(web,"(()=>{const s=getComputedStyle(document.querySelector('.mv-drawer nav'));return s.backgroundImage==='none'&&s.boxShadow==='none'&&getComputedStyle(document.querySelector('.mv-drawer-shade'),'::before').clipPath==='none'})()")),"Mobile drawer contains stacked/darkened glass");
+                screenshot("neutral-native-drawer-"+style+"-"+theme);
+                webClick(web,".mv-drawer [aria-label=设置]");
+                String expected=theme.equals("light")?"rgb(34, 40, 48)":"rgb(240, 243, 248)";
+                check("true".equals(javascript(web,"(()=>{const n=document.querySelector('.mv-modal'),s=getComputedStyle(n);return s.color==='"+expected+"'&&s.backdropFilter.includes('0.72')&&parseFloat(getComputedStyle(n.querySelector('header>button')).width)>=44})()")),"Mobile sheet neutral palette/sample/hit target failed "+javascript(web,"(()=>{const n=document.querySelector('.mv-modal'),s=getComputedStyle(n);return JSON.stringify({theme:document.querySelector('main').dataset.theme,color:s.color,filter:s.backdropFilter,width:n.querySelector('header>button').getBoundingClientRect().width})})()"));
+                screenshot("neutral-native-settings-"+style+"-"+theme);webClick(web,"[aria-label=关闭弹窗]");
+                if(style.equals("音乐墙")){
+                    webClick(web,"[aria-label=音乐墙设置]");
+                    check("true".equals(javascript(web,"(()=>{const n=document.querySelector('.wp-scale-controls .mv-slider');return parseFloat(getComputedStyle(n).height)>=44&&n.querySelectorAll('.mv-slider-mark').length===7&&getComputedStyle(n.querySelector('.mv-slider-mark>i')).boxShadow==='none'&&getComputedStyle(n.querySelector('.mv-slider-knob')).width==='18px'})()")),"Mobile scale clarity or hit region failed");
+                    webTap(web,".wp-scale-controls [data-slider-mark='90']");
+                    check("true".equals(javascript(web,"document.querySelector('.wp-scale-controls .mv-slider').getAttribute('aria-valuenow')==='90'")),"Trusted mark tap did not select 90 percent");
+                    screenshot("neutral-native-scale-"+theme);webClick(web,"[aria-label=关闭弹窗]");
+                }
+                webClick(web,"[aria-label=打开侧边栏]");
+            }
+        }
+        report.append("PASS Android WebView neutral panels in three styles/light/dark, real backdrop, seven crisp marks, trusted 90 percent tap and 44px controls\n");
+    }
+
     private void portablePlayer()throws Exception{
         Context context=getTargetContext();Uri tree=android.provider.DocumentsContract.buildTreeDocumentUri(TestMusicProvider.AUTHORITY,"root");context.getContentResolver().call(tree,"reset",null,null);
         Set<String> folders=Collections.singleton(tree.toString());List<Song> tracks=FolderLibrary.scan(context,folders,false,(a,b,c)->{},Collections.emptyList());
@@ -378,10 +423,13 @@ public final class UiRegressionInstrumentation extends Instrumentation {
         java.lang.reflect.Method artworkKey=ArtworkCache.class.getDeclaredMethod("key",Song.class);artworkKey.setAccessible(true);for(Song song:tracks){song.artworkVersion="ui-fixture";String cacheKey=(String)artworkKey.invoke(null,song);java.io.File folder=LibraryCache.directory(context,"covers");folder.mkdirs();java.io.File cover=new java.io.File(folder,cacheKey+".jpg");android.graphics.Bitmap bitmap=android.graphics.Bitmap.createBitmap(512,512,android.graphics.Bitmap.Config.ARGB_8888);android.graphics.Canvas canvas=new android.graphics.Canvas(bitmap);android.graphics.Paint paint=new android.graphics.Paint();paint.setShader(new android.graphics.LinearGradient(0,0,512,512,0xff485e96,0xffb3d0c2,android.graphics.Shader.TileMode.CLAMP));canvas.drawRect(0,0,512,512,paint);paint.setShader(null);paint.setColor(0xfff4fff9);paint.setTextSize(70);paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);canvas.drawText("MiniVoice",60,265,paint);try(java.io.FileOutputStream out=new java.io.FileOutputStream(cover)){bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG,90,out);}bitmap.recycle();java.nio.file.Files.write(new java.io.File(folder,cacheKey+".stamp").toPath(),(song.artworkUri+"\n"+song.artworkVersion+"\nquality-v2").getBytes(java.nio.charset.StandardCharsets.UTF_8));new java.io.File(folder,cacheKey+".none").delete();song.artworkPrepared=true;song.artworkCacheKey=cacheKey;song.artworkFile=cover;}
         first.lyricsRaw="[00:00.000]原文\n[00:00.000]Translation\n[00:01.000]第二行";first.lyricsPrepared=true;
         context.getSharedPreferences("library",0).edit().putStringSet("music_folders",folders).putBoolean("scan_recursive",false).commit();
-        context.getSharedPreferences("portable",0).edit().clear().commit();LibrarySnapshot.write(context,"folders\n"+LibrarySnapshot.source(folders,false),tracks);
+        // This flow starts in library style regardless of the product default or earlier tests.
+        context.getSharedPreferences("portable",0).edit().clear().putString("workspace","{\"version\":1,\"pages\":{\"appearance\":{\"style\":\"library\",\"theme\":\"dark\"}}}").commit();LibrarySnapshot.write(context,"folders\n"+LibrarySnapshot.source(folders,false),tracks);
         PortablePlayerActivity preview=(PortablePlayerActivity)startActivitySync(new Intent(context,PortablePlayerActivity.class).putExtra("minivoice.uiRegression",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
         android.webkit.WebView web=(android.webkit.WebView)field(preview,"web");boolean ready=false;for(int i=0;i<80;i++){if("162".equals(javascript(web,"document.querySelector('.mv-song-list>div')?.style.height==='11664px'?162:0"))){ready=true;break;}SystemClock.sleep(150);}check(ready,"Shared player did not load authorized library");
         check("true".equals(javascript(web,"document.querySelector('.mv-song').click();true")),"Shared song click failed");SystemClock.sleep(700);
+        if("playerFlow".equals(arguments.getString("mode"))){mobilePlayerFlow(web,preview);main(preview::finish);return;}
+        if("surfaces".equals(arguments.getString("mode"))){mobileSurfaceContracts(web,preview);main(preview::finish);return;}
         if("wall".equals(arguments.getString("mode"))){webClick(web,"[aria-label=打开侧边栏]");webStyle(web,"音乐墙");webClick(web,"[aria-label=关闭侧边栏]");SystemClock.sleep(700);wallVersionContracts(web,preview,first);main(preview::finish);return;}
         long beforeHaptic=(Long)field(preview,"lastHaptic");
         org.json.JSONArray hit=new org.json.JSONArray(javascript(web,"(()=>{const r=document.querySelector('[aria-label=打开侧边栏]').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2,innerWidth]})()"));float hapticRatio=web.getWidth()/(float)hit.getDouble(2);

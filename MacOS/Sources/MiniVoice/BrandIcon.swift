@@ -3,13 +3,16 @@ import AppKit
 /// Vector artwork inspired by the supplied MiniVoice brand reference.
 /// The same paths drive the Dock icon and both menu bar variants.
 enum BrandIcon {
-    static func image(size: CGFloat, appIcon: Bool, monochrome: Bool = false) -> NSImage {
+    static func image(size: CGFloat, appIcon: Bool, monochrome: Bool = false, fullBleed: Bool = false) -> NSImage {
         let image = NSImage(size: NSSize(width: size, height: size), flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             context.saveGState()
             context.scaleBy(x: rect.width / 512, y: rect.height / 512)
             if appIcon {
-                let background = NSBezierPath(roundedRect: NSRect(x: 24, y: 24, width: 464, height: 464), xRadius: 108, yRadius: 108)
+                // iOS applies its own icon mask; only the desktop export needs inset corners.
+                let background = fullBleed
+                    ? NSBezierPath(rect: NSRect(x: 0, y: 0, width: 512, height: 512))
+                    : NSBezierPath(roundedRect: NSRect(x: 24, y: 24, width: 464, height: 464), xRadius: 108, yRadius: 108)
                 NSGradient(starting: NSColor(srgbRed: 0.70, green: 0.98, blue: 0.74, alpha: 1),
                            ending: NSColor(srgbRed: 0.25, green: 0.82, blue: 0.39, alpha: 1))?.draw(in: background, angle: 75)
                 context.translateBy(x: 32, y: 32)

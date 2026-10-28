@@ -2,10 +2,14 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 private enum Theme {
-    static let background = Color(red: 0.035, green: 0.055, blue: 0.06)
-    static let panel = Color(red: 0.10, green: 0.14, blue: 0.14)
-    static let mint = Color(red: 0.36, green: 0.91, blue: 0.67)
-    static let muted = Color(red: 0.62, green: 0.69, blue: 0.68)
+    static let background = Color(uiColor: .systemBackground)
+    static let panel = Color(uiColor: .secondarySystemBackground)
+    static let mint = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.36, green: 0.91, blue: 0.67, alpha: 1)
+            : UIColor(red: 0.02, green: 0.40, blue: 0.29, alpha: 1)
+    })
+    static let muted = Color.secondary
 }
 
 private enum BrowserSection: Hashable {
@@ -36,11 +40,13 @@ struct HomeView: View {
     @State private var selectedID: String?
     @State private var search = ""
     @State private var searchVisible = false
+    @FocusState private var searchFocused: Bool
     @State private var drawerOpen = false
     @State private var sheet: PresentedSheet?
     @State private var showingNewPlaylist = false
     @State private var playlistName = ""
-    @State private var zoom = 1.0
+    @AppStorage("ios.wall.zoom") private var zoom = 1.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var sectionSongs: [Song] {
         let base: [Song]
@@ -93,24 +99,71 @@ struct HomeView: View {
                     .offset(x: geometry.size.width * 0.55, y: -170)
                     .allowsHitTesting(false)
 
+                content(width: geometry.size.width)
+                    .ignoresSafeArea()
                 VStack(spacing: 0) {
                     header
-                    if let focusedSong { focusCard(focusedSong).padding(.horizontal, 16).padding(.top, 12) }
-                    content(width: geometry.size.width)
-                    if player.current != nil { playerDock.padding(.horizontal, 14).padding(.bottom, 8) }
+                    Spacer(minLength: 16)
+                    if let focusedSong {
+                        VStack(spacing: 8) {
+                            HStack {
+                                Text("歌曲详情").font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                roundButton("xmark", label: "关闭歌曲详情") { selectedID = nil }
+                            }
+                            focusCard(focusedSong)
+                        }
+                        .padding(14)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28))
+                        .padding(16)
+                    }
+                    HStack(alignment: .bottom, spacing: 12) {
+                        if player.current != nil {
+                            WallPlaybackDock(width: WallControlMetrics.dockWidth(viewport: geometry.size.width),
+                                             blocked: drawerOpen || sheet != nil || searchVisible || focusedSong != nil,
+                                             showPlayer: { sheet = .player }, showQueue: { sheet = .queue })
+                        }
+                        Spacer(minLength: 0)
+                        roundButton("gearshape", label: "设置") { sheet = .settings }
+                    }
+                    .padding(.horizontal, 16).padding(.bottom, 8)
                 }
 
                 if drawerOpen { drawer(width: geometry.size.width) }
             }
+            .accessibilityHidden(sheet != nil && sheet != .player)
+
         }
-        .sheet(item: $sheet) { value in
-            switch value {
-            case .settings: SettingsView()
-            case .queue: QueueView()
-            case .player: PlayerDetailView()
-            case .modes: ModePickerView(zoom: $zoom)
+        .overlay {
+            if let panel = sheet, panel != .player {
+                IOSDialogPanel(close: { sheet = nil }) {
+                    switch panel {
+                    case .settings: SettingsView { sheet = nil }
+                    case .modes: ModePickerView(zoom: $zoom, close: { sheet = nil })
+                    case .queue: QueueView(close: { sheet = nil })
+                    case .player: EmptyView()
+                    }
+                }
             }
         }
+        .sheet(isPresented: Binding(get: { sheet == .player }, set: { if !$0, sheet == .player { sheet = nil } })) {
+            PlayerDetailView()
+        }
+        .task {
+            #if targetEnvironment(simulator)
+            if ProcessInfo.processInfo.arguments.contains("--mv-ui-fixture") {
+                let args = ProcessInfo.processInfo.arguments
+                drawerOpen = args.contains("--mv-ui-drawer")
+                if args.contains("--mv-ui-settings") { sheet = .settings }
+                if args.contains("--mv-ui-modes") { sheet = .modes }
+                if args.contains("--mv-ui-queue") { sheet = .queue }
+                if args.contains("--mv-ui-focus") { selectedID = library.songs.first?.id }
+            }
+            #endif
+        }
+        .onChange(of: drawerOpen) { _, open in if open { searchFocused = false } }
+        .onChange(of: sheet) { _, panel in if panel != nil { searchFocused = false } }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: drawerOpen)
         .alert("新建歌单", isPresented: $showingNewPlaylist) {
             TextField("歌单名称", text: $playlistName)
             Button("创建") { library.createPlaylist(name: playlistName); playlistName = "" }
@@ -126,9 +179,11 @@ struct HomeView: View {
     private var header: some View {
         HStack(spacing: 12) {
             roundButton("line.3.horizontal", label: "打开侧栏") { withAnimation(.easeOut(duration: 0.22)) { drawerOpen = true } }
-            if let groupName {
+            if searchVisible {
+                EmptyView()
+            } else if let groupName {
                 Button { self.groupName = nil; selectedID = nil } label: {
-                    Image(systemName: "chevron.left").font(.headline).foregroundStyle(.white)
+                    Image(systemName: "chevron.left").font(.headline).foregroundStyle(.primary)
                 }
                 .accessibilityLabel("返回分类")
                 Text(groupName).font(.headline).lineLimit(1)
@@ -141,16 +196,21 @@ struct HomeView: View {
             Spacer(minLength: 0)
             if searchVisible {
                 TextField("搜索歌曲、歌手或专辑", text: $search)
+                    .focused($searchFocused)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .submitLabel(.search)
                     .padding(.horizontal, 12)
                     .frame(height: 42)
-                    .background(.white.opacity(0.10), in: Capsule())
+                    .background(.regularMaterial, in: Capsule())
                     .accessibilityLabel("搜索音乐库")
             }
             roundButton(searchVisible ? "xmark" : "magnifyingglass", label: searchVisible ? "关闭搜索" : "搜索") {
-                withAnimation { searchVisible.toggle(); if !searchVisible { search = "" } }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                    searchVisible.toggle()
+                    searchFocused = searchVisible
+                    if !searchVisible { search = "" }
+                }
             }
         }
         .padding(.horizontal, 16)
@@ -170,7 +230,9 @@ struct HomeView: View {
                 Text("在“设置”中选择 iPhone、iCloud 云盘或文件提供方中的音乐目录。")
                     .foregroundStyle(Theme.muted).multilineTextAlignment(.center)
                 Button("打开设置") { sheet = .settings }
-                    .buttonStyle(.borderedProminent).tint(Theme.mint)
+                    .padding(.horizontal, 22).frame(minHeight: 48)
+                    .background(Theme.mint.opacity(0.18), in: Capsule())
+                    .buttonStyle(IOSActionButtonStyle())
             }
             .padding(32)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -190,7 +252,7 @@ struct HomeView: View {
                                 HStack(spacing: 14) {
                                     ArtworkView(song: songs.first, size: 56).frame(width: 56, height: 56)
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(name).font(.headline).foregroundStyle(.white)
+                                        Text(name).font(.headline).foregroundStyle(.primary)
                                         Text("\(songs.count) 首歌曲").font(.caption).foregroundStyle(Theme.muted)
                                     }
                                     Spacer()
@@ -202,7 +264,7 @@ struct HomeView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(16)
+                    .padding(16).padding(.top, 72).padding(.bottom, 110)
                 }
             }
         } else if sectionSongs.isEmpty {
@@ -212,9 +274,9 @@ struct HomeView: View {
             WeightedWallView(songs: sectionSongs, selectedID: $selectedID, zoom: $zoom) { song in
                 player.play(song, queue: sectionSongs, library: library)
             }
-            .overlay(alignment: .bottomTrailing) {
+            .overlay(alignment: .topTrailing) {
                 roundButton("slider.horizontal.3", label: "音乐墙设置") { sheet = .modes }
-                    .padding(18)
+                    .padding(.top, 122).padding(.trailing, 18)
             }
         }
     }
@@ -250,37 +312,11 @@ struct HomeView: View {
         .overlay(RoundedRectangle(cornerRadius: 19).stroke(Theme.mint.opacity(0.32)))
     }
 
-    private var playerDock: some View {
-        VStack(spacing: 2) {
-            HStack(spacing: 10) {
-                Button { sheet = .player } label: {
-                    HStack(spacing: 9) {
-                        ArtworkView(song: player.current, size: 42).frame(width: 42, height: 42)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(player.current?.title ?? "").font(.subheadline.weight(.semibold)).lineLimit(1)
-                            Text(player.current?.artist ?? "").font(.caption2).foregroundStyle(Theme.muted).lineLimit(1)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                Spacer(minLength: 0)
-                transport("backward.end.fill", label: "上一首", action: player.previous)
-                transport(player.isPlaying ? "pause.fill" : "play.fill", label: player.isPlaying ? "暂停" : "播放", action: player.toggle)
-                transport("forward.end.fill", label: "下一首", action: player.next)
-                transport("list.bullet", label: "播放队列") { sheet = .queue }
-            }
-            SeekBar(position: player.position, duration: player.duration, seek: player.seek)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22))
-        .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.18)))
-    }
-
     private func drawer(width: CGFloat) -> some View {
         ZStack(alignment: .leading) {
-            Color.black.opacity(0.66).ignoresSafeArea().onTapGesture { withAnimation { drawerOpen = false } }
-            VStack(alignment: .leading, spacing: 4) {
+            Color.black.opacity(0.28).ignoresSafeArea().onTapGesture { withAnimation { drawerOpen = false } }
+            ScrollView {
+              VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 11) {
                     Image("AppIconPreview").resizable().frame(width: 46, height: 46).clipShape(RoundedRectangle(cornerRadius: 11))
                     VStack(alignment: .leading, spacing: 2) {
@@ -324,12 +360,15 @@ struct HomeView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding(18)
-            .frame(width: min(width * 0.82, 340))
+              .padding(18)
+            }
+            .frame(width: min(width * 0.86, 340))
             .frame(maxHeight: .infinity)
-            .background(Color(red: 0.06, green: 0.08, blue: 0.09))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28))
+            .overlay(RoundedRectangle(cornerRadius: 28).stroke(.primary.opacity(0.10)))
+            .padding(.vertical, 8).padding(.leading, 8)
         }
-        .transition(.opacity)
+        .transition(.move(edge: .leading).combined(with: .opacity))
     }
 
     private func drawerRow(_ title: String, symbol: String, target: BrowserSection) -> some View {
@@ -344,7 +383,7 @@ struct HomeView: View {
                 .font(.subheadline.weight(section == target ? .semibold : .regular))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
-                .foregroundStyle(section == target ? Theme.mint : .white)
+                .foregroundStyle(section == target ? Theme.mint : .primary)
                 .background(section == target ? Theme.mint.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
@@ -353,15 +392,16 @@ struct HomeView: View {
     private func roundButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 18, weight: .medium))
-                .foregroundStyle(.white).frame(width: 46, height: 46)
-                .background(.white.opacity(0.11), in: Circle())
+                .foregroundStyle(.primary).frame(width: 46, height: 46)
+                .background(.ultraThinMaterial, in: Circle())
                 .overlay(Circle().stroke(.white.opacity(0.14)))
         }
+        .buttonStyle(IOSActionButtonStyle())
         .accessibilityLabel(label)
     }
 
     private func transport(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: symbol).font(.system(size: 17, weight: .semibold)).frame(width: 32, height: 42) }
+        Button(action: action) { Image(systemName: symbol).font(.system(size: 17, weight: .semibold)).frame(width: 44, height: 44) }
             .buttonStyle(.plain).accessibilityLabel(label)
     }
 }
@@ -406,16 +446,22 @@ private struct WeightedWallView: View {
     @EnvironmentObject private var library: MusicLibrary
     @EnvironmentObject private var player: MusicPlayer
     @State private var scene = WeightedWallScene(count: 0)
-    @State private var cameraX: CGFloat = 12
-    @State private var cameraY: CGFloat = 40
+    @AppStorage("ios.wall.cameraX") private var storedCameraX = 12.0
+    private var cameraX: CGFloat { CGFloat(storedCameraX) }
+    @AppStorage("ios.wall.cameraY") private var storedCameraY = 40.0
+    private var cameraY: CGFloat { CGFloat(storedCameraY) }
     @GestureState private var drag: CGSize = .zero
-    @GestureState private var pinch: CGFloat = 1
+    @GestureState private var pinch: MagnifyGesture.Value?
 
     var body: some View {
         GeometryReader { geometry in
-            let scale = CGFloat(zoom) * pinch
+            let camera = WallCamera(offset: CGPoint(x: cameraX, y: cameraY), scale: CGFloat(zoom))
+            let anchor = CGPoint(x: (pinch?.startAnchor.x ?? 0.5) * geometry.size.width,
+                                 y: (pinch?.startAnchor.y ?? 0.5) * geometry.size.height)
+            let preview = camera.zoomed(to: CGFloat(zoom) * (pinch?.magnification ?? 1), around: anchor)
+            let scale = preview.scale
             let activeScene = scene.tiles.count == songs.count ? scene : WeightedWallScene(count: songs.count)
-            let visible = activeScene.visible(cameraX: cameraX + drag.width, cameraY: cameraY + drag.height,
+            let visible = activeScene.visible(cameraX: preview.offset.x + drag.width, cameraY: preview.offset.y + drag.height,
                                               scale: scale, viewport: geometry.size)
             ZStack(alignment: .topLeading) {
                 Theme.background
@@ -425,8 +471,8 @@ private struct WeightedWallView: View {
                     let height = instance.frame.height * scale
                     wallTile(song, width: width, height: height)
                         .frame(width: width, height: height)
-                        .position(x: cameraX + drag.width + instance.frame.midX * scale,
-                                  y: cameraY + drag.height + instance.frame.midY * scale)
+                        .position(x: preview.offset.x + drag.width + instance.frame.midX * scale,
+                                  y: preview.offset.y + drag.height + instance.frame.midY * scale)
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
@@ -435,12 +481,20 @@ private struct WeightedWallView: View {
             .gesture(DragGesture(minimumDistance: 5)
                 .updating($drag) { value, state, _ in state = value.translation }
                 .onEnded { value in
-                    cameraX += value.translation.width
-                    cameraY += value.translation.height
+                    storedCameraX += Double(value.translation.width)
+                    storedCameraY += Double(value.translation.height)
                 })
-            .simultaneousGesture(MagnificationGesture()
+            .simultaneousGesture(MagnifyGesture()
                 .updating($pinch) { value, state, _ in state = value }
-                .onEnded { value in zoom = min(1.2, max(0.6, zoom * Double(value))) })
+                .onEnded { value in
+                    let anchor = CGPoint(x: value.startAnchor.x * geometry.size.width,
+                                         y: value.startAnchor.y * geometry.size.height)
+                    let committed = WallCamera(offset: CGPoint(x: cameraX, y: cameraY), scale: CGFloat(zoom))
+                        .zoomed(to: CGFloat(zoom) * value.magnification, around: anchor)
+                    storedCameraX = Double(committed.offset.x)
+                    storedCameraY = Double(committed.offset.y)
+                    zoom = Double(committed.scale)
+                })
         }
         .onAppear { scene = WeightedWallScene(count: songs.count) }
         .onChange(of: songs.count) { _, count in scene = WeightedWallScene(count: count) }
@@ -464,6 +518,7 @@ private struct WeightedWallView: View {
         .clipShape(RoundedRectangle(cornerRadius: 4))
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(selectedID == song.id ? Theme.mint : .clear, lineWidth: 2))
         .contentShape(Rectangle())
+        .foregroundStyle(.white)
         .onTapGesture(count: 2) { selectedID = song.id; play(song) }
         .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { selectedID = song.id } }
         .contextMenu {
@@ -483,135 +538,373 @@ private struct WeightedWallView: View {
     }
 }
 
+/// Preview belongs to the gesture; cancellation restores the live position without seeking.
 private struct SeekBar: View {
     let position: TimeInterval
     let duration: TimeInterval
     let seek: (TimeInterval) -> Void
-    @State private var dragging: Double?
+    @GestureState private var preview: Double?
+
+    private var valid: Bool { duration.isFinite && duration > 0 }
+    private var displayed: Double { min(max(0, preview ?? (position.isFinite ? position : 0)), valid ? duration : 0) }
 
     var body: some View {
-        Slider(value: Binding(get: { dragging ?? min(position, max(duration, 1)) }, set: { dragging = $0 }),
-               in: 0...max(duration, 1), onEditingChanged: { editing in
-            if !editing, let dragging { seek(dragging); self.dragging = nil }
-        })
-        .tint(Theme.mint)
+        GeometryReader { geometry in
+            let width = max(1, geometry.size.width - 20)
+            let fraction = valid ? displayed / duration : 0
+            ZStack(alignment: .leading) {
+                Capsule().fill(.primary.opacity(0.14)).frame(height: 3)
+                Capsule().fill(Theme.mint).frame(width: width * fraction, height: 3)
+                Circle().fill(Theme.mint).frame(width: preview == nil ? 12 : 18, height: preview == nil ? 12 : 18)
+                    .offset(x: width * fraction - (preview == nil ? 6 : 9))
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 44)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .updating($preview) { value, state, _ in
+                    state = WallControlMetrics.seekTime(x: value.location.x - 10, width: width, duration: duration)
+                }
+                .onEnded { value in
+                    if let time = WallControlMetrics.seekTime(x: value.location.x - 10, width: width, duration: duration) { seek(time) }
+                })
+            .allowsHitTesting(valid)
+        }
+        .frame(height: 44)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("播放进度")
+        .accessibilityValue("\(Int(displayed)) 秒，共 \(Int(valid ? duration : 0)) 秒")
+        .accessibilityAdjustableAction { direction in
+            guard valid else { return }
+            switch direction {
+            case .increment: seek(min(duration, displayed + 5))
+            case .decrement: seek(max(0, displayed - 5))
+            @unknown default: break
+            }
+        }
     }
 }
 
+private struct IOSDialogPanel<Content: View>: View {
+    let close: () -> Void
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Color.black.opacity(0.32).ignoresSafeArea().onTapGesture(perform: close)
+                    .accessibilityHidden(true)
+                content()
+                    .frame(width: min(520, max(0, geometry.size.width - 32)),
+                           height: min(680, max(0, geometry.size.height - 24)))
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 30))
+                    .overlay(RoundedRectangle(cornerRadius: 30).stroke(.primary.opacity(0.12)))
+                    .clipShape(RoundedRectangle(cornerRadius: 30))
+                    .padding(12)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .accessibilityAddTraits(.isModal)
+        .accessibilityAction(.escape, close)
+    }
+}
+
+/// One persistent material shell changes size; collapsing never changes playback.
+private struct WallPlaybackDock: View {
+    let width: CGFloat
+    let blocked: Bool
+    let showPlayer: () -> Void
+    let showQueue: () -> Void
+    @EnvironmentObject private var player: MusicPlayer
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var expanded = true
+    @State private var activity = 0
+    @GestureState private var touching = false
+
+    private var mayCollapse: Bool { expanded && !blocked && !touching && !voiceOver && scenePhase == .active }
+    private var idleKey: String { "\(mayCollapse)-\(activity)-\(player.current?.id ?? "")" }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Button {
+                    if expanded { showPlayer() } else { expanded = true; activity += 1 }
+                } label: {
+                    ArtworkView(song: player.current, size: 40).frame(width: 40, height: 40)
+                        .clipShape(RoundedRectangle(cornerRadius: expanded ? 11 : 20))
+                        .frame(width: 48, height: 48)
+                }
+                .accessibilityLabel(expanded ? "打开正在播放" : "展开播放条")
+                HStack(spacing: 0) {
+                    Button(action: showPlayer) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(player.current?.title ?? "").font(.subheadline.weight(.semibold)).lineLimit(1)
+                            Text(player.current?.artist ?? "").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                    IOSActionButton(symbol: player.isPlaying ? "pause.fill" : "play.fill", label: player.isPlaying ? "暂停" : "播放", action: player.toggle)
+                    IOSActionButton(symbol: "list.bullet", label: "播放队列", action: showQueue)
+                }
+                .frame(width: max(0, width - 72))
+                .opacity(expanded ? 1 : 0)
+                .allowsHitTesting(expanded).accessibilityHidden(!expanded)
+            }
+            .frame(height: 48, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            SeekBar(position: player.position, duration: player.duration, seek: player.seek)
+                .id(player.current?.id)
+                .frame(width: max(0, width - 16))
+                .opacity(expanded ? 1 : 0).allowsHitTesting(expanded).accessibilityHidden(!expanded)
+        }
+        .padding(expanded ? 8 : 0)
+        .frame(width: expanded ? width : 48, height: expanded ? 108 : 48, alignment: .topLeading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: expanded ? 26 : 24))
+        .overlay(RoundedRectangle(cornerRadius: expanded ? 26 : 24).stroke(.primary.opacity(0.12)))
+        .clipShape(RoundedRectangle(cornerRadius: expanded ? 26 : 24))
+        .buttonStyle(IOSActionButtonStyle())
+        .simultaneousGesture(DragGesture(minimumDistance: 0)
+            .updating($touching) { _, state, _ in state = true }
+            .onEnded { _ in activity += 1 })
+        .animation(reduceMotion ? nil : .spring(response: 0.36, dampingFraction: 0.88), value: expanded)
+        .onChange(of: player.current?.id) { _, _ in expanded = true; activity += 1 }
+        .task(id: idleKey) {
+            guard mayCollapse else { return }
+            do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            guard !Task.isCancelled, mayCollapse else { return }
+            expanded = false
+        }
+    }
+}
+
+private struct IOSActionButton: View {
+    let symbol: String
+    let label: String
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 17, weight: .medium)).frame(width: 44, height: 44)
+        }.buttonStyle(IOSActionButtonStyle()).accessibilityLabel(label)
+    }
+}
+
+// iOS content panel: controlled dismissal, immediate persisted preferences, system file picker only.
 private struct SettingsView: View {
     @EnvironmentObject private var library: MusicLibrary
-    @Environment(\.dismiss) private var dismiss
+    @AppStorage("ios.appearance") private var appearance = "dark"
+    let close: () -> Void
     @State private var importing = false
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("音乐文件夹") {
-                    if library.folders.isEmpty { Text("尚未添加文件夹").foregroundStyle(.secondary) }
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("设置").font(.title2.bold())
+                    Text("让音乐按你的方式呈现").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(action: close) { Image(systemName: "xmark").frame(width: 44, height: 44) }
+                    .accessibilityLabel("关闭设置")
+            }.padding(22)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("外观").font(.headline)
+                    HStack(spacing: 8) {
+                        choice("跟随系统", value: "system", symbol: "circle.lefthalf.filled")
+                        choice("浅色", value: "light", symbol: "sun.max")
+                        choice("深色", value: "dark", symbol: "moon")
+                    }
+                    Divider()
+                    Text("音乐文件夹").font(.headline)
+                    if library.folders.isEmpty {
+                        Text("添加本地音乐目录，封面会自动出现在音乐墙上。")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
                     ForEach(library.folders) { folder in
                         HStack {
-                            Label(folder.name, systemImage: "folder")
+                            Image(systemName: "folder").foregroundStyle(Theme.mint)
+                            Text(folder.name).lineLimit(2)
                             Spacer()
-                            Button("移除", role: .destructive) { library.removeFolder(folder) }
+                            Button { library.removeFolder(folder) } label: {
+                                Image(systemName: "minus.circle").frame(width: 44, height: 44)
+                            }.accessibilityLabel("移除文件夹：" + folder.name)
                         }
                     }
-                    Button { importing = true } label: { Label("添加文件夹", systemImage: "folder.badge.plus") }
-                }
-                Section("扫描") {
-                    Toggle("包含子文件夹", isOn: $library.includesSubfolders)
-                        .onChange(of: library.includesSubfolders) { _, _ in library.rescan() }
-                    HStack { Text("已找到歌曲"); Spacer(); Text("\(library.songs.count)").foregroundStyle(.secondary) }
+                    action("添加音乐文件夹", symbol: "folder.badge.plus") { importing = true }
+                    Divider()
+                    Text("音乐库").font(.headline)
+                    Button {
+                        library.includesSubfolders.toggle()
+                        library.rescan()
+                    } label: {
+                        HStack {
+                            Text("包含子文件夹")
+                            Spacer()
+                            Image(systemName: library.includesSubfolders ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(Theme.mint)
+                        }.frame(minHeight: 44)
+                    }
+                    .disabled(library.isScanning)
+                    .accessibilityValue(library.includesSubfolders ? "已开启" : "已关闭")
+                    Text("已找到 \(library.songs.count) 首歌曲").font(.subheadline).foregroundStyle(.secondary)
                     if library.isScanning { ProgressView("正在扫描音乐…") }
-                    Button("重新扫描") { library.rescan() }.disabled(library.isScanning)
-                    Button("清理封面缓存并重扫") { library.clearArtworkCache() }.disabled(library.isScanning)
-                }
-                Section {
-                    Text("从系统“文件”选择音乐目录。应用只读取音乐和歌词，不修改原文件；请保留所选目录的访问权限。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-            }
-            .navigationTitle("设置")
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
-            .fileImporter(isPresented: $importing, allowedContentTypes: [.folder], allowsMultipleSelection: true) { result in
-                switch result {
-                case .success(let urls): urls.forEach(library.addFolder)
-                case .failure(let error): library.errorMessage = "无法选择文件夹：\(error.localizedDescription)"
-                }
+                    action("重新扫描", symbol: "arrow.clockwise", disabled: library.isScanning, action: library.rescan)
+                    action("清理封面缓存并重扫", symbol: "externaldrive", disabled: library.isScanning, action: library.clearArtworkCache)
+                    Text("音乐文件保留在原位置。云端文件请先下载到设备；目录移动后需重新添加。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.padding(22)
             }
         }
+        .buttonStyle(IOSActionButtonStyle())
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 30))
+        .overlay(RoundedRectangle(cornerRadius: 30).stroke(.primary.opacity(0.12)))
+        .clipShape(RoundedRectangle(cornerRadius: 30))
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.folder], allowsMultipleSelection: true) { result in
+            switch result {
+            case .success(let urls): urls.forEach(library.addFolder)
+            case .failure(let error): library.errorMessage = "无法选择文件夹：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func choice(_ title: String, value: String, symbol: String) -> some View {
+        Button { appearance = value } label: {
+            VStack(spacing: 8) {
+                Image(systemName: symbol).font(.title3)
+                Text(title).font(.caption)
+            }
+            .frame(maxWidth: .infinity, minHeight: 76)
+            .background(appearance == value ? Theme.mint.opacity(0.18) : Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(appearance == value ? Theme.mint : .clear))
+        }.accessibilityAddTraits(appearance == value ? .isSelected : [])
+    }
+
+    private func action(_ title: String, symbol: String, disabled: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol).frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                .padding(.horizontal, 14)
+                .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+        }.disabled(disabled)
+    }
+}
+
+private struct IOSActionButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var enabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(Color.primary)
+            .opacity(enabled ? (configuration.isPressed ? 0.65 : 1) : 0.4)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: configuration.isPressed)
     }
 }
 
 private struct ModePickerView: View {
     @EnvironmentObject private var player: MusicPlayer
-    @Environment(\.dismiss) private var dismiss
     @Binding var zoom: Double
+    let close: () -> Void
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("音乐墙比例") {
-                    Slider(value: $zoom, in: 0.6...1.2).tint(Theme.mint)
-                    HStack {
-                        Text("60%")
-                        Spacer()
-                        Button("恢复 100%") { zoom = 1.0 }
-                        Spacer()
-                        Text("120%")
-                    }
-                    .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("播放模式") {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text("音乐墙设置").font(.title2.bold())
+                Spacer()
+                Button(action: close) { Image(systemName: "xmark").frame(width: 44, height: 44) }
+                    .accessibilityLabel("关闭音乐墙设置")
+            }
+            HStack {
+                Text("封面比例").font(.headline)
+                Spacer()
+                Button { zoom = max(0.6, zoom - 0.1) } label: { Image(systemName: "minus").frame(width: 44, height: 44) }
+                    .accessibilityLabel("缩小封面").disabled(zoom <= 0.6)
+                Text("\(Int((zoom * 100).rounded()))% ").monospacedDigit().frame(width: 58)
+                Button { zoom = min(1.2, zoom + 0.1) } label: { Image(systemName: "plus").frame(width: 44, height: 44) }
+                    .accessibilityLabel("放大封面").disabled(zoom >= 1.2)
+            }
+            Text("也可以在墙上双指缩放、单指拖动。")
+                .font(.caption).foregroundStyle(.secondary)
+            Divider()
+            Text("播放模式").font(.headline)
+            ScrollView {
+                VStack(spacing: 8) {
                     ForEach(PlaybackMode.allCases) { mode in
-                        Button {
-                            player.mode = mode
-                            dismiss()
-                        } label: {
+                        Button { player.mode = mode } label: {
                             HStack(spacing: 13) {
                                 Image(systemName: mode.symbol).frame(width: 28).foregroundStyle(Theme.mint)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(mode.title).foregroundStyle(.primary)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(mode.title)
                                     Text(mode.detail).font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 if player.mode == mode { Image(systemName: "checkmark").foregroundStyle(Theme.mint) }
                             }
-                        }
+                            .frame(minHeight: 48).padding(12)
+                            .background(player.mode == mode ? Theme.mint.opacity(0.12) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 16))
+                        }.accessibilityAddTraits(player.mode == mode ? .isSelected : [])
                     }
                 }
             }
-            .navigationTitle("音乐墙设置")
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
         }
+        .padding(22)
+        .buttonStyle(IOSActionButtonStyle())
+
     }
 }
 
 private struct QueueView: View {
     @EnvironmentObject private var library: MusicLibrary
     @EnvironmentObject private var player: MusicPlayer
-    @Environment(\.dismiss) private var dismiss
+    let close: () -> Void
 
     var body: some View {
-        NavigationStack {
-            List(player.queue) { song in
-                Button {
-                    player.play(song, queue: player.queue, library: library)
-                } label: {
-                    HStack(spacing: 10) {
-                        ArtworkView(song: song, size: 44).frame(width: 44, height: 44)
-                        VStack(alignment: .leading) {
-                            Text(song.title).foregroundStyle(.primary).lineLimit(1)
-                            Text(song.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                        Spacer()
-                        if player.current?.id == song.id { Image(systemName: "waveform").foregroundStyle(Theme.mint) }
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("播放队列").font(.title2.bold())
+                    Text("\(player.queue.count) 首歌曲").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                IOSActionButton(symbol: "xmark", label: "关闭播放队列", action: close)
+            }.padding(22)
+            Divider()
+            if player.queue.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "music.note.list").font(.largeTitle)
+                    Text("还没有待播放的歌曲").foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 6) {
+                            ForEach(player.queue) { song in
+                                Button {
+                                    player.play(song, queue: player.queue, library: library)
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        ArtworkView(song: song, size: 48).frame(width: 48, height: 48)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(song.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                                            Text(song.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        }
+                                        Spacer(minLength: 4)
+                                        if player.current?.id == song.id {
+                                            Image(systemName: player.isPlaying ? "waveform" : "pause.fill").foregroundStyle(Theme.mint)
+                                        }
+                                    }
+                                    .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(player.current?.id == song.id ? Theme.mint.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 16))
+                                }
+                                .accessibilityAddTraits(player.current?.id == song.id ? .isSelected : [])
+                                .id(song.id)
+                            }
+                        }.padding(12)
                     }
+                    .onAppear { if let id = player.current?.id { proxy.scrollTo(id, anchor: .center) } }
                 }
             }
-            .navigationTitle("播放队列")
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
-        }
+        }.buttonStyle(IOSActionButtonStyle())
     }
 }
 
@@ -648,6 +941,7 @@ private struct PlayerDetailView: View {
                         .buttonStyle(.plain)
                         VStack(spacing: 0) {
                             SeekBar(position: player.position, duration: player.duration, seek: player.seek)
+                                .id(player.current?.id)
                             HStack {
                                 Text(Self.time(player.position))
                                 Spacer()

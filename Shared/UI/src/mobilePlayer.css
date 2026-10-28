@@ -1,0 +1,46 @@
+/* Explicit mobile content skin: actions retain touch/keyboard feedback without chrome. */
+.mv-workspace[data-presentation=mobile]:not(.style-wall) :is(.mv-list-tools,.mv-transport,.mv-hero,.mv-lyrics) .mv-button{
+ background:transparent!important;border-color:transparent;box-shadow:none;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
+}
+.mv-workspace[data-presentation=mobile]:not(.style-wall) .mv-scene .mv-button:active{background:var(--selected)!important}
+.mv-workspace[data-presentation=mobile]:not(.style-wall) .mv-scene .mv-button.selected{color:var(--accent)}
+.mv-workspace[data-presentation=mobile]:not(.style-wall) .mv-cover{background:none;border:0;box-shadow:none;display:flex;align-items:center;justify-content:center}
+.mv-workspace[data-presentation=mobile]:not(.style-wall) .mv-cover>img{max-width:100%;max-height:100%;object-fit:contain}
+.mv-workspace[data-presentation=mobile] .wp-player.is-expanded{
+ padding-left:max(16px,var(--mv-safe-left,0px))!important;padding-right:max(16px,var(--mv-safe-right,0px))!important;
+}
+.mv-workspace[data-presentation=mobile] .wp-footer{position:relative}
+.mv-workspace[data-presentation=mobile] .wp-collapse-toggle{position:static;width:44px;height:44px;border:0;border-radius:12px;background:#ffffff18;color:white;display:grid;place-items:center;font:600 24px/1 system-ui}
+.mv-workspace[data-presentation=mobile] .wp-kinetic-toggle[aria-pressed=true]{color:#52e6df;background:#52e6df25}
+.mv-workspace[data-presentation=mobile] .wp-player.is-expanded .wp-controls{padding:0;display:flex!important;width:100%;gap:clamp(0px,1vw,10px)!important}
+.mv-workspace[data-presentation=mobile] .wp-player.is-expanded .wp-controls>.mv-button{width:44px;height:44px;min-width:44px;flex:0 0 44px;margin:0}
+.mv-workspace[data-presentation=mobile] .wp-player.is-expanded .wp-controls>.wp-kinetic-toggle{margin-left:auto}
+/* Preview expansion owns the right anchor when no lyric-mode action is present. */
+.mv-workspace[data-presentation=mobile] .wp-player.is-expanded .wp-controls>.wp-expand-toggle{margin-left:auto}
+.mv-workspace[data-presentation=mobile] .wp-player.is-expanded .wp-controls>.wp-collapse-toggle{margin-left:0}
+.mv-workspace[data-presentation=mobile] .wp-player.is-expanded .wp-seek{width:100%;min-width:0}
+@media(orientation:landscape){
+ .mv-workspace[data-presentation=mobile] .wp-player.is-expanded{--wp-safe-side:max(16px,var(--mv-safe-left,0px),var(--mv-safe-right,0px));padding-left:var(--wp-safe-side)!important;padding-right:var(--wp-safe-side)!important;padding-bottom:max(12px,var(--mv-safe-bottom,0px))!important}
+}
+.mv-kinetic-lyrics{position:relative;flex:1;min-height:0;overflow:hidden;color:#fff;display:flex;flex-direction:column;justify-content:center;width:100%}
+.mv-kinetic-main{flex:none;display:grid;place-items:center;font-size:clamp(24px,7vw,58px);font-weight:700}
+.mv-kinetic-main canvas{display:block;max-width:100%}
+.mv-kinetic-translation{margin:0 0 8px;text-align:center;font-size:clamp(14px,3vw,22px);opacity:.8}
+.mv-kinetic-upcoming{min-height:0;overflow:hidden;padding-inline:16px;font-size:clamp(16px,4vw,30px);line-height:1.65;color:#ffffff80}
+.mv-kinetic-upcoming>div+div{opacity:.55;filter:blur(1px)}
+@media(orientation:landscape){
+ .mv-workspace[data-presentation=mobile].style-wall:is([data-dock-compact=true],[data-dock-compact=false]) [data-wall-control=settings]{left:auto;right:calc(var(--mv-safe-right,0px) + 14px);bottom:calc(var(--mv-safe-bottom,0px) + 14px)}
+}
+
+/* Only secondary actions are flat. Main toolbar glass stays in materials.css. */
+.mv-workspace[data-presentation=mobile] .wp-controls .wp-kinetic-toggle{position:static;width:44px;height:44px;flex:none;display:grid;place-items:center;border:0;border-radius:12px;background:#ffffff18;color:white;padding:10px}
+.mv-workspace[data-presentation=mobile] .wp-controls .wp-kinetic-toggle[aria-pressed=true]{color:#52e6df;background:#52e6df25}
+.mv-workspace[data-presentation=mobile] .mv-song{-webkit-tap-highlight-color:transparent;outline:none;border-radius:14px}
+.mv-workspace[data-presentation=mobile] .mv-song:focus{outline:none}
+.mv-workspace[data-presentation=mobile] .mv-song:not([data-focus-input=pointer]):focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+
+/* Expanded actions share the same feedback, with no permanent button slab. */
+.mv-workspace[data-presentation=mobile] .wp-player.is-expanded :is(.wp-kinetic-toggle,.wp-collapse-toggle){background:transparent!important;border:0;box-shadow:none}
+.mv-workspace[data-presentation=mobile] .mv-button.selected:has([data-icon=heart]){color:#f04f64}
+.mv-workspace[data-presentation=mobile] .wp-controls>.mv-button:active{background:#ffffff18!important;scale:.88}
+.mv-workspace[data-presentation=mobile] .wp-dock-content>.mv-slider{width:calc(100% - 16px);align-self:center}

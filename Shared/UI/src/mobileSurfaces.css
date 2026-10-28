@@ -1,0 +1,86 @@
+/* Neutral mobile glass skin. Alpha stays unchanged; desaturated sampling and
+   a single surface remove the green/grey stacked slabs. Desktop skins stay separate. */
+.mv-workspace[data-presentation=mobile]{
+ --mv-material-saturation:.72;
+ --mv-panel-text:#222830;--mv-panel-muted:#525c68;--mv-panel-base:#f2f4f7;
+ --mv-panel-line:#56627032;--mv-panel-wash:linear-gradient(140deg,#fafbfc70,#eef1f588);
+ --mv-panel-control:#ffffff38;--mv-panel-control-line:#ffffff80;
+ --mv-panel-selection:#07866518;--mv-panel-shadow:#11182726;
+ --mv-material-tint:rgba(246,248,250,.58);--mv-material-text:#222830;
+}
+.mv-workspace[data-presentation=mobile].theme-dark{
+ --mv-panel-text:#f0f3f8;--mv-panel-muted:#bcc5d2;--mv-panel-base:#1d2026;
+ --mv-panel-line:#e2e9f02b;--mv-panel-wash:linear-gradient(140deg,#22273180,#171b2399);
+ --mv-panel-control:#ffffff0f;--mv-panel-control-line:#ffffff26;
+ --mv-panel-selection:#54d3a91f;--mv-panel-shadow:#00000048;
+ --mv-material-tint:rgba(27,30,36,.6);--mv-material-text:#f0f3f8;
+}
+.mv-workspace[data-presentation=mobile]:is(.theme-light,.theme-dark) :is(.mv-drawer,.mv-modal){
+ --text:var(--mv-panel-text);--muted:var(--mv-panel-muted);--bg:var(--mv-panel-base);
+ --border:var(--mv-panel-line);--selected:var(--mv-panel-selection);
+ color:var(--text);text-shadow:none;
+ border:1px solid var(--mv-material-line);
+ box-shadow:inset 0 1px 0 #ffffff24,0 12px 32px var(--mv-panel-shadow);
+}
+/* A single continuous scrim has no rectangular cutout edges or seams. */
+.mv-workspace[data-presentation=mobile] :is(.mv-drawer-shade,.mv-modal-shade){background:transparent}
+.mv-workspace[data-presentation=mobile] :is(.mv-drawer-shade,.mv-modal-shade)::before{
+ content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;background:#0003;
+}
+.mv-workspace[data-presentation=mobile].style-wall .mv-drawer{--mv-material-blur:22px;--mv-panel-brightness:1.45}
+.mv-workspace[data-presentation=mobile].style-wall.theme-dark .mv-drawer{--mv-panel-brightness:.85}
+.mv-workspace[data-presentation=mobile] .mv-drawer-material{background:var(--mv-panel-base)}
+.mv-workspace[data-presentation=mobile] .mv-drawer-sample{filter:blur(24px) saturate(.55)}
+.mv-workspace[data-presentation=mobile]:is(.theme-light,.theme-dark) .mv-drawer-tint{background:var(--mv-panel-wash)}
+.mv-workspace[data-presentation=mobile]:is(.theme-light,.theme-dark) .mv-drawer>nav{
+ background:none;box-shadow:none;
+}
+.mv-workspace[data-presentation=mobile]:is(.theme-light,.theme-dark) .mv-sidebar-catalog{
+ background:none;box-shadow:none;border-top:1px solid var(--mv-panel-line);
+}
+.mv-workspace[data-presentation=mobile] .mv-modal :is(.mv-button,header>button),
+.mv-workspace[data-presentation=mobile] .mv-drawer header>.mv-button{
+ background:var(--mv-panel-control);border:1px solid var(--mv-panel-control-line);
+ color:var(--text);box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+.mv-workspace[data-presentation=mobile] .mv-modal header>button{width:44px;height:44px}
+.mv-workspace[data-presentation=mobile] .mv-modal .mv-option{border:1px solid transparent}
+.mv-workspace[data-presentation=mobile] .mv-modal .mv-option[aria-pressed=true]{
+ background:var(--mv-panel-selection);border-color:var(--mv-panel-line);
+}
+.mv-workspace[data-presentation=mobile] .mv-modal :is(input,textarea){
+ background:var(--mv-panel-control);border-color:var(--mv-panel-line);color:var(--text);
+}
+/* Scale is a precision control: solid dots, no translucent halos, distinct
+   unfilled rail. Its DOM marks remain 20px wide and the touch row stays 44px. */
+.mv-workspace[data-presentation=mobile] .wp-scale-controls .mv-slider{
+ --mv-slider-base:#68748266;--mv-slider-knob-size:18px;
+}
+.mv-workspace[data-presentation=mobile].theme-dark .wp-scale-controls .mv-slider{--mv-slider-base:#d7e2ee66}
+.mv-workspace[data-presentation=mobile] .wp-scale-controls .mv-slider-track{height:4px}
+.mv-workspace[data-presentation=mobile] .wp-scale-controls .mv-slider-mark>i{
+ width:4px;height:4px;box-shadow:none;background:var(--mv-panel-text);
+}
+.mv-workspace[data-presentation=mobile] .wp-scale-controls .mv-slider-knob{
+ border:2px solid var(--mv-panel-base);box-shadow:0 1px 2px #00000030;
+}
+/* Settings use one scrolling column. Text owns flexible width; actions retain
+   their own cells rather than colliding with paths, notes or long labels. */
+.mv-workspace[data-presentation=mobile] .mv-modal>header{flex:none;align-items:center;min-width:0;gap:12px;padding-block:0 12px}
+.mv-workspace[data-presentation=mobile] .mv-modal>header h2{min-width:0;margin:0;overflow-wrap:anywhere;line-height:1.35}
+.mv-workspace[data-presentation=mobile] .mv-modal>header>button{flex:0 0 44px}
+.mv-workspace[data-presentation=mobile] .mv-mobile-settings{display:flex;flex-direction:column;gap:8px;min-width:0}
+.mv-workspace[data-presentation=mobile] .mv-mobile-settings h3{margin:16px 0 4px;padding-top:12px;border-top:1px solid var(--border);line-height:1.4}
+.mv-workspace[data-presentation=mobile] .mv-mobile-settings h3:first-child{margin-top:0;padding-top:0;border:0}
+.mv-workspace[data-presentation=mobile] .mv-mobile-settings .mv-style-picker{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;width:100%}
+.mv-workspace[data-presentation=mobile] .mv-mobile-settings .mv-style-picker>button{min-width:0;min-height:44px;border:1px solid var(--border);border-radius:12px;background:var(--mv-panel-control);color:var(--text);padding:10px 6px;white-space:normal;line-height:1.35}
+.mv-workspace[data-presentation=mobile] .mv-mobile-settings .mv-style-picker>button[aria-pressed=true]{color:var(--accent);background:var(--selected);border-color:var(--accent)}
+.mv-workspace[data-presentation=mobile] .mv-mobile-settings .mv-option{min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;white-space:normal;overflow-wrap:anywhere;line-height:1.5;padding:12px}
+.mv-workspace[data-presentation=mobile] .mv-mobile-settings .mv-option>small{max-width:100%;flex:0 1 auto;overflow-wrap:anywhere;line-height:1.5}
+.mv-workspace[data-presentation=mobile] .mv-mobile-settings .mv-option>svg{flex:0 0 20px}
+.mv-workspace[data-presentation=mobile] .mv-mobile-settings .mv-settings-note{margin:0;padding:4px 12px;overflow-wrap:anywhere}
+.mv-workspace[data-presentation=mobile] .mv-mobile-settings .mv-folder-row{align-items:flex-start;min-width:0;gap:12px;padding:12px}
+.mv-workspace[data-presentation=mobile] .mv-mobile-settings .mv-folder-row strong{display:block;overflow-wrap:anywhere;line-height:1.5}
+.mv-workspace[data-presentation=mobile] .mv-mobile-settings .mv-folder-row>button{flex:none;min-height:44px;min-width:44px}
+.mv-workspace[data-presentation=mobile] .mv-mobile-settings .mv-choice{display:flex;width:100%;min-width:0;min-height:44px;margin-block:6px;background:var(--mv-panel-control);color:var(--text)}
+.mv-workspace[data-presentation=mobile] .mv-mobile-settings .mv-choice>span:first-child{min-width:0;white-space:normal;overflow-wrap:anywhere;text-align:left}

@@ -5,7 +5,7 @@ import {Button,Icon} from './components/PlayerControls.jsx';
 import Artwork from './Artwork.jsx';
 import Slider from './components/Slider.jsx';
 export default function WallDock({song,playing,position,hidden,blocked,onLocate,onToggle,onSkip,onQueue,onSeek,onCompact,mode,onMode}){
- const {collapsed:compact,expand,events}=useIdleCollapse({enabled:!hidden,blocked,identity:song?.id});
+ const {collapsed:compact,expand,events}=useIdleCollapse({enabled:!hidden,blocked,identity:song?.id,hoverExpand:false});
  // Report the mounted dock state before paint, including style re-entry.
  useLayoutEffect(()=>{onCompact?.(compact);},[compact,onCompact]);
  return <section className={`mv-wall-dock mv-dock ${compact?'is-compact':''}`} aria-label="播放器" hidden={hidden} {...events}>

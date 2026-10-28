@@ -107,3 +107,30 @@ struct WeightedWallScene {
         (Int64(x) << 32) ^ Int64(UInt32(truncatingIfNeeded: y))
     }
 }
+
+/// Pure viewport math shared by gesture preview and commit. The anchor is in viewport points.
+struct WallCamera {
+    var offset: CGPoint
+    var scale: CGFloat
+
+    func zoomed(to requestedScale: CGFloat, around anchor: CGPoint) -> WallCamera {
+        let next = min(1.2, max(0.6, requestedScale.isFinite ? requestedScale : 1))
+        let previous = min(1.2, max(0.6, scale.isFinite ? scale : 1))
+        let ratio = next / previous
+        return WallCamera(offset: CGPoint(x: anchor.x - (anchor.x - offset.x) * ratio,
+                                          y: anchor.y - (anchor.y - offset.y) * ratio), scale: next)
+    }
+}
+
+/// Geometry rules for controls, independent of SwiftUI rendering.
+enum WallControlMetrics {
+    static func dockWidth(viewport: CGFloat) -> CGFloat {
+        // 16pt edges, 12pt gap and 46pt settings target remain outside the dock.
+        max(48, min(420, viewport - 90))
+    }
+
+    static func seekTime(x: CGFloat, width: CGFloat, duration: Double) -> Double? {
+        guard width.isFinite, width > 0, x.isFinite, duration.isFinite, duration > 0 else { return nil }
+        return Double(min(1, max(0, x / width))) * duration
+    }
+}

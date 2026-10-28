@@ -167,8 +167,32 @@
 @media(prefers-reduced-motion:reduce){[data-presentation=mobile] .wp-status .wp-bars i{animation:none!important}}
 .reduce-motion [data-presentation=mobile] .wp-status .wp-bars i{animation:none!important}
 @media(orientation:landscape){
- [data-presentation=mobile].style-wall .mv-wall-dock.mv-dock{left:auto;right:calc(var(--mv-safe-right,0px) + 16px);width:min(440px,calc(100dvh - 28px),48vw)}
+ [data-presentation=mobile].style-wall .mv-wall-dock.mv-dock{left:calc(var(--mv-safe-left,0px) + 16px);right:auto;width:min(440px,calc(100dvh - 28px),calc((100% - var(--mv-safe-left,0px) - var(--mv-safe-right,0px)) * .48))}
  [data-presentation=mobile].style-wall .mv-wall-dock.mv-dock.is-compact{width:56px}
  [data-presentation=mobile].style-wall [data-wall-control=settings]{bottom:calc(var(--mv-safe-bottom,0px) + 112px)}
  [data-presentation=mobile].style-wall[data-dock-compact=true] [data-wall-control=settings]{right:calc(var(--mv-safe-right,0px) + 88px);bottom:calc(var(--mv-safe-bottom,0px) + 14px)}
 }
+
+/* Host-selected portrait placement: expanded bar centers in the safe viewport;
+   the collapsed circle retains the Android leading anchor. One shell moves between them. */
+@media(orientation:portrait){
+ [data-presentation=mobile][data-portrait-dock=center].style-wall .mv-wall-dock.mv-dock{
+  transition:width .4s,height .4s,border-radius .4s,left .4s,transform .4s;
+ }
+ [data-presentation=mobile][data-portrait-dock=center].style-wall .mv-wall-dock.mv-dock:not(.is-compact){
+  left:calc(50% + (var(--mv-safe-left,0px) - var(--mv-safe-right,0px))/2);
+  right:auto;transform:translateX(-50%);
+ }
+}
+
+/* The resting bottom-right tool moves only when the actual dock occupies its gap. */
+@media(orientation:portrait){
+ [data-presentation=mobile].style-wall[data-dock-overlap=false] [data-wall-control=settings]{
+  bottom:calc(var(--mv-safe-bottom,0px) + 14px);
+ }
+ [data-presentation=mobile].style-wall[data-dock-overlap=true] [data-wall-control=settings]{
+  bottom:calc(var(--mv-safe-bottom,0px) + 112px);
+ }
+}
+
+[data-presentation=mobile][data-dock-geometry-ready=false] [data-wall-control=settings]{transition:none!important}

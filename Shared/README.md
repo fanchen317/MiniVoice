@@ -59,3 +59,7 @@ Core vendor 的固定版本、来源、SHA256 和许可证见 Sources/MiniVoiceC
 材质验证补充：Android WebView 某些合成路径中，侧边栏的 `backdrop-filter` 声明存在但实际采样仍可能丢失。共享页面打开侧边栏时对背景 scene 显式施加 CSS blur，并将背景设为 inert；侧边栏保持独立半透明材质和描边。关闭时撤销滤镜，避免依靠点击/滚动触发偶然重绘。模拟器截图已验证文本背景实际模糊，不仅检查 CSS 属性。
 
 自有组件的两端边界与迁移标准见 [UI/COMPONENTS.md](UI/COMPONENTS.md)：手机和平板同属触控移动端，以 Android 为设计/操作基准；电脑属键鼠桌面端，以 Mac 为基准。首组共享按钮语义、弹窗焦点边界和尺寸策略已实际接入两端，仍非全量组件迁移完成。
+
+## iOS 用户授权接入更新（2026-10-28）
+
+本节更新上文 iOS 尚未接入页面的历史状态：用户已明确要求继续 iOS，并按 Android 体验版/开发手册复用共享组件。iOS 默认现已通过 WKWebView 加载同一份 Shared/UI；Swift 仅适配本地资源、目录授权、音乐库/音频、集合操作和页面状态保存。iPhone/iPad 均使用 mobile / Android 触控家族。具体构建、专用模拟器验证与未接入能力见 `../iOS/README.md` 和 `../Docs/ACCEPTANCE_STATUS.md`。这不扩大其他未授权平台的实施范围。

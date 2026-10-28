@@ -179,7 +179,7 @@
 [data-presentation=mobile]:not(.style-wall)>.mv-scene.is-drawer-behind :is(.mv-glass,.mv-library,.mv-lyrics,.mv-dock,.mv-search-control,.mv-button){background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;border-color:transparent!important;box-shadow:none!important;outline:none!important}
 .wp-scale-controls .mv-slider{--mv-slider-knob-size:16px}
 /* One actual backdrop sample + one tint, matching the wall toolbar material. */
-[data-presentation=mobile].style-wall .mv-drawer,[data-presentation=mobile] .mv-modal{background:var(--mv-material-shine),var(--mv-material-tint)!important;backdrop-filter:blur(var(--mv-material-blur)) saturate(1.4)!important;-webkit-backdrop-filter:blur(var(--mv-material-blur)) saturate(1.4)!important}
+[data-presentation=mobile].style-wall .mv-drawer,[data-presentation=mobile] .mv-modal{background:var(--mv-material-shine),var(--mv-material-tint)!important;backdrop-filter:blur(var(--mv-material-blur)) saturate(var(--mv-material-saturation,1.4)) brightness(var(--mv-panel-brightness,1))!important;-webkit-backdrop-filter:blur(var(--mv-material-blur)) saturate(var(--mv-material-saturation,1.4)) brightness(var(--mv-panel-brightness,1))!important}
 [data-presentation=mobile] .mv-modal{position:relative;isolation:isolate;overflow:hidden}
 /* Queue detents share one virtual-list scroll owner. Zero flex bases keep the
    list spacer out of the sheet's preferred height during a resize. */

@@ -247,3 +247,63 @@ WallPlayer 当前曲目 wp-status 改成 Mac 同款 #00dac3 18% 背景/60% 轮�
 - Android 宿主横屏在三种样式与弹层中统一隐藏 systemBars，保留边缘轻扫的临时系统栏；竖屏恢复，墙面展开继续使用原沉浸行为。显示切口安全区保留，API29 路径补充 displayCutout，普通横屏左右使用对称安全区，防止刘海遮挡。输入家族仍由 Android 决定。
 - 手机横屏按现有原生 PlayerStylePage/WallViewport 分区：普通播放页左封面/单行歌曲信息/收藏/进度/五个控制，右侧歌词；列表页全宽列表+独立底栏；歌词展开隐藏封面，底部控制横排；音乐墙聚焦在左、播放栏靠右下，配置与收起播放栏留出间距。横屏不再由 800px 宽度断点决定是否沿用竖屏堆叠。CSS 和 mobileWallViewport 使用相同 dock 宽度预算，持久相机不因此修改。
 - test-mobile-landscape 验证圆形键盘焦点、无触摸方框、侧栏字体/选中语义、浅深横屏播放/列表/歌词展开、墙面左右分区及竖屏恢复；Android 仪器检查实际 bars 可见性与真实手指按住节点截图，测试仅关闭系统首次沉浸引导以免遮挡取图，不修改应用行为。
+
+## Android 中性玻璃与精确缩放条（2026-10-28）
+
+- 身份与边界：`mobileSurfaces.css` 是 `[data-presentation=mobile]` 下的显式材质皮肤，作用于现有 DrawerLayer、Modal、ActionButton 和 `data-mv-component="slider"`；不新增平台调用或状态存储，不改变 Mac 皮肤。深浅模式仍由页面 appearance 状态控制。
+- 材质：保留墙面控件/侧栏的 .18（浅）/.24（深）透明底色以及弹窗 .58/.60 透明底色，改用中性冷灰配色、.72 饱和度，侧栏采用 22px 真实背景采样。浅色侧栏在采样时调整亮度以免底图压黑，深色独立调整；简易/音乐库的解码封面采样继续存在，去掉绿色洗色与导航内部的第二层半透明底板。
+- 遮罩：手机侧栏/弹窗不再先用祖先背景压暗玻璃采样源；由独立裁切遮罩压暗外侧区域（替换早期 100vmax 外扩阴影，减少首次合成面积）。内容保持清晰，背景层与正文分开，不用整体 filter 模糊或截图替代内容。
+- 滑块：仅手机显示比例皮肤使用 4px 实色轨道、无光晕的 4px 刻度、18px 圆形滑块头及 2px 分离描边；刻度命中宽度仍为 20px，整个行至少 44px。保留七个刻度、连续 1% 调节、预览/提交/取消、键盘与禁用行为；不增加额外 Tab 停靠。
+- 按钮与弹窗：关闭按钮触控区域至少 44px；采用独立深浅控制底色、细边框、选中行和输入底色。沿用 ActionButton 的禁用/忙碌/反馈、Modal 焦点与返回规则，不新增动画或业务事件。
+- 验证入口：`test-mobile-neutral-surfaces.cjs` 覆盖三种样式 × 深浅、设置/侧栏、缩放条刻度与 62% 调节；原有 thin-glass、墙面/队列伸缩测试继续检查真实采样和交互。截图是合成封面验证，不代替用户手机 GPU 与实际封面体验验收。
+
+## Android 播放视图、歌词模式与首帧开销（2026-10-28）
+
+- 页面状态：播放身份来自宿主 snapshot；换曲后仅在聚焦原播放歌曲或展开卡片时跟随新歌，主动浏览其他预览卡片不强制跳走。切入音乐库主动进入全部歌曲列表并触发当前歌定位，不继承其他样式的 player/lyrics 展开状态。歌词解析结果同时绑定歌曲 ID 和原始歌词，换歌时不短暂露出上一首译文入口；仅非空译文显示开关。
+- `data-mv-component="kinetic-lyrics"`：受控 lines/time/duration/playing/showTranslation；只维护测量尺寸、动画偏好与短时钟插值，不持有音乐库或平台状态。复用 Mac 的 kineticCharacters/kineticLayout/kineticInk 纯算法，Mac 旧模块继续兼容导出；手机通过展开卡片的自有 SVG 按钮切换，偏好存于页面 wallKinetic。无歌词显示空状态；等待、暂停、定位、换行、双语及减弱动态效果均有确定渲染；unmount/暂停取消 RAF。Canvas 最多按 30Hz 更新、像素倍率不超过 2，不据此宣称设备达到该帧率。
+- 布局：手机普通页面的图标操作移除常态底板、描边、阴影，保留按压、选中颜色及键盘焦点反馈；封面保留原比例，去掉宽背景板。音乐墙横屏设置按钮与侧栏按钮同一安全区左边线；展开内容四边按宿主 safe inset 内缩。大字模式按可用高度选择后续歌词数量与字号，避免横屏露出半行。
+- 首帧开销：Android 风格过渡临时 PixelCopy 画面限制 120 万像素与最长边 1600，JPEG 编码仍在 rasterWorker；不影响音乐封面原件。碎片准备每 8 块让出一帧，保留原碎片轨迹、690ms 动画等待、连续切换意图和取消规则；data-style-timings 记录 capture/decode/prepare/total 实测毫秒。侧栏与弹窗的外部遮罩使用一层带面板空洞的 clip-path，不再为 100vmax 阴影创建巨大绘制区域；退出幽灵保留 mobile 皮肤和最终布局，inert 且无业务事件。
+- 验证：test-android-player-flow.cjs 覆盖下一首跟随、大字/减弱动态、非空译文、无底板、当前歌列表定位和横屏左右 inset；Android instrumentation 的 playerFlow 模式连接真实 PlaybackService，验证换曲、展开、歌词模式、安全区、设置按钮位置及音乐库列表入口。首次绘制日志仅代表对应模拟器/合成库，不替代实体设备首次启动与真实大曲库验收。
+
+## Android 反馈回归修正（2026-10-28）
+
+- 手机简洁皮肤限定列表工具、传输、hero/歌词区的次级图标按钮；顶栏侧栏/搜索/返回保留玻璃材质。SongList 触摸设 pointer 输入来源、关闭默认 WebView 高亮，键盘操作恢复可见焦点；业务选择语义不变。
+- FocusArtwork 最多保留旧显示图与新候选图，新候选 decode 完成且请求身份仍一致才接管；展开换曲保持展开根与全屏几何，收起前更新墙面目标。错误/卸载不会由旧 decode 覆盖新请求。展开 footer 中大字切换在控制行末，收起在右侧。
+- SurfaceMotion 的移动遮罩改为连续单层背景，不使用矩形空洞裁切；原手机退出幽灵仍 inert 并继承 mobile 皮肤。设置页采用可换行分组与44px按钮，长文件夹文本不挤压操作区。此说明替代上文空洞遮罩设计。
+- styleTransition 手机碎片预算24、捕获等待180ms及decode等待250ms；桌面预算224不变，保留降级、减弱动态效果与最新意图清理。模型验证预算及覆盖，页面验证一次栅格化和连续操作；本轮原生测试因WebView超时/模拟器掉线未通过，不能推导实机流畅。
+
+### iOS 原生首轮适配（2026-10-28）
+
+用户明确授权本轮 iOS；本节仅记录原生适配，不表示复用了 DOM 组件。实现位于 `iOS/MiniVoice/HomeView.swift`。
+
+- `SettingsView`：关闭状态由 HomeView 的 sheet 持有，偏好由 AppStorage 持有，扫描/目录由 MusicLibrary 持有；局部 importing 仅控制系统文件授权选择器。点击选项立即提交，无另存草稿；扫描期间禁用递归切换和重复扫描，错误仍交 HomeView 显示。自有可滚动材质容器适配深浅色，按钮至少 44pt。外层遮罩只关闭当前设置。尚未验证 VoiceOver 焦点隔离和关闭焦点恢复。
+- `IOSActionButtonStyle`：仅管理原生按钮按压外观及禁用透明度，不持有业务。减弱动态效果关闭缩放；系统 Button 提供取消触摸/辅助激活语义。应用于新设置选项、比例步进及浮动工具；不宣称所有存量按钮已统一。图标沿用 SF Symbols，应用自有路径移植待接入。
+- 音乐墙：父画布负责拖动与双指缩放，封面为画布几何例外。歌曲选择受控，拖动和缩放预览局部；相机位置/比例使用 `ios.wall.*` 持久化。选中详情采用浮层，未实现 Android 墙内封面回流。新增布局需要真机和横竖屏进一步验收。
+- 验证边界详见 `Docs/ACCEPTANCE_STATUS.md` 的 iOS 条目；编译、几何单测与首页截图分别记录，不替代交互验收。
+
+- 简易样式入口修正：启动 hydrate 及切入简易时恢复播放信息页，主动目录浏览仍由页面 catalog 控制；未选歌曲主标题和播放栏使用“选择歌曲”。定向用例见 test-mobile-simple-entry.cjs。
+
+- 展开 WallPlayer 控制行：收起按钮与其他控制在同一正常流中；mobile 专用规则让前四按钮左对齐、大字与收起右对齐，最小44px命中，间距按视口收缩。横屏内容区左右共用较大侧 safe inset（至少16px），进度行与按钮共用边界；竖屏独立侧 inset。换方向无需定位计时器，旧卡片/桌面规则保持。定向回归新增几何不重叠及安全区对称断言。
+
+### iOS 接入共享触控页面（2026-10-28，替代此前原生首轮默认入口）
+
+用户明确要求按 Android 体验版布局、交互与开发手册继续 iOS，本轮为文档平台冻结范围的明确授权例外。`MiniVoiceApp` 默认进入 `SharedPlayerView` 的 WKWebView，加载构建时打包的 Shared/UI；不进入、也不回退此前 SwiftUI HomeView。上方“iOS 原生首轮适配”为历史记录。
+
+- 内容复用：PortablePlayer、Wall/WallPlayer/WallDock、DrawerLayer/DrawerMaterial、Modal/MobileSettings/CollectionDialogs，以及 ActionButton、自有 SVG Icon、Slider、ScrollRail、Choice/CheckControl、SurfaceMotion、useIdleCollapse。iOS 没有另建这些内容组件。
+- 宿主边界：`SharedPlayerHost` 仅负责版本化 DTO、Shared Core 调用、快照/目录授权、AVPlayer 命令、集合操作和原子页面状态保存。界面只从 App Bundle 取资源；封面经当前库歌曲 ID 解析，不接受任意文件路径。桥只接主 frame 的本地页面；外部导航被拒绝。取消或卸载中止资源回调，内容进程终止后从已保存状态重载。
+- 状态归属：共享 reducer 与串行 controller 持有页面/相机/查询/主题；宿主保存 JSON。歌曲/收藏/歌单仍由 MusicLibrary 持有，音频由 MusicPlayer 持有。快照 revision 只在目录改变时更新歌曲数组；轮询与 Slider 手势规则仍由共用组件负责。移除目录时裁掉播放队列中的未授权歌曲，当前歌曲失去授权即释放播放器/锁屏信息。
+- 竖屏播放栏（用户最新澄清）：宿主提供 `portraitDock=center` 布局配置，PortablePlayer 标记 `data-portrait-dock`；共享 wall.css 的显式规则**只将展开长条放到左右安全区的中心**。收起圆形沿用原左下角位置。持续材质节点在两位置和尺寸之间过渡，减弱动态效果沿用共享规则。Android 默认配置 leading 不受此例外影响；横屏原规则保留。
+- 验证：共享 JS 单测、iOS 编译与专用 iPhone/iPad 的实际 WKWebView 集成脚本。脚本检查布局/状态/资源与桥接，使用 DOM 激活而非真实手指；真机触控、横屏、安全区域/键盘、系统目录授权与 GPU 流畅度仍需单独验收。报告见 `.build/reports/ios/shared-ui/`。
+
+### iPad 设置按钮避让与触控收起规则（2026-10-28）
+
+- `useDockSettingsCollision` 以 root/dock/settings 的实际布局及设置按钮**原始右下位置**计算 12px 安全距离；`dockCollision.js` 是纯几何模型。观察器只持有派生布局状态，通过 `data-dock-overlap` 驱动共享移动端竖屏规则。不存在碰撞就不挪动设置按钮；不以“播放条展开”作为上移依据，也不依赖平板宽度断点。初次测量关闭工具过渡并提交最终位置，避免首屏从上方滑下。ResizeObserver 跟随宽度动画和视口变化，卸载清理 observer/事件/标记。
+- `useIdleCollapse` 新增 `hoverExpand`，默认 true，保留 Mac 键鼠行为。移动端 WallDock 显式 false：模拟器鼠标进入或真实外接鼠标悬停均不展开；点击展开、按住暂停计时、键盘焦点和弹层阻塞沿用共享规则。选项改变时清理旧 hover 标记并重排计时器，避免残留状态。
+- 专用 iPhone/iPad WKWebView 验证：手机实际冲突时工具上移；iPad 展开/收起时设置按钮底距保持 34pt（本机 20pt 底安全区 + 14pt）；圆形收到 mouse pointerover 后仍收起，点击后展开。几何单测覆盖平板无碰撞、手机碰撞、圆形无碰撞、12px 边界和无效尺寸。DOM 事件验证不等于实体鼠标/手指系统输入验收。
+
+
+### 2026-10-28 音乐墙展开边缘与右侧动作
+
+Wall 的容器测量保留计算样式中的小数 CSS 尺寸，避免 Android 非整数 density 下 clientWidth/clientHeight 取整让展开层比墙面短；动画、返回、缩放状态仍由原有 Wall 持有。WallPlayer 的展开/收起按钮使用 wp-expand-toggle 标记；移动展开预览卡片通过自身 auto margin 靠右，当前播放卡片的歌词切换与收起按钮继续组成右侧动作组。普通/紧凑、当前/预览、展开/收起八种组合以真实组件验证右侧边界；横竖两种小数容器验证展开层四边差值小于 .02 CSS px。实体手机截图中的整条底部区域尚待复核，不能将小数缝隙修正视为该现象已全部解决。
+
+- 横屏手机墙面几何以左下dock和右侧56px工具列为占用区，mobileWallViewport据安全区计算剩余区域中心及卡片尺寸；竖屏不交换。SurfaceMotion关闭时将面板实测布局固定到退出层，补齐safe变量，避免祖先样式丢失造成关闭原点跳动。FocusArtwork在新图decode后以520ms轻缩放接管，保留原解码等待防闪，减弱动态不执行。Button的选中heart传filled，自有mobile皮肤显示红色；展开右侧动作无常态底框，播放栏进度仅缩短16px。

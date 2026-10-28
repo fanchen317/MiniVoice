@@ -6,11 +6,17 @@ struct Song: Codable, Identifiable, Hashable {
     let folderID: String
     let relativePath: String
     let title: String
-    let artist: String
+    var artist: String
     let album: String
     let duration: TimeInterval
-    let artworkFile: String?
+    var artworkFile: String?
     let lyrics: String?
+    var sourceAdded: Double? = nil
+    var added: Double? = nil
+    var fileSize: Int64? = nil
+    var originalArtworkFile: String? = nil
+    var cacheVersion: String? = nil
+    var originalArtist: String? = nil
 
     static func == (lhs: Song, rhs: Song) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }

@@ -14,6 +14,11 @@ final class MusicPlayer: ObservableObject {
     }
     @Published var errorMessage: String?
 
+    @Published private(set) var navigationAction = ""
+    @Published private(set) var navigationToken = 0
+    private var sessionObservers: [NSObjectProtocol] = []
+    private var playbackObserver: NSKeyValueObservation?
+    private var resumeAfterInterruption = false
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
@@ -29,6 +34,26 @@ final class MusicPlayer: ObservableObject {
             mode = PlaybackMode(rawValue: saved) ?? .sequential
         }
         configureRemoteCommands()
+        sessionObservers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in
+            let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let options = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if type == AVAudioSession.InterruptionType.began.rawValue {
+                    let resume = self.isPlaying; self.pause(); self.resumeAfterInterruption = resume
+                } else if type == AVAudioSession.InterruptionType.ended.rawValue {
+                    let resume = self.resumeAfterInterruption && AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume)
+                    self.resumeAfterInterruption = false
+                    if resume { try? AVAudioSession.sharedInstance().setActive(true); self.player?.play() }
+                }
+            }
+        })
+        sessionObservers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] notification in
+            let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+            if reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue {
+                Task { @MainActor [weak self] in self?.pause() }
+            }
+        })
     }
 
     var duration: TimeInterval { current?.duration ?? 0 }
@@ -36,8 +61,6 @@ final class MusicPlayer: ObservableObject {
     func play(_ song: Song, queue songs: [Song], library: MusicLibrary) {
         self.library = library
         queue = songs.contains(song) ? songs : [song] + songs
-        shuffleRemaining = queue.map(\.id).filter { $0 != song.id }
-        shuffleHistory.removeAll()
         load(song, autoplay: true)
     }
 
@@ -69,15 +92,23 @@ final class MusicPlayer: ObservableObject {
         statusObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
             guard item.status == .failed else { return }
             Task { @MainActor [weak self] in
+                guard self?.player?.currentItem === item else { return }
                 self?.pause()
                 self?.errorMessage = item.error?.localizedDescription ?? "无法播放这个音频文件。"
             }
         }
         let next = AVPlayer(playerItem: item)
         player = next
+        playbackObserver = next.observe(\.timeControlStatus, options: [.new]) { [weak self] observed, _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.player === observed else { return }
+                self.isPlaying = observed.timeControlStatus == .playing || observed.timeControlStatus == .waitingToPlayAtSpecifiedRate
+                self.updateNowPlaying()
+            }
+        }
         timeObserver = next.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main) { [weak self] time in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self, self.player === next else { return }
                 self.position = max(0, time.seconds.isFinite ? time.seconds : 0)
                 self.updateNowPlaying()
             }
@@ -95,6 +126,26 @@ final class MusicPlayer: ObservableObject {
         updateNowPlaying()
     }
 
+    /// Keep playback and lock-screen controls inside the currently authorized catalog.
+    func retainLibrary(_ songs: [Song]) {
+        let allowed = Set(songs.map(\.id))
+        queue.removeAll { !allowed.contains($0.id) }
+        shuffleRemaining.removeAll { !allowed.contains($0) }
+        shuffleHistory.removeAll { !allowed.contains($0) }
+        if let current, !allowed.contains(current.id) {
+            clearPlayer(); nowPlayingArtwork = nil; updateNowPlaying()
+        } else if let id = current?.id {
+            let updates = Dictionary(songs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            queue = queue.compactMap { updates[$0.id] }
+            if let updated = updates[id] {
+                current = updated
+                if let path = updated.artworkFile, let image = UIImage(contentsOfFile: path) { nowPlayingArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image } }
+                else { nowPlayingArtwork = nil }
+                updateNowPlaying()
+            }
+        }
+    }
+
     func toggle() {
         guard let player else { return }
         if isPlaying { player.pause() } else { player.play() }
@@ -103,6 +154,7 @@ final class MusicPlayer: ObservableObject {
     }
 
     func pause() {
+        resumeAfterInterruption = false
         player?.pause()
         isPlaying = false
         updateNowPlaying()
@@ -120,51 +172,27 @@ final class MusicPlayer: ObservableObject {
 
     func previous() {
         if position > 3 { seek(to: 0); return }
-        guard let current, let index = queue.firstIndex(of: current) else { return }
-        if mode == .shuffle, let previousID = shuffleHistory.popLast(), let song = queue.first(where: { $0.id == previousID }) {
-            load(song, autoplay: true)
-        } else if index > 0 {
-            load(queue[index - 1], autoplay: true)
-        } else if mode == .repeatAll, let last = queue.last {
-            load(last, autoplay: true)
-        } else {
-            seek(to: 0)
-        }
+        guard let current, let index = queue.firstIndex(of: current), let previous = ExperiencePlaybackPolicy.previous(index: index, count: queue.count) else { return }
+        load(queue[previous], autoplay: true)
     }
 
     private func didFinish() { advance(manual: false) }
 
     private func advance(manual: Bool) {
-        guard let current, let index = queue.firstIndex(of: current), !queue.isEmpty else { return }
-        if !manual && mode == .repeatOne { load(current, autoplay: true); return }
-        if mode == .shuffle {
-            if shuffleRemaining.isEmpty {
-                if !manual { pause(); seek(to: duration); return }
-                shuffleRemaining = queue.map(\.id).filter { $0 != current.id }
-            }
-            if let id = shuffleRemaining.randomElement(), let song = queue.first(where: { $0.id == id }) {
-                shuffleRemaining.removeAll { $0 == id }
-                shuffleHistory.append(current.id)
-                load(song, autoplay: true)
-            }
-            return
-        }
-        if !manual && mode == .single { pause(); seek(to: duration); return }
-        let nextIndex = index + 1
-        if nextIndex < queue.count {
-            load(queue[nextIndex], autoplay: true)
-        } else if mode == .repeatAll || manual {
-            load(queue[0], autoplay: true)
-        } else {
-            pause()
-            seek(to: duration)
-        }
+        guard let current, let index = queue.firstIndex(of: current) else { return }
+        if let next = ExperiencePlaybackPolicy.next(index: index, count: queue.count, mode: mode.rawValue, manual: manual) {
+            if !manual && mode == .repeatOne { seek(to: 0); player?.play(); isPlaying = true; updateNowPlaying() }
+            else { load(queue[next], autoplay: true) }
+        } else { pause(); seek(to: duration) }
     }
+
+    func requestNavigation(_ action: String = "LOCATE_PLAYING") { navigationAction = action; navigationToken += 1 }
+    func acknowledgeNavigation(_ token: Int) { if token == navigationToken { navigationAction = "" } }
 
     private func clearPlayer() {
         if let timeObserver { player?.removeTimeObserver(timeObserver) }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
-        statusObserver?.invalidate()
+        statusObserver?.invalidate(); playbackObserver?.invalidate(); playbackObserver = nil
         player?.pause()
         player = nil
         isPlaying = false
@@ -180,7 +208,7 @@ final class MusicPlayer: ObservableObject {
     private func configureRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in if self?.isPlaying == false { self?.toggle() } }
+            Task { @MainActor [weak self] in if self?.isPlaying == false { self?.toggle() }; self?.requestNavigation() }
             return .success
         }
         center.pauseCommand.addTarget { [weak self] _ in
@@ -192,11 +220,11 @@ final class MusicPlayer: ObservableObject {
             return .success
         }
         center.nextTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in self?.next() }
+            Task { @MainActor [weak self] in self?.next(); self?.requestNavigation() }
             return .success
         }
         center.previousTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in self?.previous() }
+            Task { @MainActor [weak self] in self?.previous(); self?.requestNavigation() }
             return .success
         }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in

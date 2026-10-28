@@ -96,13 +96,13 @@ public final class PortablePlayerActivity extends Activity {
         if(closed||web==null||web.getWidth()<1||web.getHeight()<1){reply(id,null,"页面尚未就绪");return;}
         final android.graphics.Bitmap bitmap;
         try{
-            int width=web.getWidth(),height=web.getHeight();float scale=Math.min(1f,Math.min(2560f/Math.max(width,height),(float)Math.sqrt(3000000d/(width*(double)height))));
+            int width=web.getWidth(),height=web.getHeight();float scale=Math.min(1f,Math.min(1600f/Math.max(width,height),(float)Math.sqrt(1200000d/(width*(double)height))));
             bitmap=android.graphics.Bitmap.createBitmap(Math.max(1,Math.round(width*scale)),Math.max(1,Math.round(height*scale)),android.graphics.Bitmap.Config.ARGB_8888);
             int[] location=new int[2];web.getLocationInWindow(location);
             android.graphics.Rect rect=new android.graphics.Rect(location[0],location[1],location[0]+width,location[1]+height);
             android.view.PixelCopy.request(getWindow(),rect,bitmap,result->{
                 if(result!=android.view.PixelCopy.SUCCESS||closed){bitmap.recycle();reply(id,null,"页面画面暂不可用");return;}
-                try{rasterWorker.execute(()->{try{ByteArrayOutputStream bytes=new ByteArrayOutputStream();bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG,95,bytes);reply(id,"data:image/jpeg;base64,"+android.util.Base64.encodeToString(bytes.toByteArray(),android.util.Base64.NO_WRAP),null);}catch(Exception error){reply(id,null,error.getMessage());}finally{bitmap.recycle();}});}catch(RejectedExecutionException ignored){bitmap.recycle();}
+                try{rasterWorker.execute(()->{try{ByteArrayOutputStream bytes=new ByteArrayOutputStream();bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG,85,bytes);reply(id,"data:image/jpeg;base64,"+android.util.Base64.encodeToString(bytes.toByteArray(),android.util.Base64.NO_WRAP),null);}catch(Exception error){reply(id,null,error.getMessage());}finally{bitmap.recycle();}});}catch(RejectedExecutionException ignored){bitmap.recycle();}
             },main);
         }catch(Exception error){reply(id,null,error.getMessage());}
     }
