@@ -364,3 +364,5 @@ Modal 复用 useDialogViewport + dialogViewport；由弹窗层持有 `--mv-dialo
 `animateWallReflow`接收节点和纯rectAt进度模型，只拥有临时合成动画与其修改的样式；按33点采样固定盒子transform，封面使用natural ratio/cover与反缩放，文字保持最终排版尺度。取消只恢复自己修改的属性，不覆盖图片解码的visibility等异步状态。Wall继续拥有相机、聚焦、时长、打断和保存；合成阶段不做逐海报尺寸更新，结束恢复真实几何与原生滚动位置，侧栏中断后关闭时续接。高清图在聚焦结束交接。
 
 iOS侧栏深度由保留的`.mv-wall-native-surface`独立scale(.92)承担；原生滚动偏移定义缩放原点，避免修改逐卡布局；快速反转和减弱动态由CSS契约处理。目录选择依赖只跟随当前分组相关集合，Intl.Collator保持中文数字排序行为。回归及测量边界见 IOS_RENDERING_INVESTIGATION.md 后续点击章节。
+
+Mac 歌曲编辑的缺失歌词下载复用 ActionButton 与原有错误区域：仅空歌词草稿显示，busy 阻止重复提交；由 DesktopEngine 搜索及保存，组件接收成功文本更新草稿。无独立动画，沿用桌面皮肤；实际网络、键盘及主题验收待完成。

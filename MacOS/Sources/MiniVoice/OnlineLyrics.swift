@@ -75,7 +75,7 @@ struct OnlineLyricsResult: Decodable, Identifiable, Sendable {
 }
 
 enum OnlineLyricsSearch {
-    static func search(title: String, artist: String, duration: Double) async throws -> [OnlineLyricsResult] {
+    static func search(title: String, artist: String, duration: Double, album: String = "") async throws -> [OnlineLyricsResult] {
         let trimmedArtist = artist.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanedArtist = ["未知歌手", "unknown artist"].contains(trimmedArtist.lowercased()) ? "" : trimmedArtist
         let cleanedTitle = LyricsSearchText.title(title, artist: cleanedArtist)
@@ -116,8 +116,8 @@ enum OnlineLyricsSearch {
             byID[item.id] = item
         }
         let ranked = byID.values.sorted {
-            let left = $0.score(title: cleanedTitle, artist: cleanedArtist, duration: duration)
-            let right = $1.score(title: cleanedTitle, artist: cleanedArtist, duration: duration)
+            let left = $0.score(title: cleanedTitle, artist: cleanedArtist, duration: duration) + (!album.isEmpty && LyricsSearchText.key($0.albumName ?? "") == LyricsSearchText.key(album) ? 30 : 0)
+            let right = $1.score(title: cleanedTitle, artist: cleanedArtist, duration: duration) + (!album.isEmpty && LyricsSearchText.key($1.albumName ?? "") == LyricsSearchText.key(album) ? 30 : 0)
             return left == right ? $0.id < $1.id : left > right
         }
         var seenLyrics: Set<String> = []

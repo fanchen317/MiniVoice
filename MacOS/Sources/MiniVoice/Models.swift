@@ -256,7 +256,13 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 } else {
                     let result = await Task.detached { FolderScanner.scan([root], recursive: recursive) }.value
                     let current = await Task.detached {
-                        (cached?.tracks ?? []).filter { $0.isCurrent(root: root) }
+                        (cached?.tracks ?? []).filter { entry in
+                            // A previous extraction failure must not become a permanent
+                            // “no cover” result. Explicit scans also repair evicted or
+                            // corrupt thumbnails before publishing the refreshed library.
+                            guard entry.isCurrent(root: root), let key = entry.artworkKey else { return false }
+                            return ResourceCache.isValidArtwork(ResourceCache.artworkData(key, detail: false))
+                        }
                     }.value
                     let unchanged = Dictionary(current.map { ($0.path, $0) }, uniquingKeysWith: { _, latest in latest })
                     issues += result.issues

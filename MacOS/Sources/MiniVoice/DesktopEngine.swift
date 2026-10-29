@@ -386,6 +386,26 @@ final class DesktopEngine {
             return try await OnlineLyricsSearch.search(title: String((payload["title"] as? String ?? track.title).prefix(500)), artist: String((payload["artist"] as? String ?? track.artist).prefix(500)), duration: track.duration).map { result -> [String: Any] in
                 ["id": result.id, "source": result.source, "title": result.trackName, "artist": result.artistName, "album": result.albumName ?? "", "duration": result.duration ?? 0, "timingKind": result.timingKind.rawValue, "hasTranslation": result.hasTranslation, "lyrics": result.usableLyrics ?? ""]
             }
+        case "downloadMissingLyrics":
+            let base = try track(payload)
+            guard let original = await library.resolveTrack(base.id), original.lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw NSError(domain: "MiniVoice", code: 6, userInfo: [NSLocalizedDescriptionKey: "歌曲已有歌词，请使用在线搜索预览后替换"])
+            }
+            let candidates = try await OnlineLyricsSearch.search(title: original.title, artist: original.artist, duration: original.duration, album: original.album)
+            let matches = candidates.filter {
+                LyricsSearchText.key($0.trackName) == LyricsSearchText.key(original.title)
+                    && LyricsSearchText.key($0.artistName) == LyricsSearchText.key(original.artist)
+                    && ($0.duration.map { abs($0 - original.duration) <= 10 } ?? false)
+            }.sorted { $0.timingKind == .word && $1.timingKind != .word }
+            guard let text = matches.first?.usableLyrics else {
+                throw NSError(domain: "MiniVoice", code: 6, userInfo: [NSLocalizedDescriptionKey: "未找到可靠匹配，请使用在线搜索预览候选歌词"])
+            }
+            guard var latest = await library.resolveTrack(base.id), latest.lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw NSError(domain: "MiniVoice", code: 6, userInfo: [NSLocalizedDescriptionKey: "歌词已变化，未覆盖现有歌词"])
+            }
+            latest.lyrics = text
+            try await library.save(latest, lyricsDestination: .sidecar)
+            return text
         case "syncLyrics":
             if let resolved = await library.resolveTrack(try track(payload).id) { lyricsSync.start(track: resolved, destination: .sidecar, library: library) }; return true
         case "saveMetadata":
