@@ -18,6 +18,7 @@ struct SharedPlayerView: View {
         SharedPlayerWebView(library: library, player: player, chooseFolder: { choosingFolder = true },
                             immersive: { immersive = $0 }, export: { archive = $0; exporting = true })
             .ignoresSafeArea()
+            .background(Color(red: 24/255, green: 39/255, blue: 32/255).ignoresSafeArea())
             .statusBarHidden(immersive)
             .persistentSystemOverlays(immersive ? .hidden : .automatic)
             .fileExporter(isPresented: $exporting, document: DiagnosticsDocument(data: archive), contentType: .zip, defaultFilename: "MiniVoice-diagnostics.zip") { result in
@@ -45,9 +46,12 @@ private struct SharedPlayerWebView: UIViewRepresentable {
         let host = context.coordinator
         let configuration = WKWebViewConfiguration()
         configuration.setURLSchemeHandler(host, forURLScheme: "minivoice")
+        configuration.ignoresViewportScaleLimits = false
+        configuration.dataDetectorTypes = []
         configuration.userContentController.add(host, name: "MiniVoice")
         configuration.userContentController.addUserScript(WKUserScript(source: """
         addEventListener('DOMContentLoaded', () => {
+          document.querySelector('meta[name=viewport]')?.setAttribute('content','width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover');
           for (const side of ['top','right','bottom','left'])
             document.documentElement.style.setProperty('--mv-safe-' + side, 'env(safe-area-inset-' + side + ',0px)');
         });
@@ -59,10 +63,13 @@ private struct SharedPlayerWebView: UIViewRepresentable {
         """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let web = SharedContentWebView(frame: .zero, configuration: configuration)
         web.navigationDelegate = host
-        web.isOpaque = false
-        web.backgroundColor = .systemBackground
-        web.scrollView.backgroundColor = .clear
+        web.isOpaque = true
+        web.backgroundColor = UIColor(red: 24/255, green: 39/255, blue: 32/255, alpha: 1)
+        web.scrollView.backgroundColor = web.backgroundColor
+        web.underPageBackgroundColor = web.backgroundColor!
         web.scrollView.isScrollEnabled = false
+        web.scrollView.pinchGestureRecognizer?.isEnabled = false
+        web.scrollView.bouncesZoom = false
         web.scrollView.contentInsetAdjustmentBehavior = .never
         #if targetEnvironment(simulator)
         web.isInspectable = true
@@ -92,7 +99,15 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
     private var subscriptions = Set<AnyCancellable>()
     private var catalogRevision = UUID().uuidString
     private var rows: [[String: Any]] = []
+    private var songsByID: [String: Song] = [:]
     private var activeLoads = Set<ObjectIdentifier>()
+    // Encoded, versioned thumbnails/display images only; NSCache can purge under pressure.
+    private let artworkCache: NSCache<NSString, NSData> = {
+        let cache = NSCache<NSString, NSData>()
+        cache.totalCostLimit = 32 * 1024 * 1024
+        cache.countLimit = 192
+        return cache
+    }()
     private var notice = ""
     private var noticeToken = 0
     private var lastError = ""
@@ -108,6 +123,8 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
     }
 
     private func updateCatalog(_ songs: [Song]) {
+        artworkCache.removeAllObjects()
+        songsByID = Dictionary(songs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         player.retainLibrary(songs)
         catalogRevision = UUID().uuidString
         rows = songs.map { song in
@@ -117,7 +134,7 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
                     "duration": song.duration * 1000, "path": song.relativePath,
                     "sourceAdded": song.sourceAdded ?? 0, "added": song.added ?? 0, "size": song.fileSize ?? 0,
                     "artwork": song.artworkFile == nil ? "" : "minivoice://app/artwork/\(token).png?v=\(version)",
-                    "artworkDetail": song.originalArtworkFile == nil ? "" : "minivoice://app/artwork/\(token).png?quality=original&v=\(version)"]
+                    "artworkDetail": song.originalArtworkFile == nil ? "" : "minivoice://app/artwork/\(token).png?quality=display&v=\(version)"]
         }
     }
 
@@ -134,6 +151,44 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
             guard let request = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
                   request["version"] as? Int == 1 else { throw failure("无效的宿主协议") }
             #if targetEnvironment(simulator)
+            if request["kind"] as? String == "uiTestScanStress", ProcessInfo.processInfo.arguments.contains("--mv-ui-smoke") {
+                Task { [weak self] in
+                    guard let self else { return }
+                    do { self.reply(id, value: try await self.library.simulatorScanStress()) }
+                    catch { self.reply(id, error: error.localizedDescription) }
+                }
+                return
+            }
+            if request["kind"] as? String == "uiTestAudioFormats", ProcessInfo.processInfo.arguments.contains("--mv-ui-smoke") {
+                Task { [weak self] in
+                    guard let self else { return }
+                    do {
+                        let fixture = try await self.library.simulatorAudioFixtures()
+                        var rows: [[String: Any]] = []
+                        let savedMode = self.player.mode; self.player.mode = .single
+                        for song in fixture.songs {
+                            self.player.play(song, queue: [song], library: self.library)
+                            for _ in 0..<60 {
+                                if self.player.playbackState == "playing", self.player.position > 0.2 { break }
+                                try await Task.sleep(for: .milliseconds(25))
+                            }
+                            rows.append(["format": URL(fileURLWithPath: song.relativePath).pathExtension, "state": self.player.playbackState, "position": self.player.position, "duration": self.player.duration, "error": self.player.errorMessage ?? ""])
+                            self.player.pause()
+                        }
+                        self.player.mode = savedMode
+                        var rapidSelectionSettled = false
+                        if let first = self.library.songs.first, let last = self.library.songs.last {
+                            for song in [first,last,first,last,first] { self.player.play(song, queue: self.library.songs, library: self.library) }
+                            self.player.pause(); self.player.seek(to: 12)
+                            for _ in 0..<100 { if self.player.playbackState != "loading" { break }; try await Task.sleep(for: .milliseconds(25)) }
+                            rapidSelectionSettled = self.player.current?.id == first.id && self.player.playbackState == "paused" && abs(self.player.position - 12) < 0.2
+                        }
+                        if let song = self.library.songs.first { self.player.play(song, queue: self.library.songs, library: self.library); self.player.pause() }
+                        self.reply(id, value: ["rows": rows, "rapidSelectionSettled": rapidSelectionSettled, "flacArtwork": fixture.flacArtwork, "pageZoom": self.web?.scrollView.zoomScale ?? 0, "maximumPageZoom": self.web?.scrollView.maximumZoomScale ?? 0])
+                    } catch { self.reply(id, error: error.localizedDescription) }
+                }
+                return
+            }
             if request["kind"] as? String == "uiTestDiagnostics", ProcessInfo.processInfo.arguments.contains("--mv-ui-smoke") {
                 Task { [weak self] in
                     guard let self else { return }
@@ -159,16 +214,9 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
                 return
             }
             #endif
-            if request["kind"] as? String == "captureStyle", let web {
-                let configuration = WKSnapshotConfiguration()
-                configuration.snapshotWidth = NSNumber(value: min(900, web.bounds.width))
-                web.takeSnapshot(with: configuration) { [weak self] image, _ in
-                    guard let image else { self?.reply(id, value: NSNull()); return }
-                    Task { [weak self] in
-                        let value = await Task.detached(priority: .utility) { image.jpegData(compressionQuality: 0.75).map { "data:image/jpeg;base64," + $0.base64EncodedString() } }.value
-                        if let value { self?.reply(id, value: value) } else { self?.reply(id, value: NSNull()) }
-                    }
-                }
+            if request["kind"] as? String == "captureStyle" {
+                // iOS uses the live-surface transition. Never force a WK tiled readback.
+                reply(id, value: NSNull())
                 return
             }
             Task { [weak self] in
@@ -217,7 +265,10 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
             guard let id = request["id"] as? String else { throw failure("缺少歌曲") }
             let song = try allowedSong(id)
             let ids = request["ids"] as? [String] ?? library.songs.map(\.id)
-            let songs = try ids.map(allowedSong)
+            let folders = Set(library.folders.map(\.id))
+            let songs = try ids.map { id -> Song in
+                guard let song = songsByID[id], folders.contains(song.folderID) else { throw failure("歌曲已不在授权音乐库中") }; return song
+            }
             guard songs.contains(where: { $0.id == id }) else { throw failure("歌曲不在播放列表中") }
             player.play(song, queue: songs, library: library)
             return true
@@ -238,9 +289,9 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
         let error = library.errorMessage ?? player.errorMessage ?? ""
         if error != lastError { lastError = error; notice = error; noticeToken += 1 }
         return ["songs": revision == catalogRevision ? NSNull() : rows, "catalogRevision": catalogRevision,
-                "scanning": library.isScanning, "scanDetail": library.scanDetail,
+                "scanning": library.isScanning, "scanDetail": library.scanDetail, "scanCompleted": library.scanCount, "scanTotal": library.scanTotal, "scanExecution": library.scanSession.execution, "scanPaused": UserDefaults.standard.bool(forKey: "ios.scan.pending") && !library.isScanning,
                 "current": player.current?.id as Any? ?? NSNull(), "position": player.position * 1000,
-                "playing": player.isPlaying, "rawLyrics": library.lyrics(for: player.current) ?? "",
+                "playing": player.isPlaying, "playbackState": player.playbackState, "rawLyrics": library.lyrics(for: player.current) ?? "",
                 "favorites": Array(library.favorites), "recent": library.recentIDs,
                 "navigationAction": player.navigationAction, "navigationToken": player.navigationToken,
                 "playlists": library.playlists.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }.map { ["id": $0.id.uuidString, "name": $0.name, "ids": $0.songIDs] as [String: Any] },
@@ -259,6 +310,7 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
             return try await library.sharedMaintenanceAction(name, payload: payload)
         case "chooseFolder": chooseFolder(); return true
         case "getSettings": return library.sharedSettings
+        case "enableScanNotifications": return try await library.scanSession.requestNotifications()
         case "rescan": library.rescan(); return true
         case "recursive":
             guard let value = payload["value"] as? Bool else { throw failure("缺少递归扫描设置") }
@@ -281,7 +333,7 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
     }
 
     private func allowedSong(_ id: String) throws -> Song {
-        guard let song = library.songs.first(where: { $0.id == id }), library.folders.contains(where: { $0.id == song.folderID }) else {
+        guard let song = songsByID[id], library.folders.contains(where: { $0.id == song.folderID }) else {
             throw failure("歌曲已不在授权音乐库中")
         }
         return song
@@ -316,10 +368,20 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
                     guard query.allSatisfy({ ["quality", "v"].contains($0.name) }),
                           let id = SongResourceToken.decode(String(url.lastPathComponent.dropLast(4))) else { throw self.failure("封面资源身份无效") }
                     let song = try self.allowedSong(id)
-                    let original = query.first(where: { $0.name == "quality" })?.value == "original"
+                    let quality = query.first(where: { $0.name == "quality" })?.value
+                    let original = quality == "original" || quality == "display"
                     guard let path = original ? (song.originalArtworkFile ?? song.artworkFile) : song.artworkFile else { throw self.failure("没有封面") }
                     file = URL(fileURLWithPath: path)
-                    artworkBytes = try await self.library.artworkData(for: song, original: original)
+                    let cacheKey = (url.absoluteString + "|" + (song.cacheVersion ?? self.catalogRevision)) as NSString
+                    if quality != "original", let cached = self.artworkCache.object(forKey: cacheKey) {
+                        artworkBytes = cached as Data
+                    } else {
+                        let bytes = try await self.library.artworkData(for: song, original: original, display: quality == "display")
+                        artworkBytes = bytes
+                        if quality != "original", self.activeLoads.contains(identifier) {
+                            self.artworkCache.setObject(bytes as NSData, forKey: cacheKey, cost: bytes.count)
+                        }
+                    }
                 } else {
                     guard url.query == nil, let root = Bundle.main.resourceURL?.appendingPathComponent("SharedPlayer", isDirectory: true).standardizedFileURL else { throw self.failure("共享资源无效") }
                     let relative = url.path == "/" ? "index.html" : String(url.path.dropFirst())
@@ -334,7 +396,7 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
                 if artwork, let source = CGImageSourceCreateWithData(data as CFData, nil), let type = CGImageSourceGetType(source) {
                     mime = UTType(type as String)?.preferredMIMEType ?? "image/jpeg"
                 } else { mime = ["html": "text/html", "js": "application/javascript", "css": "text/css", "png": "image/png", "svg": "image/svg+xml", "json": "application/json"][file.pathExtension] ?? "application/octet-stream" }
-                let response = HTTPURLResponse(url: urlSchemeTask.request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": mime, "Access-Control-Allow-Origin": "*", "Cache-Control": "no-cache"])!
+                let response = HTTPURLResponse(url: urlSchemeTask.request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": mime, "Access-Control-Allow-Origin": "*", "Cache-Control": artwork && url.query?.contains("v=") == true ? "private, max-age=3600" : "no-cache"])!
                 urlSchemeTask.didReceive(response); urlSchemeTask.didReceive(data); urlSchemeTask.didFinish()
             } catch {
                 guard self.activeLoads.remove(identifier) != nil else { return }
@@ -347,6 +409,7 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
         let pages = state["pages"] as? [String: Any]
         let appearance = pages?["appearance"] as? [String: Any]
         (web as? SharedContentWebView)?.contentStyle = appearance?["style"] as? String ?? "wall"
+        (web as? SharedContentWebView)?.contentTheme = appearance?["theme"] as? String ?? "system"
         (web as? SharedContentWebView)?.publishInsets()
     }
 
@@ -354,7 +417,7 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
         (webView as? SharedContentWebView)?.publishInsets(force: true)
         #if targetEnvironment(simulator)
         guard ProcessInfo.processInfo.arguments.contains("--mv-ui-smoke"),
-              let sourceURL = Bundle.main.resourceURL?.appendingPathComponent("SharedPlayer/shared-host-smoke.js"),
+              let sourceURL = Bundle.main.resourceURL?.appendingPathComponent("SharedPlayer/" + (ProcessInfo.processInfo.arguments.contains("--mv-duo-layout-smoke") ? "duo-layout-smoke.js" : "shared-host-smoke.js")),
               let source = try? String(contentsOf: sourceURL, encoding: .utf8) else { return }
         let output = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         webView.callAsyncJavaScript(source, arguments: [:], in: nil, in: .page) { result in
@@ -392,12 +455,26 @@ private struct DiagnosticsDocument: FileDocument {
 
 private final class SharedContentWebView: WKWebView {
     var contentStyle = "wall"
+    var contentTheme = "system"
+    private func updateCanvasBackground() {
+        let dark = contentTheme == "dark" || (contentTheme == "system" && traitCollection.userInterfaceStyle == .dark)
+        let rgb: (CGFloat, CGFloat, CGFloat) = contentStyle == "wall" ? (dark ? (16,36,26) : (220,234,222)) : (dark ? (24,39,32) : (234,240,238))
+        let color = UIColor(red: rgb.0/255, green: rgb.1/255, blue: rgb.2/255, alpha: 1)
+        backgroundColor = color
+        scrollView.backgroundColor = color
+        underPageBackgroundColor = color
+        window?.backgroundColor = color
+        window?.rootViewController?.view.backgroundColor = color
+    }
+    override func didMoveToWindow() { super.didMoveToWindow(); updateCanvasBackground() }
     private var lastInsets = ""
     override func safeAreaInsetsDidChange() { super.safeAreaInsetsDidChange(); publishInsets() }
     override func layoutSubviews() { super.layoutSubviews(); publishInsets() }
     func publishInsets(force: Bool = false) {
-        var safe = safeAreaInsets
-        if contentStyle != "wall", bounds.width > bounds.height { safe.left = max(safe.left, safe.right); safe.right = safe.left }
+        updateCanvasBackground()
+        scrollView.pinchGestureRecognizer?.isEnabled = false
+        scrollView.bouncesZoom = false
+        let safe = safeAreaInsets
         let key = "\(safe)-\(bounds.size)-\(contentStyle)"
         guard (force || key != lastInsets), url != nil else { return }
         lastInsets = key

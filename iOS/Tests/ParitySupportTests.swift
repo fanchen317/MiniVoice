@@ -1,4 +1,5 @@
 import Foundation
+import MiniVoiceShared
 
 @main
 struct ParitySupportTests {
@@ -76,6 +77,34 @@ struct ParitySupportTests {
         precondition(corruptRetained == "invalid JSON")
         do { _ = try await DiagnosticStore(url: original.appendingPathComponent("history.json")).append(scrubbed); preconditionFailure("write failure silently accepted") } catch {}
         print("PASS: bounded diagnostics, redaction, crash redelivery, restart persistence and visible write/corruption failures")
+        let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let flac = try FLACMetadata.read(repository.appendingPathComponent("Android/ui-tests/assets/tags.flac"))
+        precondition(abs((flac.duration ?? 0) - 1) < 0.001)
+        var picture = Data()
+        func big(_ value: Int) { var v = UInt32(value).bigEndian; withUnsafeBytes(of: &v) { picture.append(contentsOf: $0) } }
+        let image = Data([137,80,78,71,13,10,26,10])
+        big(3); big(9); picture.append(Data("image/png".utf8)); big(0)
+        big(1); big(1); big(24); big(0); big(image.count); picture.append(image)
+        var artificial = Data("fLaC".utf8)
+        artificial.append(contentsOf: [0x86, UInt8((picture.count >> 16) & 255), UInt8((picture.count >> 8) & 255), UInt8(picture.count & 255)])
+        artificial.append(picture)
+        let pictureURL = temp.appendingPathComponent("picture.flac"); try artificial.write(to: pictureURL)
+        let readPicture = try FLACMetadata.read(pictureURL); precondition(readPicture.artwork == image)
+        try artificial.dropLast().write(to: pictureURL)
+        do { _ = try FLACMetadata.read(pictureURL); preconditionFailure("truncated FLAC picture accepted") } catch {}
+        var comments = Data()
+        func little(_ value: Int) { var v = UInt32(value).littleEndian; withUnsafeBytes(of: &v) { comments.append(contentsOf: $0) } }
+        let tags = ["TITLE=测试曲目", "ARTIST=歌手", "ALBUM=专辑", "LYRICS=[00:00.00]歌词"]
+        little(0); little(tags.count)
+        for tag in tags { let bytes = Data(tag.utf8); little(bytes.count); comments.append(bytes) }
+        var tagged = Data("fLaC".utf8)
+        tagged.append(contentsOf: [0x84, UInt8((comments.count >> 16) & 255), UInt8((comments.count >> 8) & 255), UInt8(comments.count & 255)])
+        tagged.append(comments); try tagged.write(to: pictureURL)
+        let readTags = try FLACMetadata.read(pictureURL)
+        precondition(readTags.title == "测试曲目" && readTags.artist == "歌手" && readTags.album == "专辑" && readTags.lyrics == "[00:00.00]歌词")
+        do { _ = try SharedEngine.execute(["op":"not-a-real-operation"]); preconditionFailure("unknown core operation accepted") }
+        catch { precondition(error.localizedDescription.contains("Unknown core operation")) }
+        print("PASS FLAC STREAMINFO duration, VORBIS tags/lyrics, PICTURE bytes, truncation and readable core errors")
         let zip = DiagnosticArchive.zip(name: "diagnostics.json", data: Data("{\"ok\":true}".utf8))
         try zip.write(to: URL(fileURLWithPath: CommandLine.arguments[1]))
         print("PASS: path identity round trips, five Android playback policies, scoped cache deletion, legacy index decode and ZIP export")

@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DEVICE="${1:?请提供专用 MiniVoice Shared iOS 模拟器 UUID}"
 # Refuse the user's everyday simulator and all real devices.
 xcrun simctl list devices -j | python3 -c 'import json,sys; d=[v for rows in json.load(sys.stdin)["devices"].values() for v in rows if v["udid"]==sys.argv[1]]; assert d and d[0]["name"].startswith("MiniVoice Shared iOS"), "只允许 MiniVoice Shared iOS 专用模拟器"' "$DEVICE"
-APP="$ROOT/.build/cache/ios/DerivedData/Build/Products/Debug-iphonesimulator/MiniVoice.app"
+APP="${MINIVOICE_IOS_TEST_APP:-$ROOT/.build/cache/ios/DerivedData/Build/Products/Debug-iphonesimulator/MiniVoice.app}"
 [[ -d "$APP" ]] || { echo '请先运行 Scripts/build/build-ios.sh simulator Debug' >&2; exit 1; }
 xcrun simctl boot "$DEVICE" 2>/dev/null || true
 xcrun simctl bootstatus "$DEVICE" -b

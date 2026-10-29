@@ -2,7 +2,7 @@ import {fragmentKeyframes,prepareFragments} from './fragmentMotion.js';
 const reduced=()=>document.documentElement.classList.contains('reduce-motion')||matchMedia('(prefers-reduced-motion:reduce)').matches;
 const frames=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
 /** Same fragment grid, outward curl/rotation, 680ms sweep and icon origin as Mac. */
-export async function transitionStyle(update,root=document.querySelector('.mv-workspace'),capture){
+export async function transitionStyle(update,root=document.querySelector('.mv-workspace'),capture,mode='fragments'){
  if(reduced()||!root){await update();return;}
  let canvas,frame=0,timer=0,animation,stopWait,updated=false,updateFailure,interrupted=false;
  const began=performance.now();let captured=began,decoded=began,prepared=began;
@@ -15,6 +15,20 @@ export async function transitionStyle(update,root=document.querySelector('.mv-wo
  media.addEventListener('change',finish);observer.observe(document.documentElement,{attributes:true,attributeFilter:['class']});window.addEventListener('resize',abort);
  document.documentElement.dataset.mvStyleTransition='true';
  try{
+  // WKWebView snapshot/readback can leave full-width raster seams on device.
+  // This host policy keeps one live surface; no JPEG, tiles or screenshot wait.
+  if(mode==='live'){
+   root.dataset.styleRenderer='live';
+   animation=root.animate([{opacity:1},{opacity:.35}],{duration:100,easing:'ease-out',fill:'forwards'});
+   await animation.finished.catch(()=>{});
+   await commit();await frames();
+   animation.cancel();
+   if(!interrupted&&!reduced()&&root.isConnected){
+    animation=root.animate([{opacity:.35},{opacity:1}],{duration:180,easing:'ease-out'});
+    await animation.finished.catch(()=>{});
+   }
+   return;
+  }
   const icon=root.querySelector('.mv-brand-logo')?.getBoundingClientRect(),origin=icon?{x:icon.x+icon.width/2,y:icon.y+icon.height/2}:{x:36,y:60};
   await frames();
   const snapshot=capture?await Promise.race([capture().catch(()=>null),new Promise(resolve=>{timer=setTimeout(()=>resolve(null),180);})]):null;clearTimeout(timer);captured=performance.now();
@@ -48,5 +62,5 @@ export async function transitionStyle(update,root=document.querySelector('.mv-wo
    if(!reduced()&&!interrupted){animation=root.animate([{opacity:.75,transform:'translateY(6px)'},{opacity:1,transform:'none'}],{duration:260,easing:'cubic-bezier(.22,1,.36,1)'});await animation.finished.catch(()=>{});}
   }
  }catch{if(updateFailure)throw updateFailure;await commit();}
- finally{if(root)root.dataset.styleTimings=JSON.stringify({capture:Math.round(captured-began),decode:Math.round(Math.max(0,decoded-captured)),prepare:Math.round(Math.max(0,prepared-decoded)),total:Math.round(performance.now()-began)});clearTimeout(timer);cleanup();observer.disconnect();media.removeEventListener('change',finish);window.removeEventListener('resize',abort);delete document.documentElement.dataset.mvStyleTransition;}
+ finally{if(root)root.dataset.styleTimings=JSON.stringify({capture:Math.round(captured-began),decode:Math.round(Math.max(0,decoded-captured)),prepare:Math.round(Math.max(0,prepared-decoded)),total:Math.round(performance.now()-began)});clearTimeout(timer);cleanup();observer.disconnect();media.removeEventListener('change',finish);window.removeEventListener('resize',abort);delete document.documentElement.dataset.mvStyleTransition;delete root?.dataset.styleRenderer;}
 }

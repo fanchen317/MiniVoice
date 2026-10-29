@@ -15,13 +15,42 @@ const send=request=>new Promise((resolve,reject)=>{
 });
 try {
  await wait(()=>document.querySelector('.mv-workspace'),'共享页面挂载');
+ const initialState=await send({kind:'readState'});
+ const initialSnapshot=await send({kind:'snapshot'});
+ const initialStyle=initialState.pages?.appearance?.style||initialSnapshot.style||'library';
+ await wait(()=>document.querySelector('.mv-workspace')?.dataset.style===initialStyle,'恢复已保存样式');
+ if(initialStyle!=='wall'){
+   await click(button('打开侧边栏'),'初始化测试侧栏');await click(button('设置'),'初始化测试设置');
+   await click(textButton('音乐墙'),'初始化音乐墙');await click(button('关闭弹窗'),'关闭初始化设置');
+ }
  await wait(()=>document.querySelector('.mv-wall-card'),'音乐墙封面');
  check(document.querySelector('.mv-workspace').dataset.presentation==='mobile','iOS 使用 Android 触控家族');
+ // Exercise the real iOS host policy through the branded style switch.
+ let captureCalls=0;const requestBefore=MiniVoiceHost.request;
+ MiniVoiceHost.request=function(id,raw){if(JSON.parse(raw).kind==='captureStyle')captureCalls++;return requestBefore.call(this,id,raw);};
+ await click(button('打开侧边栏'),'切换渲染测试侧栏');
+ for(const target of ['simple','library','wall']){
+   document.querySelector('.mv-brand-logo').click();
+   await wait(()=>document.querySelector('main').dataset.styleBusy==='false'&&document.querySelector('main').dataset.style===target,'实时样式切换 '+target);
+   check(!document.querySelector('.mv-style-fragment-sweep'),'WK 切换无分片截图层 '+target);
+   check(getComputedStyle(document.querySelector('main')).opacity==='1','WK 切换结束恢复不透明 '+target);
+ }
+ check(captureCalls===0,'iOS 样式切换零次整屏截图请求');MiniVoiceHost.request=requestBefore;
+ await click(button('关闭侧边栏'),'关闭渲染测试侧栏');
+ const panWall=document.querySelector('.mv-cover-wall');
+ for(let i=0;i<12;i++){panWall.dispatchEvent(new WheelEvent('wheel',{deltaX:i<6?100:-100,deltaY:40,bubbles:true,cancelable:true}));await delay(20);}
+ await delay(700);
+ check(document.querySelector('.mv-wall-plane').dataset.compositedPan==='true','WK 连续滑动保留容器合成');
+ const visiblePosters=[...document.querySelectorAll('.mv-wall-card img')].filter(image=>{const r=image.getBoundingClientRect();return r.right>0&&r.left<innerWidth&&r.bottom>0&&r.top<innerHeight;});
+ await wait(()=>visiblePosters.every(image=>image.complete&&image.naturalWidth>0),'WK 往返滑动封面加载');
+ check(visiblePosters.length>0,'WK 滑动后可见封面非空');
+
  const snapshot=await send({kind:'snapshot'});
  check(snapshot.songs.length===12,'合成音乐库通过真实宿主桥读取');
  check(snapshot.songs.every(song=>song.duration===60000),'秒转毫秒协议');
  await wait(()=>[...document.images].filter(img=>img.src.includes('/artwork/')).some(img=>img.complete&&img.naturalWidth>0),'宿主封面加载');
  checks.push('授权封面资源加载成功');
+ check(getComputedStyle(document.querySelector('.mv-workspace')).webkitUserSelect==='none','移动内容禁止系统文本多选');
  check(snapshot.songs.every(song=>song.id.includes('/')&&song.id.includes('#')&&song.sourceAdded>0&&song.added>0&&song.size>0),'真实路径身份与日期和大小字段');
  for(const song of snapshot.songs){
    for(const url of [song.artwork,song.artworkDetail]){
@@ -43,6 +72,11 @@ try {
  await action('clearArtistAliases');
  check(Object.keys((await action('getSettings')).aliases).length===0,'清空歌手别名');
  const dock=document.querySelector('.mv-wall-dock');
+ // Earlier rendering probes deliberately take longer than the idle-collapse timer.
+ if(dock.classList.contains('is-compact'))await click(button('展开播放条'),'初始化展开播放条');
+ dock.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'touch'}));
+ dock.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerType:'touch'}));
+ await delay(450);
  const centerError=()=>{const r=dock.getBoundingClientRect(),s=getComputedStyle(document.querySelector('main'));return Math.abs(r.left+r.width/2-(innerWidth+parseFloat(s.getPropertyValue('--mv-safe-left')||'0')-parseFloat(s.getPropertyValue('--mv-safe-right')||'0'))/2);};
  if(innerHeight>=innerWidth){
    check(centerError()<1.5,'竖屏展开播放条左右居中');
@@ -78,6 +112,27 @@ try {
    await delay(500);
    check(centerError()<1.5,'恢复系统安全区后仍居中');
  }
+
+ // Exercise the actual WKWebView chrome, including the centered iOS bar skin.
+ if(document.querySelector('.mv-wall-focused [aria-label="收起播放器"]')){document.querySelector('.mv-wall-focused [aria-label="收起播放器"]').click();await delay(900);}
+ document.querySelector('.mv-wall-card').click();await delay(600);
+ const chromeNodes=()=>[document.querySelector('.mv-toolbar>[aria-label="打开侧边栏"]'),document.querySelector('.mv-search-control'),document.querySelector('[data-wall-control="settings"]'),document.querySelector('.mv-wall-dock')];
+ for(const compact of [false,true]){
+   document.activeElement?.blur();
+   if(compact){await wait(()=>dock.classList.contains('is-compact'),'动画测试圆形状态');await delay(450);}
+   else if(dock.classList.contains('is-compact')){button('展开播放条').click();await delay(450);}
+   const before=chromeNodes().map(n=>n.getBoundingClientRect());
+   document.querySelector('.mv-wall-focused [aria-label="展开播放器"]').click();await delay(100);
+   const moving=chromeNodes().map(n=>({r:n.getBoundingClientRect(),s:getComputedStyle(n)}));
+   check(moving.every((v,i)=>v.s.visibility==='visible'&&+v.s.opacity>0&&+v.s.opacity<1&&(i===0?v.r.x<before[i].x:i===1?v.r.x>before[i].x:v.r.y>before[i].y)),'WK 四个入口有分向移出中间帧 '+compact);
+   await delay(450);check(chromeNodes().every(n=>getComputedStyle(n).visibility==='hidden'),'WK 四个入口完全退场 '+compact);
+   await delay(3200);check(dock.classList.contains('is-compact')===compact,'WK 退场期间保留横条或圆形 '+compact);
+   document.querySelector('.mv-wall-focused [aria-label="收起播放器"]').click();await delay(100);
+   check(document.querySelector('main').dataset.wallChrome==='hidden','WK 插图缩回期间入口仍在屏外 '+compact);
+   await delay(360);check(document.querySelector('main').dataset.wallChrome==='entering','WK 插图缩回后入口有返回阶段 '+compact);
+   await delay(450);check(document.querySelector('.mv-wall-dock')===dock&&dock.classList.contains('is-compact')===compact,'WK 返回保留播放栏节点和形态 '+compact);
+ }
+ if(dock.classList.contains('is-compact')){button('展开播放条').click();await delay(450);}
  await send({kind:'uiTestSnapshot',name:'wall'});
  await click(button('打开侧边栏')||button('侧边栏'),'侧边栏');
  await wait(()=>document.querySelector('.mv-drawer'),'抽屉显示');
@@ -92,13 +147,14 @@ try {
  await wait(()=>document.querySelector('.theme-light'),'浅色主题应用');
  check((await send({kind:'readState'})).pages.appearance.theme==='light','主题通过共享状态持久化');
  await send({kind:'uiTestSnapshot',name:'settings-light'});
+ check(!document.body.textContent.includes('歌手名称归并')&&!document.body.textContent.includes('保存归并规则'),'移动设置移除未开放归并入口');
  await click(textButton('深色模式'),'深色主题');
  await wait(()=>document.querySelector('.theme-dark'),'深色主题应用');
  // Platform commands must reject forged identities without changing playback.
  let denied=false;try{await send({kind:'play',id:'not-authorized',ids:['not-authorized']});}catch{denied=true;}
  check(denied,'拒绝未授权歌曲');
  await send({kind:'play',id:snapshot.songs[1].id,ids:snapshot.songs.map(song=>song.id)});
- check((await send({kind:'snapshot'})).current===snapshot.songs[1].id,'真实 AVPlayer 切歌接入');
+ check((await send({kind:'snapshot'})).current===snapshot.songs[1].id,'真实本地音频播放器切歌接入');
  await send({kind:'seek',position:12000});
  check(Math.abs((await send({kind:'snapshot'})).position-12000)<1000,'播放进度毫秒转秒');
  await send({kind:'toggle'});
@@ -136,6 +192,20 @@ try {
    await wait(()=>document.querySelector('.style-'+style),label+'应用');
    check((await send({kind:'readState'})).pages.appearance.style===style,label+'样式持久化');
    await send({kind:'uiTestSnapshot',name:style+'-settings'});
+   if(style!=='wall'){
+     await click(button('关闭弹窗'),'检查背景材质前关闭设置');
+     if(style==='library'&&!document.querySelector('main').classList.contains('is-player'))await click(button('正在播放'),'打开音乐库播放器');
+     const materials=()=>[...document.querySelectorAll('.mv-scene .mv-glass,.mv-scene .mv-dock,.mv-scene .mv-search-control,.mv-scene .mv-toolbar>.mv-button')].filter(n=>n.getClientRects().length).map(n=>{const s=getComputedStyle(n);return [s.backgroundColor,s.backgroundImage,s.borderTopColor,s.borderTopWidth,s.boxShadow,s.backdropFilter,s.borderRadius];});
+     await delay(450);const originalMaterials=JSON.stringify(materials());
+     await click(button('打开侧边栏'),'检查背景材质时打开侧栏');
+     check(JSON.stringify(materials())===originalMaterials,'WK '+style+' 侧栏打开保留背景组件材质与轮廓');
+     check(document.querySelector('.mv-scene').inert,'WK '+style+' 侧栏打开禁止背景交互');
+     await send({kind:'uiTestSnapshot',name:style+'-drawer-surfaces'});
+     await click(button('关闭侧边栏'),'背景材质检查后关闭侧栏');
+     check(JSON.stringify(materials())===originalMaterials,'WK '+style+' 侧栏关闭保留原材质');
+     await click(button('打开侧边栏'),'回到侧栏设置');await click(button('设置'),'继续设置检查');
+   }
+
  }
  // Exercise the actual scanner after layout snapshots, not just preconstructed Song rows.
  await action('rescan');
@@ -145,8 +215,15 @@ try {
  await send({kind:'play',id:scanned.songs[0].id,ids:scanned.songs.map(song=>song.id)});
  check((await send({kind:'snapshot'})).rawLyrics.includes('根目录逐字歌词'),'扫描发现根目录 YRC 歌词');
  await send({kind:'toggle'});
+ // Warm every versioned resource before taking the cache inventory: the live
+ // wall may still be requesting the newly scanned catalog on its 450ms poll.
+ await delay(600);
+ for(const song of scanned.songs)for(const url of [song.artwork,song.artworkDetail].filter(Boolean)){
+   const image=new Image();image.src=url;await wait(()=>image.complete,'清理前显示资源完成');check(image.naturalWidth>0,'清理前显示资源可读');
+ }
  const original=await action('cacheInfo');
- check((await action('clearCache')).removed===original.count,'清理仅移除已枚举缓存');
+ const cleared=await action('clearCache');
+ check(cleared.removed===original.count,'清理仅移除已枚举缓存 '+cleared.removed+'/'+original.count);
  check((await action('cacheInfo')).count===0,'缓存清理结果回读');
  const restored=new Image();
  restored.src=scanned.songs[0].artwork.replace(/v=[^&]*/, 'v=after-clear');
@@ -154,6 +231,15 @@ try {
  await action('inspectLibrary',{start:true});
  for(let i=0;i<100;i++){inspected=await action('inspectLibrary');if(!inspected.running)break;await delay(50);}
  check(inspected.checked===12&&inspected.unavailable.length===0,'缓存清理保留全部原始音频');
+ const stress=await send({kind:'uiTestScanStress'});
+ check(stress.count===1037&&stress.incrementalCount===1037&&stress.errors===0&&stress.thumbnailsBounded,'1037 首混合格式/4096px 封面完整扫描与增量重扫 '+JSON.stringify(stress));
+ check(stress.displayBounded&&stress.originalRetained,'4096px 原封面生成 2048px 展示资源且原图字节保留');
+ check(stress.baselineBytes>0&&stress.growthBytes<300*1024*1024,'大库扫描采样内存增长低于 300 MiB');
+ const audioProbe=await send({kind:'uiTestAudioFormats'});
+ check(audioProbe.rows.length===2&&audioProbe.rows.every(row=>row.state==='playing'&&row.position>0.2&&row.duration>0.5&&!row.error),'真实 MP3/FLAC 解码并推进播放时钟 '+JSON.stringify(audioProbe.rows));
+ check(audioProbe.rapidSelectionSettled,'连续切歌期间暂停/定位保留且旧加载结果不覆盖');
+ check(audioProbe.flacArtwork,'真实 FLAC PICTURE 块经扫描生成封面');
+ check(audioProbe.maximumPageZoom<=1.001&&Math.abs(audioProbe.pageZoom-1)<0.001&&Math.abs(visualViewport.scale-1)<0.001,'整页缩放禁用且页面比例为 1 '+JSON.stringify({native:audioProbe.pageZoom,max:audioProbe.maximumPageZoom,scale:visualViewport.scale}));
  const diagnostics=await send({kind:'uiTestDiagnostics'});
  check(diagnostics.bytes>500&&Number.isInteger((await action('getSettings')).crashCount),'诊断包含事件记录并返回真实本地崩溃数量');
  // Leave the shared settings open for a deterministic native screenshot.

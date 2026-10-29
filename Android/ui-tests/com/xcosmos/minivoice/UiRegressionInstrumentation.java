@@ -18,6 +18,8 @@ public final class UiRegressionInstrumentation extends Instrumentation {
     private final StringBuilder report=new StringBuilder();
     @Override public void onCreate(Bundle args){super.onCreate(args);arguments=args;start();}
     @Override public void onStart(){Bundle result=new Bundle();try{
+        if("chrome".equals(arguments.getString("mode"))){chromeContracts();result.putString("stream",report+"UI_CHROME_PASS\n");finish(Activity.RESULT_OK,result);return;}
+        if("scanProgress".equals(arguments.getString("mode"))){scanProgressUi();result.putString("stream",report+"UI_SCAN_PROGRESS_PASS\n");finish(Activity.RESULT_OK,result);return;}
         if("keyboard".equals(arguments.getString("mode"))){portableKeyboard();result.putString("stream",report+"UI_KEYBOARD_PASS\n");finish(Activity.RESULT_OK,result);return;}
         if("crash".equals(arguments.getString("mode"))){new Thread(()->{throw new IllegalStateException("UI_CRASH_PROBE");},"diagnostic-crash-probe").start();SystemClock.sleep(10000);throw new AssertionError("Crash handler did not terminate process");}
         if("tags".equals(arguments.getString("mode"))){tagEditing();result.putString("stream",report+"UI_TAG_EDIT_PASS\n");finish(Activity.RESULT_OK,result);return;}
@@ -276,6 +278,24 @@ public final class UiRegressionInstrumentation extends Instrumentation {
         android.view.accessibility.AccessibilityNodeInfo root=getUiAutomation().getRootInActiveWindow();if(root==null)return;
         for(String text:new String[]{"Got it","知道了"})for(android.view.accessibility.AccessibilityNodeInfo node:root.findAccessibilityNodeInfosByText(text))if(node.isClickable()){node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK);SystemClock.sleep(200);return;}
     }
+    private void chromeContracts()throws Exception{
+        PortablePlayerActivity preview=(PortablePlayerActivity)startActivitySync(new Intent(getTargetContext(),PortablePlayerActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        android.webkit.WebView web=(android.webkit.WebView)field(preview,"web");SystemClock.sleep(1200);
+        java.lang.reflect.Method apply=PortablePlayerActivity.class.getDeclaredMethod("applyChrome",org.json.JSONObject.class);apply.setAccessible(true);
+        for(String style:new String[]{"wall","library","simple"})for(String theme:new String[]{"light","dark"}){
+            org.json.JSONObject state=new org.json.JSONObject().put("pages",new org.json.JSONObject().put("appearance",new org.json.JSONObject().put("style",style).put("theme",theme)));
+            main(()->{try{apply.invoke(preview,state);}catch(Exception e){throw new RuntimeException(e);}});SystemClock.sleep(200);
+            int appearance=preview.getWindow().getDecorView().getSystemUiVisibility();boolean darkIcons=(appearance&android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR)!=0;
+            check(darkIcons==(!style.equals("wall")&&theme.equals("light")),"System status icon palette mismatch "+style+"/"+theme);
+        }
+        for(int orientation:new int[]{android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE}){
+            main(()->preview.setRequestedOrientation(orientation));SystemClock.sleep(1000);dismissImmersiveHint();
+            final int rotation=preview.getWindowManager().getDefaultDisplay().getRotation();String side=rotation==android.view.Surface.ROTATION_270?"left":"right";
+            check("true".equals(javascript(web,"parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--mv-safe-"+side+"'))>=16")),"Hidden navigation edge lost rotated clearance");
+        }
+        main(()->preview.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));main(preview::finish);
+        report.append("PASS three styles/light-dark native status icon appearance and both landscape navigation edges\n");
+    }
     private void systemBarContracts(PortablePlayerActivity preview,android.webkit.WebView web)throws Exception{
         for(int orientation:new int[]{android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT}){
             main(()->preview.setRequestedOrientation(orientation));SystemClock.sleep(1000);dismissImmersiveHint();
@@ -414,6 +434,35 @@ public final class UiRegressionInstrumentation extends Instrumentation {
         report.append("PASS Android WebView neutral panels in three styles/light/dark, real backdrop, seven crisp marks, trusted 90 percent tap and 44px controls\n");
     }
 
+    private void scanProgressUi()throws Exception{
+        Context context=getTargetContext();Uri tree=android.provider.DocumentsContract.buildTreeDocumentUri(TestMusicProvider.AUTHORITY,"root");
+        context.getContentResolver().call(tree,"reset",null,null);
+        Set<String> folders=Collections.singleton(tree.toString());List<Song> tracks=FolderLibrary.scan(context,folders,false,(a,b,c)->{},Collections.emptyList());
+        context.getSharedPreferences("library",0).edit().putStringSet("music_folders",folders).putBoolean("scan_recursive",false).commit();
+        context.getSharedPreferences("portable",0).edit().clear().commit();LibrarySnapshot.write(context,"folders\n"+LibrarySnapshot.source(folders,false),tracks);
+        PortablePlayerActivity preview=(PortablePlayerActivity)startActivitySync(new Intent(context,PortablePlayerActivity.class).putExtra("minivoice.uiRegression",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        android.webkit.WebView web=(android.webkit.WebView)field(preview,"web");
+        for(int i=0;i<80&&!"true".equals(javascript(web,"!!document.querySelector('[aria-label=打开侧边栏]')"));i++)SystemClock.sleep(150);
+        context.getContentResolver().call(tree,"slow",null,null);
+        try{
+            main(()->LibraryScanService.request(context,true,false,false));
+            boolean shown=false;for(int i=0;i<60;i++){if("true".equals(javascript(web,"!!document.querySelector('.mv-scan-status')"))){shown=true;break;}SystemClock.sleep(100);}
+            check(shown,"Existing library rescan has no persistent status");
+            android.app.NotificationManager manager=(android.app.NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
+            android.service.notification.StatusBarNotification notice=null;
+            for(android.service.notification.StatusBarNotification item:manager.getActiveNotifications())if(item.getId()==2)notice=item;
+            check(notice!=null&&notice.isOngoing(),"Scan ongoing progress notification missing");
+            context.startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));SystemClock.sleep(1000);
+            check(LibraryScanService.isRunning(),"Scan did not survive backgrounding");
+            notice.getNotification().contentIntent.send();SystemClock.sleep(1200);
+            check("true".equals(javascript(web,"document.querySelector('.mv-modal')?.textContent.includes('音乐库')||false")),"Scan notification did not open details");
+            for(int i=0;i<180&&LibraryScanService.isRunning();i++)SystemClock.sleep(250);
+            check(!LibraryScanService.isRunning(),"Background scan did not finish");SystemClock.sleep(1000);
+            check("false".equals(javascript(web,"!!document.querySelector('.mv-scan-status')")),"Completed scan status did not clear");
+            report.append("PASS actual service progress, persistent existing-library indicator, ongoing notification, background continuation and notification detail navigation\n");
+        }finally{context.getContentResolver().call(tree,"fast",null,null);main(preview::finish);}
+    }
+
     private void portableKeyboard()throws Exception{
         Context context=getTargetContext();
         context.getSharedPreferences("portable",0).edit().putString("workspace","{\"version\":1,\"section\":\"音乐库\",\"pages\":{\"appearance\":{\"style\":\"wall\",\"theme\":\"light\"}}}").commit();
@@ -472,7 +521,7 @@ public final class UiRegressionInstrumentation extends Instrumentation {
         javascript(web,"window.drawerExitSamples=[];window.exitUntil=performance.now()+600;document.querySelector('[aria-label=关闭侧边栏]').click();requestAnimationFrame(function sample(){const g=document.querySelector('[data-surface-exit=drawer][inert] .mv-drawer');if(g)window.drawerExitSamples.push(new DOMMatrixReadOnly(getComputedStyle(g).transform).m41);if(performance.now()<window.exitUntil)requestAnimationFrame(sample)});true");SystemClock.sleep(700);
         check("true".equals(javascript(web,"window.drawerExitSamples.length>=2&&new Set(window.drawerExitSamples).size>=2")),"Drawer exit had no visible slide frames");
         check("true".equals(javascript(web,"!document.querySelector('[data-surface-exit=drawer]')")),"Drawer exit did not clean up");check("true".equals(javascript(web,"(()=>{const scene=document.querySelector('.mv-scene');return !scene.classList.contains('is-drawer-behind')&&!scene.inert&&new DOMMatrixReadOnly(getComputedStyle(scene).transform).isIdentity})()")),"Drawer background did not restore");webClick(web,"[aria-label=打开侧边栏]");SystemClock.sleep(400);
-        check("true".equals(javascript(web,"(()=>{const scene=document.querySelector('.mv-scene'),panels=[...scene.querySelectorAll('.mv-glass,.mv-library,.mv-lyrics,.mv-wall-dock')];return panels.every(p=>getComputedStyle(p).borderTopColor==='rgba(0, 0, 0, 0)'&&getComputedStyle(p).boxShadow==='none')&&getComputedStyle(document.querySelector('.mv-drawer nav')).boxShadow!=='none'})()")),"Drawer retained background outlines or lost section depth");
+        check("true".equals(javascript(web,"(()=>{const scene=document.querySelector('.mv-scene'),panels=[...scene.querySelectorAll('.mv-glass,.mv-library,.mv-lyrics,.mv-wall-dock')];return panels.every(p=>getComputedStyle(p).borderTopColor!=='rgba(0, 0, 0, 0)'&&getComputedStyle(p).boxShadow!=='none')&&getComputedStyle(document.querySelector('.mv-drawer nav')).boxShadow!=='none'})()")),"Drawer removed background outlines or lost section depth");
         if("wall".equals(javascript(web,"document.querySelector('main').dataset.style").replace("\"","")))check("true".equals(javascript(web,"(()=>{const scene=document.querySelector('.mv-scene'),r=scene.getBoundingClientRect();return !document.querySelector('.mv-drawer-wall-backdrop')&&Math.abs(r.width-innerWidth)<1&&Math.abs(r.height-innerHeight)<1&&Math.abs(r.left)<1&&Math.abs(r.top)<1&&[...scene.querySelectorAll('.mv-wall-card img')].some(i=>i.naturalWidth>0)})()")),"Wall drawer must scale the live canvas without a stitched backdrop");
         report.append("PASS narrow drawer actual slide frames, three-style background depth/restore, retained exit and Mac fragment style sweep with real app raster\n");
 

@@ -11,6 +11,7 @@ public final class TestMusicProvider extends android.content.ContentProvider {
     private static final String[] DOCUMENTS={DocumentsContract.Document.COLUMN_DOCUMENT_ID,DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_MIME_TYPE,DocumentsContract.Document.COLUMN_FLAGS,DocumentsContract.Document.COLUMN_SIZE,DocumentsContract.Document.COLUMN_LAST_MODIFIED};
     private volatile boolean edited,removed,failTagWrite;
     private volatile int reads;
+    private volatile int delayMs;
     @Override public boolean onCreate(){return true;}
     @Override public String getType(android.net.Uri uri){return "audio/wav";}
     @Override public Cursor query(android.net.Uri uri,String[] projection,String selection,String[] args,String sort){
@@ -31,6 +32,7 @@ public final class TestMusicProvider extends android.content.ContentProvider {
         row.add(value);
     }}
     @Override public ParcelFileDescriptor openFile(android.net.Uri uri,String mode)throws FileNotFoundException{
+        if(delayMs>0)SystemClock.sleep(delayMs);
         String id=android.provider.DocumentsContract.getDocumentId(uri);
         if(id.equals("tags.mp3")||id.equals("tags.flac")){File file=new File(getContext().getCacheDir(),id);if(!file.exists())try(InputStream in=getContext().getAssets().open(id);OutputStream out=new FileOutputStream(file)){in.transferTo(out);}catch(IOException error){throw new FileNotFoundException(error.toString());}if(mode.equals("rwt")&&failTagWrite){failTagWrite=false;try{new FileOutputStream(file).close();}catch(IOException ignored){}throw new FileNotFoundException("Simulated partial write failure");}return ParcelFileDescriptor.open(file,ParcelFileDescriptor.parseMode(mode));}
         if(!mode.equals("r")||id.equals("root")||removed&&id.equals("two.wav"))throw new FileNotFoundException();reads++;
@@ -40,5 +42,5 @@ public final class TestMusicProvider extends android.content.ContentProvider {
         }catch(IOException failure){throw new FileNotFoundException(failure.toString());}
         return ParcelFileDescriptor.open(file,ParcelFileDescriptor.MODE_READ_ONLY);
     }
-    @Override public Bundle call(String method,String argument,Bundle extras){Bundle result=new Bundle();if(method.equals("reset")){edited=false;removed=false;reads=0;}else if(method.equals("resetTags")){new File(getContext().getCacheDir(),"tags.mp3").delete();new File(getContext().getCacheDir(),"tags.flac").delete();failTagWrite=false;}else if(method.equals("failTagWrite"))failTagWrite=true;else if(method.equals("edit"))edited=true;else if(method.equals("remove"))removed=true;else if(!method.equals("stats"))return super.call(method,argument,extras);result.putInt("reads",reads);return result;}
+    @Override public Bundle call(String method,String argument,Bundle extras){Bundle result=new Bundle();if(method.equals("reset")){edited=false;removed=false;reads=0;delayMs=0;}else if(method.equals("slow"))delayMs=2000;else if(method.equals("fast"))delayMs=0;else if(method.equals("resetTags")){new File(getContext().getCacheDir(),"tags.mp3").delete();new File(getContext().getCacheDir(),"tags.flac").delete();failTagWrite=false;}else if(method.equals("failTagWrite"))failTagWrite=true;else if(method.equals("edit"))edited=true;else if(method.equals("remove"))removed=true;else if(!method.equals("stats"))return super.call(method,argument,extras);result.putInt("reads",reads);return result;}
 }

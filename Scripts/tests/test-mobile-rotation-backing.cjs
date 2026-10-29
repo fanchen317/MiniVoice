@@ -1,0 +1,9 @@
+const {app,BrowserWindow}=require('electron'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');app.setPath('userData',fs.mkdtempSync(path.join(require('node:os').tmpdir(),'mv-rotate-')));let win;const wait=ms=>new Promise(r=>setTimeout(r,ms));
+app.whenReady().then(async()=>{try{win=new BrowserWindow({show:false,width:390,height:844,webPreferences:{backgroundThrottling:false}});const js=s=>win.webContents.executeJavaScript(s,true);await win.loadURL('http://127.0.0.1:5217/tests/wall-mobile.html');await wait(500);
+for(const style of ['wall','library','simple'])for(const theme of ['light','dark']){
+await js(`localStorage.setItem('wall-fixture-v2',JSON.stringify({version:1,section:'音乐库',pages:{appearance:{style:'${style}',theme:'${theme}'}}}));true`);win.reload();await wait(650);
+await js("window.rotationFrames=[];window.rotationUntil=performance.now()+2000;requestAnimationFrame(function sample(){const n=document.querySelector('main');if(n){const r=n.getBoundingClientRect(),d=getComputedStyle(document.documentElement).backgroundColor,b=getComputedStyle(n).backgroundColor;window.rotationFrames.push({covered:r.width>=innerWidth-1&&r.height>=innerHeight-1,matched:d===b,back:d});}if(performance.now()<window.rotationUntil)requestAnimationFrame(sample)});true");
+for(const size of [[844,390],[390,844],[1024,768],[768,1024]]){win.setSize(...size);await wait(350);}await wait(650);
+const frames=await js('window.rotationFrames');assert(frames.length>20&&frames.every(f=>f.covered&&f.matched&&f.back!=='rgb(255, 255, 255)'),style+' '+theme+' backing mismatch '+JSON.stringify(frames.filter(f=>!f.covered||!f.matched)));
+}
+console.log('PASS three styles x light/dark, per-frame document backing and coverage during four viewport rotations');win.destroy();app.exit(0)}catch(e){console.error(e);win?.destroy();app.exit(1)}});

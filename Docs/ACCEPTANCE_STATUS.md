@@ -468,3 +468,120 @@ Android 专用 emulator-5554：portable 完整回归通过 UI_PORTABLE_PASS；�
 - 冲突整合保留当前 iOS 体验/正式双通道、测试和 MetricKit 引用、Debug 冒烟打包及严格许可校验；保留双方验收记录。当前开发源码随整合提交，个人 Xcode 状态单独保留。
 - 通过：Git index 干净导出 + 精简 PATH 离线共享 UI 构建；公开入口/iOS 打包模拟/独立 UI 构建测试；门禁、46 项 JS、iOS 基础与诊断/ZIP；Debug 模拟器与无签名 device Release；专用 iPhone/iPad 宿主；语法/diff 检查。
 - 未执行真实 Apple 签名和手机部署、完整 Android/Mac 原生回归。日志 `.build/reports/merge-repair/`；详见 `Docs/MERGE_VERSION2_8_1_REPAIR_2026-10-29.md`。
+
+## 2026-10-29 移动侧栏字体与可读性
+
+- 按Android截图反馈调整共享mobile侧栏排版：导航16px/500、选中600、品牌21px/600、副标题12px/400、分组12px/500，取消合成字重与不必要字距。文字使用独立导航深浅配色，副标题和分组不降低透明度；选中项使用更明确的深绿/薄荷文字及底色。
+- 侧栏采样保留，增加中性玻璃wash对真实封面明暗的缓冲，降低背景造成文字忽明忽暗；作用域为mobile侧栏，不改Mac及其他面板。共享mobile皮肤也适用于当前iOS宿主。
+- 通过：107源文件静态门禁、Android体验APK构建签名、三样式×深浅设置/侧栏与滑块定向回归；人工查看neutral-wall-drawer-light/dark截图确认文本层次。报告android-drawer-typography-{build,ui}.log。没有进行实体设备字体栅格化与全封面动态对比度测量，真机观感待用户回验。
+
+
+## 2026-10-29 iOS 本地音频、FLAC 封面、缩放与 Xcode 构建修复
+
+- 只读核对用户设备索引：1037 首中 964 首 FLAC、73 首 MP3，已有封面缓存恰为 73 份；FLAC 原生 PICTURE/VORBIS 元数据未被原 commonMetadata 路径覆盖。未复制音乐文件或修改真机曲库。新增有界 FLAC 元数据解析，读取封面、标题、歌手、专辑、歌词与时长；缓存版本升级，重新扫描补建旧封面。
+- 本地播放改用 AVAudioPlayer，协调文件读取并持续保留目录授权；支持同目录重新选择以更新失效书签；错误呈现包含实际域和代码。共享模块拒绝原因也改为可读文案。模拟器 MP3、FLAC 均真实解码、进入 playing 且时钟推进；这不等同用户所有真机文件已逐首验证。
+- iOS 宿主限制整页缩放，音乐墙保留自身相机缩放。iPhone/iPad 均通过原生双指手势：简易/音乐库布局位置和宽度不变，音乐墙显示比例发生变化。
+- Xcode 默认缓存目录原样复现失败：App Debug 同时编译 x86_64/arm64，但 Swift 包仅生成活动 arm64 模块，报 Unable to resolve module dependency: MiniVoiceShared。项目 Debug 设置 ONLY_ACTIVE_ARCH=YES 后，同目录、同目标、不附加架构或关闭签名参数构建成功；未删除缓存、未硬编码为 arm64，Release 保留原架构策略。
+- 通过：静态门禁；iOS 单元/诊断/ZIP 与 FLAC STREAMINFO、VORBIS、PICTURE、截断边界；iPhone/iPad 宿主含真实 MP3/FLAC 播放及 FLAC 封面扫描；两设备原生双指测试；无签名 device Release；Xcode 默认 Debug 构建。日志 `.build/reports/ios/local-audio-fix/`，手势结果 `pinch-flac-final.xcresult`、`pinch-flac-ipad.xcresult`，宿主报告 `shared-ui/*/20261029T035*`。
+- 待验收：用户在真机安装新版后重扫曲库并播放；真实文件提供方失效/重新授权、iCloud 下载、后台/耳机/锁屏与全部编码组合。没有安装覆盖真机 App，没有宣称 OGG 解码已接入。
+
+## 2026-10-29 侧栏底色回调及播放栏文字
+
+- 按用户反馈撤回上次新增的侧栏中性wash，选中行恢复原轻透明底色；保留导航字号、字重及文字颜色优化。此条替代上一节增强wash方案。
+- 音乐墙mobile播放栏元信息：歌名14px/600、歌手12px/400、两行3px间隔、歌手不透明度.8，封面与文字10px间距；长文本省略并限制在弹性槽内，避免侵入传输按钮。深浅使用已有材质文字变量，不新增色块。
+- 验证：静态门禁、Android体验包构建、三样式深浅侧栏面板及原音乐墙/实际Mac页面回归；实体手机字体和真实长标题观感待回验。报告android-drawer-dock-type-*.log。
+
+
+## 2026-10-29 iOS 扫描内存超限闪退
+
+- 原因已从 Xcode 保留的真机暂停调用栈确认：`EXC_RESOURCE (RESOURCE_TYPE_MEMORY: high watermark memory limit exceeded) (limit=3376 MB)`；扫描线程停在 `LibraryScanner.prepareArtwork → AVAsset.availableMetadataFormats`，系统线程在 CoreMedia 解析封面元数据的二进制属性列表。应用诊断连续记录扫描开始和进程重启，未完成扫描。未将此次问题误报为 EXC_BAD_ACCESS 或歌曲数量限制。
+- 修复：FLAC 元数据每首只经有界原生块读取，不进入 AVFoundation common/全部格式元数据；每首 readSong 和按需封面重建使用 autoreleasepool；ImageIO 直接按 640px 降采样，避免先解码原尺寸以及 UIKit 默认屏幕倍率放大；压缩图输入上限 32MiB。原图仍保留。重复重扫等待前轮协作取消并释放后再启动，防止读取叠加。
+- 定向压力验证：专用模拟器合成 964 FLAC + 73 MP3，共 1037 首，4096px 封面；实际 LibraryScanner 完整扫描与增量重扫均 1037 首，无错误，所有缩略图最长边不超过 640px。iPhone 进度点采样 RSS 从 384942080 到 461930496 字节，增长约 73.4MiB；这是采样结果，不宣称全时峰值或真机同等内存。宿主回归同时验证 MP3/FLAC 实际播放、封面缓存重建和目录原文件保留。
+- 通过：静态门禁、iOS 单元/FLAC 元数据/诊断/ZIP；iPhone/iPad 宿主含压力验证、Debug 模拟器与无签名 device Release 构建。iPad 同样扫描 1037 首、增量重扫 1037 首，采样内存增长约 57.0MiB；证据 `.build/reports/ios/shared-ui/CA6853B6-D675-4B5C-BF93-E5A7002EC070/20261029T041900Z-62945/`。iPhone 证据 `.build/reports/ios/shared-ui/E4D86FE2-4A02-463B-BB0E-AF9961F67ABF/20261029T041707Z-61202/`。
+- 待验收：用户安装新版后真实曲库扫描，后台/文件提供方边界仍未签收。没有安装或重扫用户真机曲库；旧真机崩溃现场保持暂停，没有执行继续/结束调试命令。
+
+## 2026-10-29 侧栏选中底色与播放栏字体修正
+
+- 用户截图仍显示突兀的侧栏选中亮底：现明确令选中行background透明、无背景图与阴影，仅保留文字及轻边框强调；不新增面板底色。
+- 按用户明确更正，只调整音乐墙播放栏文字，撤回临时尝试的空间重分配；保留原84px展开播放栏和原按钮位置。歌名中等500字重，歌手400，歌手取消透明衰减、统一使用深浅材质文字色；不以布局变化解决字体显示问题。
+- 通过：109源文件门禁、最终APK构建、320/390竖屏与844横屏定向检查原84px高度/歌名字重/歌手不透明/44px传输按钮/侧栏透明选中；共享模型测试及已有墙面Mac回归通过。报告android-dock-metadata-*.log。实体手机字体观感仍待回验。
+
+## 2026-10-29 Android 状态栏背景模糊
+
+- Android平台适配显式声明statusBarBlur；PortablePlayer添加aria-hidden、pointer-events:none的statusbar-backdrop，位于系统图标下方的应用内容上方。高度取宿主--mv-safe-top，blur18px及深浅渐变透明色；不重复增加安全区padding。iOS不启用此新增层，保留原宿主行为。
+- 横屏及音乐墙全屏展开时隐藏，顶部安全区0时高度0，避免隐藏状态栏后多余模糊条。
+- 通过：109源文件门禁、Android体验APK构建签名、Electron定向检查34px安全区高度/真实backdrop-filter/无触摸拦截/横屏与零安全区清理。报告android-statusbar-blur-{build,ui}.log，截图ui/android-statusbar-blur-portrait.png。模拟页面未包含系统状态图标，厂商WebView及实际系统图标合成效果待用户真机回验。
+
+
+## 2026-10-29 移动扫描可见性、后台执行与横屏安全区
+
+- iOS 移除简易/音乐库横屏强行对称化左右安全区的逻辑，按系统真实各边 inset 布局；音乐墙保持相同安全区来源。侧栏补语义区域名称，测试直接测量面板边缘，不用宽度不同的关闭按钮坐标代替面板边缘。
+- Shared/UI 新增 ScanStatus（ActionButton 查看入口与同源详情）：三种移动样式、已有曲库重扫、发现文件、已知总数、暂停/完成均有明确状态。发现阶段不编造百分比；处理阶段显示数量与进度；结束卸载；暂停保留查看入口。iOS 桥接补 completed/total/execution，Android 体验宿主接通已有服务的 completed/total。
+- Android 沿用 LibraryScanService 独立后台扫描、真实进度和通知点击 SHOW_SCAN；Android 12+ 设置 FGS_IMMEDIATE，修复系统延迟显示扫描通知；体验宿主在有来源及新授权来源时申请既有通知权限。
+- iOS 26+ 对用户主动触发扫描注册并提交 BGContinuedProcessingTask，系统提供实时活动/支持设备上的灵动岛进度与取消；进度每0.5秒节流，发现阶段使用不定进度，完成关闭任务。提交被拒/旧系统保留有界 UIApplication 后台时间，系统到期暂停，原子保存每100首检查点并在取消时保存尾批，返回时复用元数据继续；不是无限后台。通知授权从设置明确发起，授权后可收到受限后台阶段的进度替换通知及结束通知，点击查看设置详情。自动恢复扫描不冒充用户新触发的持续任务。
+- 通过：109 文件组件门禁、47 项共享 JS、iOS 单元/FLAC/诊断/ZIP；iPhone/iPad WKWebView 宿主回归，含1037首混合格式与4096px封面完整/增量扫描和真实 MP3/FLAC播放；Debug 模拟器和无签名 device Release。Android 体验 APK与测试 APK构建；专用 MiniVoiceRegression 上真实后台服务、已有库常驻指示、ongoing通知、切后台继续及点击通知详情均通过 `UI_SCAN_PROGRESS_PASS`。首轮通知缺失是真实的系统 FGS 延迟，已改即时策略后通过，没有放宽通知断言。
+- 后台系统 UI 待验：模拟器真实返回“BGTaskScheduler is not available on this platform”，只通过了受限后台回退/返回查看，不宣称灵动岛或长期持续执行已在模拟器/真机验收。未部署用户手机；iOS17–25没有自定义 ActivityKit 小组件，不能宣称这些版本有灵动岛扫描展示。
+- Duo 环境失败：初轮 XCUIDevice 旋转并未将折叠 Duo 展开，不能算展开横屏通过；补实际宽高断言后真实失败。手动展开的27.1专用Duo随后反复发生系统 PosterBoard `PRPosterDescriptor _initWithPath:` 断言(SIGTRAP)，崩溃 coalition 确认属于专用 DD2B3C31 模拟器，已关闭该设备止住重启循环；没有擦除模拟器数据或禁用崩溃提醒。Xcode 另有SDK/runtime build解析 invalidDigitCount，影响测试结果包收尾；保留失败日志，未伪造 xcresult 完成。展开Duo专用布局脚本保留用于系统恢复后验证。
+- iPad宿主首轮受旧持久化样式影响在等待音乐墙阶段失败；测试改为通过真实侧栏/设置初始化目标样式后重新通过，未改产品默认样式。最终报告 `shared-ui/CA6853B6-D675-4B5C-BF93-E5A7002EC070/20261029T045028Z-82207/`，iPhone `shared-ui/E4D86FE2-4A02-463B-BB0E-AF9961F67ABF/20261029T044432Z-78645/`。本轮集中日志 `.build/reports/mobile-scan-progress/`。
+
+- 补充通过：普通 iPhone 专用模拟器严格断言 App 宽大于高后，左右横屏×三样式直接测量“侧边栏面板”区域左边缘一致，原生测试 testLandscapeDrawerLeadingEdge 通过（phone-panel.log）；该通过不代替 Duo 展开屏验收。早先关闭按钮坐标相差20px源于样式面板宽度不同，测试已改测语义面板本体。
+
+## 2026-10-29 两端旋转露白底修正
+
+- 扫描确认iOS WKWebView原为透明/systemBackground、scrollView透明；Android只设置WebView色而未覆盖window/decor/content；HTML根文档无明确背景。这些层在旋转过渡/尺寸更新时可能露出白色底。
+- iOS改为不透明WebView，并同步WebView/scrollView/underPage/window及根控制器背景至当前三样式/深浅色；SwiftUI补非白启动背板，布局和safe变化时更新宿主背景。Android同时设置window/decor/content/WebView底色；不禁止旋转或用固定截图遮挡。共享文档在useLayoutEffect同步--bg，根层背景匹配应用，支持100dvh动态高度。
+- 通过：109源文件门禁；Android体验APK构建签名；iOS device Release无签名构建；Electron三样式×深浅×四尺寸方向变化逐帧断言根背景匹配、页面覆盖视口及无纯白底；已有墙面和实际Mac页面回归。报告rotation-backing-{android-build,ui,wall}.log、ios/rotation-backing-build.log。
+- 边界：Electron窗口变化不等于系统旋转合成动画，当前没有启动的专用iOS模拟器；厂商GPU/WebView及iOS系统旋转录屏仍需真机回验，不能宣称所有旋转中间帧已实机消除露底。iOS签名IPA条件仍未满足。
+
+## 2026-10-29 Android 状态栏模糊硬边修正
+
+- 按真机截图反馈，撤回状态栏等高矩形滤镜的硬截断。滤镜移入伪元素，向下延伸最多24px，以多段mask渐变将模糊本身淡出；浅色/深色覆盖降低，不再绘制原灰色整条。安全区0时伪元素也为0；横屏/展开隐藏和不拦截触摸规则保留。
+- 通过：111源文件门禁、Android体验包构建签名、定向检查34px安全区/58px羽化层/16px实际blur/mask/无触摸拦截/横屏及0安全区清理。日志android-statusbar-feather-{build,ui}.log。实体Android WebView下mask合成与最终观感待用户回验，不宣称与iOS系统材质完全相同。
+
+## 2026-10-29 iOS 触控与播放性能修正、移动搜索遮挡
+
+- 移动音乐库工具移除未开放的歌手归并表单；既有规则与桌面入口保留。移动内容禁止系统文本选择/长按呼出，输入框保留原生编辑；歌词后续行取消裁剪边界上的 blur 滤镜，保留透明度层级。
+- iOS 文件协调、音频会话初始激活和 AVAudioPlayer 准备移至串行后台队列，连续切歌使用取消票据和代次校验；加载期间暂停、定位保留到最终目标。歌曲索引避免队列验证重复遍历整库。展开封面使用2048px上限显示缓存，原图读取保留；iOS纯平移复用墙面容器合成，缩放/聚焦沿用逐卡投影。
+- 搜索输入使用临时同步草稿等待宿主保存，修复快速中文输入丢首字。移动搜索根据动画期间真实相交区域隐藏各工具栏动作并禁用其命中，空间足够时保留侧栏入口，关闭后恢复。iOS横屏顶部控制及侧栏上下留白按较大的垂直安全区平衡，原生左右安全区和满幅墙面不变。
+- 已通过：共享47项 JS、iOS单元、墙面回归、iPhone/iPad WKWebView宿主播放（MP3/FLAC）和连续切歌/暂停/定位；独立Touch模拟器1037首扫描、4096原图到2048显示缓存及原图字节保留；原生长按无系统菜单与“山海”完整输入用例通过。device Release无签名构建通过。原生XCTest用例通过后Xcode runtime元数据解析导致收尾挂起，保留日志，不宣称完整xcresult生成。
+- 验证边界：Electron容器平移验证只证明投影连续与封面保持，不代表真机FPS；用户截图歌词彩线具体GPU成因及真机连续播放/滑动体感仍需回验。无用户真实库写入或真机部署。
+
+
+### 2026-10-29 iOS / Android 音乐墙入口移出与返回
+
+- 本次用户明确包含 iOS、Android，按该范围修正共享音乐墙，未新增移动歌曲编辑功能。“编辑”位置沿用现有音乐墙设置入口。
+- 已修正：侧栏向左、搜索向右、设置/播放栏向下退场；隐藏入口保留节点，立即 inert / aria-hidden，动画结束后不可见。插图缩回后延迟到卡片动画完成再返回；快速反向清理旧回调，减少动态效果直接到终态。
+- 已修正：WallDock 不再以 enabled=false 清空 idle 状态。隐藏和返回期间暂停空闲倒计时，保留离开时的横条或圆形；返回后再继续正常空闲规则。iOS 居中皮肤保留自身位置变形并叠加退场 translate。设置避让读取底部锚定的静止几何，避免屏外旋转时误判。
+- 通过：组件门禁；47 项共享测试；mobile-wall-chrome.txt 中两端皮肤×横竖屏×横条/圆形八组合通过中间帧、屏外停留、保持节点和形态、屏外旋转、延迟返回、快速反向、减少动态效果。八张 chrome-{android,ios}-{portrait,landscape}-{bar,circle}.png 已生成，已查看 iOS 横屏圆形返回截图。
+- 实际宿主：iPhone WKWebView 最终 smoke 全部通过（mobile-wall-chrome-smoke-final.txt），包含四入口中间帧、隐藏超过3秒、两种形态返回。早期 iPhone / iPad smoke 曾在后续缓存检查失败，原始报告保留。Android 实包竖屏两种形态专项通过（mobile-wall-chrome-native-portrait.txt）；横屏固定100ms中间帧探针未捕获到运动，保留失败报告，不冒充原生横屏通过。
+- 未通过：Android portable 仍在 Shared play did not reach real service 断言结束；完整页面脚本复跑曾在 Mac Dock did not start a new idle collapse 断言失败。均未修改或放宽断言。
+- 构建：Android 体验 APK 与 iOS Debug 模拟器应用均已更新。实体 iPhone / Android 的手势、GPU 材质、系统导航和最终观感待用户验收；未宣称 iOS 真机签名包已交付。
+
+## 2026-10-29 系统图标配色与横屏导航边
+
+- Android此前用!dark设置LIGHT_STATUS_BAR，浅色音乐墙因此请求黑色图标；现在音乐墙按封面背景场景统一请求白色，音乐库/简易保持浅色深图标、深色白图标。兼容旧systemUiVisibility及API30+显式setSystemBarsAppearance，音乐墙羽化层使用轻暗渐变，不恢复硬边条。
+- 横屏隐藏导航栏不再丢失原底边余量：读取忽略可见性的导航insets，保存竖屏导航底边；按实际90/270旋转映射到右/左，至少16dp。三样式共用，普通页面原有对称避让保留；封面墙仍可铺满，工具和聚焦区域沿安全变量避让。
+- 通过：111源文件门禁、最终体验APK及instrumentation测试包构建。新增chrome定向模式覆盖三样式深浅原生系统图标配置和两方向导航安全边；此次安装执行前专用emulator-5554掉线，未跑成，不记原生通过。报告android-status-icons-navigation-build.log、android-chrome-test-build.log、android-native-chrome.log。实体设备系统通知图标及隐藏栏侧边需回验。
+
+最终补充：iPad WKWebView 完整 smoke 同样通过，见 mobile-wall-chrome-ipad-final.txt；与 iPhone 最终报告一起覆盖两种设备的真实宿主桥与入口动画。
+
+最终补充：test-wall-version.sh 最后完整复跑通过，见 mobile-wall-chrome-full.txt；保留上文前次 Mac idle 断言失败的事实。Android portable 的播放服务断言仍未通过。
+- 补充通过：`test-mobile-search-overlap.cjs` 的iOS/Android宽横屏入口保留、窄工具栏真实重叠隐藏及关闭恢复；iOS 21px底部/0px顶部安全区下，顶部控制外边距35px，侧栏上下边距相等。这是合成安全区的渲染验证，实体设备最终观感待回验。最终iOS Release再次构建通过。
+- 最终共享墙面回归、47项JS、Android体验APK构建通过；日志 `/tmp/mv-touch-wall-layout.log`、`/tmp/mv-touch-js-layout.log`、`/tmp/mv-touch-android-layout.log`。本轮没有声称Android实体触摸或iOS GPU实机验收。
+
+
+### 2026-10-29 侧栏打开后背景组件轮廓丢失
+
+- 根因：共享 player.css 的两条 is-drawer-behind 后代规则将背景组件的填充、描边、阴影和模糊清空，iOS / Android 共用因此同时出现。按本次用户要求移除这两条规则；仍保留后景后退、遮罩和输入隔离。
+- 通过：16种两端皮肤×简易/音乐库×深浅×横竖的开关侧栏材质逐项一致检查（drawer-surface-preservation.txt）；原 surface 测试、完整音乐墙/桌面页面回归（drawer-wall-surfaces.txt、drawer-surface-wall-full.txt）；47项共享单测与组件门禁。已查看 drawer-surface-android-simple.png，截图右侧搜索圆形、歌词板块、播放栏轮廓保留。
+- 实际 iOS WKWebView：simple / library 的侧栏前后材质与轮廓一致、后景 inert 检查通过；完整 smoke 随后在“缓存清理结果回读”断言失败（drawer-surface-smoke.txt），不宣称整套通过。
+- Android：已构建体验 APK 和测试 APK；portable 运行出现 Process crashed，日志为仍未通过的完整原生回归（drawer-surface-portable.txt）。本次界面属性专项已通过，但不宣称完整 Android 原生回归通过。
+- 产物：.build/dist/MiniVoice-android-experience.apk 与 iOS Debug 模拟器应用已更新；两端实体设备 GPU / 玻璃采样及最终观感待验收。本条取代旧“侧栏后景无框”记录中的视觉要求。
+
+## 2026-10-29 iOS录屏横线与滑动专项
+
+- 录屏可见两条跨全屏细线和快速滑动封面空底；完成抽帧和代码路径排查，详细记录见 `Docs/IOS_RENDERING_INVESTIGATION.md`。未把录屏60fps标记当成应用FPS。
+- iOS采用单页面实时opacity样式过渡，移除生产切换链路中的WK截图/编码/分片；墙面提前挂载360px，修正100px提前范围小于140px换窗口阈值；稳定封面节点与投影，iOS增加可回收的32MiB成本预算图片缓存及版本化响应缓存。
+- 通过：111文件组件门禁、47项共享逻辑、共享墙面/实际Mac页面回归、iOS定向渲染检查（连续切换/旋转/减弱动态、零capture、轮询零海报style写入、18次正反平移可见节点覆盖）、容器平移与解码连续性；iOS模拟器Debug与device Release无签名构建、Android体验APK构建。
+- 真机待验：横线消失与长时间滑动体感/系统GPU压力。没有用户设备上的Instruments采样，不能宣称横线根因已被系统级证明或帧率达到固定数值。
+- 真实WKWebView完整回归通过：`ios/shared-ui/A1A82D8E-910C-4068-8FC1-1D8D5F21A010/20261029T091341Z-21611/`，含三样式零截图、往返滑动封面、缓存清理/重建、1037首完整/增量扫描、MP3/FLAC时钟和连续切歌。保留两次初轮失败日志：前置新增探测超过播放栏闲置时限；缓存清点时新目录封面仍在生成。分别显式初始化展开态、等待新目录全部显示资源完成后重跑通过，没有放宽原断言。

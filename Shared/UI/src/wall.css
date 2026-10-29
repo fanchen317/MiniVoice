@@ -14,7 +14,7 @@
 .style-wall .mv-preview-note{position:absolute;left:90px;bottom:8px;z-index:10;font-size:10px;color:#fff;background:#0006;padding:2px 8px;border-radius:8px;pointer-events:none}
 .style-wall [data-wall-control=settings]{position:absolute;z-index:12;right:calc(var(--mv-safe-right,0px) + 14px);bottom:calc(var(--mv-safe-bottom,0px) + 112px);width:56px;height:56px;transition:bottom .35s,opacity .2s}
 .style-wall[data-dock-compact=true] [data-wall-control=settings]{bottom:calc(var(--mv-safe-bottom,0px) + 14px)}
-.style-wall[data-wall-expanded=true] .mv-toolbar,.style-wall[data-wall-expanded=true] [data-wall-control=settings]{opacity:0;pointer-events:none;visibility:hidden}
+/* Chrome retains its nodes while independently leaving each screen edge. */
 .style-wall .mv-drawer{background:linear-gradient(135deg,#ffffff20,transparent 70%),var(--glass);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5)}
 .mv-cover-wall{position:absolute;inset:0;overflow:clip;touch-action:none;user-select:none;min-height:0;background:#0e1915}
 .mv-wall-plane{position:absolute;inset:0;pointer-events:none}
@@ -196,3 +196,24 @@
 }
 
 [data-presentation=mobile][data-dock-geometry-ready=false] [data-wall-control=settings]{transition:none!important}
+
+/* iOS pan layer contains viewport-local posters, never a world-sized texture. */
+.mv-wall-plane[data-composited-pan=true]{will-change:transform;transform-origin:0 0}
+
+/* Mobile artwork immersion: independent translate preserves search/dock morph transforms. */
+[data-presentation=mobile].style-wall{--wall-chrome-motion:420ms;--wall-chrome-ease:cubic-bezier(.22,1,.36,1)}
+[data-presentation=mobile].style-wall .mv-toolbar>:is(.mv-button,.mv-back,.mv-search-control){translate:0 0;opacity:1;visibility:visible;transition:width .38s cubic-bezier(.2,.8,.2,1),border-radius .38s cubic-bezier(.2,.8,.2,1),translate var(--wall-chrome-motion) var(--wall-chrome-ease),opacity 280ms ease,visibility 0s}
+[data-presentation=mobile].style-wall [data-wall-control=settings]{translate:0 0;opacity:1;visibility:visible;transition:bottom .35s,translate var(--wall-chrome-motion) var(--wall-chrome-ease),opacity 280ms ease,visibility 0s}
+.mv-workspace[data-presentation=mobile].style-wall .mv-wall-dock.mv-dock{translate:0 0;opacity:1;visibility:visible;transition:width .4s,height .4s,border-radius .4s,left .4s,transform .4s,translate var(--wall-chrome-motion) var(--wall-chrome-ease),opacity 280ms ease,visibility 0s}
+[data-presentation=mobile].style-wall[data-wall-chrome=hidden] .mv-toolbar>:is(.mv-button,.mv-back){translate:calc(-100% - var(--mv-safe-left,0px) - 40px) 0}
+[data-presentation=mobile].style-wall[data-wall-chrome=hidden] .mv-search-control{translate:calc(100% + var(--mv-safe-right,0px) + 40px) 0}
+[data-presentation=mobile].style-wall[data-wall-chrome=hidden] [data-wall-control=settings]{translate:0 calc(100% + var(--mv-safe-bottom,0px) + 140px)}
+.mv-workspace[data-presentation=mobile].style-wall[data-wall-chrome=hidden] .mv-wall-dock.mv-dock{translate:0 calc(100% + var(--mv-safe-bottom,0px) + 32px)}
+[data-presentation=mobile].style-wall[data-wall-chrome=hidden] :is(.mv-toolbar>:is(.mv-button,.mv-back,.mv-search-control),[data-wall-control=settings],.mv-wall-dock){opacity:0;visibility:hidden;pointer-events:none}
+/* Visibility changes only after the travel finishes; inert blocks interaction immediately. */
+[data-presentation=mobile].style-wall[data-wall-chrome=hidden] .mv-toolbar>:is(.mv-button,.mv-back,.mv-search-control){transition:width .38s cubic-bezier(.2,.8,.2,1),border-radius .38s cubic-bezier(.2,.8,.2,1),translate var(--wall-chrome-motion) var(--wall-chrome-ease),opacity 280ms ease,visibility 0s var(--wall-chrome-motion)}
+[data-presentation=mobile].style-wall[data-wall-chrome=hidden] [data-wall-control=settings]{transition:bottom .35s,translate var(--wall-chrome-motion) var(--wall-chrome-ease),opacity 280ms ease,visibility 0s var(--wall-chrome-motion)}
+.mv-workspace[data-presentation=mobile].style-wall[data-wall-chrome=hidden] .mv-wall-dock.mv-dock{transition:width .4s,height .4s,border-radius .4s,left .4s,transform .4s,translate var(--wall-chrome-motion) var(--wall-chrome-ease),opacity 280ms ease,visibility 0s var(--wall-chrome-motion)}
+@media(prefers-reduced-motion:reduce){
+ [data-presentation=mobile].style-wall :is(.mv-toolbar>:is(.mv-button,.mv-back,.mv-search-control),[data-wall-control=settings],.mv-wall-dock){transition:none!important}
+}

@@ -87,3 +87,35 @@
 /* Keep mobile text entry at least 16px so WKWebView does not zoom/pan the
    entire music wall on focus; user pinch and accessibility scaling remain enabled. */
 .mv-workspace[data-presentation=mobile] :is(input,textarea){font-size:max(16px,1em)}
+
+/* Navigation typography has its own contrast palette; wallpaper tint must not
+   make secondary labels disappear or turn the active row into dim green. */
+.mv-workspace[data-presentation=mobile] .mv-drawer{
+ --mv-nav-ink:#17212b;--mv-nav-secondary:#35414e;--mv-nav-active:#00684e;
+ --mv-nav-selected:var(--mv-panel-selection);
+ font-family:system-ui,-apple-system,"Roboto","Noto Sans CJK SC",sans-serif;
+ font-synthesis:none;line-height:1.45;
+}
+.mv-workspace[data-presentation=mobile].theme-dark .mv-drawer{
+ --mv-nav-ink:#f7f9fc;--mv-nav-secondary:#d2d9e3;--mv-nav-active:#91f0ce;
+ --mv-nav-selected:var(--mv-panel-selection);
+}
+.mv-workspace[data-presentation=mobile] .mv-drawer header strong{color:var(--mv-nav-ink);font-size:21px;font-weight:600;line-height:1.25;letter-spacing:0}
+.mv-workspace[data-presentation=mobile] .mv-drawer header small{color:var(--mv-nav-secondary);font-size:12px;font-weight:400;line-height:1.5;opacity:1}
+.mv-workspace[data-presentation=mobile] .mv-drawer nav :is(button,h3){color:var(--mv-nav-ink);text-shadow:none;letter-spacing:0;opacity:1}
+.mv-workspace[data-presentation=mobile] .mv-drawer nav button{font-size:16px;font-weight:500;line-height:1.5;gap:16px}
+.mv-workspace[data-presentation=mobile] .mv-drawer nav>button[aria-current=page]{color:var(--mv-nav-active);background:transparent;background-image:none;box-shadow:none;font-weight:600;border-color:color-mix(in srgb,var(--mv-nav-active) 28%,transparent)}
+.mv-workspace[data-presentation=mobile] .mv-drawer nav h3{color:var(--mv-nav-secondary);font-size:12px;font-weight:500;line-height:1.5;padding:18px 16px 8px}
+
+/* Android draws system icons above this app-owned backdrop. Its measured safe
+   inset is the height; no content padding or touch surface is introduced. */
+.mv-workspace[data-presentation=mobile]>.mv-statusbar-blur{position:absolute;inset:0 0 auto;height:var(--mv-safe-top,0px);z-index:90;pointer-events:none}
+/* Fade the sampled blur itself, rather than ending a tinted rectangle at the
+   safe-area boundary. A zero inset keeps the entire sampled layer absent. */
+.mv-workspace[data-presentation=mobile]>.mv-statusbar-blur::before{content:'';position:absolute;inset:0 0 auto;height:calc(100% + min(24px,var(--mv-safe-top,0px)));backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);background:linear-gradient(#f6f8fa24,transparent);mask-image:linear-gradient(to bottom,#000 0%,#000 35%,#000b 58%,#0005 78%,transparent 100%);-webkit-mask-image:linear-gradient(to bottom,#000 0%,#000 35%,#000b 58%,#0005 78%,transparent 100%)}
+.mv-workspace[data-presentation=mobile].theme-dark>.mv-statusbar-blur::before{background:linear-gradient(#14192240,transparent)}
+.mv-workspace[data-wall-expanded=true]>.mv-statusbar-blur{display:none}
+@media(orientation:landscape){.mv-workspace[data-presentation=mobile]>.mv-statusbar-blur{display:none}}
+
+/* Wallpaper is independent of the app theme: wall system icons are white. */
+.mv-workspace[data-presentation=mobile].style-wall>.mv-statusbar-blur::before{background:linear-gradient(#11182770,transparent)}

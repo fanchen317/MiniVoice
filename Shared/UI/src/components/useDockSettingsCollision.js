@@ -11,7 +11,9 @@ export function useDockSettingsCollision(root,style){
    if(!active)return;
    const bounds=node.getBoundingClientRect(),button=settings.getBoundingClientRect(),safe=Number.parseFloat(getComputedStyle(node).getPropertyValue('--mv-safe-bottom'))||0;
    const resting={left:button.left,top:bounds.bottom-safe-14-button.height,width:button.width,height:button.height};
-   const collision=dockOverlapsSettings(dock.getBoundingClientRect(),resting);
+   // Chrome travel must not change the resting collision decision.
+   const rect=dock.getBoundingClientRect(),bottom=parseFloat(getComputedStyle(dock).bottom)||0;
+   const collision=dockOverlapsSettings({...rect.toJSON(),top:bounds.bottom-bottom-rect.height},resting);
    node.dataset.dockOverlap=String(collision);
   };
   // Width transitions produce ResizeObserver callbacks for intermediate frames.

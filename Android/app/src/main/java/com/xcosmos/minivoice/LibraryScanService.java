@@ -113,6 +113,7 @@ public final class LibraryScanService extends Service {
         String title=value.stage+(ongoing&&value.total>0?" · "+ScanStatusText.percent(value.completed,value.total)+"%":"");
         String detail=value.detail+(ongoing&&value.total>0?"\n已处理 "+value.completed+" / "+value.total+" 首":"");
         Notification.Builder builder=new Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_scan_notification).setContentTitle(title).setContentText(detail).setStyle(new Notification.BigTextStyle().bigText(detail)).setContentIntent(openIntent()).setOnlyAlertOnce(true).setOngoing(ongoing).setAutoCancel(!ongoing).setCategory(ongoing?Notification.CATEGORY_PROGRESS:Notification.CATEGORY_STATUS);
+        if(ongoing&&Build.VERSION.SDK_INT>=31)builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE);
         if(ongoing){builder.setSubText(value.total>0?value.completed+" / "+value.total+" 首":"音乐库扫描");builder.setProgress(Math.max(0,value.total),Math.max(0,value.completed),value.total<=0);}
         else builder.setTimeoutAfter(60*60*1000L);
         return builder.build();

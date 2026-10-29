@@ -44,3 +44,32 @@
 .mv-workspace[data-presentation=mobile] .mv-button.selected:has([data-icon=heart]){color:#f04f64}
 .mv-workspace[data-presentation=mobile] .wp-controls>.mv-button:active{background:#ffffff18!important;scale:.88}
 .mv-workspace[data-presentation=mobile] .wp-dock-content>.mv-slider{width:calc(100% - 16px);align-self:center}
+
+/* Wall dock metadata stays within its flexible slot beside transport controls. */
+.mv-workspace[data-presentation=mobile].style-wall .wp-dock-row>.mv-now{gap:10px;text-align:left;font-synthesis:none}
+.mv-workspace[data-presentation=mobile].style-wall .wp-dock-row>.mv-now>span:not(.mv-small-art){display:flex;flex-direction:column;gap:3px;min-width:0;overflow:hidden}
+.mv-workspace[data-presentation=mobile].style-wall .wp-dock-row .mv-now strong{display:block;font-size:14px;font-weight:600;line-height:1.35;letter-spacing:0;color:var(--mv-material-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mv-workspace[data-presentation=mobile].style-wall .wp-dock-row .mv-now>span>span{display:block;font-size:12px;font-weight:400;line-height:1.4;letter-spacing:0;color:var(--mv-material-text);opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Metadata keeps the original dock geometry; only text rendering changes. */
+.mv-workspace[data-presentation=mobile].style-wall .wp-dock-row .mv-now strong{font-weight:500;color:var(--mv-material-text)}
+.mv-workspace[data-presentation=mobile].style-wall .wp-dock-row .mv-now>span>span{opacity:1;color:var(--mv-material-text);font-weight:400}
+
+/* Touch content never enters WebKit text selection; editors keep native input semantics. */
+[data-presentation=mobile],[data-presentation=mobile] *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+[data-presentation=mobile] :is(input,textarea,[contenteditable=true]),[data-presentation=mobile] [contenteditable=true] *{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+/* Avoid a separate filtered text raster at the clipped upcoming-line boundary. */
+[data-presentation=mobile] .mv-kinetic-upcoming>div+div{filter:none;opacity:.28}
+
+/* Search expansion conceals a toolbar action only while their actual bounds overlap. */
+[data-presentation=mobile]:not([data-wall-chrome=hidden]) .mv-toolbar.search-open>:is(.mv-button:first-child,.mv-back){opacity:1;visibility:visible;pointer-events:auto}
+[data-presentation=mobile]:not([data-wall-chrome=hidden]) .mv-toolbar.search-open>:is(.mv-button:first-child,.mv-back)[data-search-occluded=true]{opacity:0;visibility:hidden;pointer-events:none}
+
+/* Landscape iOS chrome balances the home-indicator clearance on both edges.
+   Preserve the native left/right insets and the full-bleed artwork viewport. */
+@media(orientation:landscape){
+ [data-presentation=mobile][data-host=iOS]{--mv-chrome-y:max(var(--mv-safe-top,0px),var(--mv-safe-bottom,0px))}
+ [data-presentation=mobile][data-host=iOS].style-wall .mv-toolbar{top:calc(var(--mv-chrome-y) + 14px)}
+ [data-presentation=mobile][data-host=iOS] .mv-drawer-shade{padding-top:calc(var(--mv-chrome-y) + 12px);padding-bottom:calc(var(--mv-chrome-y) + 12px)}
+ [data-presentation=mobile][data-host=iOS]:not(.style-wall){padding-top:calc(var(--mv-chrome-y) + 8px);padding-bottom:calc(var(--mv-chrome-y) + 8px)}
+}

@@ -127,10 +127,9 @@
 .mv-lyric-lines button:not([data-active=true])>.lyric-content{background-image:none!important;color:var(--muted)!important}
 
 /* Mobile drawer: the artwork stays edge-to-edge behind a recessed content sheet.
-   Only transforms move; inner strokes never read as extra floating panels. */
+   Only transforms move; component fills, strokes and shadows remain unchanged. */
 [data-presentation=mobile]>.mv-scene{transition:transform 320ms cubic-bezier(.22,1,.36,1);border-radius:0}
 [data-presentation=mobile]>.mv-scene.is-drawer-behind{transform:translate(10px,8px) scale(.96);box-shadow:none}
-[data-presentation=mobile]>.mv-scene.is-drawer-behind :is(.mv-glass,.mv-library,.mv-lyrics,.mv-dock,.mv-search-control,.mv-button,.mv-wall-focused,.mv-wall-dock){border-color:transparent!important;box-shadow:none!important;outline:none!important}
 [data-presentation=mobile]>.mv-scene.is-drawer-behind .mv-wall-current-outline{visibility:hidden}
 [data-presentation=mobile] .mv-drawer-material{contain:paint}
 [data-presentation=mobile] .mv-drawer>header{border:0;margin-bottom:12px;padding:0 2px 14px}
@@ -176,7 +175,6 @@
    way to the screen edges. Neither mode adds a duplicate wallpaper layer. */
 [data-presentation=mobile]>.mv-scene.is-drawer-behind{border-radius:24px}
 [data-presentation=mobile].style-wall>.mv-scene.is-drawer-behind{transform:none;border-radius:0;overflow:hidden}
-[data-presentation=mobile]:not(.style-wall)>.mv-scene.is-drawer-behind :is(.mv-glass,.mv-library,.mv-lyrics,.mv-dock,.mv-search-control,.mv-button){background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;border-color:transparent!important;box-shadow:none!important;outline:none!important}
 .wp-scale-controls .mv-slider{--mv-slider-knob-size:16px}
 /* One actual backdrop sample + one tint, matching the wall toolbar material. */
 [data-presentation=mobile].style-wall .mv-drawer,[data-presentation=mobile] .mv-modal{background:var(--mv-material-shine),var(--mv-material-tint)!important;backdrop-filter:blur(var(--mv-material-blur)) saturate(var(--mv-material-saturation,1.4)) brightness(var(--mv-panel-brightness,1))!important;-webkit-backdrop-filter:blur(var(--mv-material-blur)) saturate(var(--mv-material-saturation,1.4)) brightness(var(--mv-panel-brightness,1))!important}
@@ -258,3 +256,7 @@
 }
 .mv-workspace[data-presentation=mobile][data-dialog-placement=center] .mv-modal-shade{--mv-dialog-gap:24px}
 .mv-workspace[data-presentation=mobile] .mv-modal-shade[data-visual-keyboard=true]{padding-bottom:var(--mv-dialog-gap,12px)}
+
+/* The document backing must match the app while native rotation resizes the web surface. */
+html,body,#root{background:var(--mv-canvas-bg,#182720)}
+@supports(height:100dvh){html,body,#root{height:100dvh}}

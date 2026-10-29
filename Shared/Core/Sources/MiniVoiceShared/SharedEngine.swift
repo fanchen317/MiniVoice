@@ -7,7 +7,16 @@ public enum SharedEngine {
         public let ms: Int64; public let text: String; public let translation: String; public let words: [Word]
         public var displayText: String {translation.isEmpty ? text : text + "\n" + translation}
     }
-    public enum Failure: Error {case allocation, invalidResponse, rejected(String)}
+    public enum Failure: LocalizedError {
+        case allocation, invalidResponse, rejected(String)
+        public var errorDescription: String? {
+            switch self {
+            case .allocation: return "共享引擎内存分配失败"
+            case .invalidResponse: return "共享引擎返回无效数据"
+            case .rejected(let reason): return reason
+            }
+        }
+    }
     /// C ABI transports UTF-8 JSON only; platform storage/audio/window objects stay outside this module.
     public static func executeJSON(_ request: String) throws -> String {
         guard let response = request.withCString({ mv_core_execute($0) }) else {throw Failure.allocation}

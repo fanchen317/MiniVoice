@@ -166,3 +166,73 @@ actor DiagnosticStore {
         return next
     }
 }
+
+/// FLAC's native metadata blocks are not consistently exposed as AVFoundation commonMetadata.
+struct FLACMetadata {
+    var title: String?
+    var artist: String?
+    var album: String?
+    var lyrics: String?
+    var duration: Double?
+    var artwork: Data?
+
+    static func read(_ url: URL) throws -> FLACMetadata {
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        func bytes(_ count: Int) throws -> Data {
+            guard let data = try file.read(upToCount: count), data.count == count else { throw CocoaError(.fileReadCorruptFile) }
+            return data
+        }
+        guard try bytes(4) == Data("fLaC".utf8) else { throw CocoaError(.fileReadCorruptFile) }
+        var result = FLACMetadata(), total = 0, front = false
+        while true {
+            let header = [UInt8](try bytes(4)), last = header[0] & 0x80 != 0, type = header[0] & 0x7f
+            let count = Int(header[1]) << 16 | Int(header[2]) << 8 | Int(header[3])
+            total += count + 4
+            guard total <= 64 * 1024 * 1024 else { throw CocoaError(.fileReadTooLarge) }
+            if type == 0 || type == 4 || type == 6 {
+                let block = [UInt8](try bytes(count))
+                var offset = 0
+                func number(_ little: Bool = false) throws -> Int {
+                    guard offset + 4 <= block.count else { throw CocoaError(.fileReadCorruptFile) }
+                    let parts = Array(block[offset..<offset + 4]); offset += 4
+                    return (little ? Array(parts.reversed()) : parts).reduce(0) { ($0 << 8) | Int($1) }
+                }
+                func take(_ n: Int) throws -> Data {
+                    guard n >= 0, n <= block.count - offset else { throw CocoaError(.fileReadCorruptFile) }
+                    defer { offset += n }; return Data(block[offset..<offset + n])
+                }
+                if type == 0 {
+                    guard count == 34 else { throw CocoaError(.fileReadCorruptFile) }
+                    let packed = block[10..<18].reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+                    let rate = packed >> 44, samples = packed & 0xfffffffff
+                    if rate > 0 { result.duration = Double(samples) / Double(rate) }
+                } else if type == 4 {
+                    _ = try take(number(true)); let entries = try number(true)
+                    guard entries <= block.count / 4 else { throw CocoaError(.fileReadCorruptFile) }
+                    for _ in 0..<entries {
+                        let text = String(decoding: try take(number(true)), as: UTF8.self)
+                        let pair = text.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+                        guard pair.count == 2 else { continue }
+                        let value = String(pair[1])
+                        switch pair[0].uppercased() {
+                        case "TITLE": result.title = value
+                        case "ARTIST": result.artist = value
+                        case "ALBUM": result.album = value
+                        case "LYRICS", "UNSYNCEDLYRICS": result.lyrics = value
+                        default: break
+                        }
+                    }
+                } else {
+                    let pictureType = try number()
+                    _ = try take(number()); _ = try take(number())
+                    for _ in 0..<4 { _ = try number() }
+                    let picture = try take(number())
+                    if !picture.isEmpty && (!front || pictureType == 3) { result.artwork = picture; front = pictureType == 3 }
+                }
+            } else { try file.seek(toOffset: file.offset() + UInt64(count)) }
+            if last { break }
+        }
+        return result
+    }
+}

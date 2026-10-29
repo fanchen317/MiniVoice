@@ -3,8 +3,39 @@ import Combine
 import MediaPlayer
 import UIKit
 
+private final class AudioLoadRequest: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+    func check() throws { lock.lock(); let value = cancelled; lock.unlock(); if value { throw CancellationError() } }
+}
+
+/// One prepared file owns its directory grant through asynchronous loading and playback.
+private final class PreparedLocalAudio: @unchecked Sendable {
+    let audio: AVAudioPlayer
+    private let root: URL
+    private let accessing: Bool
+    init(root: URL, relative: String) throws {
+        self.root = root; accessing = root.startAccessingSecurityScopedResource()
+        do {
+            let url = root.appendingPathComponent(relative).standardizedFileURL
+            guard url.resolvingSymlinksInPath().path.hasPrefix(root.resolvingSymlinksInPath().path + "/") else { throw CocoaError(.fileReadNoPermission) }
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            try AVAudioSession.sharedInstance().setActive(true)
+            var value: AVAudioPlayer?, failure: Error?, coordinationError: NSError?
+            NSFileCoordinator(filePresenter: nil).coordinate(readingItemAt: url, options: [], error: &coordinationError) { readable in
+                do { value = try AVAudioPlayer(contentsOf: readable) } catch { failure = error }
+            }
+            if let error = coordinationError ?? failure as NSError? { throw error }
+            guard let value, value.prepareToPlay() else { throw CocoaError(.fileReadCorruptFile) }
+            audio = value
+        } catch { if accessing { root.stopAccessingSecurityScopedResource() }; throw error }
+    }
+    deinit { if accessing { root.stopAccessingSecurityScopedResource() } }
+}
+
 @MainActor
-final class MusicPlayer: ObservableObject {
+final class MusicPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var current: Song?
     @Published private(set) var isPlaying = false
     @Published private(set) var position: TimeInterval = 0
@@ -19,18 +50,22 @@ final class MusicPlayer: ObservableObject {
     @Published private(set) var navigationAction = ""
     @Published private(set) var navigationToken = 0
     private var sessionObservers: [NSObjectProtocol] = []
-    private var playbackObserver: NSKeyValueObservation?
+    private var clock: Timer?
     private var resumeAfterInterruption = false
-    private var player: AVPlayer?
-    private var timeObserver: Any?
-    private var endObserver: NSObjectProtocol?
-    private var statusObserver: NSKeyValueObservation?
-    private var accessURL: URL?
+    private var player: AVAudioPlayer?
+    private var prepared: PreparedLocalAudio?
+    private var loadTask: Task<Void, Never>?
+    private var loadID = UUID()
+    private var loadRequest: AudioLoadRequest?
+    private var wantsPlayback = false
+    private var pendingPosition: TimeInterval?
+    private let audioWorker = DispatchQueue(label: "MiniVoice.audio-prepare", qos: .userInitiated)
     private weak var library: MusicLibrary?
     private var nowPlayingArtwork: MPMediaItemArtwork?
     private var artworkTask: Task<Void, Never>?
 
-    init() {
+    override init() {
+        super.init()
         if let saved = UserDefaults.standard.object(forKey: "playbackMode") as? Int {
             mode = PlaybackMode(rawValue: saved) ?? .sequential
         }
@@ -57,68 +92,62 @@ final class MusicPlayer: ObservableObject {
         })
     }
 
-    var duration: TimeInterval { current?.duration ?? 0 }
+    var duration: TimeInterval { player?.duration ?? current?.duration ?? 0 }
+    var playbackState: String { loadTask != nil ? "loading" : player == nil ? "unloaded" : player!.isPlaying ? "playing" : "paused" }
 
     func play(_ song: Song, queue songs: [Song], library: MusicLibrary) {
         self.library = library
         queue = songs.contains(song) ? songs : [song] + songs
+        if current?.id == song.id, player != nil || loadTask != nil {
+            wantsPlayback = true
+            if let player { isPlaying = player.play(); updateNowPlaying() }
+            return
+        }
         load(song, autoplay: true)
     }
 
     private func load(_ song: Song, autoplay: Bool) {
-        guard let library,
-              let root = library.folderURL(for: song),
-              let url = library.url(for: song) else {
+        guard let library, let root = library.folderURL(for: song) else {
             errorMessage = "音乐文件夹不可访问，请在设置中重新选择。"
             return
         }
         clearPlayer()
-        let accessing = root.startAccessingSecurityScopedResource()
-        accessURL = accessing ? root : nil
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            errorMessage = "无法启动音频播放：\(error.localizedDescription)"
-            return
-        }
-        current = song
-        position = 0
+        current = song; position = 0; wantsPlayback = autoplay; errorMessage = nil
         refreshNowPlayingArtwork(song)
-        let item = AVPlayerItem(url: url)
-        statusObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
-            guard item.status == .failed else { return }
-            Task { @MainActor [weak self] in
-                guard self?.player?.currentItem === item else { return }
-                self?.pause()
-                self?.errorMessage = "无法播放此音频，格式或编码可能不受 iOS 支持：" + (item.error?.localizedDescription ?? "请检查文件是否完整")
-            }
-        }
-        let next = AVPlayer(playerItem: item)
-        player = next
-        playbackObserver = next.observe(\.timeControlStatus, options: [.new]) { [weak self] observed, _ in
-            Task { @MainActor [weak self] in
-                guard let self, self.player === observed else { return }
-                self.isPlaying = observed.timeControlStatus == .playing || observed.timeControlStatus == .waitingToPlayAtSpecifiedRate
+        let request = loadID, worker = audioWorker, ticket = AudioLoadRequest()
+        loadRequest = ticket
+        loadTask = Task { [weak self] in
+            do {
+                let file: PreparedLocalAudio = try await withCheckedThrowingContinuation { continuation in
+                    worker.async {
+                        autoreleasepool { continuation.resume(with: Result { try ticket.check(); return try PreparedLocalAudio(root: root, relative: song.relativePath) }) }
+                    }
+                }
+                guard !Task.isCancelled, let self, self.loadID == request else { return }
+                self.loadTask = nil; self.prepared = file
+                let next = file.audio; self.player = next; next.delegate = self
+                if let value = self.pendingPosition { next.currentTime = min(next.duration, value); self.pendingPosition = nil }
+                if self.wantsPlayback {
+                    guard next.play() else { throw NSError(domain: "MiniVoice.Audio", code: 1, userInfo: [NSLocalizedDescriptionKey: "音频设备未能启动播放"]) }
+                    library.recordPlayed(song)
+                }
+                self.isPlaying = next.isPlaying
+                let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        guard let self, let audio = self.player else { return }
+                        self.position = audio.currentTime; self.isPlaying = audio.isPlaying
+                        self.updateNowPlaying()
+                    }
+                }
+                self.clock = timer; RunLoop.main.add(timer, forMode: .common)
+                self.updateNowPlaying()
+            } catch {
+                guard !Task.isCancelled, let self, self.loadID == request else { return }
+                self.loadTask = nil; self.player = nil; self.prepared = nil; self.isPlaying = false
+                let detail = error as NSError
+                self.errorMessage = "无法读取或解码歌曲（\(detail.domain) \(detail.code)）：\(detail.localizedDescription)。请确认目录授权仍有效。"
                 self.updateNowPlaying()
             }
-        }
-        timeObserver = next.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main) { [weak self] time in
-            Task { @MainActor [weak self] in
-                guard let self, self.player === next else { return }
-                self.position = max(0, time.seconds.isFinite ? time.seconds : 0)
-                self.updateNowPlaying()
-            }
-        }
-        endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.didFinish() }
-        }
-        if autoplay {
-            next.play()
-            isPlaying = true
-            library.recordPlayed(song)
-        } else {
-            isPlaying = false
         }
         updateNowPlaying()
     }
@@ -141,23 +170,29 @@ final class MusicPlayer: ObservableObject {
     }
 
     func toggle() {
-        guard let player else { return }
-        if isPlaying { player.pause() } else { player.play() }
-        isPlaying.toggle()
+        if loadTask != nil { wantsPlayback.toggle(); return }
+        guard let player else {
+            if let library, let song = current ?? library.songs.first { play(song, queue: queue.isEmpty ? library.songs : queue, library: library) }
+            else { errorMessage = "请先选择一首歌曲" }
+            return
+        }
+        if player.isPlaying { player.pause() } else if !player.play() { errorMessage = "音频设备未能恢复播放" }
+        isPlaying = player.isPlaying
         updateNowPlaying()
     }
 
     func pause() {
         resumeAfterInterruption = false
+        wantsPlayback = false
         player?.pause()
         isPlaying = false
         updateNowPlaying()
     }
 
     func seek(to seconds: TimeInterval) {
-        guard let player else { return }
         let value = max(0, min(seconds, max(duration, 0)))
-        player.seek(to: CMTime(seconds: value, preferredTimescale: 600))
+        guard let player else { if loadTask != nil { pendingPosition = value; position = value }; return }
+        player.currentTime = value
         position = value
         updateNowPlaying()
     }
@@ -184,19 +219,31 @@ final class MusicPlayer: ObservableObject {
     func acknowledgeNavigation(_ token: Int) { if token == navigationToken { navigationAction = "" } }
 
     private func clearPlayer() {
-        if let timeObserver { player?.removeTimeObserver(timeObserver) }
-        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
-        statusObserver?.invalidate(); playbackObserver?.invalidate(); playbackObserver = nil
-        player?.pause()
+        loadRequest?.cancel(); loadRequest = nil
+        loadID = UUID(); loadTask?.cancel(); loadTask = nil; wantsPlayback = false; pendingPosition = nil
+        clock?.invalidate(); clock = nil
+        player?.delegate = nil
+        player?.stop()
         player = nil
         isPlaying = false
         current = nil
         position = 0
-        timeObserver = nil
-        endObserver = nil
-        statusObserver = nil
-        accessURL?.stopAccessingSecurityScopedResource()
-        accessURL = nil
+        prepared = nil
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ audio: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor [weak self] in
+            guard let self, self.player === audio else { return }
+            if flag { self.didFinish() } else { self.pause(); self.errorMessage = "歌曲解码未能完成" }
+        }
+    }
+
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ audio: AVAudioPlayer, error: Error?) {
+        let message = error?.localizedDescription ?? "无法解码此音频"
+        Task { @MainActor [weak self] in
+            guard let self, self.player === audio else { return }
+            self.pause(); self.errorMessage = "音频解码失败：" + message
+        }
     }
 
     private func configureRemoteCommands() {

@@ -311,3 +311,44 @@ Wall 的容器测量保留计算样式中的小数 CSS 尺寸，避免 Android �
 ### Modal 可视区域（2026-10-29）
 
 Modal 复用 useDialogViewport + dialogViewport；由弹窗层持有 `--mv-dialog-top/height` 和 `data-visual-keyboard`，仅 mobile 皮肤消费。visualViewport 的 resize/scroll、窗口 resize 及 minivoice-insets 合并到单帧测量，卸载取消帧并清理监听/变量。移动端文本框保持至少 16px，防止 WKWebView 聚焦时自动缩放整页，但保留用户缩放和辅助功能字号。键盘只改变弹窗可用区域，页面/播放条不跟随移动；Android 宿主发布窗口与 WebView 的实际 IME 交集为 --mv-keyboard-bottom，已缩小布局高度时交集为 0，不重复扣除键盘。保留无键盘时的 85% 高度上限及平板居中间距。没有 visualViewport 时退回窗口。原有 ActionButton、SheetDrag、DialogBoundary 和 ScrollRail 不变；触控/键鼠、忙碌/错误与焦点语义仍由它们承担。此测量不添加动画；按系统可视区域直接更新，支持旋转和中途关闭，减弱动态效果无需额外运动。验证包含纯几何、iOS 系统键盘及共享实际页面回归，真机浮动键盘仍需单独验收。
+
+- 2026-10-29 mobile侧栏导航排版：mv-nav-ink/secondary/active/selected/wash独立变量控制深浅层次，不沿用封面按钮的颜色。主导航16px中等字重、选中600，副标题及分组保持不透明；font-synthesis:none避免合成粗体。保留原命中区、SVG和布局/动画，玻璃中性wash缓冲封面变化。三样式深浅截图回归通过，实体Android字体与动态对比度待验收。
+
+- 侧栏排版回调：撤回新增mv-nav-wash，沿用原玻璃采样与轻选中底色，保留文字层次。mobile音乐墙dock元信息使用14/12px标题/歌手、600/400字重，3px行距、10px封面间隔，文字槽min-width:0及单行省略。颜色沿用材质变量，尺寸不影响传输按钮的44px命中区。
+
+### ScanStatus 扫描提示
+- `scan-status` 由宿主 snapshot 控制，Shared/UI 的三种移动样式复用；发现阶段只显示数量，已知总数时显示进度，暂停状态保留查看入口，完成后卸载。
+- 持续提示经 ActionButton 打开原设置弹窗；详情复用同一组件。触控目标至少44px，不拦截画布其他手势，位于弹窗/侧栏下层；浅深色使用材质变量，减少动态效果停止不定进度动画。
+- 通知、后台执行、系统实时活动均由宿主承担，组件不申请系统权限、不自行发起扫描。
+
+- 2026-10-29 用户确认播放栏仅优化字体：保持既有84px布局与按钮位置，标题500、歌手400，取消歌手透明衰减，两行继承材质深浅文字色。侧栏选中行不绘制填充、背景图或阴影，仅文字与轻边框强调；不再依赖选中透明底色推断实际效果。定向DOM检查验证字体及原布局。
+
+- statusbar-backdrop：由Android adapter.statusBarBlur配置启用的纯呈现层，data-mv-component=statusbar-backdrop；无业务状态/事件/焦点/动画，依赖宿主顶部safe变量确定高度，pointer-events:none及aria-hidden。使用18px背景采样模糊与深浅透明渐变，横屏及展开隐藏；不改正文安全区、系统图标和iOS宿主。定向测试检查高度、滤镜、触摸和方向切换；实机GPU合成待回验。
+
+- 旋转底层覆盖：PortablePlayer在style/theme变化时用layout effect同步文档--mv-canvas-bg到应用--bg，html/body/root有非白默认背板并以动态视口高度填充。iOS/Android宿主各自同步底层颜色，纯页面不控制系统旋转或窗口私有接口。Electron逐帧覆盖三样式深浅四尺寸；真实系统旋转合成需两端设备回验。
+
+- Android statusbar-backdrop反馈修正：根节点维持safe-top几何，::before为16px模糊采样及弱深浅色，向下最多延伸24px并通过mask逐段淡出，避免齐边矩形；safe-top为0时不留下尾部。保留无事件、横屏和全屏隐藏契约。此项替代此前18px硬边滤镜实现；实机WebView合成待验收。
+
+
+### 2026-10-29 移动音乐墙四入口退场与返回
+
+适用于 iOS、Android 共用 PortablePlayer / WallDock。useWallChromeMotion 只管理 visible、hidden、entering 三个呈现阶段；插图全屏展开时立即禁止入口交互，侧栏向左、搜索向右、音乐墙设置与播放栏向下移动，420ms 后结束退场。插图缩回的 360ms 结束后才开始返回；定时器在反向操作及卸载时清理，系统减少动态效果时立即到最终状态。普通墙面相机缩放不改变入口状态，保持正式版的行为边界。
+
+播放栏保留同一 section 与 useIdleCollapse 状态；退场、全屏和返回期间暂停空闲计时，不再通过 enabled=false 重置圆形。原来为横条或圆形，返回仍保持该形态；歌曲切换不会在隐藏期间触发形态重置。入口通过 inert/aria-hidden 禁止隐藏后的触控、焦点和辅助激活。translate 独立于搜索展开宽度及播放栏圆形/横条变形；iOS 居中皮肤同样包含退场过渡。设置避让以扣除退场位移的播放栏静止几何计算，避免旋转和大小变化误判碰撞。
+
+验证：test-mobile-wall-chrome.cjs 覆盖两端皮肤×横竖屏×横条/圆形八种组合，检查中间帧、出屏、返回时序、节点/形态保留、快速反向及减少动态效果；真实 iOS WKWebView smoke 增加两种形态停留超3秒后的返回验证。完整原生回归结果与未通过项见验收台账。
+
+### 2026-10-29 SearchControl 触控遮挡与编辑
+
+`search-control` 的开合/查询仍由调用方控制；本地 draft/pending 只承接异步持久化期间的同步输入，关闭/最新值确认后同步，页面身份变化重置。移动工具栏用 ResizeObserver 测量搜索展开动画与兄弟动作的真实相交区域，覆盖时写入 data-search-occluded/inert，收起恢复；卸载移除观察器、事件和临时状态。桌面遮挡策略保持原契约。保留输入框 IME 和原生文本编辑，普通移动内容禁选。横屏iOS只平衡垂直chrome安全距离，不改左右授权安全区。行为验证见 test-mobile-search-overlap.cjs、iOS testContentLongPressAndSearchEditing。
+
+
+### 2026-10-29 侧栏后景保留组件材质
+
+按用户最新截图反馈，撤销普通移动页面抽屉后景“无框”的旧处理：is-drawer-behind 只负责后退缩放、圆角和输入隔离，不重写子组件 background、border、box-shadow、backdrop-filter 或 outline。简易/音乐库中的搜索圆形、歌词卡片与播放栏在打开/关闭侧栏时保留各自原来的材质；主题和布局中本身透明的控件仍按自身皮肤显示。全屏封面墙的相机退后逻辑与当前歌曲高亮的专用抑制规则不变。
+
+验证：test-mobile-drawer-surfaces.cjs 以打开前/打开后/关闭后的真实计算样式逐项比较，两端皮肤×两样式×深浅×横竖共16组合，另检查后景缩放、遮罩与 inert；旧 surface / Android 测试中“必须清空背景轮廓”的断言已按本次用户要求更新为保留组件材质。iOS 宿主 smoke 新增简易和音乐库的同类材质比较。
+
+### 2026-10-29 iOS实时样式过渡与墙面挂载窗口
+
+`transitionStyle`增加宿主选择的`mode`，默认fragments；live只拥有当前页面opacity动画，不持有业务状态。iOS适配器选择live并停用capture；100ms退出、180ms进入，更新只提交一次，旋转/减弱动态清理动画，调用方仍负责最新样式意图和错误。Wall缓存可见集合和海报节点，事件通过最新回调引用，播放时钟不驱动投影；iOS提前360px挂载，140px换窗口，纯平移复用容器，聚焦/展开及缩放保留几何投影。测试与边界见 Docs/IOS_RENDERING_INVESTIGATION.md。
