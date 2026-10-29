@@ -138,7 +138,8 @@ final class DesktopEngine {
         }
         result["canWriteTags"] = track.canWriteTags
         result["lyrics"] = track.lyrics
-        result["lyricsLoading"] = track.lyricsAreLoading
+        result["lyricsLoading"] = track.lyricsAreLoading || library.loadingLyricsID == track.id
+        result["lyricsError"] = library.playingID == track.id ? (library.onlineLyricsError ?? "") : ""
         result["lines"] = track.lyricLines.map { line -> [String: Any] in
             ["time": line.timestamp.map { $0 as Any } ?? NSNull(), "text": line.text,
              "translation": line.translation ?? "", "end": line.endTime.map { $0 as Any } ?? NSNull(),

@@ -366,3 +366,5 @@ Modal 复用 useDialogViewport + dialogViewport；由弹窗层持有 `--mv-dialo
 iOS侧栏深度由保留的`.mv-wall-native-surface`独立scale(.92)承担；原生滚动偏移定义缩放原点，避免修改逐卡布局；快速反转和减弱动态由CSS契约处理。目录选择依赖只跟随当前分组相关集合，Intl.Collator保持中文数字排序行为。回归及测量边界见 IOS_RENDERING_INVESTIGATION.md 后续点击章节。
 
 Mac 歌曲编辑的缺失歌词下载复用 ActionButton 与原有错误区域：仅空歌词草稿显示，busy 阻止重复提交；由 DesktopEngine 搜索及保存，组件接收成功文本更新草稿。无独立动画，沿用桌面皮肤；实际网络、键盘及主题验收待完成。
+
+Mac 歌曲编辑：插图置首并默认打开；移除手动缺失歌词下载按钮。歌词区 loading 由本地读取和当前在线请求共同控制，加载期间隐藏添加按钮；请求 token 隔离切歌，空结果与网络失败分别显示。状态由 MusicLibrary 持有，复用现有 spinner/主题。实际网络及三样式深浅验收待完成。
