@@ -1,4 +1,5 @@
 /** Shared navigation rules; identifiers stay strings on every host. */
+const catalogCollator=new Intl.Collator('zh-CN',{numeric:true});
 export const sections=['音乐库','最近播放','收藏','歌手','专辑'];
 export function catalogFor(snapshot,section,group,query='',sort='title',descending=false){
  const favorites=new Set(snapshot.favorites||[]),recent=snapshot.recent||[],playlist=(snapshot.playlists||[]).find(p=>'歌单:'+p.id===section);
@@ -7,11 +8,11 @@ export function catalogFor(snapshot,section,group,query='',sort='title',descendi
  if(section==='最近播放'){const index=new Map(songs.map(song=>[song.id,song]));songs=recent.map(id=>index.get(id)).filter(Boolean);}
  if(playlist){const included=new Set(playlist.ids);songs=songs.filter(song=>included.has(song.id));}
  const key=value=>String(value||'').normalize('NFKC').toLocaleLowerCase().trim();
- songs=songs.filter(song=>key(`${song.title} ${song.artist} ${song.album}`).includes(key(query)));
+ const normalizedQuery=key(query);if(normalizedQuery)songs=songs.filter(song=>key(`${song.title} ${song.artist} ${song.album}`).includes(normalizedQuery));
  const grouped=!group&&(section==='歌手'||section==='专辑');
  if(grouped){const groups=new Map();for(const song of songs){const name=section==='歌手'?song.artist:song.album;const row=groups.get(name)||{id:name,title:name,count:0,artwork:song.artwork};row.count++;groups.set(name,row);}songs=[...groups.values()];}
  else if(group)songs=songs.filter(song=>(section==='歌手'?song.artist:song.album)===group);
- if(section!=='最近播放')songs=[...songs].sort((a,b)=>{const first=a[sort],second=b[sort];return (typeof first==='number'?first-second:String(first||'').localeCompare(String(second||''),'zh-CN',{numeric:true}))*(descending?-1:1);});
+ if(section!=='最近播放')songs=[...songs].sort((a,b)=>{const first=a[sort],second=b[sort];return (typeof first==='number'?first-second:catalogCollator.compare(String(first||''),String(second||'')))*(descending?-1:1);});
  return {items:songs,grouped};
 }
 export function wallCells(camera,width,height,count){

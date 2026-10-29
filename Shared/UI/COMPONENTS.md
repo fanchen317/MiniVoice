@@ -358,3 +358,9 @@ Modal 复用 useDialogViewport + dialogViewport；由弹窗层持有 `--mv-dialo
 前述live淡入淡出策略已撤回。iOS由宿主选择`host-fragments`，prepare/animate/cancel携带稳定token和共享fragmentSamples；Swift只把相同采样交给原生合成层，不重新定义动效。取消/超时/减弱动态清理片段和桥请求，Android/Mac默认fragments继续共享采样。
 
 `useNativeWallPan`只接触DOM与相机语义回调，不调用宿主；滚动位置为临时展示状态，存储仍由Wall的onCamera负责。一指scroll被动同步；双指开始才启用阻塞move，结束/取消移除；重定位不改变业务相机，布局变化以当前相机重建坐标。禁止对相同scroll偏移赋值以保留惯性；隐藏/阻塞/展开停止背景触摸，清理监听和延迟保存。原生滚动由调用方能力参数启用，Android手势路径保留。测试：test-ios-rendering.cjs、WK shared-host-smoke、XCTest testNativeWallPanAndOriginalStyleFragments。
+
+### 2026-10-29 iOS聚焦与侧栏合成运动
+
+`animateWallReflow`接收节点和纯rectAt进度模型，只拥有临时合成动画与其修改的样式；按33点采样固定盒子transform，封面使用natural ratio/cover与反缩放，文字保持最终排版尺度。取消只恢复自己修改的属性，不覆盖图片解码的visibility等异步状态。Wall继续拥有相机、聚焦、时长、打断和保存；合成阶段不做逐海报尺寸更新，结束恢复真实几何与原生滚动位置，侧栏中断后关闭时续接。高清图在聚焦结束交接。
+
+iOS侧栏深度由保留的`.mv-wall-native-surface`独立scale(.92)承担；原生滚动偏移定义缩放原点，避免修改逐卡布局；快速反转和减弱动态由CSS契约处理。目录选择依赖只跟随当前分组相关集合，Intl.Collator保持中文数字排序行为。回归及测量边界见 IOS_RENDERING_INVESTIGATION.md 后续点击章节。

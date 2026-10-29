@@ -230,3 +230,8 @@
    overscanned poster union into one large offscreen texture. */
 .mv-cover-wall[data-native-pan=true] .mv-wall-plane{will-change:auto}
 .mv-cover-wall[data-native-pan=true][data-pan-blocked=true]{overflow:hidden}
+/* Recess one retained scrolling surface, rather than resize every poster per frame. */
+.mv-wall-native-surface{position:absolute;inset:0;transition:transform 320ms cubic-bezier(.22,1,.36,1)}
+[data-native-pan=true][data-recessed=true] .mv-wall-native-surface{transform:scale(.92)}
+.reduce-motion .mv-wall-native-surface{transition:none}
+@media(prefers-reduced-motion:reduce){.mv-wall-native-surface{transition:none}}

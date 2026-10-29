@@ -53,8 +53,8 @@ export default function PortablePlayer({adapter:provided}){
  // Fill the document's exposed backing during host rotation, before paint.
  useLayoutEffect(()=>{if(!root.current)return;const canvas=getComputedStyle(root.current).getPropertyValue('--bg').trim();document.documentElement.style.setProperty('--mv-canvas-bg',canvas);},[style,theme]);
  const favorites=useMemo(()=>new Set(snapshot.favorites||[]),[JSON.stringify(snapshot.favorites)]),playlist=(snapshot.playlists||[]).find(p=>'歌单:'+p.id===section),heading=group||playlist?.name||section;
- const listing=useMemo(()=>catalogFor(snapshot,section,group,query,page.sort||'title',page.descending),[snapshot.songs,JSON.stringify(snapshot.favorites),JSON.stringify(snapshot.recent),JSON.stringify(snapshot.playlists),section,group,query,page.sort,page.descending]);
- const sidebarSongs=useMemo(()=>catalogFor(snapshot,section==='最近播放'?'最近播放':'音乐库','',query,page.sort||'title',page.descending).items,[snapshot.songs,JSON.stringify(snapshot.recent),section,query,page.sort,page.descending]);
+ const listing=useMemo(()=>catalogFor(snapshot,section,group,query,page.sort||'title',page.descending),[snapshot.songs,section==='收藏'?JSON.stringify(snapshot.favorites):'',section==='最近播放'?JSON.stringify(snapshot.recent):'',playlist?JSON.stringify(playlist.ids):'',section,group,query,page.sort,page.descending]);
+ const sidebarSongs=useMemo(()=>catalogFor(snapshot,section==='最近播放'?'最近播放':'音乐库','',query,page.sort||'title',page.descending).items,[snapshot.songs,section==='最近播放'?JSON.stringify(snapshot.recent):'',section,query,page.sort,page.descending]);
  const lyrics=parsedLyrics.id===snapshot.current&&parsedLyrics.raw===snapshot.rawLyrics?parsedLyrics.lines:EMPTY_LYRICS;
  const showTranslation=appearance.translation!==false,displayLyrics=useMemo(()=>showTranslation?lyrics:lyrics.map(line=>({...line,translation:''})),[lyrics,showTranslation]);
  const player=style==='wall'?Boolean(page.wallOpen??page.player):style==='simple'?!page.catalog:Boolean(page.player),expanded=style==='wall'?Boolean(page.wallExpanded):Boolean(page.lyrics),blocked=drawer||Boolean(modal)||Boolean(manager);

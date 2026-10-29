@@ -48,3 +48,24 @@
 验证：112文件门禁；47项JS；共享墙面与Mac实际页面回归。Chromium真实touch输入验证一指原生滚动、双指只缩放墙面（document scale=1）、正反滑动及边界重定位可见ID完整，碎片动画没有被替换。真实WKWebView中三次切换均收到原生prepare/animate，并验证滚动相机、封面加载与完整宿主回归。原生XCTest使用系统合成手指连续拖动，再实际点按品牌按钮循环三样式，第二轮通过；初轮因测试把自有选择控件当成Button而查找失败，改用其真实Switch语义。
 
 原生测试完整xcresult及截图：`.build/reports/ios/native-pan-xctest2.xcresult`、`native-pan-attachments/`。另录制专用模拟器真实点按视频并以8帧/秒抽样，确认中间帧确有碎片卷曲/散开、结束无残留；文件 `.build/reports/ios/native-fragment-motion/run.mp4` 与contact.jpg。截图/录屏与模拟器用例不能证明用户实体设备的GPU帧率或横线已在所有系统版本消失，仍保留真机验收边界。
+
+## 后续：点击聚焦、双击播放、侧栏深度的开销（2026-10-29）
+
+用户确认原生滚动明显改善，但点击变方形、双击播放和侧栏开合仍卡顿。本轮继续保留原生滚动与碎片切换，只优化这些交互的执行路径。
+
+### 发现与实施
+
+- 原聚焦每帧修改周围海报width/height，并反复进行object-fit裁图和文字布局。iOS改为固定最终布局盒，预采样33点transform/opacity轨迹，由Web Animations合成。图片按原始宽高比计算cover尺寸，并用子层反向缩放抵消父层变形；文字同样反向缩放，避免封面/歌词拉伸。动画期间JS只跟踪用于打断和保存的进度/相机，不逐帧改写海报尺寸；结束回到原有真实几何。图片解码导致的visibility变化不能被动画清理覆盖，因此只恢复动画自己修改的样式属性。
+- 聚焦期间先使用已缓存缩略图，动画完成后再交接高清封面，避免在变形中同时引入大图解码/上传。快速重选、双击和侧栏中断从当前进度续接；侧栏关闭后完成被中断的聚焦，不停在半成形状态。
+- 原侧栏深度每帧重投影整片墙并改变所有海报尺寸。iOS现在对同一个原生滚动表面作320ms scale(.92)过渡，保留全幅墙面的提前挂载采样，工具栏仍独立；侧栏开合不再改写每张封面的宽高。Android旧投影路径保留。
+- 双击播放更新recent时，音乐库页面也会重新排序；比较器每次localeCompare还携带locale/options。目录依赖现在仅包含当前分组需要的recent/favorites/playlist，排序复用Intl.Collator，空查询不再拼接并规范化全部歌曲信息。数字标题、全角查询及非破坏排序有回归断言。
+
+### 可复核数据与范围
+
+本机Electron、440×956窗口、1037首合成目录，同一测试在a8300b8的Wall基线与新实现对比：聚焦约100–330ms采样段海报尺寸变更记录1036→0；侧栏约70–250ms段2142→0。不是“整段动画零布局”，起止会设置真实尺寸。数据存于 `.build/reports/ios/focus-motion/{baseline,optimized}.json`，脚本 `Scripts/tests/test-ios-focus-motion.cjs`；这些是DOM开销记录，不是用户设备FPS。
+
+同机Node、相同1037首随机数字标题、8次目录调用，排序前后ID严格一致：原18.28–21.02ms，新0.84–1.08ms，记录 `focus-motion/catalog-profile.json`。这说明比较器与查询处理的CPU开销减少，不是WebKit/GPU帧率测量。
+
+通过：聚焦结束正方形、动画中图片比例、双击开始播放、侧栏往返、聚焦中断后续接及无遗留海报动画；48项共享JS；共享墙面/实际Mac页面回归；113源文件门禁。真实iPhone专用模拟器XCTest系统手指拖动、单击、双击（原生暂停按钮出现）、侧栏两次往返、三样式切换通过30.10秒；结果 `.build/reports/ios/focus-drawer-xctest.xcresult`。最终真实WK完整报告 `ios/shared-ui/A1A82D8E-910C-4068-8FC1-1D8D5F21A010/20261029T101251Z-50966/`。Debug、device Release无签名、Android体验构建通过。
+
+仍需用户实体设备回验这三种动作的体感与GPU合成；本轮没有修改样式切换视觉，也没有宣称达到固定FPS。
