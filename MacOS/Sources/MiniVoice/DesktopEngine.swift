@@ -189,7 +189,7 @@ final class DesktopEngine {
             "outputDevice": volume.outputDeviceID, "outputDeviceName": volume.deviceName, "outputError": volume.error ?? "",
             "tasks": ["modelStatus": lyricsSync.modelStatus ?? "", "modelProgress": lyricsSync.modelProgress.map { $0 as Any } ?? NSNull(), "downloadingModel": lyricsSync.downloadingModel, "modelFailed": lyricsSync.modelFailed, "hasUnread": lyricsSync.hasUnread,
                       "notice": lyricsSync.alert.map { ["title": $0.title, "message": $0.message, "kind": $0.kind == .failure ? "failure" : "warning"] as [String: Any] } as Any? ?? NSNull()] as [String: Any],
-            "jobs": lyricsSync.jobs.map { ["id": $0.id.uuidString, "title": $0.track.title, "detail": $0.detail, "finished": $0.finished, "failed": $0.failed] as [String: Any] }
+            "jobs": lyricsSync.jobs.map { ["id": $0.id.uuidString, "trackID": $0.track.id.uuidString, "title": $0.track.title, "detail": $0.detail, "finished": $0.finished, "failed": $0.failed] as [String: Any] }
         ]])
     }
 

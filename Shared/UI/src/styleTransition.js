@@ -1,31 +1,35 @@
-import {fragmentKeyframes,fragmentSamples,prepareFragments} from './fragmentMotion.js';
+import {fragmentKeyframes,prepareFragments} from './fragmentMotion.js';
 const reduced=()=>document.documentElement.classList.contains('reduce-motion')||matchMedia('(prefers-reduced-motion:reduce)').matches;
 const frames=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
 /** Same fragment grid, outward curl/rotation, 680ms sweep and icon origin as Mac. */
 export async function transitionStyle(update,root=document.querySelector('.mv-workspace'),capture,mode='fragments'){
  if(reduced()||!root){await update();return;}
- let nativeToken,canvas,frame=0,timer=0,animation,stopWait,updated=false,updateFailure,interrupted=false;
+ let canvas,frame=0,timer=0,animation,stopWait,updated=false,updateFailure,interrupted=false;
  const began=performance.now();let captured=began,decoded=began,prepared=began;
  const fragments=[];
  const commit=async()=>{if(!updated){updated=true;try{await update();}catch(error){updateFailure=error;throw error;}}};
- const cleanup=()=>{if(nativeToken){capture?.({phase:'cancel',token:nativeToken}).catch(()=>{});nativeToken=null;}cancelAnimationFrame(frame);canvas?.remove();fragments.forEach(value=>value.cancel());animation?.cancel();stopWait?.();};
+ const cleanup=()=>{cancelAnimationFrame(frame);canvas?.remove();fragments.forEach(value=>value.cancel());animation?.cancel();stopWait?.();};
  const abort=()=>{interrupted=true;cleanup();};
  const finish=()=>{if(reduced())abort();};
  const media=matchMedia('(prefers-reduced-motion:reduce)'),observer=new MutationObserver(finish);
  media.addEventListener('change',finish);observer.observe(document.documentElement,{attributes:true,attributeFilter:['class']});window.addEventListener('resize',abort);
  document.documentElement.dataset.mvStyleTransition='true';
  try{
-  const icon=root.querySelector('.mv-brand-logo')?.getBoundingClientRect(),origin=icon?{x:icon.x+icon.width/2,y:icon.y+icon.height/2}:{x:36,y:60};
-  if(mode==='host-fragments'&&capture){
-   const cells=prepareFragments(innerWidth,innerHeight,origin,{maxCells:24}).map(cell=>({x:cell.x,y:cell.y,width:cell.width,height:cell.height,delay:cell.delay,frames:fragmentSamples(cell)}));
-   const prepared=await capture({phase:'prepare',cells});
-   nativeToken=prepared?.token;captured=performance.now();
-   if(!nativeToken)throw Error('原生碎片准备失败');
-   root.dataset.styleRenderer='host-fragments';
+  // WKWebView snapshot/readback can leave full-width raster seams on device.
+  // This host policy keeps one live surface; no JPEG, tiles or screenshot wait.
+  if(mode==='live'){
+   root.dataset.styleRenderer='live';
+   animation=root.animate([{opacity:1},{opacity:.35}],{duration:100,easing:'ease-out',fill:'forwards'});
+   await animation.finished.catch(()=>{});
    await commit();await frames();
-   if(!interrupted&&!reduced())await capture({phase:'animate',token:nativeToken});
+   animation.cancel();
+   if(!interrupted&&!reduced()&&root.isConnected){
+    animation=root.animate([{opacity:.35},{opacity:1}],{duration:180,easing:'ease-out'});
+    await animation.finished.catch(()=>{});
+   }
    return;
   }
+  const icon=root.querySelector('.mv-brand-logo')?.getBoundingClientRect(),origin=icon?{x:icon.x+icon.width/2,y:icon.y+icon.height/2}:{x:36,y:60};
   await frames();
   const snapshot=capture?await Promise.race([capture().catch(()=>null),new Promise(resolve=>{timer=setTimeout(()=>resolve(null),180);})]):null;clearTimeout(timer);captured=performance.now();
   if(snapshot&&!reduced()&&!interrupted&&root.isConnected){

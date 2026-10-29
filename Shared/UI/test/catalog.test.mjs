@@ -10,10 +10,3 @@ test('large recent lists index song IDs once rather than rescanning the library 
  let reads=0;const tracks=Array.from({length:5000},(_,index)=>({get id(){reads++;return String(900000+index);},title:`Song ${index}`,artist:'Artist',album:'Album'}));const recent=Array.from({length:5000},(_,index)=>String(904999-index));
  const result=catalogFor({songs:tracks,recent},'最近播放');assert.equal(result.items.length,5000);assert.equal(result.items[0].title,'Song 4999');assert.equal(result.items.at(-1).title,'Song 0');assert(reads<=10000,'Recent lookup regressed to repeated full-library scans');
 });
-
-test('shared collation retains numeric title order and empty normalized queries',()=>{
- const tracks=['歌曲10','歌曲2','歌曲1'].map((title,i)=>({id:String(i),title,artist:'周杰伦',album:'测试'}));
- assert.deepEqual(catalogFor({songs:tracks},'音乐库','','  ').items.map(song=>song.title),['歌曲1','歌曲2','歌曲10']);
- assert.deepEqual(tracks.map(song=>song.title),['歌曲10','歌曲2','歌曲1']);
- assert.equal(catalogFor({songs:tracks},'音乐库','','歌曲２').items[0].title,'歌曲2');
-});

@@ -23,10 +23,7 @@ export function paintFragments(context,bitmap,width,height,origin,elapsed,plan=p
  }
 }
 
-/** Shared samples drive both Web Animations and the native iOS compositor. */
-export function fragmentSamples(cell){
- return Array.from({length:17},(_,i)=>{const p=i/16,eased=p*p*(3-2*p),curl=Math.sin(p*Math.PI)*(cell.index%7-3)*6,distance=eased*140;return {offset:p,opacity:1-eased,dx:cell.cos*distance-cell.sin*curl,dy:cell.sin*distance+cell.cos*curl,angle:(cell.index%9-4)*eased*8,scale:1-eased*.65};});
-}
+/** Samples the same curl as paintFragments; only transform/opacity animate. */
 export function fragmentKeyframes(cell){
- return fragmentSamples(cell).map(s=>({offset:s.offset,opacity:s.opacity,transform:`translate(${s.dx}px,${s.dy}px) rotate(${s.angle}deg) scale(${s.scale})`}));
+ return Array.from({length:17},(_,i)=>{const p=i/16,eased=p*p*(3-2*p),curl=Math.sin(p*Math.PI)*(cell.index%7-3)*6,distance=eased*140;return {offset:p,opacity:1-eased,transform:`translate(${cell.cos*distance-cell.sin*curl}px,${cell.sin*distance+cell.cos*curl}px) rotate(${(cell.index%9-4)*eased*8}deg) scale(${1-eased*.65})`};});
 }

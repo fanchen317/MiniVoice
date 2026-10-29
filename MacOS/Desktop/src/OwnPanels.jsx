@@ -57,6 +57,20 @@ export function OwnEditor({id,style,onClose}){
 
  const audition=async time=>{if(playback.playing?.id!==id)await command('play',{id});await command('seek',{time});};
  const dirty=base&&JSON.stringify(draft)!==JSON.stringify(base.draft),change=(key,value)=>setDraft(previous=>({...previous,[key]:value}));
+ const completedSync=(playback.jobs||[]).filter(job=>job.trackID===id&&job.finished&&!job.failed).map(job=>job.id).join(',');
+ const refreshedSync=useRef('');
+ useEffect(()=>{
+  if(!completedSync||refreshedSync.current===`${id}:${completedSync}`||!base||dirty||busy)return;
+  refreshedSync.current=`${id}:${completedSync}`;
+  let active=true;
+  command('detail',{id}).then(song=>{
+   if(!active)return;
+   const lyrics=splitLyricsDraft(song.lyrics||'');
+   setDraft(previous=>({...previous,...lyrics}));
+   setBase(previous=>({...previous,song,draft:{...previous.draft,...lyrics}}));
+  }).catch(error=>{if(active)setError(error.message);});
+  return()=>{active=false;};
+ },[id,completedSync,Boolean(base),dirty,busy]);
  const close=()=>{if(busy)return;if(dirty)setDiscard(true);else onClose();};
  async function save(){if(busy||!draft)return;if(!draft.title.trim()){setError('歌曲名称不能为空');return;}setBusy(true);setError('');try{const payload={id,...draft,destination};if(!draft.artwork)delete payload.artwork;await command('saveMetadata',payload);onClose();}catch(error){setError(error.message);}finally{setBusy(false);}}
  async function importFile(kind){const generation=editorGeneration.current;try{const result=await command(kind==='artwork'?'pickEditorArtwork':'pickEditorLyrics');if(result!==null&&generation===editorGeneration.current){if(kind==='artwork')change('artwork',result);else{const parsed=splitLyricsDraft(result);setDraft(previous=>({...previous,...parsed}));}}}catch(error){setError(error.message);}}

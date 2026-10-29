@@ -217,21 +217,3 @@
 @media(prefers-reduced-motion:reduce){
  [data-presentation=mobile].style-wall :is(.mv-toolbar>:is(.mv-button,.mv-back,.mv-search-control),[data-wall-control=settings],.mv-wall-dock){transition:none!important}
 }
-
-/* Native WebKit scrolling carries the poster layer between virtual-window updates. */
-.mv-cover-wall[data-native-pan=true]{overflow:auto;touch-action:pan-x pan-y;overscroll-behavior:none;scrollbar-width:none;-webkit-overflow-scrolling:touch;overflow-anchor:none}
-.mv-cover-wall[data-native-pan=true]::-webkit-scrollbar{display:none}
-.mv-wall-scroll-space{width:6500%;height:6500%;pointer-events:none}
-.mv-cover-wall[data-native-pan=true]:is(.is-expanding,[data-pan-blocked=true]){touch-action:none}
-.mv-cover-wall[data-native-pan=true] :is(.mv-wall-card,.mv-wall-focused){touch-action:pan-x pan-y}
-.mv-cover-wall[data-native-pan=true][data-pan-blocked=true] .mv-wall-focused{touch-action:none}
-
-/* Let the scrolling backing store tile its content; avoid promoting the entire
-   overscanned poster union into one large offscreen texture. */
-.mv-cover-wall[data-native-pan=true] .mv-wall-plane{will-change:auto}
-.mv-cover-wall[data-native-pan=true][data-pan-blocked=true]{overflow:hidden}
-/* Recess one retained scrolling surface, rather than resize every poster per frame. */
-.mv-wall-native-surface{position:absolute;inset:0;transition:transform 320ms cubic-bezier(.22,1,.36,1)}
-[data-native-pan=true][data-recessed=true] .mv-wall-native-surface{transform:scale(.92)}
-.reduce-motion .mv-wall-native-surface{transition:none}
-@media(prefers-reduced-motion:reduce){.mv-wall-native-surface{transition:none}}

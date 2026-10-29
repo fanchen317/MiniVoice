@@ -1,39 +1,6 @@
 import XCTest
 
 final class LayoutTests: XCTestCase {
-    func testNativeWallPanAndOriginalStyleFragments() {
-        let app = XCUIApplication(); app.launchArguments = ["--mv-ui-fixture"]
-        XCUIDevice.shared.orientation = .portrait; app.launch()
-        XCTAssertTrue(app.buttons["打开侧边栏"].firstMatch.waitForExistence(timeout: 30))
-        app.buttons["打开侧边栏"].firstMatch.tap(); app.buttons["设置"].firstMatch.tap()
-        XCTAssertTrue(app.switches["音乐墙"].firstMatch.waitForExistence(timeout: 5))
-        app.switches["音乐墙"].firstMatch.tap(); app.buttons["关闭弹窗"].firstMatch.tap()
-        let web = app.webViews.firstMatch
-        let from = web.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.7))
-        let to = web.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.3))
-        for _ in 0..<3 { from.press(forDuration: 0.02, thenDragTo: to) }
-        XCTAssertEqual(app.state, .runningForeground)
-        XCTAssertTrue(app.buttons["打开侧边栏"].firstMatch.exists)
-        let pan = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); pan.name = "native-wall-pan"; pan.lifetime = .keepAlways; add(pan)
-        let titles = ["山海之间", "午夜漫步", "微光", "海岸线", "夏日来信", "远行", "雨后", "星河", "慢慢", "日落之前", "风的方向", "回声"]
-        guard let poster = app.buttons.allElementsBoundByIndex.first(where: { element in element.isHittable && titles.contains(where: { element.label.contains($0) }) }) else { XCTFail("缺少可点击封面"); return }
-        poster.tap(); RunLoop.current.run(until: Date().addingTimeInterval(0.7))
-        web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).doubleTap()
-        XCTAssertTrue(app.buttons["暂停"].firstMatch.waitForExistence(timeout: 6), "双击实际开始播放")
-        for _ in 0..<2 {
-            app.buttons["打开侧边栏"].firstMatch.tap()
-            XCTAssertTrue(app.buttons["关闭侧边栏"].firstMatch.waitForExistence(timeout: 5))
-            app.buttons["关闭侧边栏"].firstMatch.tap()
-        }
-        app.buttons["打开侧边栏"].firstMatch.tap()
-        for label in ["切换到简易样式", "切换到音乐库样式", "切换到音乐墙样式"] {
-            XCTAssertTrue(app.buttons[label].firstMatch.waitForExistence(timeout: 5)); app.buttons[label].firstMatch.tap()
-        }
-        XCTAssertTrue(app.buttons["切换到简易样式"].firstMatch.waitForExistence(timeout: 5))
-        XCTAssertEqual(app.state, .runningForeground)
-        let styles = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); styles.name = "native-fragments-returned"; styles.lifetime = .keepAlways; add(styles)
-    }
-
     func testContentLongPressAndSearchEditing() {
         let app = XCUIApplication(); app.launchArguments = ["--mv-ui-fixture"]
         XCUIDevice.shared.orientation = .portrait; app.launch()

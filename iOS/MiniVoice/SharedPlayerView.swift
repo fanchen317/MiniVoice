@@ -100,7 +100,6 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
     private var catalogRevision = UUID().uuidString
     private var rows: [[String: Any]] = []
     private var songsByID: [String: Song] = [:]
-    private let styleFragments = StyleFragmentSession()
     private var activeLoads = Set<ObjectIdentifier>()
     // Encoded, versioned thumbnails/display images only; NSCache can purge under pressure.
     private let artworkCache: NSCache<NSString, NSData> = {
@@ -216,16 +215,8 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
             }
             #endif
             if request["kind"] as? String == "captureStyle" {
-                let phase = request["phase"] as? String
-                if phase == "prepare", let web, let cells = request["cells"] as? [[String: Any]],
-                   let token = styleFragments.prepare(in: web, cells: cells) {
-                    reply(id, value: ["token": token, "cells": cells.count])
-                } else if let token = request["token"] as? String, phase == "animate" {
-                    styleFragments.animate(token) { [weak self] in self?.reply(id, value: true) }
-                } else {
-                    styleFragments.cancel(request["token"] as? String)
-                    reply(id, value: NSNull())
-                }
+                // iOS uses the live-surface transition. Never force a WK tiled readback.
+                reply(id, value: NSNull())
                 return
             }
             Task { [weak self] in

@@ -353,18 +353,20 @@ Modal 复用 useDialogViewport + dialogViewport；由弹窗层持有 `--mv-dialo
 
 `transitionStyle`增加宿主选择的`mode`，默认fragments；live只拥有当前页面opacity动画，不持有业务状态。iOS适配器选择live并停用capture；100ms退出、180ms进入，更新只提交一次，旋转/减弱动态清理动画，调用方仍负责最新样式意图和错误。Wall缓存可见集合和海报节点，事件通过最新回调引用，播放时钟不驱动投影；iOS提前360px挂载，140px换窗口，纯平移复用容器，聚焦/展开及缩放保留几何投影。测试与边界见 Docs/IOS_RENDERING_INVESTIGATION.md。
 
-### 2026-10-29 恢复碎片动效与原生墙面平移
-
-前述live淡入淡出策略已撤回。iOS由宿主选择`host-fragments`，prepare/animate/cancel携带稳定token和共享fragmentSamples；Swift只把相同采样交给原生合成层，不重新定义动效。取消/超时/减弱动态清理片段和桥请求，Android/Mac默认fragments继续共享采样。
-
-`useNativeWallPan`只接触DOM与相机语义回调，不调用宿主；滚动位置为临时展示状态，存储仍由Wall的onCamera负责。一指scroll被动同步；双指开始才启用阻塞move，结束/取消移除；重定位不改变业务相机，布局变化以当前相机重建坐标。禁止对相同scroll偏移赋值以保留惯性；隐藏/阻塞/展开停止背景触摸，清理监听和延迟保存。原生滚动由调用方能力参数启用，Android手势路径保留。测试：test-ios-rendering.cjs、WK shared-host-smoke、XCTest testNativeWallPanAndOriginalStyleFragments。
-
-### 2026-10-29 iOS聚焦与侧栏合成运动
-
-`animateWallReflow`接收节点和纯rectAt进度模型，只拥有临时合成动画与其修改的样式；按33点采样固定盒子transform，封面使用natural ratio/cover与反缩放，文字保持最终排版尺度。取消只恢复自己修改的属性，不覆盖图片解码的visibility等异步状态。Wall继续拥有相机、聚焦、时长、打断和保存；合成阶段不做逐海报尺寸更新，结束恢复真实几何与原生滚动位置，侧栏中断后关闭时续接。高清图在聚焦结束交接。
-
-iOS侧栏深度由保留的`.mv-wall-native-surface`独立scale(.92)承担；原生滚动偏移定义缩放原点，避免修改逐卡布局；快速反转和减弱动态由CSS契约处理。目录选择依赖只跟随当前分组相关集合，Intl.Collator保持中文数字排序行为。回归及测量边界见 IOS_RENDERING_INVESTIGATION.md 后续点击章节。
-
 Mac 歌曲编辑的缺失歌词下载复用 ActionButton 与原有错误区域：仅空歌词草稿显示，busy 阻止重复提交；由 DesktopEngine 搜索及保存，组件接收成功文本更新草稿。无独立动画，沿用桌面皮肤；实际网络、键盘及主题验收待完成。
 
-Mac 歌曲编辑：插图置首并默认打开；移除手动缺失歌词下载按钮。歌词区 loading 由本地读取和当前在线请求共同控制，加载期间隐藏添加按钮；请求 token 隔离切歌，空结果与网络失败分别显示。状态由 MusicLibrary 持有，复用现有 spinner/主题。实际网络及三样式深浅验收待完成。
+### iOS共享相机的稳定绘制原点（151c549基线，2026-10-29）
+
+Wall保持原Pointer手势、惯性、定位、聚焦/展开及状态保存；`compositedCamera`仅控制既有平移绘制策略，不接入原生overflow滚动。可见窗口仍按140px更新，独立rasterOrigin保存局部投影原点，在缩放改变或距离超过1024 CSS px时重定位；重定位在同一paint内更新平面与海报。短距离窗口切换中，重叠海报坐标不变，避免重写style及重新栅格化的诱因。原点只持有临时几何，不写持久化，卸载自然释放。
+
+布局、主题、语义控件和图片资源沿用基线，未新增按钮/皮肤/资源缓存；聚焦、展开、侧栏深度期间继续原投影路径。相机仍为业务恢复的唯一事实来源，绘制原点不改变返回/重启锚点。Android仍走原逐卡投影，不启用合成原点路径。
+
+验证：`test-ios-pan-work.cjs`对比16次短程往返及32次跨原点长程往返，检查可见ID、实际像素投影、已有节点style写入与相机回到原位；真实WK宿主增加32次平移、原点交接几何与原宿主回归。计数不是FPS，实体GPU与触感需真机回验。
+
+歌曲编辑导航顺序为插图、歌曲信息、歌词与翻译；打开及换歌默认插图，沿用原有键盘、忙碌和关闭规则。
+
+Mac Lyrics 的 lyricsLoading 由歌曲详情本地加载或当前在线请求共同提供；加载期间显示状态提示且不显示添加按钮，空结果与网络失败分别显示。请求状态由 MusicLibrary 持有，以请求 token 清理，停止/切歌取消；沿用现有 spinner 和主题样式。
+
+编辑页已移除“联网下载缺失歌词”按钮，缺失歌词通过播放流程自动加载；原在线搜索、导入与时间轴入口保留。
+
+歌曲编辑在当前歌曲时间轴任务完成后回读歌词，仅无未保存草稿时刷新原文/翻译及保存基线；用户编辑期间取消应用回读，换歌/卸载清理。后台 jobs 用 trackID 关联，不能用标题匹配。

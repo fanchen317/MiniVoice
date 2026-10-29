@@ -25,9 +25,20 @@ try {
  }
  await wait(()=>document.querySelector('.mv-wall-card'),'音乐墙封面');
  check(document.querySelector('.mv-workspace').dataset.presentation==='mobile','iOS 使用 Android 触控家族');
+ // Verify bounded raster-origin handoffs in WebKit with the existing JS camera.
+ await delay(700);
+ const panPlane=document.querySelector('.mv-wall-plane'),panView=document.querySelector('.mv-cover-wall');
+ for(let step=0;step<32;step++){
+   const oldCamera=JSON.parse(panPlane.dataset.camera),oldNodes=new Map([...panPlane.children].map(node=>[node,{r:node.getBoundingClientRect(),id:node.dataset.wallCell}]));
+   panView.dispatchEvent(new WheelEvent('wheel',{deltaX:step<16?160:-160,deltaY:0,bubbles:true,cancelable:true}));await delay(45);
+   const nextCamera=JSON.parse(panPlane.dataset.camera);
+   check(Math.abs(nextCamera.x-oldCamera.x)>100,'WK共享相机响应平移 '+step);
+   for(const [node,old] of oldNodes){if(!node.isConnected)continue;const r=node.getBoundingClientRect();check(Math.abs(r.x-old.r.x-nextCamera.x+oldCamera.x)<1.5,'WK原点交接不跳位 '+step);}
+ }
+
  // Exercise the real iOS host policy through the branded style switch.
- let captureCalls=0,fragmentPreparations=0,fragmentAnimations=0;const requestBefore=MiniVoiceHost.request;
- MiniVoiceHost.request=function(id,raw){const request=JSON.parse(raw);if(request.kind==='captureStyle'){captureCalls++;if(request.phase==='prepare')fragmentPreparations++;if(request.phase==='animate')fragmentAnimations++;}return requestBefore.call(this,id,raw);};
+ let captureCalls=0;const requestBefore=MiniVoiceHost.request;
+ MiniVoiceHost.request=function(id,raw){if(JSON.parse(raw).kind==='captureStyle')captureCalls++;return requestBefore.call(this,id,raw);};
  await click(button('打开侧边栏'),'切换渲染测试侧栏');
  for(const target of ['simple','library','wall']){
    document.querySelector('.mv-brand-logo').click();
@@ -35,12 +46,9 @@ try {
    check(!document.querySelector('.mv-style-fragment-sweep'),'WK 切换无分片截图层 '+target);
    check(getComputedStyle(document.querySelector('main')).opacity==='1','WK 切换结束恢复不透明 '+target);
  }
- check(fragmentPreparations===3&&fragmentAnimations===3,'iOS 三次切换均使用原生碎片动画');MiniVoiceHost.request=requestBefore;
+ check(captureCalls===0,'iOS 样式切换零次整屏截图请求');MiniVoiceHost.request=requestBefore;
  await click(button('关闭侧边栏'),'关闭渲染测试侧栏');
  const panWall=document.querySelector('.mv-cover-wall');
- check(getComputedStyle(panWall).overflowX==='auto'&&panWall.scrollWidth>innerWidth*6,'WK 原生双轴滚动承载墙面');
- panWall.scrollLeft+=120;panWall.scrollTop+=80;await delay(200);
- check(Math.abs(JSON.parse(document.querySelector('.mv-wall-plane').dataset.camera).x-12)>1,'WK 原生滚动同步相机');
  for(let i=0;i<12;i++){panWall.dispatchEvent(new WheelEvent('wheel',{deltaX:i<6?100:-100,deltaY:40,bubbles:true,cancelable:true}));await delay(20);}
  await delay(700);
  check(document.querySelector('.mv-wall-plane').dataset.compositedPan==='true','WK 连续滑动保留容器合成');
