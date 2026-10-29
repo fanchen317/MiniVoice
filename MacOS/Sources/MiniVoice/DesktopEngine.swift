@@ -385,7 +385,7 @@ final class DesktopEngine {
         case "lyricsSearch":
             let track = try track(payload)
             return try await OnlineLyricsSearch.search(title: String((payload["title"] as? String ?? track.title).prefix(500)), artist: String((payload["artist"] as? String ?? track.artist).prefix(500)), duration: track.duration).map { result -> [String: Any] in
-                ["id": result.id, "source": result.source, "title": result.trackName, "artist": result.artistName, "album": result.albumName ?? "", "duration": result.duration ?? 0, "timingKind": result.timingKind.rawValue, "hasTranslation": result.hasTranslation, "lyrics": result.usableLyrics ?? ""]
+                ["id": result.id, "source": result.source, "title": result.trackName, "artist": result.artistName, "album": result.albumName ?? "", "duration": result.duration ?? 0, "timingKind": result.timingKind.rawValue, "hasTranslation": result.hasTranslation, "lyrics": result.usableLyrics ?? "", "simplifiedLyrics": ChineseLyricsScript.simplified(result.usableLyrics ?? "")]
             }
         case "downloadMissingLyrics":
             let base = try track(payload)
@@ -417,7 +417,9 @@ final class DesktopEngine {
             resolved.album = payload["album"] as? String ?? resolved.album
             resolved.lyrics = payload["lyrics"] as? String ?? resolved.lyrics
             if let translation = payload["translation"] as? String { resolved.lyrics = LyricsTranslation.attaching(translation,to:resolved.lyrics) }
-            if let artwork = payload["artwork"] as? String {
+            if payload["removeArtwork"] as? Bool == true {
+                resolved.artwork = nil; resolved.artworkKey = nil; resolved.artworkWasEdited = true
+            } else if let artwork = payload["artwork"] as? String {
                 guard artwork.hasPrefix("data:image/"),let separator=artwork.firstIndex(of:","),let data=Data(base64Encoded:String(artwork[artwork.index(after:separator)...])),data.count<=20*1024*1024,let image=NSImage(data:data),image.size.width>0,image.size.height>0 else { throw CocoaError(.coderInvalidValue) }
                 resolved.artwork=image;resolved.artworkWasEdited=true
             }

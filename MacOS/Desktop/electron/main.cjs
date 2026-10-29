@@ -172,7 +172,7 @@ app.whenReady().then(() => {
     }
     if(identity.debug&&['pickEditorArtwork','pickEditorLyrics'].includes(action)){
       if(!panelWindows.owns(event.sender))throw Error('请在歌曲编辑窗口操作');
-      const image=action==='pickEditorArtwork';const selected=await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender),{title:image?'选择歌曲封面':'导入歌词',properties:['openFile'],filters:[{name:image?'图片':'歌词',extensions:image?['png','jpg','jpeg','webp']:['lrc','txt']}]});if(selected.canceled)return null;
+      const image=action==='pickEditorArtwork';const selected=await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender),{title:image?'选择歌曲封面':'导入歌词',properties:['openFile'],filters:[{name:image?'图片':'歌词',extensions:image?['png','jpg','jpeg','webp']:['lrc','srt','txt']}]});if(selected.canceled)return null;
       const file=selected.filePaths[0],stat=fs.statSync(file);if(!stat.isFile()||stat.size>(image?20*1024*1024:1024*1024))throw Error('文件过大');
       if(image){const bitmap=nativeImage.createFromPath(file);if(bitmap.isEmpty())throw Error('无法读取图片');const bytes=fs.readFileSync(file),extension=path.extname(file).toLowerCase(),mime=extension==='.png'?'image/png':extension==='.webp'?'image/webp':'image/jpeg';return 'data:'+mime+';base64,'+bytes.toString('base64');}
       let bytes=fs.readFileSync(file);if(bytes[0]===0xff&&bytes[1]===0xfe)return bytes.subarray(2).toString('utf16le');if(bytes[0]===0xfe&&bytes[1]===0xff)return bytes.subarray(2).swap16().toString('utf16le');return new TextDecoder('utf-8',{fatal:true}).decode(bytes).replace(/^\uFEFF/,'');
