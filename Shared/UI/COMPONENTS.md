@@ -352,3 +352,9 @@ Modal 复用 useDialogViewport + dialogViewport；由弹窗层持有 `--mv-dialo
 ### 2026-10-29 iOS实时样式过渡与墙面挂载窗口
 
 `transitionStyle`增加宿主选择的`mode`，默认fragments；live只拥有当前页面opacity动画，不持有业务状态。iOS适配器选择live并停用capture；100ms退出、180ms进入，更新只提交一次，旋转/减弱动态清理动画，调用方仍负责最新样式意图和错误。Wall缓存可见集合和海报节点，事件通过最新回调引用，播放时钟不驱动投影；iOS提前360px挂载，140px换窗口，纯平移复用容器，聚焦/展开及缩放保留几何投影。测试与边界见 Docs/IOS_RENDERING_INVESTIGATION.md。
+
+### 2026-10-29 恢复碎片动效与原生墙面平移
+
+前述live淡入淡出策略已撤回。iOS由宿主选择`host-fragments`，prepare/animate/cancel携带稳定token和共享fragmentSamples；Swift只把相同采样交给原生合成层，不重新定义动效。取消/超时/减弱动态清理片段和桥请求，Android/Mac默认fragments继续共享采样。
+
+`useNativeWallPan`只接触DOM与相机语义回调，不调用宿主；滚动位置为临时展示状态，存储仍由Wall的onCamera负责。一指scroll被动同步；双指开始才启用阻塞move，结束/取消移除；重定位不改变业务相机，布局变化以当前相机重建坐标。禁止对相同scroll偏移赋值以保留惯性；隐藏/阻塞/展开停止背景触摸，清理监听和延迟保存。原生滚动由调用方能力参数启用，Android手势路径保留。测试：test-ios-rendering.cjs、WK shared-host-smoke、XCTest testNativeWallPanAndOriginalStyleFragments。

@@ -1,6 +1,29 @@
 import XCTest
 
 final class LayoutTests: XCTestCase {
+    func testNativeWallPanAndOriginalStyleFragments() {
+        let app = XCUIApplication(); app.launchArguments = ["--mv-ui-fixture"]
+        XCUIDevice.shared.orientation = .portrait; app.launch()
+        XCTAssertTrue(app.buttons["打开侧边栏"].firstMatch.waitForExistence(timeout: 30))
+        app.buttons["打开侧边栏"].firstMatch.tap(); app.buttons["设置"].firstMatch.tap()
+        XCTAssertTrue(app.switches["音乐墙"].firstMatch.waitForExistence(timeout: 5))
+        app.switches["音乐墙"].firstMatch.tap(); app.buttons["关闭弹窗"].firstMatch.tap()
+        let web = app.webViews.firstMatch
+        let from = web.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.7))
+        let to = web.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.3))
+        for _ in 0..<3 { from.press(forDuration: 0.02, thenDragTo: to) }
+        XCTAssertEqual(app.state, .runningForeground)
+        XCTAssertTrue(app.buttons["打开侧边栏"].firstMatch.exists)
+        let pan = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); pan.name = "native-wall-pan"; pan.lifetime = .keepAlways; add(pan)
+        app.buttons["打开侧边栏"].firstMatch.tap()
+        for label in ["切换到简易样式", "切换到音乐库样式", "切换到音乐墙样式"] {
+            XCTAssertTrue(app.buttons[label].firstMatch.waitForExistence(timeout: 5)); app.buttons[label].firstMatch.tap()
+        }
+        XCTAssertTrue(app.buttons["切换到简易样式"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.state, .runningForeground)
+        let styles = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); styles.name = "native-fragments-returned"; styles.lifetime = .keepAlways; add(styles)
+    }
+
     func testContentLongPressAndSearchEditing() {
         let app = XCUIApplication(); app.launchArguments = ["--mv-ui-fixture"]
         XCUIDevice.shared.orientation = .portrait; app.launch()
