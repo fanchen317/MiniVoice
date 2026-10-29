@@ -11,7 +11,7 @@ while [[ $# -gt 0 ]]; do
     --no-launch) LAUNCH=false ;;
     --help|-h)
       echo '用法：Scripts/{build,build-experience,deploy,deploy-experience}.sh [--platforms mac,android,ios] [--no-launch]'
-      echo '默认全部平台。iOS 导出需 MINIVOICE_IOS_TEAM 与 MINIVOICE_IOS_EXPORT_OPTIONS。'
+      echo '默认全部平台。iOS 导出需 MINIVOICE_IOS_TEAM 与 MINIVOICE_IOS_EXPORT_OPTIONS；体验版可用 MINIVOICE_IOS_EXPERIENCE_TEAM / MINIVOICE_IOS_EXPERIENCE_EXPORT_OPTIONS 覆盖。'
       exit 0 ;;
     *) echo "未知参数：$1" >&2; exit 2 ;;
   esac

@@ -12,7 +12,9 @@ final class MusicPlayer: ObservableObject {
     @Published var mode: PlaybackMode = .sequential {
         didSet { UserDefaults.standard.set(mode.rawValue, forKey: "playbackMode") }
     }
-    @Published var errorMessage: String?
+    @Published var errorMessage: String? {
+        didSet { if let message = errorMessage, message != oldValue { IOSDiagnostics.shared.record(.failure, "player: " + message) } }
+    }
 
     @Published private(set) var navigationAction = ""
     @Published private(set) var navigationToken = 0
@@ -26,8 +28,7 @@ final class MusicPlayer: ObservableObject {
     private var accessURL: URL?
     private weak var library: MusicLibrary?
     private var nowPlayingArtwork: MPMediaItemArtwork?
-    private var shuffleRemaining: [String] = []
-    private var shuffleHistory: [String] = []
+    private var artworkTask: Task<Void, Never>?
 
     init() {
         if let saved = UserDefaults.standard.object(forKey: "playbackMode") as? Int {
@@ -83,18 +84,14 @@ final class MusicPlayer: ObservableObject {
         }
         current = song
         position = 0
-        if let path = song.artworkFile, let image = UIImage(contentsOfFile: path) {
-            nowPlayingArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-        } else {
-            nowPlayingArtwork = nil
-        }
+        refreshNowPlayingArtwork(song)
         let item = AVPlayerItem(url: url)
         statusObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
             guard item.status == .failed else { return }
             Task { @MainActor [weak self] in
                 guard self?.player?.currentItem === item else { return }
                 self?.pause()
-                self?.errorMessage = item.error?.localizedDescription ?? "无法播放这个音频文件。"
+                self?.errorMessage = "无法播放此音频，格式或编码可能不受 iOS 支持：" + (item.error?.localizedDescription ?? "请检查文件是否完整")
             }
         }
         let next = AVPlayer(playerItem: item)
@@ -130,8 +127,6 @@ final class MusicPlayer: ObservableObject {
     func retainLibrary(_ songs: [Song]) {
         let allowed = Set(songs.map(\.id))
         queue.removeAll { !allowed.contains($0.id) }
-        shuffleRemaining.removeAll { !allowed.contains($0) }
-        shuffleHistory.removeAll { !allowed.contains($0) }
         if let current, !allowed.contains(current.id) {
             clearPlayer(); nowPlayingArtwork = nil; updateNowPlaying()
         } else if let id = current?.id {
@@ -139,8 +134,7 @@ final class MusicPlayer: ObservableObject {
             queue = queue.compactMap { updates[$0.id] }
             if let updated = updates[id] {
                 current = updated
-                if let path = updated.artworkFile, let image = UIImage(contentsOfFile: path) { nowPlayingArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image } }
-                else { nowPlayingArtwork = nil }
+                refreshNowPlayingArtwork(updated)
                 updateNowPlaying()
             }
         }
@@ -231,6 +225,18 @@ final class MusicPlayer: ObservableObject {
             guard let value = (event as? MPChangePlaybackPositionCommandEvent)?.positionTime else { return .commandFailed }
             Task { @MainActor [weak self] in self?.seek(to: value) }
             return .success
+        }
+    }
+
+    private func refreshNowPlayingArtwork(_ song: Song) {
+        artworkTask?.cancel()
+        nowPlayingArtwork = nil
+        guard let path = song.artworkFile else { return }
+        artworkTask = Task { [weak self] in
+            let image = await Task.detached(priority: .utility) { UIImage(contentsOfFile: path) }.value
+            guard !Task.isCancelled, let self, self.current?.id == song.id, let image else { return }
+            self.nowPlayingArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            self.updateNowPlaying()
         }
     }
 

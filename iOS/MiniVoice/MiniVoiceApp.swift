@@ -16,12 +16,14 @@ struct MiniVoiceApp: App {
                 .preferredColorScheme(appearance == "system" ? nil : appearance == "light" ? .light : .dark)
                 .onOpenURL { url in if url.scheme == "minivoice", url.host == "playing" { player.requestNavigation() } }
                 .onChange(of: scenePhase) { old, new in
+                    IOSDiagnostics.shared.record(.event, "scene state=\(new)")
                     if new == .active {
                         library.restoreAndScan()
                         if old == .background, player.current != nil { player.requestNavigation() }
                     }
                 }
                 .onAppear {
+                    IOSDiagnostics.shared.start()
                     library.restoreAndScan()
                     #if targetEnvironment(simulator)
                     if ProcessInfo.processInfo.arguments.contains("--mv-ui-fixture"), let song = library.songs.first {

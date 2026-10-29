@@ -1,3 +1,4 @@
+import {useDialogViewport} from './components/useDialogViewport.js';
 import {useSheetDrag} from './components/useSheetDrag.js';
 import ActionButton from './components/ActionButton.jsx';
 import {useSurfaceMotion} from './components/useSurfaceMotion.js';
@@ -7,6 +8,7 @@ import {useDialogBoundary} from './components/useDialogBoundary.js';
 import React,{useRef} from 'react';
 export default function Modal({title,children,onClose,expandable=false}){
  const ref=useRef(null),layer=useRef(null),scroll=useRef(null);
+ useDialogViewport(layer);
  const expanded=useRef(false);
  const setExpanded=value=>{expanded.current=value;if(ref.current){ref.current.dataset.sheetExpanded=String(value);ref.current.querySelector('.mv-modal-grip')?.setAttribute('aria-expanded',String(value));}};
  const grip=useSheetDrag(ref,onClose,title,{expandable,get expanded(){return expanded.current},onExpandedChange:setExpanded});

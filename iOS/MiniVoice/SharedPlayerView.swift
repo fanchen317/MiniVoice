@@ -96,6 +96,7 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
     private var notice = ""
     private var noticeToken = 0
     private var lastError = ""
+    private let stateWorker = DispatchQueue(label: "MiniVoice.shared-state", qos: .utility)
     private let stateURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("MiniVoice/shared-mobile-workspace-v1.json")
 
@@ -133,6 +134,18 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
             guard let request = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
                   request["version"] as? Int == 1 else { throw failure("无效的宿主协议") }
             #if targetEnvironment(simulator)
+            if request["kind"] as? String == "uiTestDiagnostics", ProcessInfo.processInfo.arguments.contains("--mv-ui-smoke") {
+                Task { [weak self] in
+                    guard let self else { return }
+                    do {
+                        let data = try await self.library.diagnosticsArchive()
+                        let output = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("diagnostics-test.zip")
+                        try await Task.detached(priority: .utility) { try data.write(to: output, options: .atomic) }.value
+                        self.reply(id, value: ["bytes": data.count])
+                    } catch { self.reply(id, error: error.localizedDescription) }
+                }
+                return
+            }
             if request["kind"] as? String == "uiTestSnapshot", ProcessInfo.processInfo.arguments.contains("--mv-ui-smoke"),
                let name = request["name"] as? String, name.range(of: "^[a-z0-9-]+$", options: .regularExpression) != nil, let web {
                 let output = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(name + ".png")
@@ -150,17 +163,27 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
                 let configuration = WKSnapshotConfiguration()
                 configuration.snapshotWidth = NSNumber(value: min(900, web.bounds.width))
                 web.takeSnapshot(with: configuration) { [weak self] image, _ in
-                    let value: Any = image?.jpegData(compressionQuality: 0.75).map { "data:image/jpeg;base64," + $0.base64EncodedString() } ?? NSNull() as Any
-                    self?.reply(id, value: value)
+                    guard let image else { self?.reply(id, value: NSNull()); return }
+                    Task { [weak self] in
+                        let value = await Task.detached(priority: .utility) { image.jpegData(compressionQuality: 0.75).map { "data:image/jpeg;base64," + $0.base64EncodedString() } }.value
+                        if let value { self?.reply(id, value: value) } else { self?.reply(id, value: NSNull()) }
+                    }
                 }
                 return
             }
             Task { [weak self] in
                 guard let self else { return }
                 do { self.reply(id, value: try await self.execute(request)) }
-                catch { self.reply(id, error: error.localizedDescription) }
+                catch { IOSDiagnostics.shared.record(.failure, "host: " + error.localizedDescription); self.reply(id, error: error.localizedDescription) }
             }
         } catch { reply(id, error: error.localizedDescription) }
+    }
+
+    /// Enqueue before suspension so rapid camera/settings saves cannot finish out of order.
+    private func stateIO<T>(_ operation: @escaping () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            stateWorker.async { continuation.resume(with: Result { try operation() }) }
+        }
     }
 
     private func execute(_ request: [String: Any]) async throws -> Any {
@@ -171,7 +194,7 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
         case "snapshot": return snapshot(revision: request["catalogRevision"] as? String)
         case "readState":
             let url = stateURL
-            if let data = await Task.detached(priority: .utility, operation: { try? Data(contentsOf: url) }).value {
+            if let data = try? await stateIO({ try Data(contentsOf: url) }) {
                 let state = try JSONSerialization.jsonObject(with: data)
                 applyChrome(state as? [String: Any] ?? [:]); return state
             }
@@ -180,10 +203,10 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
             guard let state = request["state"] as? [String: Any], state["version"] as? Int == 1 else { throw failure("页面状态无效") }
             let data = try JSONSerialization.data(withJSONObject: state)
             let url = stateURL
-            try await Task.detached(priority: .utility) {
+            try await stateIO {
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try data.write(to: url, options: .atomic)
-            }.value
+            }
             applyChrome(state)
             if let pages = state["pages"] as? [String: Any], let appearance = pages["appearance"] as? [String: Any],
                let theme = appearance["theme"] as? String, ["light", "dark", "system"].contains(theme) {
@@ -231,7 +254,7 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
         case "immersive": immersive(payload["value"] as? Bool ?? false); return true
         case "ackNavigation": player.acknowledgeNavigation(payload["token"] as? Int ?? -1); return true
         case "settings": player.requestNavigation("SHOW_SCAN"); return true
-        case "exportDiagnostics": export(try library.diagnosticsArchive()); return true
+        case "exportDiagnostics": export(try await library.diagnosticsArchive()); return true
         case "cacheInfo", "clearCache", "inspectLibrary", "artistAlias", "clearArtistAliases":
             return try await library.sharedMaintenanceAction(name, payload: payload)
         case "chooseFolder": chooseFolder(); return true
@@ -286,6 +309,7 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
             do {
                 guard let url = urlSchemeTask.request.url, url.host == "app", !url.pathComponents.contains("..") else { throw self.failure("资源路径无效") }
                 let file: URL
+                var artworkBytes: Data?
                 let artwork = url.path.hasPrefix("/artwork/")
                 if artwork {
                     let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
@@ -295,13 +319,16 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
                     let original = query.first(where: { $0.name == "quality" })?.value == "original"
                     guard let path = original ? (song.originalArtworkFile ?? song.artworkFile) : song.artworkFile else { throw self.failure("没有封面") }
                     file = URL(fileURLWithPath: path)
+                    artworkBytes = try await self.library.artworkData(for: song, original: original)
                 } else {
                     guard url.query == nil, let root = Bundle.main.resourceURL?.appendingPathComponent("SharedPlayer", isDirectory: true).standardizedFileURL else { throw self.failure("共享资源无效") }
                     let relative = url.path == "/" ? "index.html" : String(url.path.dropFirst())
                     file = root.appendingPathComponent(relative).standardizedFileURL
                     guard file.path.hasPrefix(root.path + "/") else { throw self.failure("资源路径越界") }
                 }
-                let data = try await Task.detached(priority: .userInitiated) { try Data(contentsOf: file) }.value
+                let data: Data
+                if let artworkBytes { data = artworkBytes }
+                else { data = try await Task.detached(priority: .userInitiated) { try Data(contentsOf: file) }.value }
                 guard self.activeLoads.remove(identifier) != nil else { return }
                 let mime: String
                 if artwork, let source = CGImageSourceCreateWithData(data as CFData, nil), let type = CGImageSourceGetType(source) {
@@ -324,7 +351,7 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        (webView as? SharedContentWebView)?.publishInsets()
+        (webView as? SharedContentWebView)?.publishInsets(force: true)
         #if targetEnvironment(simulator)
         guard ProcessInfo.processInfo.arguments.contains("--mv-ui-smoke"),
               let sourceURL = Bundle.main.resourceURL?.appendingPathComponent("SharedPlayer/shared-host-smoke.js"),
@@ -368,11 +395,11 @@ private final class SharedContentWebView: WKWebView {
     private var lastInsets = ""
     override func safeAreaInsetsDidChange() { super.safeAreaInsetsDidChange(); publishInsets() }
     override func layoutSubviews() { super.layoutSubviews(); publishInsets() }
-    func publishInsets() {
+    func publishInsets(force: Bool = false) {
         var safe = safeAreaInsets
         if contentStyle != "wall", bounds.width > bounds.height { safe.left = max(safe.left, safe.right); safe.right = safe.left }
         let key = "\(safe)-\(bounds.size)-\(contentStyle)"
-        guard key != lastInsets, url != nil else { return }
+        guard (force || key != lastInsets), url != nil else { return }
         lastInsets = key
         let script = "(()=>{const s=document.documentElement.style;s.setProperty('--mv-safe-top','\(safe.top)px');s.setProperty('--mv-safe-bottom','\(safe.bottom)px');s.setProperty('--mv-safe-left','\(safe.left)px');s.setProperty('--mv-safe-right','\(safe.right)px');dispatchEvent(new Event('minivoice-insets'));})()"
         evaluateJavaScript(script, completionHandler: nil)

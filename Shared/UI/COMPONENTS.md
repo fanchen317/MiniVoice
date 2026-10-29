@@ -307,3 +307,7 @@ WallPlayer 当前曲目 wp-status 改成 Mac 同款 #00dac3 18% 背景/60% 轮�
 Wall 的容器测量保留计算样式中的小数 CSS 尺寸，避免 Android 非整数 density 下 clientWidth/clientHeight 取整让展开层比墙面短；动画、返回、缩放状态仍由原有 Wall 持有。WallPlayer 的展开/收起按钮使用 wp-expand-toggle 标记；移动展开预览卡片通过自身 auto margin 靠右，当前播放卡片的歌词切换与收起按钮继续组成右侧动作组。普通/紧凑、当前/预览、展开/收起八种组合以真实组件验证右侧边界；横竖两种小数容器验证展开层四边差值小于 .02 CSS px。实体手机截图中的整条底部区域尚待复核，不能将小数缝隙修正视为该现象已全部解决。
 
 - 横屏手机墙面几何以左下dock和右侧56px工具列为占用区，mobileWallViewport据安全区计算剩余区域中心及卡片尺寸；竖屏不交换。SurfaceMotion关闭时将面板实测布局固定到退出层，补齐safe变量，避免祖先样式丢失造成关闭原点跳动。FocusArtwork在新图decode后以520ms轻缩放接管，保留原解码等待防闪，减弱动态不执行。Button的选中heart传filled，自有mobile皮肤显示红色；展开右侧动作无常态底框，播放栏进度仅缩短16px。
+
+### Modal 可视区域（2026-10-29）
+
+Modal 复用 useDialogViewport + dialogViewport；由弹窗层持有 `--mv-dialog-top/height` 和 `data-visual-keyboard`，仅 mobile 皮肤消费。visualViewport 的 resize/scroll、窗口 resize 及 minivoice-insets 合并到单帧测量，卸载取消帧并清理监听/变量。移动端文本框保持至少 16px，防止 WKWebView 聚焦时自动缩放整页，但保留用户缩放和辅助功能字号。键盘只改变弹窗可用区域，页面/播放条不跟随移动；Android 宿主发布窗口与 WebView 的实际 IME 交集为 --mv-keyboard-bottom，已缩小布局高度时交集为 0，不重复扣除键盘。保留无键盘时的 85% 高度上限及平板居中间距。没有 visualViewport 时退回窗口。原有 ActionButton、SheetDrag、DialogBoundary 和 ScrollRail 不变；触控/键鼠、忙碌/错误与焦点语义仍由它们承担。此测量不添加动画；按系统可视区域直接更新，支持旋转和中途关闭，减弱动态效果无需额外运动。验证包含纯几何、iOS 系统键盘及共享实际页面回归，真机浮动键盘仍需单独验收。

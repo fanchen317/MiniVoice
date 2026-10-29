@@ -84,3 +84,6 @@
 .mv-workspace[data-presentation=mobile] .mv-mobile-settings .mv-folder-row>button{flex:none;min-height:44px;min-width:44px}
 .mv-workspace[data-presentation=mobile] .mv-mobile-settings .mv-choice{display:flex;width:100%;min-width:0;min-height:44px;margin-block:6px;background:var(--mv-panel-control);color:var(--text)}
 .mv-workspace[data-presentation=mobile] .mv-mobile-settings .mv-choice>span:first-child{min-width:0;white-space:normal;overflow-wrap:anywhere;text-align:left}
+/* Keep mobile text entry at least 16px so WKWebView does not zoom/pan the
+   entire music wall on focus; user pinch and accessibility scaling remain enabled. */
+.mv-workspace[data-presentation=mobile] :is(input,textarea){font-size:max(16px,1em)}

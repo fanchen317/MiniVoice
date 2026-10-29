@@ -15,3 +15,13 @@ swiftc "${SHARED_FLAGS[@]}" -lc++ "$ROOT/iOS/MiniVoice/Models.swift" "$ROOT/iOS/
 "$OUTPUT/lrc-tests"
 swiftc "$ROOT/iOS/MiniVoice/WeightedWallScene.swift" "$ROOT/iOS/Tests/WeightedWallSceneTests.swift" -o "$OUTPUT/wall-tests"
 "$OUTPUT/wall-tests"
+
+swiftc "${SHARED_FLAGS[@]}" -lc++ "$ROOT/iOS/MiniVoice/Models.swift" "$ROOT/iOS/MiniVoice/ParitySupport.swift" "$ROOT/iOS/Tests/ParitySupportTests.swift" -o "$OUTPUT/parity-tests"
+"$OUTPUT/parity-tests" "$OUTPUT/diagnostics-test.zip"
+python3 - "$OUTPUT/diagnostics-test.zip" <<'ZIPTEST'
+import sys,zipfile,json
+with zipfile.ZipFile(sys.argv[1]) as z:
+    assert z.testzip() is None
+    assert json.loads(z.read('diagnostics.json')) == {'ok':True}
+print('PASS: diagnostic ZIP extracted and CRC validated')
+ZIPTEST

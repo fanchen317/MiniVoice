@@ -19,7 +19,9 @@ final class MusicLibrary: ObservableObject {
     }
     @Published private(set) var isScanning = false
     @Published private(set) var scanCount = 0
-    @Published var errorMessage: String?
+    @Published var errorMessage: String? {
+        didSet { if let message = errorMessage, message != oldValue { IOSDiagnostics.shared.record(.failure, "library: " + message) } }
+    }
 
     @Published private(set) var scanDetail = ""
     private var didRestore = false
@@ -119,11 +121,14 @@ final class MusicLibrary: ObservableObject {
     func rescan() {
         guard !maintenanceBusy else { errorMessage = "正在维护缓存，请稍后重扫"; return }
         scanTask?.cancel()
+        inspectionGeneration = UUID()
+        inspection = ["running": false, "checked": 0, "total": 0, "unavailable": [[String: String]]()]
         let generation = UUID()
         scanGeneration = generation
         let selectedFolders = folders
         let previous = songs
         let recursive = includesSubfolders
+        IOSDiagnostics.shared.record(.event, "scan started folders=\(selectedFolders.count) recursive=\(recursive)")
         isScanning = true; scanCount = 0; scanDetail = "正在查找音乐文件…"
         defaults.set(true, forKey: "ios.scan.pending")
         let background = UIApplication.shared.beginBackgroundTask(withName: "MiniVoice music scan") { [weak self] in
@@ -131,6 +136,7 @@ final class MusicLibrary: ObservableObject {
             self.scanTask?.cancel()
             self.isScanning = false
             self.scanDetail = "扫描暂停，返回应用后继续"
+            IOSDiagnostics.shared.record(.event, "scan background time expired")
         }
         let worker = Task.detached(priority: .userInitiated) { [weak self] in
             LibraryScanner.scan(folders: selectedFolders, recursive: recursive, previous: previous) { count, detail in
@@ -147,6 +153,7 @@ final class MusicLibrary: ObservableObject {
             do { songs = try applyingAliases(result.songs).sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending } }
             catch { errorMessage = "歌手归并失败：\(error.localizedDescription)"; songs = result.songs }
             scanCount = songs.count; isScanning = false; scanDetail = "扫描完成 · \(songs.count) 首歌曲"
+            IOSDiagnostics.shared.record(.event, "scan completed songs=\(songs.count) errors=\(result.errors.count)")
             defaults.set(false, forKey: "ios.scan.pending")
             saveIndex(songs)
             errorMessage = result.errors.isEmpty ? nil : result.errors.joined(separator: "\n")
@@ -227,6 +234,22 @@ final class MusicLibrary: ObservableObject {
 private enum LibraryScanner {
     static let audioExtensions: Set<String> = ["mp3", "m4a", "aac", "flac", "wav", "aiff", "aif", "caf", "ogg", "opus"]
 
+    static func artworkData(song: Song, folder: MusicFolder, original: Bool) throws -> Data {
+        guard let root = resolve(folder) else { throw CocoaError(.fileReadNoPermission) }
+        let accessing = root.startAccessingSecurityScopedResource()
+        defer { if accessing { root.stopAccessingSecurityScopedResource() } }
+        let file = root.appendingPathComponent(song.relativePath).standardizedFileURL
+        guard file.resolvingSymlinksInPath().path.hasPrefix(root.resolvingSymlinksInPath().path + "/") else { throw CocoaError(.fileReadNoPermission) }
+        var artwork = original ? (song.originalArtworkFile ?? song.artworkFile) : song.artworkFile
+        if artwork == nil || !FileManager.default.fileExists(atPath: artwork!) {
+            let name = song.artworkFile.map { URL(fileURLWithPath: $0).lastPathComponent } ?? SHA256.hash(data: Data(song.id.utf8)).map { String(format: "%02x", $0) }.joined() + ".jpg"
+            let path = prepareArtwork(asset: AVURLAsset(url: file), url: file, imageName: name)
+            artwork = original ? path.map { $0 + ".original" } : path
+        }
+        guard let artwork else { throw CocoaError(.fileNoSuchFile) }
+        return try Data(contentsOf: URL(fileURLWithPath: artwork))
+    }
+
     static func resolve(_ folder: MusicFolder) -> URL? {
         var stale = false
         return try? URL(resolvingBookmarkData: folder.bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
@@ -272,7 +295,7 @@ private enum LibraryScanner {
                     cached.artist = cached.originalArtist ?? cached.artist
                     songs.append(cached)
                 } else {
-                    var song = readSong(url: url, root: root, folderID: folder.id, relativePath: relativePath, modified: modified)
+                    var song = readSong(url: url, root: root, folderID: folder.id, relativePath: relativePath, version: version)
                     song.sourceAdded = old[identity]?.sourceAdded ?? (values?.creationDate ?? Date()).timeIntervalSince1970 * 1000
                     song.added = (modified ?? Date()).timeIntervalSince1970 * 1000
                     song.fileSize = Int64(values?.fileSize ?? 0); song.cacheVersion = version
@@ -284,7 +307,7 @@ private enum LibraryScanner {
         return (songs, errors)
     }
 
-    private static func readSong(url: URL, root: URL, folderID: String, relativePath: String, modified: Date?) -> Song {
+    private static func readSong(url: URL, root: URL, folderID: String, relativePath: String, version: String) -> Song {
         let asset = AVURLAsset(url: url)
         let metadata = asset.commonMetadata
         func common(_ key: String) -> String? {
@@ -299,7 +322,7 @@ private enum LibraryScanner {
         let album = common("albumName").flatMap { $0.isEmpty ? nil : $0 } ?? "未知专辑"
         let duration = asset.duration.seconds
         let fingerprint = folderID + "/" + relativePath
-        let imageName = SHA256.hash(data: Data((fingerprint + String(modified?.timeIntervalSince1970 ?? 0)).utf8))
+        let imageName = SHA256.hash(data: Data((fingerprint + version).utf8))
             .map { String(format: "%02x", $0) }.joined() + ".jpg"
         let artworkFile = prepareArtwork(asset: asset, url: url, imageName: imageName)
         var song = Song(id: fingerprint, folderID: folderID, relativePath: relativePath,
@@ -392,8 +415,8 @@ extension MusicLibrary {
     private func prepareSimulatorFixture() throws {
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("MiniVoice-UITestFixture", isDirectory: true)
+        if FileManager.default.fileExists(atPath: root.path) { try FileManager.default.removeItem(at: root) }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let audio = root.appendingPathComponent("silence.wav")
         var wav = Data()
         func ascii(_ text: String) { wav.append(contentsOf: text.utf8) }
         func u16(_ value: UInt16) { var v = value.littleEndian; withUnsafeBytes(of: &v) { wav.append(contentsOf: $0) } }
@@ -402,7 +425,6 @@ extension MusicLibrary {
         ascii("RIFF"); u32(bytes + 36); ascii("WAVEfmt "); u32(16); u16(1); u16(1)
         u32(8000); u32(16000); u16(2); u16(16); ascii("data"); u32(bytes)
         wav.append(Data(count: Int(bytes)))
-        try wav.write(to: audio, options: .atomic)
         let bookmark = try root.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         folders = [MusicFolder(id: root.path, name: "合成测试音乐", bookmark: bookmark)]
         let titles = ["山海之间", "午夜漫步", "微光", "海岸线", "夏日来信", "远行", "雨后", "星河", "慢慢", "日落之前", "风的方向", "回声"]
@@ -418,9 +440,26 @@ extension MusicLibrary {
                 ("MINIVOICE · UI TEST" as NSString).draw(at: CGPoint(x: 26, y: 300), withAttributes: [.font: UIFont.systemFont(ofSize: 16, weight: .medium), .foregroundColor: UIColor.white])
             }
             try image.pngData()!.write(to: artwork, options: .atomic)
-            return Song(id: root.path + "/歌手 #\(index)%/silence.wav", folderID: root.path, relativePath: "silence.wav", title: title,
+            try FileManager.default.createDirectory(at: Self.artworkDirectory, withIntermediateDirectories: true)
+            let thumbnail = Self.artworkDirectory.appendingPathComponent("fixture-\(index).png")
+            try image.pngData()!.write(to: thumbnail, options: .atomic)
+            let parent = root.appendingPathComponent("歌手 #\(index)%", isDirectory: true)
+            try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+            let stem = "\(index) - \(["北岸", "山间电台", "微光乐队"][index % 3]) - \(title)"
+            let relative = parent.lastPathComponent + "/" + stem + ".wav"
+            try wav.write(to: root.appendingPathComponent(relative), options: .atomic)
+            try image.pngData()!.write(to: parent.appendingPathComponent("cover.png"), options: .atomic)
+            let lyricsRoot = root.appendingPathComponent("lrc", isDirectory: true)
+            try FileManager.default.createDirectory(at: lyricsRoot, withIntermediateDirectories: true)
+            try "[0,15000](0,15000,0)根目录逐字歌词".write(to: lyricsRoot.appendingPathComponent(stem + ".yrc"), atomically: true, encoding: .utf8)
+            var song = Song(id: root.path + "/" + relative, folderID: root.path, relativePath: relative, title: title,
                         artist: ["北岸", "山间电台", "微光乐队"][index % 3], album: "模拟器测试专辑", duration: 60,
-                        artworkFile: artwork.path, lyrics: "[00:00.00]这是一段合成测试音频\n[00:15.00]用来检查音乐墙与播放界面\n[00:30.00]不会读取你的真实音乐")
+                        artworkFile: thumbnail.path, lyrics: "[00:00.00]这是一段合成测试音频\n[00:15.00]用来检查音乐墙与播放界面\n[00:30.00]不会读取你的真实音乐")
+            song.originalArtworkFile = artwork.path
+            song.sourceAdded = Double(index + 1) * 1000; song.added = Double(index + 1) * 2000
+            song.fileSize = Int64(wav.count); song.cacheVersion = "fixture-\(index)"
+            song.originalArtist = song.artist
+            return song
         }
     }
 }
@@ -490,10 +529,15 @@ extension MusicLibrary {
         }
     }
 
+    func artworkData(for song: Song, original: Bool) async throws -> Data {
+        guard let folder = folders.first(where: { $0.id == song.folderID }) else { throw CocoaError(.fileReadNoPermission) }
+        return try await Task.detached(priority: .userInitiated) { try LibraryScanner.artworkData(song: song, folder: folder, original: original) }.value
+    }
+
     var sharedSettings: [String: Any] {
         ["folders": folders.map { ["id": $0.id, "name": $0.name, "path": "系统文件授权目录"] },
          "recursive": includesSubfolders, "artists": Array(Set(songs.map { $0.originalArtist ?? $0.artist })).sorted(),
-         "aliases": aliases, "crashCount": 0,
+         "aliases": aliases, "crashCount": IOSDiagnostics.shared.crashCount,
          "actions": ["chooseFolder", "removeFolder", "recursive", "rescan", "clearRecent", "cacheInfo", "clearCache", "inspectLibrary", "artistAlias", "clearArtistAliases", "exportDiagnostics"]]
     }
 
@@ -514,8 +558,7 @@ extension MusicLibrary {
             // Invalidate index references, preserving original music, user lyrics and collection data.
             songs = songs.map { song in
                 var value = song
-                if let path = value.artworkFile, !FileManager.default.fileExists(atPath: path) { value.artworkFile = nil; value.cacheVersion = nil }
-                if let path = value.originalArtworkFile, !FileManager.default.fileExists(atPath: path) { value.originalArtworkFile = nil; value.cacheVersion = nil }
+                if let path = value.artworkFile, !FileManager.default.fileExists(atPath: path) { value.cacheVersion = nil }
                 return value
             }
             saveIndex(songs)
@@ -584,12 +627,16 @@ extension MusicLibrary {
         }
     }
 
-    func diagnosticsArchive() throws -> Data {
+    func diagnosticsArchive() async throws -> Data {
+        let history = try await IOSDiagnostics.shared.exportHistory()
+        let historyData = try JSONEncoder().encode(history)
         // Counts, versions and local errors only; do not export security bookmarks or music paths.
         let report: [String: Any] = ["platform": "iOS", "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "",
                                    "songCount": songs.count, "folderCount": folders.count, "playlistCount": playlists.count,
                                    "scanning": isScanning, "scanDetail": scanDetail, "inspection": ["running": inspection["running"] ?? false],
-                                   "createdAt": ISO8601DateFormatter().string(from: Date())]
+                                   "createdAt": ISO8601DateFormatter().string(from: Date()),
+                                   "diagnostics": try JSONSerialization.jsonObject(with: historyData),
+                                   "crashDelivery": "MetricKit 系统延迟投递；本地保留最近 5 条崩溃，未收到记录不代表从未崩溃"]
         return DiagnosticArchive.zip(name: "diagnostics.json", data: try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]))
     }
 }

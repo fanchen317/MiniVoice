@@ -433,3 +433,38 @@ Android 专用 emulator-5554：portable 完整回归通过 UI_PORTABLE_PASS；�
 - 修正：`build/` 改为 `/build/`，只忽略仓库根构建输出；按 `Scripts/README.md` 与 `Docs/PROJECT_STRUCTURE.md` 的目录职责恢复 `Scripts/build/` 的 15 个脚本，适配新目录层级与 `.build/{cache,work,reports,dist}` 布局（`.build/work/shared-ui`、`.build/work/android`、`.build/work/native`、`.build/cache/ios/DerivedData`）；新增 `Scripts/build/build-ios-ui.sh`（把共享 UI 打包进 App bundle 的 `SharedPlayer/`，并附带模拟器冒烟脚本）与 `Scripts/common/node-runtime.sh`（Xcode 构建阶段的最小 PATH 只解析到 `/usr/local/bin/node` v16，缺少 `node:util` 的 `styleText`，统一按仓库既有规则选择 Node 20/22/24 LTS）。
 - 通过：`bash Scripts/build/build-ios.sh simulator Debug`（Debug 模拟器构建成功，产物含 `SharedPlayer/index.html`、assets 与 `shared-host-smoke.js`）；`bash Scripts/tests/test-ios.sh`；`node --test Shared/UI/test/*.test.mjs`（45 项）；`python3 Scripts/tests/test-package-workflows.py`；`python3 Scripts/tests/test-shared-ui-independent.py`（异目录、无 `MacOS/Desktop/node_modules` 的离线构建）；`bash Scripts/build/build-app.sh release`（Mac 正式包重建到 `.build/dist/MiniVoice.app`，`codesign --verify --deep --strict` 通过）。
 - 未验证：Android 打包缺本机 Android SDK 与 `Android/signing-certificate.sha256`，脚本已运行到 SDK 发现步骤即按预期拒绝；`package-ios.sh` 的签名 IPA 导出仍缺开发团队与导出配置；iOS 专用模拟器的 WKWebView 集成冒烟本轮未运行。
+
+## 2026-10-28 统一入口接入 iOS 打包
+
+- 按用户明确要求维护iOS打包：移除旧“iOS体验宿主未接入”拦截。build/build-experience/deploy/deploy-experience均默认包含iOS，支持--platforms ios定向导出。iOS deploy仅产出IPA，不安装手机。
+- 正式/体验均使用当前iOS共享宿主，不更换业务UI。正式bundle com.xcosmos.MiniVoice.ios，体验bundle com.xcosmos.MiniVoice.ios.experience；缓存和固定IPA名按通道隔离。通用团队/ExportOptions配置保留，体验可独立覆盖。先校验plist，再archive/export；失败明确返回非零，不把旧IPA当本次成功。此项取代此前体验宿主未接入的打包限制。
+- 通过：四公开入口路由测试、模拟Xcode的iOS双通道archive/export/产物命名/身份/配置继承/缺签名失败/临时目录清理测试；bash语法及diff检查；实际 build-ios.sh device Release 无签名构建通过，报告 .build/reports/ios/package-device-build.log。模拟导出仅验证脚本，不代表Apple签名验收。
+- 未完成真实签名导出：本机security find-identity报告0个可用签名身份，开发团队/ExportOptions未配置；公开体验入口正确失败，报告package-signing-check.log。没有生成或宣称生成可安装IPA，实体设备安装仍待有效证书及描述文件。
+
+
+## 2026-10-29 iOS 全面补齐 Android 体验版主体能力
+
+- 基准固定为 PortablePlayerActivity + Shared/UI，按用户明确授权开展 iOS 开发；保留竖屏长条居中、圆形左下、iPad 按实际碰撞避让和禁止悬停展开。
+- 已实施：特殊路径封面身份、原图和缓存重建、日期/大小、LRC/YRC 发现、共享维护工具/诊断 ZIP 导出、五模式策略、音频打断/路由与状态观察、导航定位、扫描进度/增量/中断标记、默认系统主题、集合排序、当前元数据刷新、沉浸与横屏安全区。状态后台串行保存避免旧请求覆盖新状态。
+- 通过：组件门禁、45 项共享 JS；iOS 解析/策略/路径/缓存/旧索引/ZIP；iPhone 88、iPad 89 项 WKWebView 桥接；两设备三样式×深浅×横竖的 XCUITest 点按/旋转与系统截图；iPhone 系统导出面板打开/取消；Debug 模拟器和无签名 device Release。两包实际共享 JS/CSS 指纹一致。最终状态串行保存后重新通过双设备桥接和 device Release。
+- 测试修正记录：原 Button 查询不能匹配 WKWebView 的 aria-pressed Switch，以及系统取消 Other；修正实际辅助功能查询。app.screenshot 横屏附件裁切异常，改用 XCUIScreen 系统截图并重新跑矩阵，未把黑边旧截图作为通过证据。
+- 尚未完整对齐：OGG/Vorbis 解码、崩溃捕获/完整诊断历史、长期后台扫描、大库主线程开销。待验：真实文件提供方/iCloud、电话/耳机/蓝牙/锁屏、软键盘/IME/VoiceOver/分屏、多指及取消手势、实体 GPU。不可宣称完整实机签收。
+- 逐项实现与证据见 `Docs/iOS-AndroidExperience-Parity-Implementation-2026-10-29.md`，历史审计保留修复前结论。
+
+
+## 2026-10-29 iOS 按标准继续补充：诊断、键盘与真实手势
+
+- 已实施：MetricKit 系统报告接入、有界本地事件/错误/崩溃历史、跨启动读取、投递去重、路径/URI 清理和诊断 ZIP；替代上一阶段“崩溃捕获未接入”，但系统延迟报告不等同即时全量捕获。截图 JPEG 编码转后台。
+- 已修复：真实 iPhone 创建歌单被键盘遮挡及文本框聚焦自动放大；Shared Modal 复用可视区域测量，保留原无键盘高度/平板间距和播放条位置。实际 Android 35 不缩小 visualViewport，补宿主 IME 与 WebView 实际交集，避免重复扣除。
+- 通过：门禁、46 项共享 JS、iOS 诊断持久化/边界/清理/损坏/失败/ZIP；iPhone 89、iPad 90 项宿主；两设备各 4 个 XCUITest（含三样式×深浅×横竖、实际搜索/歌单软键盘、队列上拉下拉、系统导出/取消）；实际 Android 35 `UI_KEYBOARD_PASS`；test-wall-version 全部页面/Mac 回归。Debug 模拟器与无签名 device Release、Android 体验 APK 构建通过，共享 JS/CSS 指纹一致。
+- 失败及修正：初始 iPhone 键盘遮挡断言、Android 关闭点按落到键盘均真实失败，已修复；iPad 导出自动化需滚动到弹窗真实可见矩形，修正测试可见性判断后通过。
+- 待验收：MetricKit 真机投递、API 29 回退、浮动/分离/横屏键盘及完整 IME；OGG、长期后台扫描、大库性能和此前真机边界仍在。未执行完整 Android portable 历史用例，不扩大宣称。
+- 完整实现、证据与已知限制见 `Docs/iOS-AndroidExperience-Followup-2026-10-29.md`。
+
+
+## 2026-10-29 合并 origin/version2.8.1-repair
+
+- 已合入 28c9948、dc7f0a9、38c6c02、c3a7903：修正 `.gitignore` 的 build 作用域、入库构建脚本、Node 兼容处理和共享资源根路径规范化。
+- 冲突整合保留当前 iOS 体验/正式双通道、测试和 MetricKit 引用、Debug 冒烟打包及严格许可校验；保留双方验收记录。当前开发源码随整合提交，个人 Xcode 状态单独保留。
+- 通过：Git index 干净导出 + 精简 PATH 离线共享 UI 构建；公开入口/iOS 打包模拟/独立 UI 构建测试；门禁、46 项 JS、iOS 基础与诊断/ZIP；Debug 模拟器与无签名 device Release；专用 iPhone/iPad 宿主；语法/diff 检查。
+- 未执行真实 Apple 签名和手机部署、完整 Android/Mac 原生回归。日志 `.build/reports/merge-repair/`；详见 `Docs/MERGE_VERSION2_8_1_REPAIR_2026-10-29.md`。

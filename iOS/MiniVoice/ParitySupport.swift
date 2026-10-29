@@ -98,3 +98,71 @@ enum DiagnosticArchive {
         return output
     }
 }
+
+struct DiagnosticRecord: Codable, Sendable {
+    enum Kind: String, Codable, Sendable { case event, failure, crash }
+    let id: String
+    let timestamp: Date
+    let kind: Kind
+    let detail: String
+
+    init(id: String = UUID().uuidString, timestamp: Date = Date(), kind: Kind, detail: String) {
+        self.id = id; self.timestamp = timestamp; self.kind = kind
+        let scrubbed = Self.scrub(detail)
+        self.detail = String(decoding: scrubbed.utf8.prefix(kind == .crash ? 16384 : 512), as: UTF8.self)
+    }
+
+    static func scrub(_ detail: String) -> String {
+        detail.replacingOccurrences(of: #"(?:file|content|https?)://[^\s\"<>]+"#, with: "[uri]", options: .regularExpression)
+            .replacingOccurrences(of: #"/(?:Users|private|var|Volumes|storage|sdcard|data/user)/[^\s\"<>]+"#, with: "[path]", options: .regularExpression)
+    }
+
+    static func metricDetail(_ data: Data) throws -> String {
+        func sanitize(_ value: Any) -> Any {
+            if let text = value as? String { return scrub(text) }
+            if let array = value as? [Any] { return array.map(sanitize) }
+            if let object = value as? [String: Any] { return object.mapValues(sanitize) }
+            return value
+        }
+        let object = try JSONSerialization.jsonObject(with: data)
+        let scrubbed = try JSONSerialization.data(withJSONObject: sanitize(object), options: [.sortedKeys, .withoutEscapingSlashes])
+        return String(decoding: scrubbed, as: UTF8.self)
+    }
+}
+
+struct DiagnosticHistory: Codable, Sendable {
+    private(set) var records: [DiagnosticRecord] = []
+    var crashCount: Int { records.filter { $0.kind == .crash }.count }
+    mutating func append(_ record: DiagnosticRecord) {
+        guard !records.contains(where: { $0.id == record.id }) else { return }
+        records.append(record)
+        records.sort { $0.timestamp < $1.timestamp }
+        let crashes = records.filter { $0.kind == .crash }.suffix(5)
+        let events = records.filter { $0.kind != .crash }.suffix(200)
+        records = (Array(crashes) + Array(events)).sorted { $0.timestamp < $1.timestamp }
+    }
+}
+
+/// Serial actor owns disk access. A failed write never publishes a successful saved state.
+actor DiagnosticStore {
+    private let url: URL
+    private var history: DiagnosticHistory?
+    init(url: URL) { self.url = url }
+    func snapshot() throws -> DiagnosticHistory {
+        if let history { return history }
+        let loaded: DiagnosticHistory
+        do { loaded = try JSONDecoder().decode(DiagnosticHistory.self, from: Data(contentsOf: url)) }
+        catch let error as CocoaError where error.code == .fileReadNoSuchFile { loaded = DiagnosticHistory() }
+        history = loaded
+        return loaded
+    }
+    func append(_ record: DiagnosticRecord) throws -> DiagnosticHistory {
+        var next = try snapshot()
+        next.append(record)
+        let data = try JSONEncoder().encode(next)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
+        history = next
+        return next
+    }
+}

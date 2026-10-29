@@ -36,14 +36,28 @@ node --test Shared/UI/test/*.test.mjs
 bash Scripts/tests/test-ios-shared-ui.sh <专用模拟器UUID>
 ```
 
-脚本拒绝普通模拟器。测试启动参数 `--mv-ui-fixture --mv-ui-smoke` 只在模拟器生效，生成 12 张合成封面与静音 WAV，通过实际 WKWebView/宿主桥验证共享页面，并把 JSON 报告与截图复制到 `.build/reports/ios/shared-ui/<UUID>/`。不读取真实音乐库；DOM 自动操作不能替代真机触控/手势测试。
+脚本拒绝普通模拟器。测试启动参数 `--mv-ui-fixture --mv-ui-smoke` 只在模拟器生效，生成 12 张合成封面与静音 WAV，通过实际 WKWebView/宿主桥验证共享页面，并把 JSON 报告与截图复制到 `.build/reports/ios/shared-ui/<UUID>/<runID>/`。不读取真实音乐库；DOM 自动操作不能替代真机触控/手势测试。
+
+系统点按、横竖屏和三样式深浅截图：
+
+```sh
+bash Scripts/tests/test-ios-layout.sh <专用模拟器UUID>
+```
+
+该脚本使用 XCUITest，包含诊断系统导出面板的打开与取消，截图使用 XCUIScreen，报告位于 `.build/reports/ios/layout/<UUID>/<runID>/`。仅用专用模拟器，不能替代真机音频和多指手势检查。
 
 ## 当前边界
 
-系统目录选择器、iCloud 文件下载与授权续期仍需手工/真机检查。iOS 尚未接入诊断导出、歌手别名管理、完整缓存维护及原生版本的手动 LRC 导入入口；共享设置只声明已实现的宿主能力，未实现命令明确报错。系统电话打断、锁屏入口定位、横屏、VoiceOver 与实体 GPU 的玻璃/动画仍待验收。已有 AVFoundation 同步标签读取的弃用警告尚待后续迁移。
+已接入诊断 ZIP 系统导出、共享缓存维护/文件巡检/歌手归并、原图封面、扫描日期及进度、LRC/YRC 发现、五模式策略和系统音频/导航信号。完整逐项结果见 `Docs/iOS-AndroidExperience-Parity-Implementation-2026-10-29.md`。已继续接入 MetricKit 延迟崩溃报告和本地诊断历史，并修复真实软键盘遮挡、补队列触摸测试，见 `Docs/iOS-AndroidExperience-Followup-2026-10-29.md`。OGG 解码、大库性能及后台长期扫描仍未完整对齐；系统目录选择器、iCloud、电话/蓝牙/锁屏、VoiceOver 与实体 GPU 仍需真机验收。AVFoundation 同步标签读取的弃用警告尚在。
 
 iOS 图标由 `bash Scripts/tools/generate-ios-icon.sh` 从共享矢量导出，不透明背景铺满，主屏圆角由系统裁切。完整验收状态见 `Docs/ACCEPTANCE_STATUS.md`，后续开发遵守 `Docs/PRODUCT_STANDARD.md`、`Docs/COMPONENT_STANDARD.md` 与 `Shared/UI/COMPONENTS.md`。
 
 用户最新竖屏定位要求：展开播放长条在左右安全区内居中，收起圆形保持原左下角位置。通过共享组件的 `portraitDock` 配置实现，横屏和 Android 的现有规则保持不变。
 
 iPad 的设置按钮按播放条与原右下位置的实际碰撞决定是否上移，未遮挡时位置不变。移动端圆形播放条只响应点击展开；模拟器鼠标悬停不会展开。Mac 的键鼠行为由同一收起组件的独立参数保留。
+
+## 统一打包入口
+
+`bash Scripts/build.sh --platforms ios` / `bash Scripts/build-experience.sh --platforms ios` 分别生成正式/体验签名IPA；deploy对应命令同样生成IPA，只有Mac执行本机应用替换，不自动安装iPhone。两条iOS通道目前都使用本目录现有共享宿主，区别为包标识、缓存及产物隔离，不代表恢复旧原生UI。
+
+设置 `MINIVOICE_IOS_TEAM` 和 `MINIVOICE_IOS_EXPORT_OPTIONS`（有效ExportOptions.plist绝对路径）；体验版可用 `MINIVOICE_IOS_EXPERIENCE_TEAM` / `MINIVOICE_IOS_EXPERIENCE_EXPORT_OPTIONS` 覆盖。证书/描述文件需支持正式 `com.xcosmos.MiniVoice.ios` 或体验 `com.xcosmos.MiniVoice.ios.experience`。输出 `.build/dist/MiniVoice-ios.ipa` / `MiniVoice-ios-experience.ipa`，缓存 `.build/cache/ios/{release,experience}/DerivedData`。缺签名时明确失败，旧IPA不代表本次成功。

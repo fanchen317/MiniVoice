@@ -7,7 +7,7 @@
 - `Scripts/deploy.sh`：正式版移动安装包及 Mac 应用替换。
 - `Scripts/deploy-experience.sh`：体验版移动安装包及 Mac 应用替换。
 
-均支持 `--platforms mac,android`、`--no-launch` 和 `--help`。iOS 体验宿主尚未接入；正式 IPA 需配置签名，详见根 README。
+均支持 `--platforms mac,android,ios`、`--no-launch` 和 `--help`，默认三个平台。iOS 正式/体验均走 archive + exportArchive；仅需 iOS 时传 `--platforms ios`。签名与固定产物说明见根 README。
 
 | 目录 | 用途 |
 | --- | --- |

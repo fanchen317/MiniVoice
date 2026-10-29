@@ -44,9 +44,9 @@ MiniVoice 是本地音乐播放器，包含 macOS、Android 和 iOS 三个独立
 | 命令 | 版本 | 行为 |
 | --- | --- | --- |
 | `Scripts/build.sh` | 正式 | Mac `.app` + DMG、Android APK、iOS 签名 IPA |
-| `Scripts/build-experience.sh` | 体验 | Mac `.app` + DMG、Android APK；iOS 体验宿主尚未接入，会报错 |
+| `Scripts/build-experience.sh` | 体验 | Mac `.app` + DMG、Android APK、iOS 体验版签名 IPA |
 | `Scripts/deploy.sh` | 正式 | APK、签名 IPA，并替换 `/Applications/MiniVoice.app` |
-| `Scripts/deploy-experience.sh` | 体验 | APK，并替换 `/Applications/MiniVoice-debug.app`；iOS 体验宿主尚未接入，会报错 |
+| `Scripts/deploy-experience.sh` | 体验 | APK、体验版签名 IPA，并替换 `/Applications/MiniVoice-debug.app` |
 
 默认处理 mac、android、ios；可用 `--platforms mac,android` 只构建当前已接入的平台。部署默认启动应用，`--no-launch` 只替换。任何平台失败最终返回非零，其余平台继续处理；旧包保留不代表本轮成功。四个入口共用互斥锁，避免同时写入构建缓存。
 
@@ -56,7 +56,7 @@ MiniVoice 是本地音乐播放器，包含 macOS、Android 和 iOS 三个独立
 
 Android 的签名前 APK、DEX、资源包只写临时组装目录，失败或成功均清理；测试兼容链接 `.build/work/android/MiniVoice-debug.apk` 指向体验发布包。内部平台脚本仍可用于定向开发，`install-mac.sh` 只负责经过校验的 Mac 应用替换。
 
-iOS 正式 IPA 使用 Xcode archive + exportArchive，需设置 `MINIVOICE_IOS_TEAM`（开发团队）和 `MINIVOICE_IOS_EXPORT_OPTIONS`（有效 ExportOptions.plist 路径），并在本机准备对应证书和描述文件。缺失配置时明确失败，不导出无法安装的未签名压缩包。`build-ios.sh` 仍用于模拟器或未签名编译检查，不是 IPA 发布入口。
+iOS 正式/体验 IPA 使用现有共享界面宿主和 Xcode archive + exportArchive，需设置 `MINIVOICE_IOS_TEAM`（开发团队）和 `MINIVOICE_IOS_EXPORT_OPTIONS`（有效 ExportOptions.plist 路径），并在本机准备对应证书和描述文件。缺失配置时明确失败，不导出无法安装的未签名压缩包。体验版可用 `MINIVOICE_IOS_EXPERIENCE_TEAM`、`MINIVOICE_IOS_EXPERIENCE_EXPORT_OPTIONS` 覆盖签名配置（未设置时继承通用配置）。正式包标识为 `com.xcosmos.MiniVoice.ios`，体验包为 `com.xcosmos.MiniVoice.ios.experience`；手动签名配置需覆盖对应标识。固定产物为 `.build/dist/MiniVoice-ios.ipa` 和 `MiniVoice-ios-experience.ipa`。iOS 的 deploy 生成 IPA，不自动安装到手机。`build-ios.sh` 仍用于模拟器或未签名编译检查，不是 IPA 发布入口。
 
 需要 Node.js LTS / npm、Xcode、Android SDK/NDK 及仓库 Git LFS 资源。Android 默认仍使用仓库固定开发签名，本文“正式”指旧界面版本，不代表已配置商店发行证书。
 

@@ -38,6 +38,7 @@ public final class PortablePlayerActivity extends Activity {
     @Override public void onCreate(Bundle state){super.onCreate(state);
         web=new WebView(this);setContentView(web);applyChrome(null);
         web.setOnApplyWindowInsetsListener((view,insets)->{publishInsets(insets);return insets;});
+        web.addOnLayoutChangeListener((view,l,t,r,b,oldL,oldT,oldR,oldB)->publishInsets(web.getRootWindowInsets()));
         WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(false);
         settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         web.setWebViewClient(new WebViewClient(){
@@ -141,7 +142,17 @@ public final class PortablePlayerActivity extends Activity {
     }
     private void publishInsets(android.view.WindowInsets insets){
         if(web==null||closed)return;int left=0,top=0,right=0,bottom=0;if(insets!=null){if(Build.VERSION.SDK_INT>=30){android.graphics.Insets safe=insets.getInsets(android.view.WindowInsets.Type.systemBars()|android.view.WindowInsets.Type.displayCutout());left=safe.left;top=safe.top;right=safe.right;bottom=safe.bottom;}else{left=insets.getSystemWindowInsetLeft();top=insets.getSystemWindowInsetTop();right=insets.getSystemWindowInsetRight();bottom=Math.min(insets.getSystemWindowInsetBottom(),insets.getStableInsetBottom());android.view.DisplayCutout cutout=insets.getDisplayCutout();if(cutout!=null){left=Math.max(left,cutout.getSafeInsetLeft());top=Math.max(top,cutout.getSafeInsetTop());right=Math.max(right,cutout.getSafeInsetRight());bottom=Math.max(bottom,cutout.getSafeInsetBottom());}}}if(!wallChrome&&getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE){left=right=Math.max(left,right);}
-        float d=getResources().getDisplayMetrics().density;String script="(()=>{const s=document.documentElement.style;s.setProperty('--mv-safe-left','"+(left/d)+"px');s.setProperty('--mv-safe-top','"+(top/d)+"px');s.setProperty('--mv-safe-right','"+(right/d)+"px');s.setProperty('--mv-safe-bottom','"+(bottom/d)+"px');window.dispatchEvent(new Event('minivoice-insets'));})()";web.evaluateJavascript(script,null);
+        int obscured=0,imeBottom=0;
+        if(insets!=null){
+            if(Build.VERSION.SDK_INT>=30){if(insets.isVisible(android.view.WindowInsets.Type.ime()))imeBottom=insets.getInsets(android.view.WindowInsets.Type.ime()).bottom;}
+            else if(insets.getSystemWindowInsetBottom()>insets.getStableInsetBottom())imeBottom=insets.getSystemWindowInsetBottom();
+        }
+        if(imeBottom>0){
+            int[] windowOrigin=new int[2],webOrigin=new int[2];android.view.View decor=getWindow().getDecorView();decor.getLocationOnScreen(windowOrigin);web.getLocationOnScreen(webOrigin);
+            int keyboardTop=windowOrigin[1]+decor.getHeight()-imeBottom;
+            obscured=Math.min(web.getHeight(),Math.max(0,webOrigin[1]+web.getHeight()-keyboardTop));
+        }
+        float d=getResources().getDisplayMetrics().density;String script="(()=>{const s=document.documentElement.style;s.setProperty('--mv-safe-left','"+(left/d)+"px');s.setProperty('--mv-safe-top','"+(top/d)+"px');s.setProperty('--mv-safe-right','"+(right/d)+"px');s.setProperty('--mv-safe-bottom','"+(bottom/d)+"px');s.setProperty('--mv-keyboard-bottom','"+(obscured/d)+"px');window.dispatchEvent(new Event('minivoice-insets'));})()";web.evaluateJavascript(script,null);
     }
     @Override public void onConfigurationChanged(android.content.res.Configuration value){super.onConfigurationChanged(value);applyChrome(lastWorkspace);}
     private void hostAction(JSONObject request)throws Exception{

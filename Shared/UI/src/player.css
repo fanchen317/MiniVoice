@@ -247,3 +247,14 @@
  [data-presentation=mobile] .mv-drawer-shade{display:flex;align-items:stretch}
  [data-presentation=mobile] .mv-drawer{height:100%;max-width:360px}
 }
+
+/* Mobile hosts that pan instead of resizing the layout viewport (WKWebView)
+   still place every modal above the keyboard. Android adjustResize yields the
+   full visual height here, so keyboard space is never subtracted twice. */
+.mv-workspace[data-presentation=mobile] .mv-modal-shade{
+ top:var(--mv-dialog-top,0px);bottom:auto;height:var(--mv-dialog-height,100%);
+ --mv-dialog-safe-top:max(0px,calc(var(--mv-safe-top,0px) - var(--mv-dialog-top,0px)));
+ padding-top:calc(var(--mv-dialog-safe-top) + var(--mv-dialog-gap,12px));
+}
+.mv-workspace[data-presentation=mobile][data-dialog-placement=center] .mv-modal-shade{--mv-dialog-gap:24px}
+.mv-workspace[data-presentation=mobile] .mv-modal-shade[data-visual-keyboard=true]{padding-bottom:var(--mv-dialog-gap,12px)}

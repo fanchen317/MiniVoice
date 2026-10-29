@@ -21,7 +21,7 @@ export default function MobileSettings({adapter,snapshot,style,theme,appearance,
    {supports('recursive')&&<label className="mv-option">包含子文件夹<CheckControl label="包含子文件夹" checked={settings.recursive} disabled={pending} onCheckedChange={value=>perform('recursive',{value})}/></label>}
    {supports('rescan')&&<ActionButton className="mv-option" disabled={pending||snapshot.scanning} onClick={()=>perform('rescan')}>{snapshot.scanning?snapshot.scanDetail||'正在扫描…':'重新扫描音乐库'}</ActionButton>}
    {supports('clearRecent')&&<ActionButton className="mv-option" disabled={pending} onClick={()=>setConfirm({name:'clearRecent',payload:{}})}>清空最近播放记录</ActionButton>}
-   {supports('exportDiagnostics')&&<><h3>诊断与稳定性</h3><ActionButton className="mv-option" disabled={pending} onClick={()=>perform('exportDiagnostics')}>导出诊断报告<small>{settings.crashCount||0} 次本地崩溃记录</small></ActionButton></>}
+   {supports('exportDiagnostics')&&<><h3>诊断与稳定性</h3><ActionButton className="mv-option" disabled={pending} onClick={()=>perform('exportDiagnostics')}>导出诊断报告<small>{Number.isFinite(settings.crashCount)?`${settings.crashCount} 次本地崩溃记录`:'本地诊断信息'}</small></ActionButton></>}
    {supports('cacheInfo')&&<MobileLibraryTools adapter={adapter} snapshot={snapshot} settings={settings} onChanged={refresh}/>}<ActionButton className="mv-option" onClick={onExit}>返回播放器</ActionButton>
   </>}
  </div>;

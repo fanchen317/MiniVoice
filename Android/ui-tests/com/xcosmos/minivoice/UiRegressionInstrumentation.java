@@ -18,6 +18,7 @@ public final class UiRegressionInstrumentation extends Instrumentation {
     private final StringBuilder report=new StringBuilder();
     @Override public void onCreate(Bundle args){super.onCreate(args);arguments=args;start();}
     @Override public void onStart(){Bundle result=new Bundle();try{
+        if("keyboard".equals(arguments.getString("mode"))){portableKeyboard();result.putString("stream",report+"UI_KEYBOARD_PASS\n");finish(Activity.RESULT_OK,result);return;}
         if("crash".equals(arguments.getString("mode"))){new Thread(()->{throw new IllegalStateException("UI_CRASH_PROBE");},"diagnostic-crash-probe").start();SystemClock.sleep(10000);throw new AssertionError("Crash handler did not terminate process");}
         if("tags".equals(arguments.getString("mode"))){tagEditing();result.putString("stream",report+"UI_TAG_EDIT_PASS\n");finish(Activity.RESULT_OK,result);return;}
         if("playerFlow".equals(arguments.getString("mode"))){portablePlayer();result.putString("stream",report+"UI_PLAYER_FLOW_PASS\n");finish(Activity.RESULT_OK,result);return;}
@@ -413,6 +414,21 @@ public final class UiRegressionInstrumentation extends Instrumentation {
         report.append("PASS Android WebView neutral panels in three styles/light/dark, real backdrop, seven crisp marks, trusted 90 percent tap and 44px controls\n");
     }
 
+    private void portableKeyboard()throws Exception{
+        Context context=getTargetContext();
+        context.getSharedPreferences("portable",0).edit().putString("workspace","{\"version\":1,\"section\":\"音乐库\",\"pages\":{\"appearance\":{\"style\":\"wall\",\"theme\":\"light\"}}}").commit();
+        PortablePlayerActivity preview=(PortablePlayerActivity)startActivitySync(new Intent(context,PortablePlayerActivity.class).putExtra("minivoice.uiRegression",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        android.webkit.WebView web=(android.webkit.WebView)field(preview,"web");SystemClock.sleep(1800);
+        webTap(web,"[aria-label=打开侧边栏]");webButton(web,"新建歌单");SystemClock.sleep(400);
+        webTap(web,"input[aria-label=歌单名称]");SystemClock.sleep(1000);
+        main(()->check(web.getRootWindowInsets().isVisible(android.view.WindowInsets.Type.ime()),"Actual Android keyboard did not open"));
+        check("true".equals(javascript(web,"(()=>{const button=document.querySelector('.mv-confirm'),r=button.getBoundingClientRect(),v=visualViewport,modal=document.querySelector('.mv-modal').getBoundingClientRect();const bottom=Math.min(v.offsetTop+v.height,innerHeight-(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--mv-keyboard-bottom'))||0));return r.top>=v.offsetTop&&r.bottom<=bottom&&modal.top>=v.offsetTop&&modal.bottom<=bottom&&parseFloat(getComputedStyle(document.querySelector('input[aria-label=歌单名称]')).fontSize)>=16})()")),"Android keyboard overlaps modal or subtracts keyboard height twice");
+        report.append("KEYBOARD_GEOMETRY "+javascript(web,"JSON.stringify({innerHeight,viewport:{height:visualViewport.height,top:visualViewport.offsetTop},layer:document.querySelector('.mv-modal-shade').getBoundingClientRect(),modal:document.querySelector('.mv-modal').getBoundingClientRect(),button:document.querySelector('[aria-label=关闭弹窗]').getBoundingClientRect()})")+"\n");
+        main(()->report.append("NATIVE_KEYBOARD webHeight="+web.getHeight()+" decor="+preview.getWindow().getDecorView().getHeight()+" ime="+web.getRootWindowInsets().getInsets(android.view.WindowInsets.Type.ime()).bottom+"\n"));
+        screenshot("shared-keyboard-playlist");webTap(web,"[aria-label=关闭弹窗]");SystemClock.sleep(500);
+        check("true".equals(javascript(web,"!document.querySelector('[role=dialog]')")),"Keyboard modal did not dismiss");
+        report.append("PASS actual Android experience keyboard, visible create button, unchanged viewport subtraction and dismissal\n");main(preview::finish);
+    }
     private void portablePlayer()throws Exception{
         Context context=getTargetContext();Uri tree=android.provider.DocumentsContract.buildTreeDocumentUri(TestMusicProvider.AUTHORITY,"root");context.getContentResolver().call(tree,"reset",null,null);
         Set<String> folders=Collections.singleton(tree.toString());List<Song> tracks=FolderLibrary.scan(context,folders,false,(a,b,c)->{},Collections.emptyList());

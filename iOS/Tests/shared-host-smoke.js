@@ -22,6 +22,26 @@ try {
  check(snapshot.songs.every(song=>song.duration===60000),'秒转毫秒协议');
  await wait(()=>[...document.images].filter(img=>img.src.includes('/artwork/')).some(img=>img.complete&&img.naturalWidth>0),'宿主封面加载');
  checks.push('授权封面资源加载成功');
+ check(snapshot.songs.every(song=>song.id.includes('/')&&song.id.includes('#')&&song.sourceAdded>0&&song.added>0&&song.size>0),'真实路径身份与日期和大小字段');
+ for(const song of snapshot.songs){
+   for(const url of [song.artwork,song.artworkDetail]){
+     const img=new Image();img.src=url;await wait(()=>img.complete,'封面请求完成');check(img.naturalWidth>0,'特殊路径缩略图及原图 '+song.title);
+   }
+ }
+ const action=(name,payload={})=>send({kind:'action',name,payload});
+ const config=await action('getSettings');
+ check(['cacheInfo','clearCache','inspectLibrary','artistAlias','clearArtistAliases','exportDiagnostics'].every(key=>config.actions.includes(key)),'维护设置能力完整接入');
+ const cache=await action('cacheInfo');check(cache.count>=12&&cache.bytes>0,'封面缓存统计');
+ let cacheDenied=false;try{await action('clearCache',{ids:['../outside']});}catch{cacheDenied=true;}
+ check(cacheDenied&&(await action('cacheInfo')).count===cache.count,'拒绝越界缓存清理并保留缓存');
+ await action('inspectLibrary',{start:true});
+ let inspected;for(let i=0;i<100;i++){inspected=await action('inspectLibrary');if(!inspected.running)break;await delay(50);}
+ check(inspected.checked===12&&inspected.unavailable.length===0,'真实文件读取巡检完成');
+ const [source,target]=config.artists;
+ await action('artistAlias',{source,target});
+ check((await send({kind:'snapshot'})).songs.filter(song=>song.artist===target).length>snapshot.songs.filter(song=>song.artist===target).length,'歌手别名应用到目录');
+ await action('clearArtistAliases');
+ check(Object.keys((await action('getSettings')).aliases).length===0,'清空歌手别名');
  const dock=document.querySelector('.mv-wall-dock');
  const centerError=()=>{const r=dock.getBoundingClientRect(),s=getComputedStyle(document.querySelector('main'));return Math.abs(r.left+r.width/2-(innerWidth+parseFloat(s.getPropertyValue('--mv-safe-left')||'0')-parseFloat(s.getPropertyValue('--mv-safe-right')||'0'))/2);};
  if(innerHeight>=innerWidth){
@@ -88,8 +108,7 @@ try {
  const updated=await send({kind:'snapshot'});
  check(updated.playlists.some(p=>p.id===playlist.id&&p.ids[0]===snapshot.songs[0].id),'共享歌单操作保存回读');
  await send({kind:'action',name:'deletePlaylist',payload:{playlist:playlist.id}});
- await send({kind:'action',name:'mode',payload:{value:4}});
- check((await send({kind:'snapshot'})).mode===4,'五种播放模式接入');
+ for(let value=0;value<5;value++){await send({kind:'action',name:'mode',payload:{value}});check((await send({kind:'snapshot'})).mode===value,'播放模式 '+value+' 接入');}
  await click(button('关闭弹窗'),'关闭设置');
  await wait(()=>!document.querySelector('.mv-modal'),'设置关闭完成');
  await click(button('音乐墙设置'),'音乐墙设置');
@@ -118,6 +137,25 @@ try {
    check((await send({kind:'readState'})).pages.appearance.style===style,label+'样式持久化');
    await send({kind:'uiTestSnapshot',name:style+'-settings'});
  }
+ // Exercise the actual scanner after layout snapshots, not just preconstructed Song rows.
+ await action('rescan');
+ let scanned;for(let i=0;i<150;i++){scanned=await send({kind:'snapshot'});if(!scanned.scanning)break;await delay(100);}
+ check(!scanned.scanning&&scanned.songs.length===12,'真实目录扫描完成且不丢歌');
+ check(scanned.songs.every(song=>song.sourceAdded>0&&song.size>0&&song.artworkDetail),'扫描回填日期大小和原封面');
+ await send({kind:'play',id:scanned.songs[0].id,ids:scanned.songs.map(song=>song.id)});
+ check((await send({kind:'snapshot'})).rawLyrics.includes('根目录逐字歌词'),'扫描发现根目录 YRC 歌词');
+ await send({kind:'toggle'});
+ const original=await action('cacheInfo');
+ check((await action('clearCache')).removed===original.count,'清理仅移除已枚举缓存');
+ check((await action('cacheInfo')).count===0,'缓存清理结果回读');
+ const restored=new Image();
+ restored.src=scanned.songs[0].artwork.replace(/v=[^&]*/, 'v=after-clear');
+ await wait(()=>restored.complete,'清理后封面重建');check(restored.naturalWidth>0,'缓存清理后从授权原文件重建封面');
+ await action('inspectLibrary',{start:true});
+ for(let i=0;i<100;i++){inspected=await action('inspectLibrary');if(!inspected.running)break;await delay(50);}
+ check(inspected.checked===12&&inspected.unavailable.length===0,'缓存清理保留全部原始音频');
+ const diagnostics=await send({kind:'uiTestDiagnostics'});
+ check(diagnostics.bytes>500&&Number.isInteger((await action('getSettings')).crashCount),'诊断包含事件记录并返回真实本地崩溃数量');
  // Leave the shared settings open for a deterministic native screenshot.
  return {ok:true,checks,viewport:{width:innerWidth,height:innerHeight},state:before,body:document.body.innerText.slice(0,800)};
 } catch(error) { return {ok:false,error:error.message,checks,body:document.body.innerText.slice(0,1200)}; }
