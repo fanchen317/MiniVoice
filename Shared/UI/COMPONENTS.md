@@ -451,3 +451,5 @@ iOS 系统滚动后的交互规则补充：双击在墙面捕获阶段按第一�
 2026-10-30 iOS展开/关闭连续性：nativeScrolling内容宽高每帧与外层插值矩形一致，React finalSize使用当前expansionValue插值，native路径每帧提交expansion用于内容布局；展开控制在layout effect起动，避免先绘制终点内容。native收起不再调用focusCell(animate:false)重新居中，避免相机瞬移。Android原展开时机与尺寸规则保留。新增test-ios-expand-continuity.cjs：中间18次内容/外层尺寸差、反向打断、最终viewport边界、相机稳定。以实际viewport而非BrowserWindow外框作为终点。
 
 2026-10-30 移动音乐墙按压反馈：普通卡片/聚焦背景复用Wall触控边界，单指按住添加is-touch-pressed，独立scale缩至.96（Mac pressingID参考）与1px白色内描边，160ms恢复；无hover放大。移动超过8px、多指、cancel、页面隐藏/失焦、blocked/expanded或卸载清理，内部播放按钮/slider不重复激活卡片按压。墙面父层承担手势命中，反馈不改变相机transform或业务数据。减弱动态不缩放但保留按压描边。测试test-mobile-wall-press.cjs覆盖Android/iOS合成触摸的按压、取消和减弱动态；真机手感仍待验收。
+
+2026-10-30 音乐墙歌词（ScrollingLyrics）显示修复：行离开当前位时用lyricSweep.clearLyricSweep清除其命令式sweep-surface类与内联背景（React不会重写未变化的className，旧类会把原文变透明而只剩译文），并清除被裁切行按自身盒的淡出遮罩，避免视口边缘留下半行或孤立译文。共享组件，Mac/iOS/Android体验三端同时生效。
