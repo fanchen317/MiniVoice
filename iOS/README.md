@@ -4,8 +4,8 @@
 
 ## 当前默认架构
 
-- `SharedPlayerView.swift` 用 WKWebView 加载打包在 App 内的 **同一份 Shared/UI**。音乐墙、侧栏、三种样式、设置/队列/歌单弹窗、图标、ActionButton、Slider、ScrollRail、聚焦回流和空闲播放条均来自 Android 使用的 React/CSS 组件。
-- `platform.js` 为 iOS 选择 mobile / Android 参考 / touch；宽 iPad 仍是触控家族。Swift 不重新实现内容组件。
+- `SharedPlayerView.swift` 在 UIKit 原生音乐墙上叠加透明 WKWebView。`NativeMusicWall.swift` 独立处理 iOS 封面墙的滚动惯性、缩放、封面复用、正方形聚焦与定位；`IOSNativeWall.jsx` 传递语义状态，不逐帧驱动原生画布。侧栏、设置/队列/歌单弹窗、歌词和播放栏继续使用 Shared/UI。
+- `platform.js` 为 iOS 选择 mobile / touch；宽 iPad 仍是触控家族。原生画布仅在宿主声明 nativeWall 能力时接入，Android/Mac 的音乐墙实现不变。
 - Swift 负责系统文件目录授权、扫描、标签与封面读取、AVPlayer、后台音频、锁屏媒体控制和持久化；C++ Shared Core 继续负责歌词与共享状态 reducer。
 - `HomeView.swift` 是此前的原生实现参考，默认入口不调用它，也不会用它作内容回退。
 
@@ -61,3 +61,5 @@ iPad 的设置按钮按播放条与原右下位置的实际碰撞决定是否上
 `bash Scripts/build.sh --platforms ios` / `bash Scripts/build-experience.sh --platforms ios` 分别生成正式/体验签名IPA；deploy对应命令同样生成IPA，只有Mac执行本机应用替换，不自动安装iPhone。两条iOS通道目前都使用本目录现有共享宿主，区别为包标识、缓存及产物隔离，不代表恢复旧原生UI。
 
 设置 `MINIVOICE_IOS_TEAM` 和 `MINIVOICE_IOS_EXPORT_OPTIONS`（有效ExportOptions.plist绝对路径）；体验版可用 `MINIVOICE_IOS_EXPERIENCE_TEAM` / `MINIVOICE_IOS_EXPERIENCE_EXPORT_OPTIONS` 覆盖。证书/描述文件需支持正式 `com.xcosmos.MiniVoice.ios` 或体验 `com.xcosmos.MiniVoice.ios.experience`。输出 `.build/dist/MiniVoice-ios.ipa` / `MiniVoice-ios-experience.ipa`，缓存 `.build/cache/ios/{release,experience}/DerivedData`。缺签名时明确失败，旧IPA不代表本次成功。
+
+原生墙面设计和明确差异见 `Docs/iOS-NativeMusicWall-2026-10-30.md`。专用模拟器可用 `MINIVOICE_IOS_NATIVE_WALL_ONLY=1 bash Scripts/tests/test-ios-shared-ui.sh <UUID>` 运行墙面定向测试；系统手势用例为 `LayoutTests/testNativeWallGesturesAndFocus`。

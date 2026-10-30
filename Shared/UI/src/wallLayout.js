@@ -1,3 +1,5 @@
+export const DEFAULT_WALL_SCALE=1;
+export const initialWallCamera=value=>({x:Number.isFinite(value?.x)?value.x:12,y:Number.isFinite(value?.y)?value.y:80,scale:Number.isFinite(value?.scale)&&value.scale>0?clampZoom(value.scale):DEFAULT_WALL_SCALE});
 export const clampZoom=value=>Math.max(.6,Math.min(1.2,Number.isFinite(value)?value:1));
 export function mobileWallViewport(width,height,insets={}){
  const safe={top:insets.top||0,bottom:insets.bottom||0,left:insets.left||0,right:insets.right||0};

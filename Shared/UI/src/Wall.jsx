@@ -4,9 +4,12 @@ import ActionButton from './components/ActionButton.jsx';
 import React,{forwardRef,useEffect,useLayoutEffect,useImperativeHandle,useMemo,useRef,useState} from 'react';
 import Artwork from './Artwork.jsx';
 import {createScene,visibleReflowTiles,nearestInstance,reflowFrame,focusProgress} from './wallGeometry.js';
-import {clampZoom,mobileWallViewport,mixRect} from './wallLayout.js';
+import {clampZoom,mobileWallViewport,mixRect,initialWallCamera} from './wallLayout.js';
+// Keep mounted coverage beyond the 140px camera refresh threshold, including
+// focus transitions; a smaller window exposes gaps before React mounts posters.
+const WALL_OVERSCAN=360;
 const reduced=()=>matchMedia('(prefers-reduced-motion:reduce)').matches;
-const safeCamera=value=>({x:Number.isFinite(value?.x)?value.x:12,y:Number.isFinite(value?.y)?value.y:80,scale:clampZoom(value?.scale)});
+const safeCamera=initialWallCamera;
 // Never reveal a replacement cover before its pixels are decoded. The
 // retained poster below owns the image until this layer can take over.
 function FocusArtwork({src}){
@@ -53,11 +56,11 @@ export default forwardRef(function Wall({compositedCamera=false,items,current,pl
  function update(next,force=false){live.current=next;schedulePaint();const previous=mountedCamera.current;if(force||Math.abs(next.x-previous.x)>140||Math.abs(next.y-previous.y)>140||Math.abs(next.scale-previous.scale)>.06){mountedCamera.current={...next};setCamera({...next});latest.current.onScale?.(next.scale);}}
  function frameFor(cell,final=false){const state=latest.current,tween=transition.current,side=Math.max(Math.min(focusSide.current,state.viewport.side/Math.max(1,live.current.scale)),Math.min(240,state.viewport.side)/live.current.scale),target=reflowFrame(cell,state.focus,{width:side,height:side});if(final||!tween||state.progress>=1)return target;const from=tween.frames.get(cell.id)||reflowFrame(cell,tween.layout?.focus,tween.layout?.size||{width:side,height:side});return mixRect(from,target,state.progress);}
  function focusSize(){const state=latest.current,side=Math.max(Math.min(focusSide.current,state.viewport.side/Math.max(1,live.current.scale)),Math.min(240,state.viewport.side)/live.current.scale);return {width:side,height:side};}
- function visibleScene(overscan=220){const state=latest.current;const cells=visibleReflowTiles(state.scene,displayCamera(),state.viewport,state.focus,focusSize(),overscan,transition.current?.layout),retained=transition.current?.cells;
+ function visibleScene(overscan=WALL_OVERSCAN){const state=latest.current;const cells=visibleReflowTiles(state.scene,displayCamera(),state.viewport,state.focus,focusSize(),overscan,transition.current?.layout),retained=transition.current?.cells;
   // A replacement animation starts at the *rendered* intermediate layout, not
   // the previous target. Keep those loaded posters until the handoff finishes.
   if(retained){const ids=new Set(cells.map(cell=>cell.id));for(const cell of retained)if(!ids.has(cell.id)){cells.push(cell);ids.add(cell.id);}}return cells;}
- function transitionCells(){return [...new Map([...renderedCells.current,...visibleScene(220)].map(cell=>[cell.id,cell])).values()];}
+ function transitionCells(){return [...new Map([...renderedCells.current,...visibleScene(WALL_OVERSCAN)].map(cell=>[cell.id,cell])).values()];}
  function captureFrames(){const state=latest.current,cells=transitionCells();if(state.focus&&!cells.some(cell=>cell.id===state.focus.id))cells.push(state.focus);return new Map(cells.map(cell=>[cell.id,frameFor(cell)]));}
  function focusCell(cell,{animate=true,move=true}={}){
   if(!cell)return;stop();cancelAnimationFrame(focusMotion.current);focusCamera.current=move;const state=latest.current,old=live.current,cells=transitionCells(),frames=captureFrames();transition.current={cells,frames,previous:state.focus,layout:{focus:state.focus,size:focusSize()}};focusSide.current=state.viewport.side;setFocus(cell);latest.current.focus=cell;progressValue.current=0;setProgress(0);latest.current.progress=0;
@@ -106,7 +109,7 @@ export default forwardRef(function Wall({compositedCamera=false,items,current,pl
  const displayFocus=focus||(progressValue.current<1?transition.current?.previous:null);
  // The mounted window must extend beyond the 140px rebase threshold. Keep its
  // identity across playback polling so a clock tick cannot rerasterize posters.
- const cells=useMemo(()=>visibleScene(compositedCamera?360:displayFocus?220:100),[cameraSnapshot,viewport,focus,progress,expansion,items,compositedCamera]);
+ const cells=useMemo(()=>visibleScene(WALL_OVERSCAN),[cameraSnapshot,viewport,focus,progress,expansion,items,compositedCamera]);
  const rendered=useMemo(()=>displayFocus&&!cells.some(cell=>cell.id===displayFocus.id)?[...cells,displayFocus]:cells,[cells,displayFocus]);
  renderedCells.current=rendered;
  const focusRect=displayFocus?frameFor(displayFocus):null,normal=focusRect?{x:camera.x+focusRect.x*camera.scale,y:camera.y+focusRect.y*camera.scale,width:focusRect.width*camera.scale,height:focusRect.height*camera.scale}:null;

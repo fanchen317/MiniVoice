@@ -1,0 +1,7 @@
+/* Only the native iOS wall exposes the UIKit canvas underneath WKWebView. */
+html.ios-native-wall,html.ios-native-wall body,html.ios-native-wall #root,
+html.ios-native-wall .mv-workspace.style-wall,html.ios-native-wall .mv-workspace.style-wall .mv-scene,
+html.ios-native-wall .mv-ios-native-wall{background:transparent!important}
+html.ios-native-wall .mv-native-focus{background:transparent;box-shadow:none;contain:layout;will-change:auto;--wall-surface-opacity:1}
+html.ios-native-wall .mv-native-focus::before{display:none}
+html.ios-native-wall .mv-native-focus .mv-wall-focus-content{opacity:1}

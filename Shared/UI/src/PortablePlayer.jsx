@@ -21,7 +21,8 @@ import React,{useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {platformAdapter} from './platform.js';
 import {createWorkspaceController,stableSongs,playlistPageActions} from './state.js';
 import {catalogFor,sections} from './catalog.js';
-import Wall from './Wall.jsx';
+import SharedWall from './Wall.jsx';
+import IOSNativeWall from './IOSNativeWall.jsx';
 import Modal from './Modal.jsx';
 import Artwork from './Artwork.jsx';
 import CollectionDialogs from './CollectionDialogs.jsx';
@@ -94,6 +95,7 @@ export default function PortablePlayer({adapter:provided}){
  const lyricCard=<GlassPanel className="mv-lyrics"><Button label={expanded?'收起歌词':'展开歌词'} icon="expand" onClick={()=>patch(key,{lyrics:!expanded}).catch(report)}/><Lyrics position={snapshot.position} duration={current?.duration||0} playing={snapshot.playing} expanded={expanded} hasTranslation={lyrics.some(line=>typeof line.translation==='string'&&line.translation.trim())} showTranslation={showTranslation} onTranslation={()=>patch('appearance',{translation:!showTranslation}).catch(report)} lines={displayLyrics} frame={frame} seek={position=>adapter.seek(position).catch(report)}/></GlassPanel>;
  const transport=<div className="mv-transport"><Button label="播放模式" icon={['single','modeList','shuffle','repeatOne','repeat'][snapshot.mode]||'modeList'} onClick={()=>setModal('mode')}/><Button label="上一首" icon="prev" onClick={()=>skipTrack(-1).catch(report)}/><Button label={snapshot.playing?'暂停':'播放'} icon={snapshot.playing?'pauseFilled':'play'} onClick={()=>adapter.toggle().catch(report)} selected/><Button label="下一首" icon="next" onClick={()=>skipTrack(1).catch(report)}/><Button label="播放队列" icon="queue" onClick={()=>setModal('queue')}/></div>;
  const seek=<div className="mv-seek"><span>{ms(snapshot.position)}</span><Slider label="播放进度" min={0} max={Math.max(1,current?.duration||1)} step={100} value={Math.min(snapshot.position||0,current?.duration||1)} disabled={!current||!current.duration} resetKey={current?.id} valueText={value=>`${ms(value)} / ${ms(current?.duration)}`} onCommit={position=>adapter.seek(position).catch(report)}/><span>{ms(current?.duration)}</span></div>;
+ const Wall=adapter.name==='iOS'&&globalThis.MiniVoiceHost?.nativeWall===true?IOSNativeWall:SharedWall;
  return <FeedbackContext.Provider value={adapter.haptic}><main ref={root} className={`mv-workspace style-${style} theme-${theme} ${player?'is-player':''}`} data-style={style} data-theme={theme} data-presentation="mobile" data-host={adapter.name} data-reference="android" data-wall-expanded={style==='wall'&&expanded} data-wall-chrome={wallChrome.phase} data-dock-compact={dockCompact} data-portrait-dock={adapter.portraitDock||'leading'} data-style-busy={styleBusy}>
    <div className="mv-atmosphere" style={current?.artwork?{backgroundImage:`url("${current.artwork}")`}:undefined} aria-hidden="true"/>
   <div className={`mv-scene ${blocked?'is-blurred':''} ${drawer?'is-drawer-behind':''}`} inert={blocked} aria-hidden={blocked}>

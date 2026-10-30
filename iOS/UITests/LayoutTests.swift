@@ -11,11 +11,60 @@ final class LayoutTests: XCTestCase {
                 app.buttons["打开侧边栏"].firstMatch.tap(); app.buttons["设置"].firstMatch.tap()
                 XCTAssertTrue(app.switches[style].firstMatch.waitForExistence(timeout: 5)); app.switches[style].firstMatch.tap()
                 app.switches[theme].firstMatch.tap(); app.buttons["关闭弹窗"].firstMatch.tap()
-                for orientation in [UIDeviceOrientation.landscapeLeft, .portrait, .landscapeRight, .portrait, .landscapeLeft] {
+                for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {
+                    XCUIDevice.shared.orientation = orientation
+                    let settled = NSPredicate { _, _ in (app.frame.width > app.frame.height) == (orientation != .portrait) }
+                    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: settled, object: nil)], timeout: 5), .completed)
+                    XCTAssertTrue(app.buttons["打开侧边栏"].firstMatch.isHittable)
+                    let image = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+                    image.name = "rotation-backing-\(style)-\(theme)-\(orientation.rawValue)"; image.lifetime = .keepAlways; add(image)
+                }
+            }
+        }
+    }
+
+    func testNativeWallGesturesAndFocus() {
+        let app = XCUIApplication(); app.launchArguments = ["--mv-ui-fixture"]
+        XCUIDevice.shared.orientation = .portrait; app.launch()
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCTAssertTrue(app.buttons["打开侧边栏"].firstMatch.waitForExistence(timeout: 30))
+        app.buttons["打开侧边栏"].firstMatch.tap(); app.buttons["设置"].firstMatch.tap()
+        XCTAssertTrue(app.switches["音乐墙"].firstMatch.waitForExistence(timeout: 5))
+        app.switches["音乐墙"].firstMatch.tap(); app.buttons["关闭弹窗"].firstMatch.tap()
+        let wall = app.scrollViews["ios-native-wall-scroll"]
+        XCTAssertTrue(wall.waitForExistence(timeout: 8), app.debugDescription)
+        app.buttons["音乐墙设置"].firstMatch.tap()
+        let reset = app.buttons["恢复 100%"].firstMatch
+        if reset.isEnabled { reset.tap() }
+        app.buttons["关闭弹窗"].firstMatch.tap()
+        let center = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+        center.tap()
+        let expand = app.buttons["展开播放器"].firstMatch
+        XCTAssertTrue(expand.waitForExistence(timeout: 8), app.debugDescription)
+        let beforeDrag = expand.frame
+        center.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.43)))
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        XCTAssertGreaterThan(abs(expand.frame.midX - beforeDrag.midX), 30, "在聚焦图片上拖动必须实际移动原生相机")
+        let beforeZoom = String(describing: wall.value ?? "")
+        wall.pinch(withScale: 1.8, velocity: 1)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        XCTAssertNotEqual(String(describing: wall.value ?? ""), beforeZoom, "双指必须实际改变原生相机比例")
+        app.buttons["音乐墙设置"].firstMatch.tap()
+        XCTAssertTrue(app.sliders["显示比例"].firstMatch.waitForExistence(timeout: 5))
+        app.buttons["关闭弹窗"].firstMatch.tap()
+        center.tap()
+        XCTAssertTrue(expand.waitForExistence(timeout: 5)); expand.tap()
+        let collapse = app.buttons["收起播放器"].firstMatch
+        XCTAssertTrue(collapse.waitForExistence(timeout: 5)); collapse.tap()
+        XCTAssertTrue(app.buttons["打开侧边栏"].firstMatch.waitForExistence(timeout: 5))
+        app.terminate(); app.launch()
+        XCTAssertTrue(wall.waitForExistence(timeout: 8))
+        XCTAssertTrue(expand.waitForExistence(timeout: 8), "重启恢复墙面聚焦")
+        let portrait = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); portrait.name = "native-wall-portrait-focus"; portrait.lifetime = .keepAlways; add(portrait)
+        for orientation in [UIDeviceOrientation.landscapeLeft, .portrait, .landscapeRight, .portrait, .landscapeLeft] {
             XCUIDevice.shared.orientation = orientation
             let settled = NSPredicate { _, _ in
-                let landscape = orientation != .portrait
-                return (app.frame.width > app.frame.height) == landscape && expand.isHittable
+                (app.frame.width > app.frame.height) == (orientation != .portrait) && expand.isHittable
             }
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: settled, object: nil)], timeout: 5), .completed, "旋转完成后聚焦卡片及展开入口必须仍在可用区域内")
             XCTAssertTrue(app.buttons["打开侧边栏"].firstMatch.isHittable)

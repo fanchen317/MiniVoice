@@ -23,22 +23,40 @@ try {
    await click(button('打开侧边栏'),'初始化测试侧栏');await click(button('设置'),'初始化测试设置');
    await click(textButton('音乐墙'),'初始化音乐墙');await click(button('关闭弹窗'),'关闭初始化设置');
  }
- await wait(()=>document.querySelector('.mv-wall-card'),'音乐墙封面');
- check(document.querySelector('.mv-workspace').dataset.presentation==='mobile','iOS 使用 Android 触控家族');
- // Verify bounded raster-origin handoffs in WebKit with the existing JS camera.
+ await wait(()=>document.querySelector('[data-native-renderer="uikit"]'),'iOS 原生音乐墙挂载');
+ const native=payload=>send({kind:'uiTestNativeWall',...payload});
  await delay(700);
- const panPlane=document.querySelector('.mv-wall-plane'),panView=document.querySelector('.mv-cover-wall');
+ let state=await native({});
+ check(state.active&&state.count===12&&state.mounted>0,'UIKit 墙面实际接入并挂载封面');
+ check(!document.querySelector('.mv-wall-plane'),'iOS 不再创建 Android DOM 封面平面');
  for(let step=0;step<32;step++){
-   const oldCamera=JSON.parse(panPlane.dataset.camera),oldNodes=new Map([...panPlane.children].map(node=>[node,{r:node.getBoundingClientRect(),id:node.dataset.wallCell}]));
-   panView.dispatchEvent(new WheelEvent('wheel',{deltaX:step<16?160:-160,deltaY:0,bubbles:true,cancelable:true}));await delay(45);
-   const nextCamera=JSON.parse(panPlane.dataset.camera);
-   check(Math.abs(nextCamera.x-oldCamera.x)>100,'WK共享相机响应平移 '+step);
-   for(const [node,old] of oldNodes){if(!node.isConnected)continue;const r=node.getBoundingClientRect();check(Math.abs(r.x-old.r.x-nextCamera.x+oldCamera.x)<1.5,'WK原点交接不跳位 '+step);}
+   const before=await native({});
+   state=await native({operation:'pan',dx:step<16?160:-160,dy:0});
+   check(Math.abs(state.x-before.x-(step<16?-160:160))<1,'原生滚动相机连续 '+step);
+   check(state.mounted>0&&state.mounted<150,'原生可见封面有界复用 '+step);
+ }
+ await delay(700);state=await native({});check(state.decoded>0,'原生缩略图后台解码完成');
+ await native({operation:'select',index:0});await delay(600);
+ state=await native({});check(state.square&&!state.animating&&!!state.focused,'原生点击收敛到正方形');
+ state=await native({operation:'pan',dx:2,dy:0});check(state.retainedContent,'原生拖动保留共享卡片文字画面');await delay(150);
+ const oldMotion=await native({operation:'beginPan'});
+ await native({operation:'endPan'});await delay(150);
+ const newMotion=await native({operation:'beginPan'});
+ for(const scale of [.6,1.2,.8,1]){
+   const zoomed=await native({operation:'motionZoom',scale});
+   check(zoomed.motionActive&&zoomed.retainedContent&&zoomed.contentAligned,'缩放中按钮歌词和遮罩随卡片同比缩放 '+scale);
  }
 
+ const staleReady=await native({operation:'ready',epoch:oldMotion.motionEpoch});
+ check(staleReady.motionActive&&staleReady.retainedContent&&staleReady.motionEpoch===newMotion.motionEpoch,'旧滑动回调不能移除新滑动的按钮歌词画面');
+ await native({operation:'endPan'});await delay(150);
+
+ await native({operation:'select',index:1});await delay(70);await native({operation:'pan',dx:80,dy:30});await delay(500);
+ state=await native({});check(!state.animating&&state.mounted>0,'聚焦中拖动取消旧动画');
+
  // Exercise the real iOS host policy through the branded style switch.
- let captureCalls=0;const requestBefore=MiniVoiceHost.request;
- MiniVoiceHost.request=function(id,raw){if(JSON.parse(raw).kind==='captureStyle')captureCalls++;return requestBefore.call(this,id,raw);};
+ let captureCalls=0,fragmentPreparations=0,fragmentAnimations=0;const requestBefore=MiniVoiceHost.request;
+ MiniVoiceHost.request=function(id,raw){const request=JSON.parse(raw);if(request.kind==='captureStyle'){captureCalls++;if(request.phase==='prepare')fragmentPreparations++;if(request.phase==='animate')fragmentAnimations++;}return requestBefore.call(this,id,raw);};
  await click(button('打开侧边栏'),'切换渲染测试侧栏');
  for(const target of ['simple','library','wall']){
    document.querySelector('.mv-brand-logo').click();
@@ -46,15 +64,10 @@ try {
    check(!document.querySelector('.mv-style-fragment-sweep'),'WK 切换无分片截图层 '+target);
    check(getComputedStyle(document.querySelector('main')).opacity==='1','WK 切换结束恢复不透明 '+target);
  }
- check(captureCalls===0,'iOS 样式切换零次整屏截图请求');MiniVoiceHost.request=requestBefore;
+ check(fragmentPreparations===3&&fragmentAnimations===3,'iOS 三次切换均使用原生碎片动画');MiniVoiceHost.request=requestBefore;
  await click(button('关闭侧边栏'),'关闭渲染测试侧栏');
- const panWall=document.querySelector('.mv-cover-wall');
- for(let i=0;i<12;i++){panWall.dispatchEvent(new WheelEvent('wheel',{deltaX:i<6?100:-100,deltaY:40,bubbles:true,cancelable:true}));await delay(20);}
- await delay(700);
- check(document.querySelector('.mv-wall-plane').dataset.compositedPan==='true','WK 连续滑动保留容器合成');
- const visiblePosters=[...document.querySelectorAll('.mv-wall-card img')].filter(image=>{const r=image.getBoundingClientRect();return r.right>0&&r.left<innerWidth&&r.bottom>0&&r.top<innerHeight;});
- await wait(()=>visiblePosters.every(image=>image.complete&&image.naturalWidth>0),'WK 往返滑动封面加载');
- check(visiblePosters.length>0,'WK 滑动后可见封面非空');
+ await delay(700);state=await native({});
+ check(state.active&&state.mounted>0,'切换样式后重建原生墙面');
 
  const snapshot=await send({kind:'snapshot'});
  check(snapshot.songs.length===12,'合成音乐库通过真实宿主桥读取');
@@ -126,7 +139,7 @@ try {
 
  // Exercise the actual WKWebView chrome, including the centered iOS bar skin.
  if(document.querySelector('.mv-wall-focused [aria-label="收起播放器"]')){document.querySelector('.mv-wall-focused [aria-label="收起播放器"]').click();await delay(900);}
- document.querySelector('.mv-wall-card').click();await delay(600);
+ await native({operation:'select',index:0});await delay(600);
  const chromeNodes=()=>[document.querySelector('.mv-toolbar>[aria-label="打开侧边栏"]'),document.querySelector('.mv-search-control'),document.querySelector('[data-wall-control="settings"]'),document.querySelector('.mv-wall-dock')];
  for(const compact of [false,true]){
    document.activeElement?.blur();
@@ -194,6 +207,17 @@ try {
  await send({kind:'uiTestSnapshot',name:'queue'});
  await click(button('关闭弹窗'),'关闭队列');
  await delay(500);
+ if(globalThis.MINIVOICE_NATIVE_WALL_ONLY){
+   state=await native({operation:'stress'});
+   check(state.count===1037&&state.mounted>0&&state.mounted<150,'1037 项原生渲染夹具有界挂载');
+   for(let step=0;step<40;step++){
+     state=await native({operation:'pan',dx:step<20?240:-240,dy:80});
+     check(state.mounted>0&&state.mounted<150,'大墙面原生封面复用 '+step);
+   }
+   await delay(700);check((await native({})).decoded>0,'大墙面可见封面完成解码');
+   await send({kind:'uiTestSnapshot',name:'native-wall-1037'});
+   return {ok:true,scope:'ios-native-wall',checks};
+ }
  await click(button('打开侧边栏'),'再次打开侧栏');
  await send({kind:'uiTestSnapshot',name:'drawer'});
  await click(button('设置'),'再次打开设置');

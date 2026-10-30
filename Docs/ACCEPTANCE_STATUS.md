@@ -730,9 +730,24 @@ Android 专用 emulator-5554：portable 完整回归通过 UI_PORTABLE_PASS；�
 - 已接入：文件名识别歌名/多歌手；显式removeArtwork保存标记及恢复原图；在线歌词简体预览/应用共用同一文本；SRT选择与时间标签转换。
 - 已通过组件门禁、桌面64测试（4跳过）；真实合成文件写入/封面移除恢复、SRT编码、多歌手回读及三样式深浅待验收。不在真实音乐库执行写入测试。
 
+### 2026-10-30 iOS/Android 音乐墙检查（定向修复，待实机验收）
+
+- 已修复：共享 Wall 普通滑动挂载预留 100px 小于相机 140px 刷新阈值；统一滑动、聚焦和打断保留集合为 360px，保持 iOS 局部合成路径。
+- 自动验证：共享逻辑 47/47 通过。音乐墙真实 DOM 回归执行情况见 `.build/reports/ui` 及本次交付说明。
+- 待验收：iOS WKWebView 真机连续滑动、点击变方形、快速切换与定位、中途打断、横竖屏及深浅主题的帧耗时；Android 增加预留后的内存开销。Mac 独立实现仅代码比对，未宣称三端性能一致。本轮不是完整重构或全面验收完成。
+- 本轮页面回归：千首曲库、40 步拖动、聚焦打断、移动展开/旋转/恢复和 Mac 实际墙面聚焦展开用例通过；完整脚本退出失败，停在歌词时间编辑器缺少 `.mv-lyrics-timing>.mv-disclosure-trigger`（test-wall-version.cjs:165），未将整套回归记为通过。
+
+
 ### 2026-10-30 再次处理侧栏后景暗边
 
 保留普通移动后景填充与描边，停用所有后景按钮/面板的嵌套 backdrop-filter 与 box-shadow；后景缩放时解除场景 overflow 裁切与 isolation，前景抽屉保留自身材质。关闭后恢复原皮肤。组件门禁与共享单测通过，Android体验包已构建；专项日志 drawer-edge-repair.txt，iOS构建日志 drawer-edge-repair-build.txt。实体设备暗边和旋转合成尚待复核，不宣称彻底解决。
+
+## 2026-10-30 恢复回滚的 iOS 碎片切换
+
+- 当前适配器已回退到live淡入淡出、StyleFragmentSession缺失。按用户要求从a8300b8恢复共享fragmentSamples、host-fragments prepare/animate/cancel桥、原生UIView碎片与Core Animation，以及Xcode源文件注册。仅恢复切换链路，保留当前Wall及材质的未提交改动。
+- 通过：111源文件门禁、47项共享JS、iOS Debug构建；真实WK中三次品牌切换全部调用原生碎片prepare/animate，日志 `/tmp/mv-restore-fragments-host.log`。
+- 完整回归未全通过：WK后续在simple侧栏背景材质断言失败；共享墙面脚本后续找不到`.mv-lyrics-timing>.mv-disclosure-trigger`。未放宽或跳过失败，不把这些结果写成全套通过；当前其他材质/编辑器改动保留。切换在用户实体设备上的视觉与流畅度仍需回验。
+- 补充：iOS device Release无签名构建通过，日志 `/tmp/mv-restore-fragments-release.log`。
 
 ## 2026-10-30 iOS 歌词滚动彩线兼容修正
 
@@ -759,3 +774,12 @@ iOS补全承载WebView的祖先容器底色，透明内容后持续保留内容�
 通过112源文件门禁、iOS Debug/device Release和Android体验构建；Web三种样式×深浅×四尺寸逐帧覆盖；专用iPhone系统三样式×深浅旋转用例39.66秒通过，完整xcresult及录屏在 .build/reports/ios/rotation-backing-native/ 。检查旋转中间态；另发现冷启动空白launch screen，已补资源但尚未重新录制冷启动。
 
 Android本轮没有连接专用模拟器/设备，系统旋转尚未实测；模拟器不能证明用户实体设备GPU合成与所有中间帧均无白底。当前原生音乐墙接入等其他会话改动仍单独留在工作区。
+
+### 2026-10-30 iOS 原生音乐墙录屏反馈后的样式补齐
+
+- 已修复：原生回流替代悬浮重复封面；邻近封面保持共享边界及间隙；卡片从被点击封面本身展开；恢复普通封面的标题/歌手/渐变/暗化/深色间隙和当前轮廓；拖动期间用一次原生快照保留卡片内容；聚焦封面后台升级原图并保留已加载缩略图。
+- 已修复：原生容器自动跟随旋转后，不能仅凭 bounds 是否改变判断重新居中；改为同时处理可用中心/边长变化，由实际 UIKit 尺寸和 safeAreaInsets 驱动相机。保留其他会话加入的宿主/scroll 自动布局。
+- 已通过：组件门禁；iOS 纯逻辑（增加回流共边、1037 项三档缩放逆查询覆盖、横竖屏区域断言）；共享逻辑 47/47；模拟器及 iPhoneOS Debug 无签名构建；系统手势/展开收起/重启恢复和左右横屏/竖屏连续五次切换。报告 `.build/reports/ios/native-wall-parity-verified.xcresult`，横竖截图已人工检查。
+- 待验收：用户真机重看相同场景、实体 GPU 帧耗时、iPad、VoiceOver、低内存及深浅完整矩阵。首次补强测试曾暴露横屏聚焦出屏，修复后用上述五次旋转断言复测通过；测试文件结构编辑错误也已修正。未把截图或几何用例当作 FPS 证据。
+- 最终墙面宿主集成：208 项定向检查通过（含原生拖动保留共享卡片内容画面、1037 项渲染夹具及有界复用）。报告 `.build/reports/ios/shared-ui/A1A82D8E-910C-4068-8FC1-1D8D5F21A010/20261030T045244Z-36096/report.json`，ok=true。真机库与 FPS 不在此结论内。
+- 补充回归：三种样式 × 深浅主题的系统旋转背景用例通过，报告 `.build/reports/ios/native-wall-parity-rotation-backing.xcresult`；测试结构恢复后未屏蔽该用例。

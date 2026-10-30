@@ -32,3 +32,11 @@ test('reflow culling retains every on-screen poster while a focused wall is pann
   }
  }
 });
+
+import {initialWallCamera,DEFAULT_WALL_SCALE} from '../src/wallLayout.js';
+test('Android and iOS wall defaults are 100 percent and invalid persisted scales do not become 60 percent',()=>{
+ assert.equal(DEFAULT_WALL_SCALE,1);
+ for(const camera of [undefined,null,{}, {scale:0},{scale:null},{scale:NaN},{scale:-1}])assert.equal(initialWallCamera(camera).scale,1);
+ assert.equal(initialWallCamera({scale:.8}).scale,.8);
+ assert.deepEqual(initialWallCamera(),{x:12,y:80,scale:1});
+});

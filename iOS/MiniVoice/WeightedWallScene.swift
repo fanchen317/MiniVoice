@@ -134,3 +134,68 @@ enum WallControlMetrics {
         return Double(min(1, max(0, x / width))) * duration
     }
 }
+
+/// iOS layout parity with the original wall: transform shared cell edges before
+/// subtracting gutters. Mapping each rectangle independently would create gaps.
+enum NativeWallReflow {
+    static func frame(_ frame: CGRect, focus: CGRect?, size: CGSize, gap: CGFloat = 5) -> CGRect {
+        guard let focus else { return frame }
+        func coordinate(_ value: CGFloat, _ lower: CGFloat, _ upper: CGFloat, _ length: CGFloat) -> CGFloat {
+            let target = max(1, length), delta = (target - (upper - lower)) / 2
+            if value <= lower { return value - delta }
+            if value >= upper { return value + delta }
+            return lower - delta + (value - lower) * target / (upper - lower)
+        }
+        let x = coordinate(frame.minX, focus.minX, focus.maxX + gap, size.width + gap)
+        let right = coordinate(frame.maxX + gap, focus.minX, focus.maxX + gap, size.width + gap)
+        let y = coordinate(frame.minY, focus.minY, focus.maxY + gap, size.height + gap)
+        let bottom = coordinate(frame.maxY + gap, focus.minY, focus.maxY + gap, size.height + gap)
+        return CGRect(x: x, y: y, width: right - x - gap, height: bottom - y - gap)
+    }
+
+    static func query(camera: WallCamera, viewport: CGSize, focus: CGRect?, size: CGSize, overscan: CGFloat) -> CGRect {
+        func inverse(_ value: CGFloat, _ lower: CGFloat, _ upper: CGFloat, _ length: CGFloat) -> CGFloat {
+            let target = max(1, length), span = upper - lower, delta = (target - span) / 2
+            if value <= lower - delta { return value + delta }
+            if value >= upper + delta { return value - delta }
+            return lower + (value - lower + delta) * span / target
+        }
+        var left = (-camera.offset.x - overscan) / camera.scale
+        var right = (viewport.width - camera.offset.x + overscan) / camera.scale
+        var top = (-camera.offset.y - overscan) / camera.scale
+        var bottom = (viewport.height - camera.offset.y + overscan) / camera.scale
+        if let focus {
+            left = inverse(left, focus.minX, focus.maxX + 5, size.width + 5)
+            right = inverse(right, focus.minX, focus.maxX + 5, size.width + 5)
+            top = inverse(top, focus.minY, focus.maxY + 5, size.height + 5)
+            bottom = inverse(bottom, focus.minY, focus.maxY + 5, size.height + 5)
+        }
+        return CGRect(x: left, y: top, width: right - left, height: bottom - top)
+    }
+}
+
+extension WeightedWallScene {
+    func visibleReflow(camera: WallCamera, viewport: CGSize, focus: CGRect?, size: CGSize, overscan: CGFloat = 220) -> [Instance] {
+        let query = NativeWallReflow.query(camera: camera, viewport: viewport, focus: focus, size: size, overscan: overscan)
+        return visible(cameraX: -query.minX * camera.scale, cameraY: -query.minY * camera.scale, scale: camera.scale,
+                       viewport: CGSize(width: query.width * camera.scale, height: query.height * camera.scale), overscan: 0)
+    }
+}
+
+/// Same free-region budget as mobileWallViewport, measured from the UIKit host
+/// so a transient WebKit layout during rotation cannot relocate the camera.
+struct NativeWallViewport {
+    let center: CGPoint
+    let side: CGFloat
+    init(size: CGSize, top: CGFloat, right: CGFloat, bottom: CGFloat, left: CGFloat) {
+        let width = max(1, size.width - left - right), landscape = size.width > size.height
+        let dockWidth = min(440, landscape ? min(size.height - 28, width * 0.48) : width - 28)
+        let leading = landscape ? left + 16 + dockWidth + 16 : left
+        let trailing = landscape ? size.width - right - 14 - 56 - 16 : size.width - right
+        let available = max(120, trailing - leading)
+        let upper = top + (landscape ? 12 : 80)
+        let lower = size.height - bottom - (landscape ? 12 : 114)
+        side = max(120, min(520, available - 12, lower - upper - 12))
+        center = CGPoint(x: (leading + trailing) / 2, y: (upper + lower) / 2)
+    }
+}

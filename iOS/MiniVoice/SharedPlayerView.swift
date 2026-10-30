@@ -42,7 +42,7 @@ private struct SharedPlayerWebView: UIViewRepresentable {
 
     func makeCoordinator() -> SharedPlayerHost { SharedPlayerHost(library: library, player: player, chooseFolder: chooseFolder, immersive: immersive, export: export) }
 
-    func makeUIView(context: Context) -> WKWebView {
+    func makeUIView(context: Context) -> UIView {
         let host = context.coordinator
         let configuration = WKWebViewConfiguration()
         configuration.setURLSchemeHandler(host, forURLScheme: "minivoice")
@@ -57,6 +57,7 @@ private struct SharedPlayerWebView: UIViewRepresentable {
         });
         globalThis.MiniVoiceHost = {
           platform: 'ios',
+          nativeWall: true,
           request(id, raw) { webkit.messageHandlers.MiniVoice.postMessage({id, raw}); },
           haptic() { webkit.messageHandlers.MiniVoice.postMessage({haptic:true}); }
         };
@@ -74,14 +75,39 @@ private struct SharedPlayerWebView: UIViewRepresentable {
         #if targetEnvironment(simulator)
         web.isInspectable = true
         #endif
+        let surface = UIView()
+        surface.isOpaque = true
+        surface.backgroundColor = web.backgroundColor
+        let nativeWall = NativeMusicWall()
+        nativeWall.isHidden = true
+        nativeWall.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        surface.addSubview(nativeWall)
+        surface.addSubview(web)
+        web.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([web.leadingAnchor.constraint(equalTo: surface.leadingAnchor), web.trailingAnchor.constraint(equalTo: surface.trailingAnchor), web.topAnchor.constraint(equalTo: surface.topAnchor), web.bottomAnchor.constraint(equalTo: surface.bottomAnchor)])
+        web.nativeWall = nativeWall
+        host.nativeWall = nativeWall
+        nativeWall.captureFocus = { [weak web] rect in
+            guard let web else { return nil }
+            let visible = rect.intersection(web.bounds)
+            guard !visible.isNull, !visible.isEmpty,
+                  let snapshot = web.resizableSnapshotView(from: visible, afterScreenUpdates: false, withCapInsets: .zero) else { return nil }
+            return NativeWallContentSnapshot(content: snapshot, sourceSize: rect.size,
+                                             sourceFrame: visible.offsetBy(dx: -rect.minX, dy: -rect.minY))
+        }
+        nativeWall.emit = { [weak web] payload in
+            web?.callAsyncJavaScript("dispatchEvent(new CustomEvent('minivoice-native-wall',{detail:payload}))", arguments: ["payload": payload], in: nil, in: .page, completionHandler: nil)
+        }
         host.web = web
         web.load(URLRequest(url: URL(string: "minivoice://app/index.html")!))
-        return web
+        return surface
     }
 
-    func updateUIView(_ web: WKWebView, context: Context) {}
+    func updateUIView(_ view: UIView, context: Context) {}
 
-    static func dismantleUIView(_ web: WKWebView, coordinator: SharedPlayerHost) {
+    static func dismantleUIView(_ view: UIView, coordinator: SharedPlayerHost) {
+        coordinator.nativeWall?.detach()
+        guard let web = coordinator.web else { return }
         web.configuration.userContentController.removeScriptMessageHandler(forName: "MiniVoice")
         web.stopLoading()
         coordinator.web = nil
@@ -91,6 +117,7 @@ private struct SharedPlayerWebView: UIViewRepresentable {
 @MainActor
 private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSchemeHandler, WKNavigationDelegate {
     weak var web: WKWebView?
+    weak var nativeWall: NativeMusicWall?
     let library: MusicLibrary
     let player: MusicPlayer
     let chooseFolder: () -> Void
@@ -142,6 +169,10 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, message.frameInfo.request.url?.scheme == "minivoice",
               message.frameInfo.request.url?.host == "app", let body = message.body as? [String: Any] else { return }
+        if let value = body["nativeWall"] as? [String: Any] {
+            handleNativeWall(value)
+            return
+        }
         if body["haptic"] as? Bool == true {
             UISelectionFeedbackGenerator().selectionChanged()
             return
@@ -152,6 +183,10 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
             guard let request = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
                   request["version"] as? Int == 1 else { throw failure("无效的宿主协议") }
             #if targetEnvironment(simulator)
+            if request["kind"] as? String == "uiTestNativeWall", ProcessInfo.processInfo.arguments.contains("--mv-ui-smoke"), let nativeWall {
+                reply(id, value: nativeWall.testProbe(request))
+                return
+            }
             if request["kind"] as? String == "uiTestScanStress", ProcessInfo.processInfo.arguments.contains("--mv-ui-smoke") {
                 Task { [weak self] in
                     guard let self else { return }
@@ -205,20 +240,22 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
             if request["kind"] as? String == "uiTestSnapshot", ProcessInfo.processInfo.arguments.contains("--mv-ui-smoke"),
                let name = request["name"] as? String, name.range(of: "^[a-z0-9-]+$", options: .regularExpression) != nil, let web {
                 let output = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(name + ".png")
-                web.takeSnapshot(with: nil) { [weak self] image, error in
-                    do {
-                        guard let data = image?.pngData() else { throw error ?? self?.failure("截图失败") ?? NSError(domain: "UITest", code: 1) }
-                        try data.write(to: output, options: .atomic)
-                        self?.reply(id, value: true)
-                    } catch { self?.reply(id, error: error.localizedDescription) }
+                let surface = web.superview ?? web
+                let image = UIGraphicsImageRenderer(bounds: surface.bounds).image { _ in
+                    surface.drawHierarchy(in: surface.bounds, afterScreenUpdates: true)
                 }
+                do {
+                    guard let data = image.pngData() else { throw failure("截图失败") }
+                    try data.write(to: output, options: .atomic)
+                    reply(id, value: true)
+                } catch { reply(id, error: error.localizedDescription) }
                 return
             }
             #endif
             if request["kind"] as? String == "captureStyle" {
                 let phase = request["phase"] as? String
                 if phase == "prepare", let web, let cells = request["cells"] as? [[String: Any]],
-                   let token = styleFragments.prepare(in: web, cells: cells) {
+                   let token = styleFragments.prepare(in: web.superview ?? web, cells: cells) {
                     reply(id, value: ["token": token, "cells": cells.count])
                 } else if let token = request["token"] as? String, phase == "animate" {
                     styleFragments.animate(token) { [weak self] in self?.reply(id, value: true) }
@@ -355,6 +392,37 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
         web?.evaluateJavaScript("((r)=>globalThis.MiniVoiceTransport?.receive(r[0],r[1]))(\(json))", completionHandler: nil)
     }
 
+    private func handleNativeWall(_ value: [String: Any]) {
+        guard let nativeWall, let session = value["session"] as? String, session.count <= 128 else { return }
+        switch value["kind"] as? String {
+        case "configure":
+            let rawItems = value["items"] as? [[String: Any]]
+            guard value["items"] == nil || (rawItems != nil && rawItems!.count <= 100_000) else { return }
+            let items: [NativeMusicWall.Item]? = rawItems?.compactMap { raw in
+                guard let id = raw["id"] as? String, id.count <= 4096 else { return nil }
+                // Group artwork is resolved through a validated library resource identity too.
+                var song = songsByID[id]
+                if song == nil, let rawURL = raw["artwork"] as? String, let url = URL(string: rawURL),
+                   url.scheme == "minivoice", url.host == "app", url.path.hasPrefix("/artwork/"),
+                   let artworkID = SongResourceToken.decode(String(url.lastPathComponent.dropLast(4))) {
+                    song = songsByID[artworkID]
+                }
+                return NativeMusicWall.Item(id: id, title: String((raw["title"] as? String ?? "").prefix(1024)), artist: String((raw["artist"] as? String ?? "").prefix(1024)), artwork: song?.artworkFile, detailArtwork: song?.originalArtworkFile, version: song?.cacheVersion ?? catalogRevision)
+            }
+            nativeWall.configure(value, items: items)
+        case "geometry":
+            guard let web, web.bounds.width > 0, web.bounds.height > 0 else { return }
+            let safe = web.safeAreaInsets
+            let viewport = NativeWallViewport(size: web.bounds.size, top: safe.top, right: safe.right, bottom: safe.bottom, left: safe.left)
+            var geometry = value
+            geometry["bounds"] = ["x": 0, "y": 0, "width": web.bounds.width, "height": web.bounds.height]
+            geometry["viewport"] = ["x": viewport.center.x, "y": viewport.center.y, "side": viewport.side]
+            nativeWall.geometry(geometry)
+        default: nativeWall.command(value)
+        }
+        (web as? SharedContentWebView)?.publishInsets(force: true)
+    }
+
     private func failure(_ message: String) -> NSError { NSError(domain: "MiniVoice.iOS.Host", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -429,7 +497,8 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
               let sourceURL = Bundle.main.resourceURL?.appendingPathComponent("SharedPlayer/" + (ProcessInfo.processInfo.arguments.contains("--mv-duo-layout-smoke") ? "duo-layout-smoke.js" : "shared-host-smoke.js")),
               let source = try? String(contentsOf: sourceURL, encoding: .utf8) else { return }
         let output = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        webView.callAsyncJavaScript(source, arguments: [:], in: nil, in: .page) { result in
+        let testSource = (ProcessInfo.processInfo.arguments.contains("--mv-native-wall-smoke") ? "globalThis.MINIVOICE_NATIVE_WALL_ONLY=true;\n" : "") + source
+        webView.callAsyncJavaScript(testSource, arguments: [:], in: nil, in: .page) { result in
             let report: [String: Any]
             switch result {
             case .success(let value): report = value as? [String: Any] ?? ["error": "测试无结果"]
@@ -463,16 +532,28 @@ private struct DiagnosticsDocument: FileDocument {
 }
 
 private final class SharedContentWebView: WKWebView {
+    weak var nativeWall: NativeMusicWall?
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if let nativeWall {
+            let local = convert(point, to: nativeWall)
+            if nativeWall.acceptsCanvasTouch(local) { return nativeWall.hitTest(local, with: event) }
+        }
+        return super.hitTest(point, with: event)
+    }
     var contentStyle = "wall"
     var contentTheme = "system"
     private func updateCanvasBackground() {
         let dark = contentTheme == "dark" || (contentTheme == "system" && traitCollection.userInterfaceStyle == .dark)
         let rgb: (CGFloat, CGFloat, CGFloat) = contentStyle == "wall" ? (dark ? (16,36,26) : (220,234,222)) : (dark ? (24,39,32) : (234,240,238))
         let color = UIColor(red: rgb.0/255, green: rgb.1/255, blue: rgb.2/255, alpha: 1)
-        backgroundColor = color
-        scrollView.backgroundColor = color
-        underPageBackgroundColor = color
-        // Rotation can expose intermediate hosting containers before web paint.
+        let native = nativeWall?.active == true
+        isOpaque = !native
+        backgroundColor = native ? .clear : color
+        scrollView.backgroundColor = native ? .clear : color
+        underPageBackgroundColor = native ? .clear : color
+        // Every exposed hosting container must agree before the system rotates
+        // the old surface into its new bounds. A clear intermediate UIView can
+        // otherwise expose the hosting controller's default white backing.
         var container = superview
         while let view = container {
             view.backgroundColor = color

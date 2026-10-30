@@ -16,7 +16,9 @@ RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 MARKER="$CONTAINER/Documents/.shared-smoke-$RUN_ID"
 touch "$MARKER"
 rm -f "$REPORT"
-xcrun simctl launch "$DEVICE" com.xcosmos.MiniVoice.ios --mv-ui-fixture --mv-ui-smoke
+SMOKE_ARGUMENTS=(--mv-ui-fixture --mv-ui-smoke)
+if [[ "${MINIVOICE_IOS_NATIVE_WALL_ONLY:-0}" == 1 ]]; then SMOKE_ARGUMENTS+=(--mv-native-wall-smoke); fi
+xcrun simctl launch "$DEVICE" com.xcosmos.MiniVoice.ios "${SMOKE_ARGUMENTS[@]}"
 for attempt in {1..90}; do
   [[ -f "$REPORT" ]] && break
   sleep 1
