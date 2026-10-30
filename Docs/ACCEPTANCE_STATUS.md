@@ -939,3 +939,5 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
 2026-10-30 用户截图白线再次出现：标记于Sold Out邻卡底边，上一轮捏合期间绕过rasterRect是明确回归风险。本轮恢复捏合中四边物理像素对齐，保留邻卡真实宽高与固定scroll更新路径。静态检查、共享53项、合成捏合几何/控件/scroll定向检查通过（/tmp/mv-edge-pinch-grid.txt）。3倍像素密度检查日志 /tmp/mv-edge-pinch-dpr3.txt。白线根因尚未经WK真机观测证实，该候选修正仍待用户同场景回验；不得将Electron几何通过写成实体白线已修复。
 
 2026-10-30 22:11 iOS展开收起跳动：已查看录屏接触表；修正iOS内容先跳终点尺寸/外层仍过渡的不同步，收起移除额外无动画定位。静态检查、共享53项测试通过。定向Electron中间尺寸跟随、快速反向重开、最终实际viewport、相机不动检查通过（/tmp/mv-expand-continuity-targeted.txt）；首轮测试误用窗口外框956为viewport高度而失败，已改为读取实际viewport，并保留尺寸断言。完整页面回归仍在Mac歌词编辑入口缺失失败（/tmp/mv-expand-continuity-pages.txt）。未进行iOS真机部署或流畅度验收，实体展开关闭及缩放后的连续性待验收。
+
+2026-10-30 用户要求先提交再加反馈：此前已有源代码/测试优化已提交802655d，未纳入用户Xcode个人界面状态。随后独立新增移动墙面按住.96缩小+白色细框，不加入hover放大；原Mac代码不改。静态检查及共享53项通过；Android/iOS合成触摸按压、拖动/多指/cancel与reduce-motion定向检查通过（/tmp/mv-wall-press-targeted.txt）。首轮160ms动画测试采样180ms未达端点失败，复跑通过；真机时序/快速点按仍待回验，不据复跑否认时序风险。Android体验构建日志 /tmp/mv-wall-press-final-build.txt；本轮未部署实体iOS包。原有灰屏/细线与全回归缺口不因本次反馈新增改为通过。

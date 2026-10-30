@@ -252,3 +252,9 @@
    Keep keyboard focus-visible intact. */
 .mv-wall-card,.mv-wall-focused{-webkit-tap-highlight-color:transparent}
 .mv-wall-card:focus:not(:focus-visible){outline:none}
+
+/* Wall owns touch hit-testing; press scale never rewrites camera transforms. */
+[data-presentation=mobile] :is(.mv-wall-card,.mv-wall-focused){scale:1;transition:scale 160ms cubic-bezier(.2,.8,.2,1)}
+[data-presentation=mobile] :is(.mv-wall-card,.mv-wall-focused).is-touch-pressed{scale:.96;outline:1px solid #ffffffd9;outline-offset:-2px}
+@media(prefers-reduced-motion:reduce){[data-presentation=mobile] :is(.mv-wall-card,.mv-wall-focused){transition:none;scale:1!important}}
+.reduce-motion [data-presentation=mobile] :is(.mv-wall-card,.mv-wall-focused){transition:none;scale:1!important}
