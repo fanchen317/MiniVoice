@@ -77,3 +77,9 @@ html,body,#root{width:100%;height:100%;overflow:hidden}
 .wall-poster.playing::after{animation:mv-current-enter .48s ease-out}
 @media(prefers-reduced-motion:reduce){.wall-poster.playing::after{animation:none}}
 .reduce-motion .wall-poster.playing::after{animation:none}
+
+/* A single contour owns the edge. The legacy article border otherwise
+   flashes underneath the transformed face when focus reflow starts. */
+.wall-poster,.wall-poster:hover,.wall-poster:active{border:0}
+.wall-poster.focused:not(.playing)>.poster-face{outline:0!important}
+.wall-poster.focused:not(.playing)::after{border-color:transparent;transform:none;transition:none}
