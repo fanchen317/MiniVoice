@@ -3,7 +3,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$repo_root/Scripts/common/android-sdk.sh"
 sdk_root="$(minivoice_find_sdk test)"
-android_jar="$sdk_root/platforms/android-35/android.jar"
+android_jar="$(minivoice_find_platform "$sdk_root")"
 output="$repo_root/.build/reports/android/tests"
 source_root="$repo_root/Android/app/src/main/java/com/xcosmos/minivoice"
 mkdir -p "$output"

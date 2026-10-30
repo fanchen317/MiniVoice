@@ -6,12 +6,13 @@
 
 执行 `Scripts/build/build-android.sh experience` 生成 `.build/dist/MiniVoice-android-experience.apk`；`Scripts/build/build-android.sh release` 生成旧原生入口正式包 `.build/dist/MiniVoice-android.apk`。测试路径 `.build/work/android/MiniVoice-debug.apk` 为体验包兼容链接。也可在 Android Studio 打开 `Android/`，安装 Android SDK 35 和 Build Tools 35.0.0 后运行 `:app:assembleDebug`。支持 Android 10 及以上。
 
-脚本会依次查找 `ANDROID_HOME`、`ANDROID_SDK_ROOT`、`Android/local.properties` 的 `sdk.dir`，然后查找 Android Studio 常用 SDK 目录、Homebrew 路径和项目的 `.build/android-sdk`。优先使用 Build Tools 35.0.0，也支持更新的稳定版本。显式配置的 SDK 不完整时会给出缺少组件的提示，不会删除已有 APK。自定义路径可这样运行：
+脚本会依次查找 `ANDROID_HOME`、`ANDROID_SDK_ROOT`、`Android/local.properties` 的 `sdk.dir`，然后查找 Android Studio 常用 SDK 目录、Homebrew 路径和项目的 `.build/android-sdk`。优先使用 Platform android-35 和 Build Tools 35.0.0，也支持更新的稳定版本。显式配置的 SDK 不完整时会给出缺少组件的提示，不会删除已有 APK。自定义路径可这样运行：
 
 ```bash
 ANDROID_HOME="/你的/Android/sdk" ./Scripts/build/build-android.sh
 ```
 
+脚本还需要 NDK 27.2.12479018（默认取 `$SDK/ndk/27.2.12479018`）交叉编译 `libminivoice_core.so`。缺失时用 Android Studio 的 SDK Manager 安装 NDK (Side by side) 27.2.12479018，或用 `ANDROID_NDK_HOME` 指向已有安装。
 
 音乐墙使用与 Mac 版相同的加权封面分割算法，并支持双向拖动、双指缩放、点按卡片聚焦、双击播放和封面缓存；移动端控制方式按触屏适配。默认入口已使用 Shared/UI 自有组件，提供标签/双语歌词编辑与手动打点；在线歌词搜索和离线 AI 匹配仍未接入 Android。安卓通过系统文件夹选择器授权读取用户添加的音乐目录，不直接读取 Mac 的音乐目录；需将音频文件传到手机。安卓应用缓存位于系统分配的应用专属外部存储目录，设置中显示真实路径并可查看和清理；文件管理器能否访问 Android/data 由系统限制决定。
 

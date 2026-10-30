@@ -4,6 +4,7 @@ repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$repo_root/Scripts/common/android-sdk.sh"
 sdk_root="$(minivoice_find_sdk build)"
 build_tools="$(minivoice_find_build_tools "$sdk_root")"
+android_jar="$(minivoice_find_platform "$sdk_root")"
 output="$repo_root/.build/reports/android/ui-tests"
 mkdir -p "$output/classes" "$output/dex"
 # Test fixture replaces library state: only permit a dedicated emulator, never a user's phone.
@@ -12,9 +13,9 @@ if [[ -n "$serial" && "$serial" != emulator-* ]]; then
   echo 'UI 回归使用合成音乐库，只允许专用 emulator-* 设备。' >&2; exit 2
 fi
 bash "$repo_root/Scripts/build/build-android.sh"
-"$build_tools/aapt2" link -o "$output/unsigned.apk" -I "$sdk_root/platforms/android-35/android.jar" --manifest "$repo_root/Android/ui-tests/AndroidManifest.xml" -A "$repo_root/Android/ui-tests/assets"
-javac -source 17 -target 17 -cp "$sdk_root/platforms/android-35/android.jar:$repo_root/.build/work/android/classes" -d "$output/classes" "$repo_root"/Android/ui-tests/com/xcosmos/minivoice/*.java
-"$build_tools/d8" --lib "$sdk_root/platforms/android-35/android.jar" --min-api 29 --output "$output/dex" "$output"/classes/com/xcosmos/minivoice/*.class
+"$build_tools/aapt2" link -o "$output/unsigned.apk" -I "$android_jar" --manifest "$repo_root/Android/ui-tests/AndroidManifest.xml" -A "$repo_root/Android/ui-tests/assets"
+javac -source 17 -target 17 -cp "$android_jar:$repo_root/.build/work/android/classes" -d "$output/classes" "$repo_root"/Android/ui-tests/com/xcosmos/minivoice/*.java
+"$build_tools/d8" --lib "$android_jar" --min-api 29 --output "$output/dex" "$output"/classes/com/xcosmos/minivoice/*.class
 (cd "$output/dex" && zip -q "$output/unsigned.apk" classes.dex)
 "$build_tools/zipalign" -f 4 "$output/unsigned.apk" "$output/aligned.apk"
 source "$repo_root/Scripts/common/android-signing.sh"

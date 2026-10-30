@@ -17,6 +17,6 @@ for version in 3 4; do
   "$ffmpeg_bin" -v error -f lavfi -i 'sine=frequency=440:duration=1' -metadata comment='preserve me' -y "$output/fixtures/m4a$version.m4a"
  fi
 done
-android_jar="$sdk_root/platforms/android-35/android.jar"
+android_jar="$(minivoice_find_platform "$sdk_root")"
 javac -cp "$android_jar" -d "$output/classes" "$source_root/AudioTags.java" "$source_root/PortableTagCodec.java" "$source_root/PortableM4aTags.java" "$repo_root/Android/tests/com/xcosmos/minivoice/PortableTagCodecTests.java"
 java -cp "$output/classes:$android_jar" com.xcosmos.minivoice.PortableTagCodecTests "$output/fixtures" "$ffmpeg_bin" "$ffprobe_bin"

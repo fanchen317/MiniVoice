@@ -1,8 +1,26 @@
 #!/usr/bin/env bash
 # Shared SDK discovery. Source this file after setting repo_root.
+minivoice_find_platform() {
+  local sdk="$1" version
+  # Prefer the project's original platform, then any newer installed platform.
+  for version in 35 $(
+    for dir in "$sdk"/platforms/android-*; do
+      [[ -d "$dir" ]] || continue
+      basename "$dir" | sed 's/^android-//'
+    done | LC_ALL=C sort -t . -k1,1nr -k2,2nr -k3,3nr
+  ); do
+    if [[ -f "$sdk/platforms/android-$version/android.jar" ]]; then
+      printf '%s\n' "$sdk/platforms/android-$version/android.jar"
+      return 0
+    fi
+  done
+  printf '缺少 Android Platform（需要 android-35 或更新稳定版本）：%s/platforms\n' "$sdk" >&2
+  return 1
+}
+
 minivoice_sdk_valid() {
   local candidate="$1" mode="${2:-build}"
-  [[ -f "$candidate/platforms/android-35/android.jar" ]] || return 1
+  minivoice_find_platform "$candidate" >/dev/null 2>&1 || return 1
   if [[ "$mode" == build ]]; then
     minivoice_find_build_tools "$candidate" >/dev/null 2>&1 || return 1
   fi
@@ -46,7 +64,7 @@ minivoice_find_sdk() {
       printf '%s\n' "$configured"
       return 0
     fi
-    printf '配置的 Android SDK 不完整：%s\n需要 platforms/android-35/android.jar' "$configured" >&2
+    printf '配置的 Android SDK 不完整：%s\n需要 platforms/android-35/android.jar（android-35 或更新稳定版本）' "$configured" >&2
     [[ "$mode" != build ]] || printf ' 和 Build Tools 35.0.0 或更新稳定版本' >&2
     printf '。请检查 ANDROID_HOME、ANDROID_SDK_ROOT 或 Android/local.properties。\n' >&2
     return 1
@@ -56,13 +74,13 @@ minivoice_find_sdk() {
     "$HOME/Android/Sdk" \
     /opt/homebrew/share/android-commandlinetools \
     /usr/local/share/android-commandlinetools \
-    "$repo_root/.build/cache/android-sdk"; do
+    "$repo_root/.build/android-sdk"; do
     if minivoice_sdk_valid "$candidate" "$mode"; then
       printf '%s\n' "$candidate"
       return 0
     fi
   done
-  printf '未找到可用的 Android SDK。请安装 Android SDK Platform 35' >&2
+  printf '未找到可用的 Android SDK。请安装 Android SDK Platform 35（或更新稳定版本）' >&2
   [[ "$mode" != build ]] || printf ' 和 Build Tools 35.0.0（或更新稳定版本）' >&2
   printf '，并设置 ANDROID_HOME=/你的/Android/sdk。\n' >&2
   return 1
