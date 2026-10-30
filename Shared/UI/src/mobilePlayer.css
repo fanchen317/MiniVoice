@@ -73,3 +73,8 @@
  [data-presentation=mobile][data-host=iOS] .mv-drawer-shade{padding-top:calc(var(--mv-chrome-y) + 12px);padding-bottom:calc(var(--mv-chrome-y) + 12px)}
  [data-presentation=mobile][data-host=iOS]:not(.style-wall){padding-top:calc(var(--mv-chrome-y) + 8px);padding-bottom:calc(var(--mv-chrome-y) + 8px)}
 }
+
+/* Avoid filter-backed scrolling row textures in WKWebView. Emphasis remains
+   opacity-based; pointer scrolling must not leave a focused row outline. */
+[data-presentation=mobile][data-host=iOS] .mv-lyric-lines button{filter:none!important;transition:opacity 220ms ease;-webkit-tap-highlight-color:transparent}
+[data-presentation=mobile][data-host=iOS] .mv-lyric-lines button:focus:not(:focus-visible){outline:none}

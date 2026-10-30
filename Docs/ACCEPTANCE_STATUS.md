@@ -733,3 +733,21 @@ Android 专用 emulator-5554：portable 完整回归通过 UI_PORTABLE_PASS；�
 ### 2026-10-30 再次处理侧栏后景暗边
 
 保留普通移动后景填充与描边，停用所有后景按钮/面板的嵌套 backdrop-filter 与 box-shadow；后景缩放时解除场景 overflow 裁切与 isolation，前景抽屉保留自身材质。关闭后恢复原皮肤。组件门禁与共享单测通过，Android体验包已构建；专项日志 drawer-edge-repair.txt，iOS构建日志 drawer-edge-repair-build.txt。实体设备暗边和旋转合成尚待复核，不宣称彻底解决。
+
+## 2026-10-30 iOS 歌词滚动彩线兼容修正
+
+- 当前源码中此前lyricEffects兼容配置不存在，普通歌词仍有filter blur过渡。现按实际data-host=iOS直接限定，移除滚动歌词行的filter及filter transition，保留透明度层次、逐字高亮、定位与键盘焦点；非focus-visible不画轮廓。
+- 静态门禁及iOS Debug模拟器构建通过。彩线根因未在真机复现，当前是针对滚动滤镜合成路径的兼容修正，不宣称已确定系统缺陷或实机完全修复。原生集成报告见ios/lyric-line-repair-integration.log，最终状态以报告为准。
+
+- 本次WKWebView完整集成未通过，失败项为“WK simple 侧栏打开保留背景组件材质与轮廓”；未修改该断言，不记整体验收通过。歌词彩线仍需用户设备复测。
+
+### 2026-10-30 iOS 独立原生音乐墙（用户授权，定向验收）
+
+- 已接入：默认 iOS 宿主启用 NativeMusicWall，UIKit 负责墙面拖动/惯性/缩放、可见封面复用、后台解码、独立正方形聚焦及定位；Shared/UI 保留播放/歌词/设置/歌单业务。Android/Mac 默认渲染入口不变，旧 HomeView 未启用。
+- 已通过：自有组件静态门禁；iOS 模拟器 Debug 构建；iOS 纯逻辑脚本；共享逻辑 47/47；墙面定向宿主测试（32 步往返平移、聚焦打断、展开收起、比例保存及 1037 项渲染夹具 40 步有界复用/解码）。1037 项夹具复用合成封面，不代表 1037 个真实音乐文件及独立原图已验收。
+- 已通过：专用模拟器 XCUITest，断言聚焦图片上的真实拖动使卡片位置变化、双指使相机比例变化，覆盖共享控制点击、展开收起、重启恢复聚焦和横屏入口。报告 `.build/reports/ios/native-wall-touch-routing.xcresult`。
+- 未通过：完整宿主脚本停在 `WK simple 侧栏打开保留背景组件材质与轮廓`，未跳过或放宽该断言。XCUITest 中仍记录 SwiftUI 发布状态时机警告，来源未定位。
+- 待验收：真机 GPU 帧耗时、快速反向连续操作、低内存、VoiceOver、iPad、深浅主题完整矩阵、长时间后台及真实大库。原生卡片暂不做邻居回流，滚动时隐藏文字/歌词且停下再对齐；原生侧栏背景缩小与原图升级未实现。详见 `Docs/iOS-NativeMusicWall-2026-10-30.md`。
+- 最终复核：iOS Simulator / iPhoneOS Debug 目标均编译通过（关闭签名；不代表已安装真机）。底层封面保留后的系统手势复测报告为 `.build/reports/ios/native-wall-delivery.xcresult`；最终墙面定向宿主报告为 `.build/reports/ios/shared-ui/A1A82D8E-910C-4068-8FC1-1D8D5F21A010/20261030T034424Z-6078/report.json`，ok=true。
+
+- 用户回验（2026-10-30）：反馈歌词滚动蓝线似已消失，记录为用户初步确认；未扩大为全部设备或完整集成验收通过。
