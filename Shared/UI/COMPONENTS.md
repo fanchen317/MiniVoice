@@ -453,3 +453,5 @@ iOS 系统滚动后的交互规则补充：双击在墙面捕获阶段按第一�
 2026-10-30 移动音乐墙按压反馈：普通卡片/聚焦背景复用Wall触控边界，单指按住添加is-touch-pressed，独立scale缩至.96（Mac pressingID参考）与1px白色内描边，160ms恢复；无hover放大。移动超过8px、多指、cancel、页面隐藏/失焦、blocked/expanded或卸载清理，内部播放按钮/slider不重复激活卡片按压。墙面父层承担手势命中，反馈不改变相机transform或业务数据。减弱动态不缩放但保留按压描边。测试test-mobile-wall-press.cjs覆盖Android/iOS合成触摸的按压、取消和减弱动态；真机手感仍待验收。
 
 2026-10-30 音乐墙歌词（ScrollingLyrics）显示修复：行离开当前位时用lyricSweep.clearLyricSweep清除其命令式sweep-surface类与内联背景（React不会重写未变化的className，旧类会把原文变透明而只剩译文），并清除被裁切行按自身盒的淡出遮罩，避免视口边缘留下半行或孤立译文。共享组件，Mac/iOS/Android体验三端同时生效。
+
+2026-10-30 按压反馈漂移及遮罩修正：撤回定位节点上的独立scale，mv-wall-press-surface内部视觉层围绕center缩放.96，100ms ease-out对应Mac按压时长；文档定位transform与外部44px命中不变。封面/遮罩/正文在同一内部stacking context，遮罩z1、正文z2，避免外层遮罩覆盖全部内容。只移植视觉反馈，不改变WallPlayer移动按钮显示条件；对802655d比对WallPlayer无差异。定向测试验证中心不漂移、外部命中不变、单击聚焦、双击切换播放、取消与减弱动态，截图检查正文可读。

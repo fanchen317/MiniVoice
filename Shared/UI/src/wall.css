@@ -253,8 +253,18 @@
 .mv-wall-card,.mv-wall-focused{-webkit-tap-highlight-color:transparent}
 .mv-wall-card:focus:not(:focus-visible){outline:none}
 
-/* Wall owns touch hit-testing; press scale never rewrites camera transforms. */
-[data-presentation=mobile] :is(.mv-wall-card,.mv-wall-focused){scale:1;transition:scale 160ms cubic-bezier(.2,.8,.2,1)}
-[data-presentation=mobile] :is(.mv-wall-card,.mv-wall-focused).is-touch-pressed{scale:.96;outline:1px solid #ffffffd9;outline-offset:-2px}
-@media(prefers-reduced-motion:reduce){[data-presentation=mobile] :is(.mv-wall-card,.mv-wall-focused){transition:none;scale:1!important}}
-.reduce-motion [data-presentation=mobile] :is(.mv-wall-card,.mv-wall-focused){transition:none;scale:1!important}
+/* Position and hit testing stay outside the centred press surface. */
+.mv-wall-press-surface{position:absolute;inset:0;overflow:hidden;transform-origin:center;transform:scale(1);transition:transform 100ms ease-out}
+[data-presentation=mobile] .is-touch-pressed>.mv-wall-press-surface{transform:scale(.96);outline:1.5px solid #fffffff2;outline-offset:-1.5px}
+@media(prefers-reduced-motion:reduce){.mv-wall-press-surface{transition:none;transform:none!important}}
+.reduce-motion .mv-wall-press-surface{transition:none;transform:none!important}
+
+/* Artwork, its shade and readable controls must share the press stacking context. */
+.mv-wall-card::before,.mv-wall-focused::after{display:none}
+.mv-wall-card>.mv-wall-press-surface::before{content:'';position:absolute;inset:0;background:#00000057;z-index:1;pointer-events:none}
+.mv-wall-card.is-focus-underlay>.mv-wall-press-surface::before{background:transparent}
+.mv-wall-focused>.mv-wall-press-surface{isolation:isolate}
+.mv-wall-focused>.mv-wall-press-surface::after{content:'';position:absolute;inset:0;background:linear-gradient(#0007,#0005 40%,#000b);opacity:var(--wall-surface-opacity,1);z-index:1;pointer-events:none}
+.mv-wall-focused.is-preview>.mv-wall-press-surface::after{background:linear-gradient(transparent 35%,#0002 65%,#0008)}
+.mv-wall-focused.is-current>.mv-wall-press-surface::after{background:linear-gradient(#0005,#0006 40%,#000b)}
+.mv-wall-press-surface>.mv-art-fallback,.mv-wall-press-surface>.mv-wall-placeholder{width:100%;height:100%}
