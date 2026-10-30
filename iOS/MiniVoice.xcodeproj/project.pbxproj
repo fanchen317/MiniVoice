@@ -19,7 +19,6 @@
 		C10000000000000000000002 /* ParitySupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000002 /* ParitySupport.swift */; };
 		D10000000000000000000002 /* UITests/LayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000001 /* UITests/LayoutTests.swift */; };
 		E10000000000000000000001 /* IOSDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000001 /* IOSDiagnostics.swift */; };
-		E91000000000000000000001 /* NativeMusicWall.swift in Sources */ = {isa = PBXBuildFile; fileRef = E92000000000000000000001 /* NativeMusicWall.swift */; };
 		F20000000000000000000001 /* ScanBackgroundSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* ScanBackgroundSession.swift */; };
 		F30000000000000000000001 /* StyleFragmentSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000002 /* StyleFragmentSession.swift */; };
 /* End PBXBuildFile section */
@@ -49,7 +48,6 @@
 		D10000000000000000000001 /* UITests/LayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITests/LayoutTests.swift; sourceTree = "<group>"; };
 		D10000000000000000000003 /* MiniVoiceUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = MiniVoiceUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E20000000000000000000001 /* IOSDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSDiagnostics.swift; sourceTree = "<group>"; };
-		E92000000000000000000001 /* NativeMusicWall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMusicWall.swift; sourceTree = "<group>"; };
 		F20000000000000000000002 /* ScanBackgroundSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanBackgroundSession.swift; sourceTree = "<group>"; };
 		F30000000000000000000002 /* StyleFragmentSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StyleFragmentSession.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -90,7 +88,6 @@
 				F30000000000000000000002 /* StyleFragmentSession.swift */,
 				C20000000000000000000002 /* ParitySupport.swift */,
 				C20000000000000000000001 /* SharedPlayerView.swift */,
-				E92000000000000000000001 /* NativeMusicWall.swift */,
 				A20000000000000000000001 /* MiniVoiceApp.swift */,
 				A20000000000000000000002 /* Models.swift */,
 				A20000000000000000000003 /* MusicLibrary.swift */,
@@ -229,7 +226,6 @@
 				F30000000000000000000001 /* StyleFragmentSession.swift in Sources */,
 				C10000000000000000000002 /* ParitySupport.swift in Sources */,
 				C10000000000000000000001 /* SharedPlayerView.swift in Sources */,
-				E91000000000000000000001 /* NativeMusicWall.swift in Sources */,
 				A10000000000000000000001 /* MiniVoiceApp.swift in Sources */,
 				A10000000000000000000002 /* Models.swift in Sources */,
 				A10000000000000000000003 /* MusicLibrary.swift in Sources */,

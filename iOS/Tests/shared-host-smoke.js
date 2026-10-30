@@ -1,3 +1,4 @@
+const runtimeErrors=[];addEventListener('error',event=>runtimeErrors.push(event.message));
 // Runs in the real iOS WKWebView only with an explicit simulator test argument.
 const checks=[];
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -23,41 +24,89 @@ try {
    await click(button('打开侧边栏'),'初始化测试侧栏');await click(button('设置'),'初始化测试设置');
    await click(textButton('音乐墙'),'初始化音乐墙');await click(button('关闭弹窗'),'关闭初始化设置');
  }
- await wait(()=>document.querySelector('[data-native-renderer="uikit"]'),'iOS 原生音乐墙挂载');
- const native=payload=>send({kind:'uiTestNativeWall',...payload});
+ await wait(()=>document.querySelector('.mv-wall-card'),'统一音乐墙封面');
+ const {createWallProbe}=await import('./wall-smoke-helpers.js');
+ const {rootWall,camera,box,probe:wallProbe}=createWallProbe({delay});
+ check(MiniVoiceHost.wallRenderer==='single-surface'&&!MiniVoiceHost.nativeWall,'iOS 只有一个音乐墙渲染表面，无原生卡片桥');
  await delay(700);
- let state=await native({});
- check(state.active&&state.count===12&&state.mounted>0,'UIKit 墙面实际接入并挂载封面');
- check(!document.querySelector('.mv-wall-plane'),'iOS 不再创建 Android DOM 封面平面');
+ let state=await wallProbe({});
+ check(state.active&&state.mounted>0,'iOS 与 Android 共用真实封面、轮廓、遮罩和控制组件');
+ check(rootWall().dataset.wallRenderer==='native-scroll-single-surface'&&state.planeBounds.width===16384&&state.planeBounds.height===16384&&getComputedStyle(rootWall().querySelector('.mv-wall-plane')).willChange==='auto','iOS 采用固定滚动文档，不把文档提升为整张 GPU 纹理');
+ check([...rootWall().querySelectorAll('.mv-wall-card,.mv-wall-focused')].every(node=>getComputedStyle(node).touchAction.includes('pan-x')&&getComputedStyle(node).touchAction.includes('pan-y')),'卡片与聚焦内容允许系统接管真实拖动');
  for(let step=0;step<32;step++){
-   const before=await native({});
-   state=await native({operation:'pan',dx:step<16?160:-160,dy:0});
-   check(Math.abs(state.x-before.x-(step<16?-160:160))<1,'原生滚动相机连续 '+step);
-   check(state.mounted>0&&state.mounted<150,'原生可见封面有界复用 '+step);
+   const before=camera(),nodes=new Map([...document.querySelectorAll('.mv-wall-card')].map(n=>[n,n.getBoundingClientRect()]));
+   state=await wallProbe({operation:'pan',dx:step<16?160:-160,dy:0});
+   check(Math.abs(state.x-before.x-(step<16?-160:160))<1,'统一相机连续平移 '+step+' '+JSON.stringify({before:before.x,after:state.x,left:rootWall().scrollLeft,width:rootWall().scrollWidth}));
+   for(const [node,old]of nodes){if(!node.isConnected)continue;const r=node.getBoundingClientRect();check(Math.abs(r.x-old.x-state.x+before.x)<1.5,'视口原点重置后封面连续 '+step);}
  }
- await delay(700);state=await native({});check(state.decoded>0,'原生缩略图后台解码完成');
- await native({operation:'select',index:0});await delay(600);
- state=await native({});check(state.square&&!state.animating&&!!state.focused,'原生点击收敛到正方形');
- state=await native({operation:'pan',dx:2,dy:0});check(state.retainedContent,'原生拖动保留共享卡片文字画面');await delay(150);
- const oldMotion=await native({operation:'beginPan'});
- await native({operation:'endPan'});await delay(150);
- const newMotion=await native({operation:'beginPan'});
+
+ // The second tap can hit the new focus section or a neighbour while reflowing.
+ const doublePoster=[...rootWall().querySelectorAll('.mv-wall-card:not(.is-focus-underlay)')].find(node=>{const r=node.getBoundingClientRect();return r.left>10&&r.top>90&&r.right<innerWidth-10&&r.bottom<innerHeight-120;})||rootWall().querySelector('.mv-wall-card:not(.is-focus-underlay)');
+ const doubleRect=doublePoster.getBoundingClientRect(),doublePoint={x:Math.max(15,Math.min(innerWidth-15,doubleRect.x+doubleRect.width/2)),y:Math.max(95,Math.min(innerHeight-125,doubleRect.y+doubleRect.height/2))},doubleId=doublePoster.dataset.wallId;
+ doublePoster.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,detail:1,clientX:doublePoint.x,clientY:doublePoint.y}));await delay(80);
+ const doubleTarget=document.elementFromPoint(doublePoint.x,doublePoint.y)||rootWall(),secondTouch=new Touch({identifier:99,target:doubleTarget,clientX:doublePoint.x,clientY:doublePoint.y});
+ doubleTarget.dispatchEvent(new TouchEvent('touchstart',{bubbles:true,cancelable:true,touches:[secondTouch],targetTouches:[secondTouch],changedTouches:[secondTouch]}));
+ doubleTarget.dispatchEvent(new TouchEvent('touchend',{bubbles:true,cancelable:true,touches:[],targetTouches:[],changedTouches:[secondTouch]}));
+ await delay(700);const doubleState=await send({kind:'snapshot'});
+ check(doubleState.current===doubleId&&doubleState.playing,'变形期间第二次点击命中改变仍双击播放首张歌曲，且只触发一次 '+JSON.stringify({doubleId,current:doubleState.current,playing:doubleState.playing,target:document.elementFromPoint(doublePoint.x,doublePoint.y)?.outerHTML.slice(0,200)}));
+ await delay(350);
+ const afterDoubleCamera=camera();await wallProbe({operation:'pan',dx:32,dy:0});
+ check(Math.abs(camera().x-afterDoubleCamera.x+32)<1,'聚焦完成后释放相机动画所有权，不吞掉后续系统滚动');
+ await wallProbe({operation:'pan',dx:-32,dy:0});
+ await wallProbe({operation:'select',index:0});await delay(650);
+ state=await wallProbe({});check(state.square&&state.maskAligned,'点击回流为正方形，遮罩覆盖完整卡片');
+ const playingFixture=await send({kind:'snapshot'});
+ await send({kind:'play',id:state.focused,ids:playingFixture.songs.map(song=>song.id)});
+ await wait(()=>box()?.querySelector('.wp-player.is-current .wp-lyrics .wp-line'),'播放后真实歌词与按钮就绪');
+ const persistentCard=box(),persistentContent=box().querySelector('.mv-wall-focus-content'),persistentControls=box().querySelector('.wp-controls'),persistentLyrics=box().querySelector('.wp-lyrics');
+ check(box().parentElement===document.querySelector('.mv-wall-plane'),'播放卡片、遮罩与歌词位于同一个相机容器');
+ state=await wallProbe({});check(state.contourVisible&&state.contourAligned,'播放轮廓与封面保持同一节点与边界');
+ await wallProbe({operation:'beginPan'});
+ for(let step=0;step<40;step++){
+   state=await wallProbe({operation:'panStep',dx:2,dy:0});
+   check(box()===persistentCard&&persistentControls.isConnected&&persistentLyrics.isConnected&&state.liveContent,'滑动逐帧保留真实按钮和歌词 '+step);
+ }
+ await wallProbe({operation:'endPan'});
  for(const scale of [.6,1.2,.8,1]){
-   const zoomed=await native({operation:'motionZoom',scale});
-   check(zoomed.motionActive&&zoomed.retainedContent&&zoomed.contentAligned,'缩放中按钮歌词和遮罩随卡片同比缩放 '+scale);
+   const layoutWidth=parseFloat(persistentContent.style.width),posterLayouts=new Map([...rootWall().querySelectorAll('.mv-wall-card')].map(node=>[node,node.style.width]));
+   state=await wallProbe({operation:'motionZoom',scale});
+   check(Math.abs(parseFloat(persistentContent.style.width)-layoutWidth)<.01&&[...posterLayouts].every(([node,width])=>!node.isConnected||node.style.width===width),'双指期间封面和歌词布局尺寸保持稳定，仅变换缩放 '+scale);
+   check(Math.abs(state.scale-scale)<.001&&state.contentAligned&&state.maskAligned&&state.contourAligned,'双指缩放同帧同步卡片内容、遮罩和轮廓 '+scale);
+   check(persistentContent.isConnected&&persistentControls.isConnected&&persistentLyrics.isConnected,'缩放不替换或截图歌词和按钮 '+scale);
+   await wallProbe({operation:'endPan'});
  }
+ await wallProbe({operation:'endPan'});await delay(250);
+ await wallProbe({operation:'motionZoom',scale:1});await wallProbe({operation:'cancelZoom'});
+ check(!rootWall().hasAttribute('data-native-pinching')&&getComputedStyle(rootWall()).overflowY!=='hidden','双指取消即使残留触点也解除滚动锁');
+ await wallProbe({operation:'endPan'});
 
- const staleReady=await native({operation:'ready',epoch:oldMotion.motionEpoch});
- check(staleReady.motionActive&&staleReady.retainedContent&&staleReady.motionEpoch===newMotion.motionEpoch,'旧滑动回调不能移除新滑动的按钮歌词画面');
- await native({operation:'endPan'});await delay(150);
+ await wallProbe({operation:'select',index:1});await delay(90);
+ const interrupted=box();await wallProbe({operation:'tapFocused'});
+ check(box()===interrupted,'点卡片其他区域不替换正在变形的卡片');
+ await wallProbe({operation:'pan',dx:80,dy:30});await delay(600);
+ check((await wallProbe({})).maskAligned,'动画中平移后遮罩仍对齐');
 
- await native({operation:'select',index:1});await delay(70);await native({operation:'pan',dx:80,dy:30});await delay(500);
- state=await native({});check(!state.animating&&state.mounted>0,'聚焦中拖动取消旧动画');
-
+ // Use the product playback-bar action, including its async workspace update.
+ await wallProbe({operation:'pan',dx:260,dy:100});
+ const locateStart=camera();
+ const locateMeter=button('展开播放条');if(locateMeter&&!locateMeter.hidden)locateMeter.click();
+ document.querySelector('.mv-wall-dock .mv-now').click();await delay(100);
+ const locateMiddle=camera();
+ check(Math.hypot(locateMiddle.x-locateStart.x,locateMiddle.y-locateStart.y)>1,'播放栏定位具有真实相机中间帧');
+ await delay(650);
+ const locateEnd=camera(),playingNow=await send({kind:'snapshot'});
+ check(box()?.dataset.wallId===playingNow.current,'播放栏定位回到正在播放的歌曲而非预览歌曲');
+ check(Math.hypot(locateEnd.x-locateMiddle.x,locateEnd.y-locateMiddle.y)>1,'播放栏定位从中间帧继续完成 '+JSON.stringify({locateStart,locateMiddle,locateEnd}));
+ check(document.querySelectorAll('.mv-wall-card.active:not(.is-focus-underlay)').length+document.querySelectorAll('.mv-wall-focused.is-current').length===1,'重复封面仅一个实例展示正在播放样式');
  // Exercise the real iOS host policy through the branded style switch.
  let captureCalls=0,fragmentPreparations=0,fragmentAnimations=0;const requestBefore=MiniVoiceHost.request;
  MiniVoiceHost.request=function(id,raw){const request=JSON.parse(raw);if(request.kind==='captureStyle'){captureCalls++;if(request.phase==='prepare')fragmentPreparations++;if(request.phase==='animate')fragmentAnimations++;}return requestBefore.call(this,id,raw);};
- await click(button('打开侧边栏'),'切换渲染测试侧栏');
+ const beforeDrawerScale=camera().scale;
+ button('打开侧边栏').click();await delay(90);
+ const drawerMoving=await wallProbe({});
+ check(drawerMoving.depth>.92&&drawerMoving.depth<1,'侧栏缩小有真实相机中间帧');
+ await delay(350);
+ check(Math.abs((await wallProbe({})).depth-.92)<.001&&camera().scale===beforeDrawerScale,'侧栏深度不改变持久比例');
  for(const target of ['simple','library','wall']){
    document.querySelector('.mv-brand-logo').click();
    await wait(()=>document.querySelector('main').dataset.styleBusy==='false'&&document.querySelector('main').dataset.style===target,'实时样式切换 '+target);
@@ -66,8 +115,8 @@ try {
  }
  check(fragmentPreparations===3&&fragmentAnimations===3,'iOS 三次切换均使用原生碎片动画');MiniVoiceHost.request=requestBefore;
  await click(button('关闭侧边栏'),'关闭渲染测试侧栏');
- await delay(700);state=await native({});
- check(state.active&&state.mounted>0,'切换样式后重建原生墙面');
+ await delay(700);state=await wallProbe({});
+ check(state.active&&state.mounted>0,'切换样式后恢复同一渲染架构');
 
  const snapshot=await send({kind:'snapshot'});
  check(snapshot.songs.length===12,'合成音乐库通过真实宿主桥读取');
@@ -139,7 +188,7 @@ try {
 
  // Exercise the actual WKWebView chrome, including the centered iOS bar skin.
  if(document.querySelector('.mv-wall-focused [aria-label="收起播放器"]')){document.querySelector('.mv-wall-focused [aria-label="收起播放器"]').click();await delay(900);}
- await native({operation:'select',index:0});await delay(600);
+ await wallProbe({operation:'select',index:0});await delay(600);
  const chromeNodes=()=>[document.querySelector('.mv-toolbar>[aria-label="打开侧边栏"]'),document.querySelector('.mv-search-control'),document.querySelector('[data-wall-control="settings"]'),document.querySelector('.mv-wall-dock')];
  for(const compact of [false,true]){
    document.activeElement?.blur();
@@ -207,16 +256,44 @@ try {
  await send({kind:'uiTestSnapshot',name:'queue'});
  await click(button('关闭弹窗'),'关闭队列');
  await delay(500);
- if(globalThis.MINIVOICE_NATIVE_WALL_ONLY){
-   state=await native({operation:'stress'});
-   check(state.count===1037&&state.mounted>0&&state.mounted<150,'1037 项原生渲染夹具有界挂载');
-   for(let step=0;step<40;step++){
-     state=await native({operation:'pan',dx:step<20?240:-240,dy:80});
-     check(state.mounted>0&&state.mounted<150,'大墙面原生封面复用 '+step);
+ if(globalThis.MINIVOICE_WALL_ONLY){
+   const matrixSnapshot=await send({kind:'snapshot'});
+   if(!matrixSnapshot.favorites.includes(matrixSnapshot.songs[0].id))await send({kind:'action',name:'favorite',payload:{id:matrixSnapshot.songs[0].id}});
+   const matrixPlaylist=await send({kind:'action',name:'createPlaylist',payload:{name:'音乐墙页面矩阵',ids:matrixSnapshot.songs.slice(0,4).map(song=>song.id)}});
+   const verifyZoom=async label=>{
+     for(const scale of [.6,1.2,.8,1]){
+       const result=await wallProbe({operation:'zoom',scale});
+       check(Math.abs(result.scale-scale)<.001&&result.active&&result.mounted>0,label+' 比例往返 '+scale);
+       if(result.focused)check(result.maskAligned&&result.contourAligned,label+' 聚焦遮罩轮廓对齐 '+scale);
+     }
+   };
+   for(const [themeLabel,theme]of [['浅色模式','light'],['深色模式','dark']]){
+     await click(button('打开侧边栏'),'页面矩阵主题侧栏');await click(button('设置'),'页面矩阵设置');
+     await click(textButton(themeLabel),themeLabel);await click(button('关闭弹窗'),'关闭矩阵设置');
+     await wait(()=>document.querySelector('main').dataset.theme===theme,'矩阵主题 '+theme);
+     for(const label of ['音乐库','最近播放','收藏','歌手','专辑','音乐墙页面矩阵']){
+       await click(button('打开侧边栏'),'矩阵导航 '+label);
+       const entry=[...document.querySelectorAll('.mv-drawer nav button')].find(node=>node.textContent.trim()===label);
+       await click(entry,'墙页面 '+label);await delay(150);
+       await verifyZoom(theme+' '+label);
+       if(label==='歌手'||label==='专辑'){
+         await wallProbe({operation:'select',index:0});await delay(450);
+         await verifyZoom(theme+' '+label+'分组内');
+         await click(button('打开侧边栏'),'分组定位前返回目录');
+         await click([...document.querySelectorAll('.mv-drawer nav button')].find(node=>node.textContent.trim()===label),'返回分组墙');
+         const groupMeter=button('展开播放条');if(groupMeter&&!groupMeter.hidden)groupMeter.click();
+         document.querySelector('.mv-wall-dock .mv-now').click();
+         await wait(()=>box()?.dataset.wallId===snapshot.songs[1].id,'分组墙播放栏定位 '+theme+' '+label);
+         check((await send({kind:'readState'})).section==='音乐库','分组封面借用歌曲 ID 也进入歌曲墙定位 '+theme+' '+label);
+         await delay(650);
+
+       }
+     }
    }
-   await delay(700);check((await native({})).decoded>0,'大墙面可见封面完成解码');
-   await send({kind:'uiTestSnapshot',name:'native-wall-1037'});
-   return {ok:true,scope:'ios-native-wall',checks};
+   await send({kind:'action',name:'deletePlaylist',payload:{playlist:matrixPlaylist.id}});
+   await click(button('打开侧边栏'),'矩阵返回音乐库侧栏');
+   await click([...document.querySelectorAll('.mv-drawer nav button')].find(node=>node.textContent.trim()==='音乐库'),'矩阵返回音乐库');
+   check(runtimeErrors.length===0,'无运行时异常：'+runtimeErrors.join(';'));return {ok:true,scope:'ios-single-surface-wall',checks};
  }
  await click(button('打开侧边栏'),'再次打开侧栏');
  await send({kind:'uiTestSnapshot',name:'drawer'});
@@ -278,5 +355,5 @@ try {
  const diagnostics=await send({kind:'uiTestDiagnostics'});
  check(diagnostics.bytes>500&&Number.isInteger((await action('getSettings')).crashCount),'诊断包含事件记录并返回真实本地崩溃数量');
  // Leave the shared settings open for a deterministic native screenshot.
- return {ok:true,checks,viewport:{width:innerWidth,height:innerHeight},state:before,body:document.body.innerText.slice(0,800)};
+ check(runtimeErrors.length===0,'无运行时异常：'+runtimeErrors.join(';'));return {ok:true,checks,viewport:{width:innerWidth,height:innerHeight},state:before,body:document.body.innerText.slice(0,800)};
 } catch(error) { return {ok:false,error:error.message,checks,body:document.body.innerText.slice(0,1200)}; }

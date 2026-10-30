@@ -17,9 +17,10 @@ MARKER="$CONTAINER/Documents/.shared-smoke-$RUN_ID"
 touch "$MARKER"
 rm -f "$REPORT"
 SMOKE_ARGUMENTS=(--mv-ui-fixture --mv-ui-smoke)
-if [[ "${MINIVOICE_IOS_NATIVE_WALL_ONLY:-0}" == 1 ]]; then SMOKE_ARGUMENTS+=(--mv-native-wall-smoke); fi
+if [[ "${MINIVOICE_IOS_WALL_ONLY:-${MINIVOICE_IOS_NATIVE_WALL_ONLY:-0}}" == 1 ]]; then SMOKE_ARGUMENTS+=(--mv-wall-only-smoke); fi
+if [[ "${MINIVOICE_IOS_WALL_STRESS:-0}" == 1 ]]; then SMOKE_ARGUMENTS+=(--mv-wall-stress-fixture); fi
 xcrun simctl launch "$DEVICE" com.xcosmos.MiniVoice.ios "${SMOKE_ARGUMENTS[@]}"
-for attempt in {1..90}; do
+for attempt in {1..180}; do
   [[ -f "$REPORT" ]] && break
   sleep 1
 done

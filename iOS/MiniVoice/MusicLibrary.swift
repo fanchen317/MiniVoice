@@ -154,7 +154,7 @@ final class MusicLibrary: ObservableObject {
             // Cancellation is cooperative; wait for the old file read to release its buffers.
             await precedingScan?.value
             guard !Task.isCancelled, scanGeneration == generation else { return }
-            let worker = Task.detached(priority: .userInitiated) { [weak self] in
+            let worker = Task.detached(priority: .utility) { [weak self] in
                 LibraryScanner.scan(folders: selectedFolders, recursive: recursive, previous: previous, checkpoint: { rows in
                     if let data = try? JSONEncoder().encode(rows) {
                         try? FileManager.default.createDirectory(at: Self.checkpointURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -274,6 +274,21 @@ private enum LibraryScanner {
         }
         guard let artwork else { throw CocoaError(.fileNoSuchFile) }
         return try Data(contentsOf: URL(fileURLWithPath: artwork))
+    }
+
+    static func wallArtworkData(song: Song, folder: MusicFolder, card: Bool) throws -> Data {
+        let pixels = card ? 960 : 320
+        let key = SHA256.hash(data: Data((song.id + (song.cacheVersion ?? "") + "wall-v1-\(pixels)").utf8)).map { String(format: "%02x", $0) }.joined()
+        let destination = cacheDirectory().appendingPathComponent("wall-" + key + ".jpg")
+        if let cached = try? Data(contentsOf: destination) { return cached }
+        return try autoreleasepool {
+            let data = try artworkData(song: song, folder: folder, original: card)
+            guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+                  let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: pixels, kCGImageSourceShouldCacheImmediately: true] as CFDictionary),
+                  let result = UIImage(cgImage: image).jpegData(compressionQuality: 0.82) else { throw CocoaError(.fileReadCorruptFile) }
+            try result.write(to: destination, options: .atomic)
+            return result
+        }
     }
 
     static func displayArtworkData(song: Song, folder: MusicFolder) throws -> Data {
@@ -631,6 +646,18 @@ extension MusicLibrary {
             song.originalArtist = song.artist
             return song
         }
+        if ProcessInfo.processInfo.arguments.contains("--mv-wall-stress-fixture") {
+            let templates = songs
+            songs = (0..<1037).map { index in
+                let base = templates[index % templates.count]
+                var song = Song(id: base.id + "#render-\(index)", folderID: base.folderID, relativePath: base.relativePath,
+                                title: String(format: "%04d", index) + " " + base.title, artist: base.artist, album: base.album,
+                                duration: base.duration, artworkFile: base.artworkFile, lyrics: base.lyrics)
+                song.originalArtworkFile = base.originalArtworkFile; song.cacheVersion = base.cacheVersion
+                song.sourceAdded = base.sourceAdded; song.added = base.added; song.fileSize = base.fileSize
+                return song
+            }
+        }
     }
 }
 #endif
@@ -699,9 +726,9 @@ extension MusicLibrary {
         }
     }
 
-    func artworkData(for song: Song, original: Bool, display: Bool = false) async throws -> Data {
+    func artworkData(for song: Song, original: Bool, display: Bool = false, wall: Bool = false, card: Bool = false) async throws -> Data {
         guard let folder = folders.first(where: { $0.id == song.folderID }) else { throw CocoaError(.fileReadNoPermission) }
-        return try await Task.detached(priority: .userInitiated) { try display ? LibraryScanner.displayArtworkData(song: song, folder: folder) : LibraryScanner.artworkData(song: song, folder: folder, original: original) }.value
+        return try await Task.detached(priority: .userInitiated) { try wall || card ? LibraryScanner.wallArtworkData(song: song, folder: folder, card: card) : display ? LibraryScanner.displayArtworkData(song: song, folder: folder) : LibraryScanner.artworkData(song: song, folder: folder, original: original) }.value
     }
 
     var sharedSettings: [String: Any] {

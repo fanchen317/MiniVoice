@@ -25,7 +25,7 @@
 .mv-wall-caption{position:absolute;bottom:0;left:0;right:0;padding:24px 10px 9px;background:linear-gradient(transparent,#000b);pointer-events:none}
 .mv-wall-caption strong,.mv-wall-caption small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mv-wall-caption strong{font-size:calc(16px * var(--wall-camera-scale,1));line-height:1.4}.mv-wall-caption small{font-size:calc(11px * var(--wall-camera-scale,1));opacity:.8}
-.mv-wall-focused{position:absolute;z-index:4;overflow:clip;background:#152d25;color:#fff;box-shadow:inset 0 0 0 1px #ffffff80,0 8px 30px #0005;isolation:isolate;touch-action:none;will-change:left,top,width,height}
+.mv-wall-focused{position:absolute;z-index:4;overflow:clip;background:#152d25;color:#fff;box-shadow:inset 0 0 0 1px #ffffff80,0 8px 30px #0005;isolation:isolate;touch-action:none;will-change:transform}
 .mv-wall-focused::before{content:'';position:absolute;inset:-30px;z-index:-1;background-image:linear-gradient(#081b17a8,#081b17c9),var(--wall-cover);background-position:center;background-size:cover;filter:blur(22px)}
 .mv-wall-focused.is-expanded{z-index:20}
 .mv-wall-expand-shade{position:absolute;inset:0;z-index:3;background:#0009;pointer-events:none}
@@ -217,3 +217,32 @@
 @media(prefers-reduced-motion:reduce){
  [data-presentation=mobile].style-wall :is(.mv-toolbar>:is(.mv-button,.mv-back,.mv-search-control),[data-wall-control=settings],.mv-wall-dock){transition:none!important}
 }
+
+/* iOS owns a bounded backing, not a world-sized layer. The original card,
+   mask, contour and live controls remain in this same DOM rendering surface. */
+.mv-wall-plane[data-bounded-plane=true]{contain:layout paint;overflow:hidden;will-change:transform;transform-origin:0 0}
+
+/* The focused card travels in the same camera plane as its retained cover. */
+.mv-wall-plane>.mv-wall-focused{pointer-events:auto}
+
+/* iOS uses WebKit asynchronous scrolling for touch tracking and inertia.
+   This document is tiled by the scroll view, never promoted as one texture. */
+.mv-cover-wall[data-wall-renderer=native-scroll-single-surface]{overflow:scroll;touch-action:pan-x pan-y;overscroll-behavior:none;scrollbar-width:none}
+.mv-cover-wall[data-wall-renderer=native-scroll-single-surface]::-webkit-scrollbar{display:none}
+.mv-wall-plane[data-native-scroll=true]{contain:layout style;will-change:auto;transform:none!important}
+
+.mv-cover-wall[data-wall-renderer=native-scroll-single-surface].is-expanding{overflow:hidden;touch-action:none}
+
+.mv-cover-wall[data-wall-renderer=native-scroll-single-surface]{overflow-anchor:none;scroll-behavior:auto}
+
+.mv-cover-wall[data-wall-renderer=native-scroll-single-surface][data-wall-blocked=true]{overflow:hidden}
+/* Child touch-action participates in the browser's gesture intersection. */
+.mv-cover-wall[data-wall-renderer=native-scroll-single-surface] :is(.mv-wall-card,.mv-wall-focused){touch-action:pan-x pan-y}
+
+.mv-cover-wall[data-wall-renderer=native-scroll-single-surface][data-native-pinching=true]{overflow:hidden}
+
+/* The sharp cover already fills this card. Avoid an additional filtered
+   copy behind every iOS focus animation. */
+.mv-wall-plane[data-native-scroll=true]>.mv-wall-focused::before{display:none}
+
+.wp-player[data-wall-visible=false] .wp-bars i{animation-play-state:paused}

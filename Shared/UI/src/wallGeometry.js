@@ -112,3 +112,22 @@ export function visibleReflowTiles(scene,camera,viewport,focus,size,overscan=220
  if(previous){const old=reflowQuery(camera,viewport,previous.focus,previous.size,overscan);bounds.left=Math.min(bounds.left,old.left);bounds.right=Math.max(bounds.right,old.right);bounds.top=Math.min(bounds.top,old.top);bounds.bottom=Math.max(bounds.bottom,old.bottom);}
  return visibleTiles(scene,{x:-bounds.left*camera.scale,y:-bounds.top*camera.scale,scale:camera.scale},{width:(bounds.right-bounds.left)*camera.scale,height:(bounds.bottom-bounds.top)*camera.scale},0);
 }
+
+// Repeated covers share a song ID, but exactly one instance owns playback emphasis.
+export function playingInstance(scene,index,camera,viewport,focus){
+ if(index<0)return null;
+ return focus?.index===index?focus:nearestInstance(scene,index,camera,viewport);
+}
+
+// A focused card reflows its neighbours. Locate against rendered centres,
+// since the closest original grid centre can belong to a different repeat.
+export function nearestRenderedInstance(scene,index,camera,viewport,frameFor=cell=>cell){
+ const seed=nearestInstance(scene,index,camera,viewport);if(!seed)return null;
+ let best=seed,distance=Infinity;
+ for(let row=seed.row-1;row<=seed.row+1;row++)for(let column=seed.column-1;column<=seed.column+1;column++){
+  const tile=scene.tiles[index],cell={...tile,column,row,id:`${index}:${column}:${row}`,x:tile.x+column*scene.world.width,y:tile.y+row*scene.world.height};
+  const r=frameFor(cell),dx=camera.x+(r.x+r.width/2)*camera.scale-viewport.width/2,dy=camera.y+(r.y+r.height/2)*camera.scale-viewport.height/2,d=dx*dx+dy*dy;
+  if(d<distance){best=cell;distance=d;}
+ }
+ return best;
+}

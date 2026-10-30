@@ -7,7 +7,7 @@ import {SortMenuItem} from './SortMenuItem';
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { command,state as playbackState } from './store';
 import { WallClickSequence } from './wallClick';
-import { createScene, visibleTiles, wheelStep, releaseDistance, reflowFrame, focusProgress, reflowProgress, nearestInstance, restoredPlayerCamera, wallFocusSide } from './wallGeometry';
+import { createScene, visibleTiles, wheelStep, releaseDistance, reflowFrame, focusProgress, reflowProgress, nearestInstance, nearestRenderedInstance, playingInstance, restoredPlayerCamera, wallFocusSide } from './wallGeometry';
 import { Cover, Icon, WallCardPlayer } from './components';
 import { springEasing,springProgress,posterArtworkMotion } from './motion';
 
@@ -124,8 +124,9 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID,locate
   }, [scene]);
   useEffect(() => {
     if (!locateToken||grouped||handledLocation.current===locateToken) return;
-    const tile=nearestInstance(scene,tracks.findIndex(t=>t.id===(locateID||selectedID)),camera.current,viewport.current);if(tile){handledLocation.current=locateToken;prepareFocus(tile);setFocus({tile,track:tracks[tile.index]});center(tile,locateAnimated);}
-  }, [locateToken,grouped,sequence]);
+    const side=Math.max(260,Math.min(preferredSide,viewport.current.width-leadingInset-40,viewport.current.height-150));
+    const tile=nearestRenderedInstance(scene,tracks.findIndex(t=>t.id===(locateID||selectedID)),camera.current,viewport.current,cell=>reflowFrame(cell,focus?.tile,{width:side,height:Math.max(320,side)}));if(tile){handledLocation.current=locateToken;prepareFocus(tile);setFocus({tile,track:tracks[tile.index]});center(tile,locateAnimated);}
+  }, [locateToken,locateID,selectedID,grouped,sequence]);
   useEffect(() => {
     const node = surface.current;
     function wheel(event) {
@@ -216,6 +217,7 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID,locate
   // Group covers borrow their first track's artwork/ID, but must never borrow
   // its playback state or an old song focus while navigation effects settle.
   const activeFocus=grouped?null:focus;
+  const playingCell=playingInstance(scene,grouped?-1:tracks.findIndex(track=>track.id===playingID),camera.current,viewport.current,activeFocus?.tile);
   const rendered = activeFocus && !tiles.some(t => t.id === activeFocus.tile.id) ? [...tiles, activeFocus.tile] : tiles;
   return <section ref={surface} className={`wall-surface ${immersive?'is-immersive':''} ${transitioning?'is-expanding':''} ${playingID&&!groups?'has-playing-track':''}`} aria-label="音乐墙" onClickCapture={continuedClick} onPointerDown={down} onPointerMove={move} onPointerUp={up}
     onPointerCancel={() => { drag.current=null;clickSequence.current.reset(); stop(); }}>
@@ -225,7 +227,7 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID,locate
       const side=Math.max(260,Math.min(preferredSide,viewport.current.width-leadingInset-40,viewport.current.height-150));
       const size=immersive?{width:viewport.current.width/camera.current.scale,height:viewport.current.height/camera.current.scale}:{width:side,height:Math.max(320,side)};
       const frame=reflowFrame(tile,activeFocus?.tile,size),c=camera.current,visible=frame.x*c.scale+c.x<viewport.current.width+200&&(frame.x+frame.width)*c.scale+c.x> -200&&frame.y*c.scale+c.y<viewport.current.height+200&&(frame.y+frame.height)*c.scale+c.y> -200;
-      return <Poster key={tile.id} tile={frame} grouped={grouped} visible={visible} onReveal={()=>center(tile,false)} track={track} focused={focused} playing={!grouped&&playingID===track.id} onMenu={onMenu} onGroupMenu={event=>{event.preventDefault();setGroupMenu({name:groups[tile.index].name,x:Math.max(8,Math.min(event.clientX,innerWidth-248)),y:Math.max(8,Math.min(event.clientY,innerHeight-80))});}} expanded={immersive} transitioning={transitioning} reduceMotion={reduceMotion||performance.now()<resizingUntil.current} onExpand={expand} onPlay={()=>groups?onOpenGroup(groups[tile.index].name):playPoster(track.id)}
+      return <Poster key={tile.id} tile={frame} grouped={grouped} visible={visible} onReveal={()=>center(tile,false)} track={track} focused={focused} playing={playingCell?.id===tile.id} onMenu={onMenu} onGroupMenu={event=>{event.preventDefault();setGroupMenu({name:groups[tile.index].name,x:Math.max(8,Math.min(event.clientX,innerWidth-248)),y:Math.max(8,Math.min(event.clientY,innerHeight-80))});}} expanded={immersive} transitioning={transitioning} reduceMotion={reduceMotion||performance.now()<resizingUntil.current} onExpand={expand} onPlay={()=>groups?onOpenGroup(groups[tile.index].name):playPoster(track.id)}
         onFocus={(_,__,event)=>{if(suppressClick.current){suppressClick.current=false;return;}if(groups){onOpenGroup(groups[tile.index].name);return;}if(focus?.tile.id===tile.id)return;prepareFocus(tile);setFocus({tile,track});center(tile);}}/>
 
     })}</div>

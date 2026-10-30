@@ -40,3 +40,20 @@ test('Android and iOS wall defaults are 100 percent and invalid persisted scales
  assert.equal(initialWallCamera({scale:.8}).scale,.8);
  assert.deepEqual(initialWallCamera(),{x:12,y:80,scale:1});
 });
+
+test('1037-song reflow visibility matches a full scan at every supported zoom range',async()=>{
+ const {visibleReflowTiles}=await import('../src/wallGeometry.js');
+ const scene=createScene(1037),focus=scene.tiles[100],size={width:300,height:300},viewport={width:390,height:740};
+ const intersects=r=>r.x<viewport.width&&r.y<viewport.height&&r.x+r.width>0&&r.y+r.height>0;
+ for(const scale of [.6,1,1.2])for(const delta of [-550,0,550]){
+  const camera={x:195-(focus.x+focus.width/2)*scale+delta,y:370-(focus.y+focus.height/2)*scale,scale};
+  const projected=cell=>{const r=reflowFrame(cell,focus,size);return {x:camera.x+r.x*scale,y:camera.y+r.y*scale,width:r.width*scale,height:r.height*scale};};
+  const expected=[];
+  for(let row=-1;row<=1;row++)for(let column=-1;column<=1;column++)for(const tile of scene.tiles){
+   const cell={...tile,x:tile.x+column*scene.world.width,y:tile.y+row*scene.world.height,id:`${tile.index}:${column}:${row}`};
+   if(intersects(projected(cell)))expected.push(cell.id);
+  }
+  const actual=visibleReflowTiles(scene,camera,viewport,focus,size,0).filter(cell=>intersects(projected(cell))).map(cell=>cell.id);
+  assert.deepEqual(new Set(actual),new Set(expected));
+ }
+});
