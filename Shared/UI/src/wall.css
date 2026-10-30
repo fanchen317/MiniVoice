@@ -268,3 +268,8 @@
 .mv-wall-focused.is-preview>.mv-wall-press-surface::after{background:linear-gradient(transparent 35%,#0002 65%,#0008)}
 .mv-wall-focused.is-current>.mv-wall-press-surface::after{background:linear-gradient(#0005,#0006 40%,#000b)}
 .mv-wall-press-surface>.mv-art-fallback,.mv-wall-press-surface>.mv-wall-placeholder{width:100%;height:100%}
+
+/* Current-song contour belongs to the same visual box as the press feedback. */
+.mv-wall-card.active::after{display:none}
+.mv-wall-card.active>.mv-wall-press-surface::after{content:'';position:absolute;inset:0;border:3px solid #32d8b5;box-shadow:inset 0 0 18px #32d8b555;opacity:.8;z-index:3;pointer-events:none}
+.mv-wall-press-surface{transform-box:border-box}

@@ -1,7 +1,7 @@
 import KineticLyrics from './components/KineticLyrics.jsx';
 import ScrollingLyrics from './components/ScrollingLyrics.jsx';
 import ActionButton from './components/ActionButton.jsx';
-import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 import {Button,Icon} from './components/PlayerControls.jsx';
 import Slider from './components/Slider.jsx';
 import {lyricWindow,wallCardMetrics} from './wallLayout.js';
@@ -10,11 +10,6 @@ export function WallLyrics({lines,time,duration,playing,onSeek}){return <Scrolli
 export default function WallPlayer({song,card,current,playing,favorite,lines,frame,position,expanded,mode,onPlay,onToggle,onSkip,onFavorite,onExpand,onClose,onSeek,onMode,hasTranslation,showTranslation,onTranslation,kinetic=false,onKinetic}){
  const surface=useRef(null),[visible,setVisible]=useState(true);
  useEffect(()=>{const observer=new IntersectionObserver(entries=>setVisible(entries[0]?.isIntersecting??false));if(surface.current)observer.observe(surface.current);return()=>observer.disconnect();},[]);
- useLayoutEffect(()=>{
-  const root=surface.current;if(!root||expanded||!root.closest('[data-presentation=mobile]'))return;
-  const align=()=>{const button=root.querySelector('[data-wall-transport=play]'),title=root.querySelector('.wp-heading h1'),path=button?.querySelector('svg path');if(!button||!title||!path)return;const matrix=path.getScreenCTM();if(!matrix)return;const box=path.getBBox(),edge=new DOMPoint(box.x,box.y).matrixTransform(matrix).x,scale=root.getBoundingClientRect().width/root.offsetWidth;if(!scale)return;const current=parseFloat(getComputedStyle(button).getPropertyValue('--wp-leading-icon-inset'))||0,next=current+(edge-title.getBoundingClientRect().left)/scale;if(Math.abs(next-current)>.05)button.style.setProperty('--wp-leading-icon-inset',`${next}px`);const last=root.querySelector('.wp-controls>.mv-button:last-child'),lastPath=last?.querySelector('svg path'),lastMatrix=lastPath?.getScreenCTM();if(!lastPath||!lastMatrix)return;const b=lastPath.getBBox(),right=new DOMPoint(b.x+b.width,b.y).matrixTransform(lastMatrix).x,target=root.getBoundingClientRect().right-(title.getBoundingClientRect().left-root.getBoundingClientRect().left),old=parseFloat(getComputedStyle(last).getPropertyValue('--wp-trailing-icon-inset'))||0,value=old+(target-right)/scale;if(Math.abs(value-old)>.05)last.style.setProperty('--wp-trailing-icon-inset',`${value}px`);};
-  const observer=new ResizeObserver(align);observer.observe(root);align();return()=>observer.disconnect();
- },[expanded,playing,current,song.id]);
  const compact=!expanded&&!card.keepControls&&(card.compact||card.height<270),metrics=wallCardMetrics(card.width,card.height,expanded,compact);
  return <div ref={surface} data-wall-visible={visible} className={`wp-player ${compact?'is-compact':''} ${expanded?'is-expanded':''} ${current?'is-current':'is-preview'}`} style={{padding:metrics.padding}}>
   <header className="wp-header"><div className="wp-heading"><div role="status" className={`wp-status ${playing&&current?'is-playing':''}`}>{current&&<span className="wp-bars" aria-hidden="true"><i/><i/><i/></span>}{current?(playing?'正在播放':'已暂停'):'预览'}</div><h1 title={song.title}>{song.title}</h1><p>{song.artist||'未知歌手'}</p></div><div className="wp-header-actions">{current&&hasTranslation&&<ActionButton className="wp-translation-toggle" aria-label={showTranslation?'隐藏译文':'显示译文'} aria-pressed={showTranslation} onClick={onTranslation}>译文</ActionButton>}</div></header>

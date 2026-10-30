@@ -455,3 +455,5 @@ iOS 系统滚动后的交互规则补充：双击在墙面捕获阶段按第一�
 2026-10-30 音乐墙歌词（ScrollingLyrics）显示修复：行离开当前位时用lyricSweep.clearLyricSweep清除其命令式sweep-surface类与内联背景（React不会重写未变化的className，旧类会把原文变透明而只剩译文），并清除被裁切行按自身盒的淡出遮罩，避免视口边缘留下半行或孤立译文。共享组件，Mac/iOS/Android体验三端同时生效。
 
 2026-10-30 按压反馈漂移及遮罩修正：撤回定位节点上的独立scale，mv-wall-press-surface内部视觉层围绕center缩放.96，100ms ease-out对应Mac按压时长；文档定位transform与外部44px命中不变。封面/遮罩/正文在同一内部stacking context，遮罩z1、正文z2，避免外层遮罩覆盖全部内容。只移植视觉反馈，不改变WallPlayer移动按钮显示条件；对802655d比对WallPlayer无差异。定向测试验证中心不漂移、外部命中不变、单击聚焦、双击切换播放、取消与减弱动态，截图检查正文可读。
+
+2026-10-30 用户纠正对齐语义：优先容纳完整圆形按钮，两边留白一致，撤回首尾SVG路径贴齐标题的负margin与动态测量。标题/歌手/按钮外框共用内容内边距，按钮44px不变。测试test-wall-content-alignment改为校验完整按钮边界和镜像边距（用户需求变化，不沿用已不适用的图形墨迹对齐断言）。iOS内容取消捏合scale分支，按帧布局，keepControls阻止比例阈值隐藏按钮；Android原compact显示条件不变。普通卡片当前歌曲描边移动到内部press surface，与聚焦卡片一致随视觉层居中缩放。Mac仅提供.96/100ms按压参考，不接入其字号/布局/按钮显示规则。
