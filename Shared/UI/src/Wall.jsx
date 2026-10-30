@@ -1,3 +1,4 @@
+import {clampMobileWallScale as clampZoom,initialMobileWallCamera,MOBILE_DEFAULT_SCALE} from './mobileWallZoom.js';
 import {projectWallFrame} from './wallProjection.js';
 import {WALL_EXPANSION_MS} from './wallMotion.js';
 import {useActivationFeedback,emitActivationFeedback} from './components/FeedbackContext.jsx';
@@ -5,13 +6,13 @@ import ActionButton from './components/ActionButton.jsx';
 import React,{forwardRef,useEffect,useLayoutEffect,useImperativeHandle,useMemo,useRef,useState} from 'react';
 import Artwork from './Artwork.jsx';
 import {createScene,visibleReflowTiles,nearestInstance,nearestRenderedInstance,playingInstance,reflowFrame,focusProgress} from './wallGeometry.js';
-import {clampZoom,mobileWallViewport,mixRect,initialWallCamera} from './wallLayout.js';
+import {mobileWallViewport,mixRect} from './wallLayout.js';
 // Keep mounted coverage beyond the 140px camera refresh threshold, including
 // focus transitions; a smaller window exposes gaps before React mounts posters.
 const WALL_OVERSCAN=360;
 const NATIVE_SCROLL_EXTENT=16384,NATIVE_SCROLL_ANCHOR=8192;
 const reduced=()=>matchMedia('(prefers-reduced-motion:reduce)').matches||document.documentElement.classList.contains('reduce-motion');
-const safeCamera=initialWallCamera;
+const safeCamera=initialMobileWallCamera;
 // Stable values must not dirty layout on every camera frame.
 function writeStyle(node,key,value){if(node.style[key]!==value)node.style[key]=value;}
 // Never reveal a replacement cover before its pixels are decoded. The
@@ -123,7 +124,7 @@ export default forwardRef(function Wall({nativeScrolling=false,items,current,pla
   if(state.expanded){stop();cancelAnimationFrame(focusMotion.current);transition.current=null;focusSide.current=state.viewport.side;setFocus(cell);latest.current.focus=cell;progressValue.current=1;latest.current.progress=1;setProgress(1);schedulePaint();return true;}
   focusCell(cell,{animate,move:!preserve});return true;
  }
- useImperativeHandle(api,()=>({interrupt:()=>{stop();cancelGesture();lastTap.current=null;},zoomTo:value=>{const state=latest.current;zoomAt(value,state.viewport.x,state.viewport.y);},reset:()=>{stop();cancelAnimationFrame(focusMotion.current);transition.current=null;setFocus(null);latest.current.focus=null;progressValue.current=1;setProgress(1);latest.current.progress=1;update({x:12,y:80,scale:1});save();},locate:()=>revealCurrent(true),camera:()=>({...live.current}),backdrop:()=>{const state=latest.current,camera=displayCamera();return visibleScene(220).map(cell=>{const r=frameFor(cell);return {id:cell.id,artwork:state.items[cell.index]?.artworkWall||state.items[cell.index]?.artwork,x:camera.x+r.x*camera.scale,y:camera.y+r.y*camera.scale,width:r.width*camera.scale,height:r.height*camera.scale};});}}),[]);
+ useImperativeHandle(api,()=>({interrupt:()=>{stop();cancelGesture();lastTap.current=null;},zoomTo:value=>{const state=latest.current;zoomAt(value,state.viewport.x,state.viewport.y);},reset:()=>{stop();cancelAnimationFrame(focusMotion.current);transition.current=null;setFocus(null);latest.current.focus=null;progressValue.current=1;setProgress(1);latest.current.progress=1;update({x:12,y:80,scale:MOBILE_DEFAULT_SCALE});save();},locate:()=>revealCurrent(true),camera:()=>({...live.current}),backdrop:()=>{const state=latest.current,camera=displayCamera();return visibleScene(220).map(cell=>{const r=frameFor(cell);return {id:cell.id,artwork:state.items[cell.index]?.artworkWall||state.items[cell.index]?.artwork,x:camera.x+r.x*camera.scale,y:camera.y+r.y*camera.scale,width:r.width*camera.scale,height:r.height*camera.scale};});}}),[]);
  useLayoutEffect(()=>{const from=depth.current,to=recessed?.92:1,start=performance.now();cancelAnimationFrame(depthMotion.current);const tick=now=>{const t=reduced()||document.documentElement.classList.contains('reduce-motion')?1:Math.min(1,(now-start)/320);depth.current=from+(to-from)*focusProgress(t);schedulePaint();if(t<1)depthMotion.current=requestAnimationFrame(tick);else setCamera({...live.current});};tick(start);return()=>cancelAnimationFrame(depthMotion.current);},[recessed]);
  // Android densities produce fractional CSS bounds; clientWidth/clientHeight would leave a raster seam.
  useEffect(()=>{const element=view.current;const measure=()=>{const style=getComputedStyle(document.documentElement),safe={};for(const name of ['top','bottom','left','right'])safe[name]=parseFloat(style.getPropertyValue(`--mv-safe-${name}`))||0;const bounds=getComputedStyle(element);const next=mobileWallViewport(parseFloat(bounds.width),parseFloat(bounds.height),safe);setViewport(previous=>JSON.stringify(previous)===JSON.stringify(next)?previous:next);};const observer=new ResizeObserver(measure);observer.observe(element);window.addEventListener('minivoice-insets',measure);window.addEventListener('minivoice-flush',save);measure();return()=>{observer.disconnect();window.removeEventListener('minivoice-insets',measure);window.removeEventListener('minivoice-flush',save);stop();clearTimeout(hold.current);cancelAnimationFrame(expandMotion.current);cancelAnimationFrame(focusMotion.current);save(false);cancelAnimationFrame(paintFrame.current);};},[]);

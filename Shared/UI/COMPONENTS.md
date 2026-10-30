@@ -459,3 +459,5 @@ iOS 系统滚动后的交互规则补充：双击在墙面捕获阶段按第一�
 2026-10-30 用户纠正对齐语义：优先容纳完整圆形按钮，两边留白一致，撤回首尾SVG路径贴齐标题的负margin与动态测量。标题/歌手/按钮外框共用内容内边距，按钮44px不变。测试test-wall-content-alignment改为校验完整按钮边界和镜像边距（用户需求变化，不沿用已不适用的图形墨迹对齐断言）。iOS内容取消捏合scale分支，按帧布局，keepControls阻止比例阈值隐藏按钮；Android原compact显示条件不变。普通卡片当前歌曲描边移动到内部press surface，与聚焦卡片一致随视觉层居中缩放。Mac仅提供.96/100ms按压参考，不接入其字号/布局/按钮显示规则。
 
 2026-10-30 Mac体验墙面边缘交接：liquidGlass明确清除wall-poster外层遗留border，保留独立hover/press伪元素描边；focused非playing时明确退出hover白边/缩放，当前播放mint描边不改。内容定位和悬浮/按压比例不改。test-mac-wall-contour.cjs使用实际鼠标输入，断言hover白框及点击后15个聚焦重排中间采样无外层border/白边。移动样式不在本次改动范围。
+
+2026-10-31 移动120%硬上限统一：新增mobileWallZoom纯模型，内部.5–1对应展示60–120%，默认内部1/1.2。Wall全部手势、按钮zoomAt与历史初始化都使用该限制，重置相机使用同一默认值，避免旧clampZoom内部1.2与展示×1.2叠乘为144%。历史超过上限值读取时夹至1；有效历史比例继续恢复。两移动宿主keepControls=true，缩放不进入隐藏transport的compact分支，Android字号路径不改。
