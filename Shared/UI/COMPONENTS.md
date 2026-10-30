@@ -445,3 +445,7 @@ iOS 系统滚动后的交互规则补充：双击在墙面捕获阶段按第一�
 2026-10-30 iOS 展开封面交接：nativeScrolling 的高清升级不再因 expansion 中间态延后。已接管图片保留为底层（最多三张已接管源），详情图解码后淡入，避免升级时先撤掉卡片图而退回墙面缩略图。卸载随歌曲 key 清理；拖动/滚动仍延后，非 iOS 保持原时机。收起可保留已解码高清底层，不重新显示低清封面。
 
 2026-10-30 iOS 点击聚焦帧调度：引入 flushPaint 统一消费绘制与 pendingMount；nativeScrolling 聚焦 tick 更新 progress/camera 后在同一 RAF 内消费绘制，并取消已排队的下一帧绘制，避免每帧额外延迟与重复调度。其他路径仍经 schedulePaint 合并，补载阈值、最终提交、动画时长与打断语义不变。首帧 DOM 挂载仍由 layout effect 补齐。
+
+2026-10-30 缩放白线复现：撤销上一条“捏合期间跳过物理像素取整”，native poster始终以左右/上下四条边共同取整得到宽高，不恢复冻结尺寸scale。合成捏合测试增加邻卡位置/宽高四边物理像素余数断言，并支持MINIVOICE_TEST_DPR配置。该断言只覆盖几何，不能证明WK合成白线已消除。
+
+2026-10-30 iOS展开/关闭连续性：nativeScrolling内容宽高每帧与外层插值矩形一致，React finalSize使用当前expansionValue插值，native路径每帧提交expansion用于内容布局；展开控制在layout effect起动，避免先绘制终点内容。native收起不再调用focusCell(animate:false)重新居中，避免相机瞬移。Android原展开时机与尺寸规则保留。新增test-ios-expand-continuity.cjs：中间18次内容/外层尺寸差、反向打断、最终viewport边界、相机稳定。以实际viewport而非BrowserWindow外框作为终点。

@@ -78,3 +78,12 @@
    opacity-based; pointer scrolling must not leave a focused row outline. */
 [data-presentation=mobile][data-host=iOS] .mv-lyric-lines button{filter:none!important;transition:opacity 220ms ease;-webkit-tap-highlight-color:transparent}
 [data-presentation=mobile][data-host=iOS] .mv-lyric-lines button:focus:not(:focus-visible){outline:none}
+
+/* Align the first transport's painted edge with the card text inset.
+   44px target, 25px icon, 24-unit viewBox; play adds its shared 1px optical shift.
+   Keep the hit target intact and apply only to the non-expanded wall card. */
+[data-presentation=mobile] .wp-player:not(.is-expanded) .wp-controls>[data-wall-transport=play]{--wp-leading-icon-inset:15.75px;margin-left:calc(-1 * var(--wp-leading-icon-inset))}
+[data-presentation=mobile] .wp-player:not(.is-expanded) .wp-controls>[data-wall-transport=play][data-playback-state=paused]{--wp-leading-icon-inset:17.270833px}
+
+/* Balance the trailing painted edge against the title inset measured by WallPlayer. */
+[data-presentation=mobile] .wp-player:not(.is-expanded) .wp-controls>.mv-button:last-child{margin-right:calc(-1 * var(--wp-trailing-icon-inset,0px))}

@@ -5,10 +5,18 @@ export function filledFragments(widths,progress){
   return widths.map(width=>{const filled=Math.min(width,Math.max(0,remaining));remaining-=width;return filled;});
 }
 const layouts=new WeakMap();
+// A painted row keeps its class and inline background until they are cleared: the row
+// stays in the DOM after the playhead leaves it, and React never rewrites a className
+// that did not change, so the sweep would survive and blank the text.
+export function clearLyricSweep(surface){
+  if(!surface)return;
+  surface.classList.remove('sweep-surface');
+  surface.style.backgroundImage='';surface.style.backgroundPosition='';surface.style.backgroundSize='';
+}
 export function paintLyricSweep(surface,time,{reduced=false,wall=false}={}){
   if(!surface||!surface.offsetWidth||!surface.offsetHeight)return;
   const words=[...surface.querySelectorAll('[data-word-start]')];
-  if(!words.length){surface.classList.remove('sweep-surface');surface.style.backgroundImage='';return;}
+  if(!words.length){clearLyricSweep(surface);return;}
   const signature=`${wall}:${surface.clientWidth}:${surface.clientHeight}:${getComputedStyle(surface).fontSize}:${words.map(word=>word.textContent).join('|')}`;
   let cached=layouts.get(surface);
   if(!cached||cached.signature!==signature||cached.first!==words[0]){

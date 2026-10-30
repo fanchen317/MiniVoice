@@ -247,8 +247,6 @@
 
 .wp-player[data-wall-visible=false] .wp-bars i{animation-play-state:paused}
 
-/* Cover the subpixel sampling edge inside each clipped native-scroll tile. */
-.mv-wall-plane[data-native-scroll=true] .mv-wall-card>img{width:calc(100% + .5px);height:calc(100% + .5px);max-width:none}
 
 /* Touch feedback belongs to the wall gesture, not WebKit's link/button tint.
    Keep keyboard focus-visible intact. */
