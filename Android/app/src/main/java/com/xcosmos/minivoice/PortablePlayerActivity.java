@@ -40,7 +40,7 @@ public final class PortablePlayerActivity extends Activity {
         web=new WebView(this);setContentView(web);applyChrome(null);
         web.setOnApplyWindowInsetsListener((view,insets)->{publishInsets(insets);return insets;});
         web.addOnLayoutChangeListener((view,l,t,r,b,oldL,oldT,oldR,oldB)->publishInsets(web.getRootWindowInsets()));
-        WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(false);
+        WebSettings settings=web.getSettings();settings.setOffscreenPreRaster(true);settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(false);
         settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         web.setWebViewClient(new WebViewClient(){
             @Override public void onPageFinished(WebView view,String url){view.requestApplyInsets();publishInsets(view.getRootWindowInsets());}
@@ -136,6 +136,12 @@ public final class PortablePlayerActivity extends Activity {
         if(workspace!=null)lastWorkspace=workspace;
         SharedPreferences prefs=getSharedPreferences("library",0);JSONObject pages=lastWorkspace==null?null:lastWorkspace.optJSONObject("pages"),appearance=pages==null?null:pages.optJSONObject("appearance");String theme=appearance==null?AppAppearance.theme(prefs):appearance.optString("theme",AppAppearance.theme(prefs));String style=appearance==null?AppAppearance.style(prefs):appearance.optString("style",AppAppearance.style(prefs));boolean dark=AppAppearance.darkValue(theme,(getResources().getConfiguration().uiMode&android.content.res.Configuration.UI_MODE_NIGHT_MASK)==android.content.res.Configuration.UI_MODE_NIGHT_YES);wallChrome=style.equals("wall");if(!wallChrome)immersiveChrome=false;
         boolean landscape=getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE;boolean hideBars=landscape||wallChrome&&immersiveChrome;
+        int backing=wallChrome?(dark?0xFF10241A:0xFFDCEADE):(dark?0xFF182720:0xFFEAF0EE);
+        // Reassert backing on every configuration/layout pass, even when chrome is cached.
+        getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(backing));
+        getWindow().getDecorView().setBackgroundColor(backing);
+        android.view.View backingContent=getWindow().findViewById(android.R.id.content);if(backingContent!=null)backingContent.setBackgroundColor(backing);
+        web.setBackgroundColor(backing);
         String chromeKey=style+":"+dark+":"+immersiveChrome+":"+getResources().getConfiguration().orientation;if(chromeKey.equals(appliedChrome))return;appliedChrome=chromeKey;
         int color=wallChrome?(dark?0xFF10241A:0xFFDCEADE):(dark?0xFF182720:0xFFEAF0EE);android.view.Window window=getWindow();window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);window.setStatusBarColor(android.graphics.Color.TRANSPARENT);window.setNavigationBarColor(android.graphics.Color.TRANSPARENT);if(Build.VERSION.SDK_INT>=29)window.setNavigationBarContrastEnforced(!wallChrome);
 

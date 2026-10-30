@@ -472,6 +472,12 @@ private final class SharedContentWebView: WKWebView {
         backgroundColor = color
         scrollView.backgroundColor = color
         underPageBackgroundColor = color
+        // Rotation can expose intermediate hosting containers before web paint.
+        var container = superview
+        while let view = container {
+            view.backgroundColor = color
+            container = view.superview
+        }
         window?.backgroundColor = color
         window?.rootViewController?.view.backgroundColor = color
     }

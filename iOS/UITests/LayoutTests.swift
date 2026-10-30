@@ -1,6 +1,29 @@
 import XCTest
 
 final class LayoutTests: XCTestCase {
+    func testRotationBackingAcrossStyles() {
+        let app = XCUIApplication(); app.launchArguments = ["--mv-ui-fixture"]
+        XCUIDevice.shared.orientation = .portrait; app.launch()
+        XCTAssertTrue(app.buttons["打开侧边栏"].firstMatch.waitForExistence(timeout: 30))
+        defer { XCUIDevice.shared.orientation = .portrait }
+        for style in ["音乐墙", "简易", "音乐库"] {
+            for theme in ["浅色模式", "深色模式"] {
+                app.buttons["打开侧边栏"].firstMatch.tap(); app.buttons["设置"].firstMatch.tap()
+                XCTAssertTrue(app.switches[style].firstMatch.waitForExistence(timeout: 5)); app.switches[style].firstMatch.tap()
+                app.switches[theme].firstMatch.tap(); app.buttons["关闭弹窗"].firstMatch.tap()
+                for orientation in [UIDeviceOrientation.landscapeLeft, .portrait, .landscapeRight, .portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            let settled = NSPredicate { _, _ in
+                let landscape = orientation != .portrait
+                return (app.frame.width > app.frame.height) == landscape && expand.isHittable
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: settled, object: nil)], timeout: 5), .completed, "旋转完成后聚焦卡片及展开入口必须仍在可用区域内")
+            XCTAssertTrue(app.buttons["打开侧边栏"].firstMatch.isHittable)
+        }
+        let image = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        image.name = "native-wall-landscape"; image.lifetime = .keepAlways; add(image)
+    }
+
     func testContentLongPressAndSearchEditing() {
         let app = XCUIApplication(); app.launchArguments = ["--mv-ui-fixture"]
         XCUIDevice.shared.orientation = .portrait; app.launch()

@@ -751,3 +751,11 @@ Android 专用 emulator-5554：portable 完整回归通过 UI_PORTABLE_PASS；�
 - 最终复核：iOS Simulator / iPhoneOS Debug 目标均编译通过（关闭签名；不代表已安装真机）。底层封面保留后的系统手势复测报告为 `.build/reports/ios/native-wall-delivery.xcresult`；最终墙面定向宿主报告为 `.build/reports/ios/shared-ui/A1A82D8E-910C-4068-8FC1-1D8D5F21A010/20261030T034424Z-6078/report.json`，ok=true。
 
 - 用户回验（2026-10-30）：反馈歌词滚动蓝线似已消失，记录为用户初步确认；未扩大为全部设备或完整集成验收通过。
+
+## 2026-10-30 系统旋转底板补全
+
+iOS补全承载WebView的祖先容器底色，透明内容后持续保留内容背景；补LaunchBackground启动颜色资源。当前工作区的原生墙及scroll子视图另补自动尺寸跟随，保留其他会话的原生墙接入。Android增加不透明主题窗口/启动底色，在chrome缓存前重申各层底色，并开启单WebView离屏预光栅化。保持系统旋转动画，不用截图遮盖或禁止旋转。
+
+通过112源文件门禁、iOS Debug/device Release和Android体验构建；Web三种样式×深浅×四尺寸逐帧覆盖；专用iPhone系统三样式×深浅旋转用例39.66秒通过，完整xcresult及录屏在 .build/reports/ios/rotation-backing-native/ 。检查旋转中间态；另发现冷启动空白launch screen，已补资源但尚未重新录制冷启动。
+
+Android本轮没有连接专用模拟器/设备，系统旋转尚未实测；模拟器不能证明用户实体设备GPU合成与所有中间帧均无白底。当前原生音乐墙接入等其他会话改动仍单独留在工作区。
