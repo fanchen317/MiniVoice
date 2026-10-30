@@ -33,7 +33,8 @@
 .mv-sidebar-title{display:flex;align-items:center;gap:8px;flex:0 0 48px;font-size:14px;border-bottom:1px solid var(--border);margin-bottom:6px}.mv-sidebar-title>span{color:var(--muted);font-size:12px;white-space:nowrap}.mv-sidebar-title>.mv-button:first-of-type{margin-left:auto}.mv-sidebar-title>.mv-button{width:44px;height:44px;color:var(--accent)}
 .mv-drawer-footer{gap:6px}.mv-style-picker{gap:4px;min-width:0}.mv-style-picker button{min-width:0;white-space:nowrap;padding:10px 4px;font-size:12px}
 @media(orientation:landscape) and (max-height:500px){.mv-drawer header{margin-bottom:6px}.mv-drawer{padding:10px}.mv-drawer header small{display:none}.style-simple .mv-drawer-search{height:40px;margin-bottom:4px}.style-simple .mv-drawer nav{display:flex;gap:6px}.style-simple .mv-drawer nav>button{min-height:44px;gap:8px;font-size:14px}.mv-drawer-footer{padding-top:4px}}
-.mv-sidebar-catalog .mv-song{padding:8px;gap:12px;border-radius:12px}
+.mv-sidebar-catalog .mv-song-list{padding-right:0}
+.mv-sidebar-catalog .mv-song{left:0;right:8px;width:auto;padding:8px;gap:12px;border-radius:12px}
 .mv-sidebar-catalog .mv-song>img,.mv-sidebar-catalog .mv-song>.mv-art-fallback,.mv-sidebar-catalog .mv-small-art{width:52px;height:52px;border-radius:12px}
 .mv-sidebar-catalog .mv-song strong{font-size:17px;font-weight:500}.mv-sidebar-catalog .mv-song small{font-size:12px}.mv-sidebar-catalog .mv-song-duration{display:none}
 /* One backdrop pass per surface. Filtering the entire live WebView scene and

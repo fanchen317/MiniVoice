@@ -427,3 +427,21 @@ iOS 系统滚动后的交互规则补充：双击在墙面捕获阶段按第一�
 资源约束取代上轮扩大预解码：iOS 墙面及分组 artworkWall 320px、普通聚焦 artworkCard 960px、全屏 display 高清；不传这些可选字段的平台沿用 artwork。保护窗口恢复 360px，不主动 decode 所有挂载图、不批量 will-change 预分配卡片层。WallPlayer 用 IntersectionObserver 暂停离屏歌词帧更新，保留同一真实 DOM 与播放状态。iOS 的资源处理在宿主按最多 2（省电/高热 1）项排队，聚焦优先、资源取消可释放等待；终止与内存警告写入诊断。iOS workspace 与首 snapshot 同时就绪前不绘制默认空库，错误可见。前述 600px/所有封面 decodeAhead 契约已撤销。
 
 音乐墙聚焦定位修正（2026-10-30）：Wall 聚焦 section 的布局原点固定为 left/top=0，React 与 paint 均以 transform 表达相机平面内位置；iOS 原生滚动需补偿 scrollLeft/Top，投影模式补偿 planeGuard。状态、输入和动画语义保持原契约，避免滚动触发 React 提交后布局位移与绘制位移叠加。真机连续拖动、惯性和缩放仍待验收。
+
+2026-10-30 点击聚焦性能：原生滚动路径在封面样式写入前统一采样 scrollLeft/scrollTop，聚焦定位复用本帧快照，避免读写交错触发同步布局。不改变动画时长、打断规则、状态与最终几何；未新增 GPU 流畅度或 FPS 结论。
+
+2026-10-30 SongList 侧栏宽度：共享简易侧栏取消列表右侧 padding，歌曲行以 left=0/right=8px/width=auto 撑满目录内容区，仅预留一次边距。选中背景、点击区域与未选中行共用几何；iOS/Android 共用，不影响独立 Mac track-row 布局。输入、状态与动画契约不变。页面回归新增手机横竖屏侧栏实际边界断言。
+
+2026-10-30 移动横屏播放布局：非音乐墙播放页的 hero/dock 填满左列，与工具栏左边缘共用对齐线；hero 跨顶部工具栏行，封面从同一顶边开始，横向为工具按钮留出112px总空间。工具栏空白穿透，按钮保留命中。仅 mobile 横屏生效，竖屏和 desktop 不改。Wall 点击重排在过渡对象内缓存目标 frame，focus 或 side 改变时失效；打断继续捕获当前插值几何，减弱动态和最终布局保持原规则。
+
+2026-10-30 移动侧栏反向衔接：useSurfaceMotion 在移动 drawer 重入时采样尚在退出的面板 transform/opacity，再清理 inert 退出副本，并由该中间态进入；关闭沿用当前进入动画的采样态，非移动及其他弹层不改。减弱动态直接结束；退出副本继续无命中、隐藏辅助语义并按原生命周期清理。iOS Wall depth 缩放时封面用固定基准尺寸加 scale，减少尺寸布局写入；原生滚动封面内增加 .5px 裁切内溢出覆盖采样边缘，需真机确认细线问题是否消除。
+
+2026-10-30 用户撤回移动横屏播放布局：上一条横屏 hero/dock 对齐与封面跨工具栏行的说明已失效，代码恢复原横屏布局（hero 第二行、最大320px居中、dock最大320px居中）。Wall 目标缓存、侧栏动画及歌曲选中框修复继续保留。
+
+2026-10-30 iOS 聚焦封面升级：FocusArtwork 的 smoothUpgrade 仅由 nativeScrolling 接入。已解码 preview 保留底层；高清图 decode 成功后以180ms opacity交接，不再仅因聚焦 progress<1 等待动画结束。滚动、手势和展开中间态继续延后升级，旧请求不覆盖新对象；减少动态效果直接切换。Android/桌面维持原交接。真机清晰度观感与合成仍待验收。
+
+2026-10-30 原生墙面拖动坐标：React 初始/更新聚焦 frame 改用与 paint 相同的 document-space 投影，稳定拖动直接使用 nativeOrigin，不再由异步 camera 与实时 scrollOffset 拼接坐标。展开端点使用文档内 viewport 原点。卡片禁用 WebKit tap highlight，非 focus-visible 不显示默认 outline，键盘 focus-visible 保留；默认触摸色与产品当前歌曲描边分离。
+
+2026-10-30 iOS 展开封面交接：nativeScrolling 的高清升级不再因 expansion 中间态延后。已接管图片保留为底层（最多三张已接管源），详情图解码后淡入，避免升级时先撤掉卡片图而退回墙面缩略图。卸载随歌曲 key 清理；拖动/滚动仍延后，非 iOS 保持原时机。收起可保留已解码高清底层，不重新显示低清封面。
+
+2026-10-30 iOS 点击聚焦帧调度：引入 flushPaint 统一消费绘制与 pendingMount；nativeScrolling 聚焦 tick 更新 progress/camera 后在同一 RAF 内消费绘制，并取消已排队的下一帧绘制，避免每帧额外延迟与重复调度。其他路径仍经 schedulePaint 合并，补载阈值、最终提交、动画时长与打断语义不变。首帧 DOM 挂载仍由 layout effect 补齐。

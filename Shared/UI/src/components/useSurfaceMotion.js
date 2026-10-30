@@ -32,7 +32,8 @@ function exitSurface(node,modal,last,surface){
 export function useSurfaceMotion(ref,open,{modal=false,surface=modal?'modal':'popover',easing='cubic-bezier(.2,.8,.2,1)'}={}){
   useLayoutEffect(()=>{
     const node=ref.current;if(!open||!node)return;
-    for(const ghost of closing)if(ghost.dataset.surfaceExit===surface){ghost.remove();closing.delete(ghost);}
+    let interrupted=null;
+    for(const ghost of closing)if(ghost.dataset.surfaceExit===surface){if(surface==='drawer'&&node.closest('[data-presentation=mobile]')){const panel=ghost.querySelector('.mv-drawer');if(panel){const style=getComputedStyle(panel);interrupted={transform:style.transform,opacity:style.opacity};}}ghost.remove();closing.delete(ghost);}
     const target=surface==='drawer'?node.querySelector('.mv-drawer'):modal?node.querySelector('.name-dialog,.mv-modal'):node;
     const mobileDrawer=surface==='drawer'&&node.closest('[data-presentation=mobile]');
     const mobileModal=modal&&node.closest('[data-presentation=mobile]');
@@ -42,7 +43,7 @@ export function useSurfaceMotion(ref,open,{modal=false,surface=modal?'modal':'po
     window.addEventListener('resize',sample);
     if(!reduced()){
       const travel=Math.min(10,Math.max(3,target.offsetHeight*.025)),origin=getComputedStyle(target).getPropertyValue('--surface-origin-y'),originY=origin.endsWith('%')?target.offsetHeight*parseFloat(origin)/100:parseFloat(origin)||0,shift=modal||originY>=target.offsetHeight/2?travel:-travel;
-      animation=target.animate([{opacity:mobileDrawer||mobileModal?1:0,transform:surface==='drawer'?`translateX(-${target.getBoundingClientRect().right+16}px)`:`translateY(${shift}px) scale(.975)`},{opacity:1,transform:'none'}],{duration:surface==='drawer'?360:260,easing});
+      animation=target.animate([{opacity:interrupted?.opacity??(mobileDrawer||mobileModal?1:0),transform:interrupted?.transform??(surface==='drawer'?`translateX(-${target.getBoundingClientRect().right+16}px)`:`translateY(${shift}px) scale(.975)`)},{opacity:1,transform:'none'}],{duration:surface==='drawer'?360:260,easing});
       if(modal&&!mobileModal||surface==='drawer'&&!mobileDrawer)fade=node.animate([{opacity:0},{opacity:1}],{duration:180,easing:'ease-out'});
     }
     animation?.finished.then(sample).catch(()=>{});
