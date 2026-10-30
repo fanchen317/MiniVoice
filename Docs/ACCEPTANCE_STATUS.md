@@ -729,3 +729,7 @@ Android 专用 emulator-5554：portable 完整回归通过 UI_PORTABLE_PASS；�
 ### Mac 编辑四项迁移补齐（2026-10-29）
 - 已接入：文件名识别歌名/多歌手；显式removeArtwork保存标记及恢复原图；在线歌词简体预览/应用共用同一文本；SRT选择与时间标签转换。
 - 已通过组件门禁、桌面64测试（4跳过）；真实合成文件写入/封面移除恢复、SRT编码、多歌手回读及三样式深浅待验收。不在真实音乐库执行写入测试。
+
+### 2026-10-30 再次处理侧栏后景暗边
+
+保留普通移动后景填充与描边，停用所有后景按钮/面板的嵌套 backdrop-filter 与 box-shadow；后景缩放时解除场景 overflow 裁切与 isolation，前景抽屉保留自身材质。关闭后恢复原皮肤。组件门禁与共享单测通过，Android体验包已构建；专项日志 drawer-edge-repair.txt，iOS构建日志 drawer-edge-repair-build.txt。实体设备暗边和旋转合成尚待复核，不宣称彻底解决。

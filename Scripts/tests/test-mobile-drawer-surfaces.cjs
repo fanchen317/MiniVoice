@@ -5,6 +5,7 @@ let win;const wait=ms=>new Promise(r=>setTimeout(r,ms)),check=(v,m)=>{if(!v)thro
 const until=async(s,m)=>{for(let i=0;i<100;i++){if(await js(s))return;await wait(50);}throw Error(m)};
 const click=async s=>{await js(`document.querySelector(${JSON.stringify(s)}).click();true`);await wait(400)};
 const surfaceProbe=`(()=>{const selectors=['.mv-toolbar>.mv-button','.mv-search-control','.mv-lyrics','.mv-dock','.mv-library'];return selectors.flatMap(selector=>[...document.querySelectorAll('.mv-scene '+selector)].filter(n=>n.getClientRects().length).map(n=>{const s=getComputedStyle(n);return {selector,background:s.backgroundColor,image:s.backgroundImage,border:s.borderTopColor,borderWidth:s.borderTopWidth,shadow:s.boxShadow,blur:s.backdropFilter,radius:s.borderRadius}}))})()`;
+const silhouette=rows=>rows.map(({shadow,blur,...shape})=>shape);
 const timeout=setTimeout(()=>{console.error('Drawer surface test timed out');app.exit(1)},120000);
 app.whenReady().then(async()=>{try{
  for(const host of ['android','ios']){
@@ -23,7 +24,8 @@ app.whenReady().then(async()=>{try{
      const before=await js(surfaceProbe);check(before.some(s=>s.selector==='.mv-lyrics')&&before.some(s=>s.selector==='.mv-dock'),'Playback blocks missing');
      check(before.filter(s=>s.selector==='.mv-search-control').every(s=>s.background!=='rgba(0, 0, 0, 0)'||s.image!=='none'),'Fixture lacks drawn surfaces');
      await click('[aria-label=打开侧边栏]');const during=await js(surfaceProbe);
-     check(JSON.stringify(before)===JSON.stringify(during),`Drawer changed component material: ${host}/${style}/${theme}/${landscape}`);
+     check(JSON.stringify(silhouette(before))===JSON.stringify(silhouette(during)),`Drawer changed component material: ${host}/${style}/${theme}/${landscape}`);
+     check(during.every(s=>s.shadow==='none'&&s.blur==='none'),'Recessed content still samples nested backdrops or casts shadows');
      check(await js("document.querySelector('.mv-scene').inert&&Number(new DOMMatrixReadOnly(getComputedStyle(document.querySelector('.mv-scene')).transform).a)<1&&!!document.querySelector('.mv-drawer-shade')"),'Drawer lost recess/scrim/input isolation');
      if(!landscape&&theme==='light')fs.writeFileSync(path.join(out,`drawer-surface-${host}-${style}.png`),(await win.webContents.capturePage()).toPNG());
      await click('[aria-label=关闭侧边栏]');check(JSON.stringify(before)===JSON.stringify(await js(surfaceProbe)),'Closing drawer changed material');

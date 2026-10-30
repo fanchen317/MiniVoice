@@ -260,3 +260,9 @@
 /* The document backing must match the app while native rotation resizes the web surface. */
 html,body,#root{background:var(--mv-canvas-bg,#182720)}
 @supports(height:100dvh){html,body,#root{height:100dvh}}
+
+/* Recessed mobile content is a silhouette, not another backdrop sampling tree.
+   Keep fills/strokes, and avoid clipping the scaled subtree into a rectangular
+   intermediate raster. The foreground drawer owns its own material. */
+[data-presentation=mobile]:not(.style-wall)>.mv-scene.is-drawer-behind{overflow:visible;isolation:auto;box-shadow:none}
+[data-presentation=mobile]:not(.style-wall)>.mv-scene.is-drawer-behind :is(.mv-glass,.mv-library,.mv-lyrics,.mv-dock,.mv-search-control,.mv-button,.mv-back){backdrop-filter:none!important;-webkit-backdrop-filter:none!important;box-shadow:none!important}
