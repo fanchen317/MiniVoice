@@ -9,7 +9,7 @@ export function catalogFor(snapshot,section,group,query='',sort='title',descendi
  const key=value=>String(value||'').normalize('NFKC').toLocaleLowerCase().trim();
  songs=songs.filter(song=>key(`${song.title} ${song.artist} ${song.album}`).includes(key(query)));
  const grouped=!group&&(section==='歌手'||section==='专辑');
- if(grouped){const groups=new Map();for(const song of songs){const name=section==='歌手'?song.artist:song.album;const row=groups.get(name)||{id:name,title:name,count:0,artwork:song.artwork};row.count++;groups.set(name,row);}songs=[...groups.values()];}
+ if(grouped){const groups=new Map();for(const song of songs){const name=section==='歌手'?song.artist:song.album;const row=groups.get(name)||{id:name,title:name,count:0,artwork:song.artwork,...(song.artworkWall?{artworkWall:song.artworkWall}:{})};row.count++;groups.set(name,row);}songs=[...groups.values()];}
  else if(group)songs=songs.filter(song=>(section==='歌手'?song.artist:song.album)===group);
  if(section!=='最近播放')songs=[...songs].sort((a,b)=>{const first=a[sort],second=b[sort];return (typeof first==='number'?first-second:String(first||'').localeCompare(String(second||''),'zh-CN',{numeric:true}))*(descending?-1:1);});
  return {items:songs,grouped};

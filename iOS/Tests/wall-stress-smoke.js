@@ -2,12 +2,12 @@ const runtimeErrors=[];addEventListener('error',event=>runtimeErrors.push(event.
 const checks=[],delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const check=(condition,label)=>{if(!condition)throw Error(label);checks.push(label);};
 const wait=async(fn,label)=>{for(let i=0;i<160;i++){if(fn())return;await delay(100);}throw Error(label);};
-let serial=800000;
+let serial=800000,peakMounted=0;
 const send=request=>new Promise((resolve,reject)=>{const previous=MiniVoiceTransport.receive,id=String(++serial);MiniVoiceTransport.receive=(key,result)=>{if(key===id){MiniVoiceTransport.receive=previous;result.ok?resolve(result.value):reject(Error(result.error));}else previous(key,result);};MiniVoiceHost.request(id,JSON.stringify({version:1,...request}));});
 const button=label=>document.querySelector(`button[aria-label="${label}"]`);
 const click=async node=>{if(!node)throw Error('missing button');node.click();await delay(450);};
 try{
- await wait(()=>document.querySelector('main'),'mount');
+ await wait(()=>document.querySelector('main')?.dataset.ready==='true','mount');
  if(document.querySelector('main').dataset.style!=='wall'){
   await click(button('打开侧边栏'));await click(button('设置'));
   await click([...document.querySelectorAll('button')].find(n=>n.textContent.trim()==='音乐墙'));await click(button('关闭弹窗'));
@@ -21,7 +21,7 @@ try{
   const before=camera(),dx=index<40?120:-120;
   const state=await probe({operation:'pan',dx,dy:index%2?40:-40});
   check(Math.abs(state.x-before.x+dx)<1,'大曲库平移不中断 '+index);
-  check(state.mounted>0&&state.mounted<220,'挂载窗口不随 1037 项曲库扩大 '+index);
+  peakMounted=Math.max(peakMounted,state.mounted);check(state.mounted>0&&state.mounted<220,'挂载窗口不随 1037 项曲库扩大 '+index);
  }
  for(let index=0;index<20;index++){
   await probe({operation:'select',index});
@@ -43,5 +43,5 @@ try{
  check(budget.webTerminations===0,'大曲库操作期间 WebContent 未终止');
  check([...box().querySelectorAll('.mv-wall-focused-art')].filter(node=>getComputedStyle(node).visibility==='visible').every(node=>node.naturalWidth<=960&&node.naturalHeight<=960),'普通聚焦封面边长不超过 960');
  await send({kind:'uiTestSnapshot',name:'single-surface-wall-1037'});
- check(runtimeErrors.length===0,'无运行时异常：'+runtimeErrors.join(';'));return {ok:true,scope:'ios-single-surface-1037',checks};
+ check(runtimeErrors.length===0,'无运行时异常：'+runtimeErrors.join(';'));return {ok:true,scope:'ios-single-surface-1037',peakMounted,checks};
 }catch(error){return {ok:false,error:error.message,checks,body:document.body.innerText.slice(0,600)};}

@@ -41,8 +41,14 @@ try {
  }
 
  // The second tap can hit the new focus section or a neighbour while reflowing.
- const doublePoster=[...rootWall().querySelectorAll('.mv-wall-card:not(.is-focus-underlay)')].find(node=>{const r=node.getBoundingClientRect();return r.left>10&&r.top>90&&r.right<innerWidth-10&&r.bottom<innerHeight-120;})||rootWall().querySelector('.mv-wall-card:not(.is-focus-underlay)');
- const doubleRect=doublePoster.getBoundingClientRect(),doublePoint={x:Math.max(15,Math.min(innerWidth-15,doubleRect.x+doubleRect.width/2)),y:Math.max(95,Math.min(innerHeight-125,doubleRect.y+doubleRect.height/2))},doubleId=doublePoster.dataset.wallId;
+ const doubleCandidate=[...rootWall().querySelectorAll('.mv-wall-card:not(.is-focus-underlay)')].flatMap(node=>{
+  const r=node.getBoundingClientRect(),left=Math.max(12,r.left),right=Math.min(innerWidth-12,r.right),top=Math.max(160,r.top),bottom=Math.min(innerHeight-180,r.bottom);
+  if(right-left<12||bottom-top<12)return [];
+  for(const fx of [.5,.2,.8])for(const fy of [.5,.2,.8]){const x=left+(right-left)*fx,y=top+(bottom-top)*fy,hit=document.elementFromPoint(x,y);if(hit?.closest('.mv-wall-card')===node)return [{node,x,y}];}
+  return [];
+ })[0];
+ check(!!doubleCandidate,'真实可命中的非聚焦卡片用于双击回归');
+ const doublePoster=doubleCandidate.node,doublePoint={x:doubleCandidate.x,y:doubleCandidate.y},doubleId=doublePoster.dataset.wallId;
  doublePoster.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,detail:1,clientX:doublePoint.x,clientY:doublePoint.y}));await delay(80);
  const doubleTarget=document.elementFromPoint(doublePoint.x,doublePoint.y)||rootWall(),secondTouch=new Touch({identifier:99,target:doubleTarget,clientX:doublePoint.x,clientY:doublePoint.y});
  doubleTarget.dispatchEvent(new TouchEvent('touchstart',{bubbles:true,cancelable:true,touches:[secondTouch],targetTouches:[secondTouch],changedTouches:[secondTouch]}));

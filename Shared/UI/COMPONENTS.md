@@ -423,3 +423,5 @@ NativeMusicWall 每次语义状态更新都配置 focusPoster，原生播放轮�
 iOS 系统滚动后的交互规则补充：双击在墙面捕获阶段按第一张歌曲及连续位置识别，第二次命中可变的聚焦内容仍播放首曲；真实滚动/双指重置序列。普通重绘和同坐标保存不发出滚动写入。背景卡片回流用固定布局尺寸加 transform，当前卡片仍更新真实几何。iOS 保护窗口至少 600px，Artwork 的 decodeAhead 仅在该路径开启，保留原 onLoad 回调并异步预解码。双指期间 overflow 隐藏，在最后触点离开、取消、失焦、隐藏、阻塞或卸载时恢复；取消不要求 touches 为空。
 
 双指性能约束补充：开始时保存封面布局框及播放内容尺寸/compact，手势期间只通过 transform 呈现比例，避免父 React 提交重新改变歌词布局；松手提交一次真实尺寸。第二次触摸在 touchend 捕获阶段识别，覆盖 ActionButton 直接发出 TouchEnd 语义点击的路径；移动超过阈值不识别双击。聚焦完成必须清除相机动画所有权。
+
+资源约束取代上轮扩大预解码：iOS 墙面及分组 artworkWall 320px、普通聚焦 artworkCard 960px、全屏 display 高清；不传这些可选字段的平台沿用 artwork。保护窗口恢复 360px，不主动 decode 所有挂载图、不批量 will-change 预分配卡片层。WallPlayer 用 IntersectionObserver 暂停离屏歌词帧更新，保留同一真实 DOM 与播放状态。iOS 的资源处理在宿主按最多 2（省电/高热 1）项排队，聚焦优先、资源取消可释放等待；终止与内存警告写入诊断。iOS workspace 与首 snapshot 同时就绪前不绘制默认空库，错误可见。前述 600px/所有封面 decodeAhead 契约已撤销。
