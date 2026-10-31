@@ -11,7 +11,9 @@ export function mobileWallViewport(width,height,insets={}){
  const right=landscape?width-safe.right-14-56-16:width-safe.right;
  const available=Math.max(120,right-left);
  const top=safe.top+(landscape?12:80),bottom=height-safe.bottom-(landscape?12:114);
- const side=Math.max(120,Math.min(520,available-12,bottom-top-12));
+ // 120% is the largest square in the usable region; grid gaps belong
+ // between posters, not between the focused square and the viewport edges.
+ const side=Math.max(120,Math.min(available,bottom-top));
  return {width,height,safe,landscape,dockWidth,side,x:(left+right)/2,y:(top+bottom)/2};
 }
 export function wallCardMetrics(width,height,expanded=false,compact=false){
