@@ -30,7 +30,7 @@ node Shared/Tooling/prepare-dependencies.mjs desktop
 | `.build/archive/` | 旧安装包、历史项目副本、与新产物重名的旧文件 | 确认不再回退或参考后再删除 |
 | `.build/dist/` | 当前两版 App、DMG、APK 和实际导出的 IPA | 用户安装与交付使用的产物 |
 
-正式 App：`.build/dist/MiniVoice.app`；体验 App：`.build/dist/MiniVoice-debug.app`。Mac 应用标识和数据目录保持原有隔离。正式保留原生设置等窗口，体验使用自有组件窗口。
+正式 App：`.build/dist/MiniVoice.app`。正式版现使用原体验版共享主界面、自有设置/编辑窗口与桌面歌词；Mac-debug 仅作内部隔离调试。公开 experience 命令映射正式渠道，旧体验数据不自动覆盖正式数据。
 
 新产物写入上述目录，不在根 `.build` 生成日志或安装包。测试 APK、截图和日志在 `.build/reports/android/`，Electron 页面验证在 `.build/reports/ui/`。Swift 主构建使用 `.build/cache/swift`，共享核心单独 Swift 验证使用 `.build/cache/swift-shared-core`。
 
