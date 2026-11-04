@@ -3,6 +3,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ACTION="$1"; VARIANT="$2"; shift 2
+case "$VARIANT" in release|experience) VARIANT=release ;; *) echo "未知版本渠道：$VARIANT" >&2; exit 2 ;; esac
 PLATFORMS=mac,android,ios
 LAUNCH=true
 while [[ $# -gt 0 ]]; do
@@ -11,7 +12,7 @@ while [[ $# -gt 0 ]]; do
     --no-launch) LAUNCH=false ;;
     --help|-h)
       echo '用法：Scripts/{build,build-experience,deploy,deploy-experience}.sh [--platforms mac,android,ios] [--no-launch]'
-      echo '默认全部平台。iOS 导出需 MINIVOICE_IOS_TEAM 与 MINIVOICE_IOS_EXPORT_OPTIONS；体验版可用 MINIVOICE_IOS_EXPERIENCE_TEAM / MINIVOICE_IOS_EXPERIENCE_EXPORT_OPTIONS 覆盖。'
+      echo '默认全部平台。iOS 导出需 MINIVOICE_IOS_TEAM 与 MINIVOICE_IOS_EXPORT_OPTIONS。旧 experience 命令现为正式版兼容入口。'
       exit 0 ;;
     *) echo "未知参数：$1" >&2; exit 2 ;;
   esac
@@ -23,7 +24,6 @@ for platform in "${requested[@]}"; do
   case "$platform" in mac|android|ios) ;; *) echo "未知平台：$platform" >&2; exit 2 ;; esac
 done
 export MINIVOICE_BUILD_CHANNEL=release
-[[ "$VARIANT" != experience ]] || export MINIVOICE_BUILD_CHANNEL=debug
 node "$ROOT/Scripts/checks/check-ui-standards.mjs"
 # Prevent concurrent workflows from mutating the shared Swift/UI/native caches.
 mkdir -p "$ROOT/.build/work"

@@ -45,5 +45,5 @@ final class Diagnostics {
         }
     }
     // Kept independent of Gradle-generated BuildConfig: the shell builder uses the manifest version.
-    private static final class BuildConfigInfo {static String version(){return "1.0.0";}}
+    private static final class BuildConfigInfo {static String version(){return "3.0.0";}}
 }

@@ -7,7 +7,7 @@ class IOSPackage(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=pathlib.Path(tmp); scripts=root/'Scripts/build';scripts.mkdir(parents=True)
             shutil.copyfile(SOURCE,scripts/'package-ios.sh')
-            (root/'Scripts/checks').mkdir();(root/'Scripts/checks/check-ui-standards.mjs').write_text('')
+            (root/'Scripts/checks').mkdir();(root/'Scripts/checks/check-ui-standards.mjs').write_text('');(root/'Scripts/checks/check-release-config.mjs').write_text('')
             binary=root/'bin';binary.mkdir()
             fake=binary/'xcodebuild';fake.write_text('''#!/usr/bin/env python3
 import os,sys,json,pathlib,zipfile

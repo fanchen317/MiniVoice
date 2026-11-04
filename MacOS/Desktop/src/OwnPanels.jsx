@@ -1,3 +1,4 @@
+import releaseVersion from '../../../Shared/version.json';
 import LyricsPreview from '../../../Shared/UI/src/components/LyricsPreview.jsx';
 import Disclosure from '../../../Shared/UI/src/components/Disclosure.jsx';
 import NumberField from '../../../Shared/UI/src/components/NumberField.jsx';
@@ -94,5 +95,5 @@ export function OwnEditor({id,style,onClose}){
 function OwnAbout({style,onClose}){
  const [tab,setTab]=useState('about'),[licenses,setLicenses]=useState('正在读取许可…');
  useEffect(()=>{let alive=true;fetch('./assets/THIRD_PARTY_NOTICES.txt').then(result=>{if(!result.ok)throw Error();return result.text();}).then(text=>{if(alive)setLicenses(text);}).catch(()=>{if(alive)setLicenses('许可文本读取失败，请检查安装包完整性。');});return()=>{alive=false;};},[]);
- return <Modal title="关于 MiniVoice-debug" className="own-panel" onClose={onClose}><div data-own-surface="about" data-style={style}><PanelFrame title="关于 MiniVoice-debug" tabs={[{id:'about',label:'关于'},{id:'licenses',label:'开源许可'}]} tab={tab} onTab={setTab} onClose={onClose}>{tab==='about'?<><h3>MiniVoice-debug</h3><p>2.7.0 · 体验版</p><p className="own-note">本地音乐播放器</p></>:<pre style={{whiteSpace:'pre-wrap',fontSize:12,lineHeight:1.6}}>{licenses}</pre>}</PanelFrame></div></Modal>;
+ return <Modal title="关于 MiniVoice" className="own-panel" onClose={onClose}><div data-own-surface="about" data-style={style}><PanelFrame title="关于 MiniVoice" tabs={[{id:'about',label:'关于'},{id:'licenses',label:'开源许可'}]} tab={tab} onTab={setTab} onClose={onClose}>{tab==='about'?<><h3>MiniVoice</h3><p>{releaseVersion.version}</p><p className="own-note">本地音乐播放器</p></>:<pre style={{whiteSpace:'pre-wrap',fontSize:12,lineHeight:1.6}}>{licenses}</pre>}</PanelFrame></div></Modal>;
 }

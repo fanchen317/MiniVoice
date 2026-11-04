@@ -1,4 +1,4 @@
-> 当前只完善 Android 与 Mac 体验版，其他平台暂停扩展。开发与交付遵守 [产品标准](Docs/PRODUCT_STANDARD.md)，当前证据与缺口见 [验收台账](Docs/ACCEPTANCE_STATUS.md)。
+> 当前 Mac、Android 已将体验实现提升为正式实现，三端版本统一 **3.0.0**。开发与交付遵守 [产品标准](Docs/PRODUCT_STANDARD.md)，实际验证与缺口见 [验收台账](Docs/ACCEPTANCE_STATUS.md)。
 
 # MiniVoice
 
@@ -44,23 +44,23 @@ MiniVoice 是本地音乐播放器，包含 macOS、Android 和 iOS 三个独立
 | 命令 | 版本 | 行为 |
 | --- | --- | --- |
 | `Scripts/build.sh` | 正式 | Mac `.app` + DMG、Android APK、iOS 签名 IPA |
-| `Scripts/build-experience.sh` | 体验 | Mac `.app` + DMG、Android APK、iOS 体验版签名 IPA |
+| `Scripts/build-experience.sh` | 正式兼容入口 | 等同 `Scripts/build.sh` |
 | `Scripts/deploy.sh` | 正式 | APK、签名 IPA，并替换 `/Applications/MiniVoice.app` |
-| `Scripts/deploy-experience.sh` | 体验 | APK、体验版签名 IPA，并替换 `/Applications/MiniVoice-debug.app` |
+| `Scripts/deploy-experience.sh` | 正式兼容入口 | 等同 `Scripts/deploy.sh` |
 
 默认处理 mac、android、ios；可用 `--platforms mac,android` 只构建当前已接入的平台。部署默认启动应用，`--no-launch` 只替换。任何平台失败最终返回非零，其余平台继续处理；旧包保留不代表本轮成功。四个入口共用互斥锁，避免同时写入构建缓存。
 
-历史散落安装包自动归档到 `.build/archive/installers/`，保留可恢复副本。发布目录统一为 `.build/dist/`，固定名称覆盖更新：`MiniVoice-android.apk`、`MiniVoice-android-experience.apk`、`MiniVoice-mac.dmg`、`MiniVoice-mac-experience.dmg`、`MiniVoice-ios.ipa`。Mac app 保留 `.build/dist/MiniVoice.app` 和 `.build/dist/MiniVoice-debug.app`，体验版身份、偏好及音乐库授权保持独立。正式 Mac 按用户确认保留现有 Electron + Swift 主界面及原生设置、编辑、桌面歌词路径；体验版使用自有组件窗口，不恢复更早的纯 SwiftUI 主窗口。Android 正式版启动旧原生 MainActivity，体验版启动 PortablePlayerActivity；两者延续现有包标识和证书，安装会互相替换。
+正式发布目录为 `.build/dist/`，固定产物为 `MiniVoice.app`、`MiniVoice-mac.dmg`、`MiniVoice-android.apk` 和 `MiniVoice-ios.ipa`。Mac 正式包使用当前 Electron + Swift 主界面、自有设置/编辑窗口与桌面歌词；Android 正式包启动共享 PortablePlayerActivity，旧 MainActivity 仅转发兼容历史入口，不再包含旧播放器。正式包标识与 Android 签名不变，原有正式数据继续使用。旧 Mac-debug 数据保留且不自动覆盖正式数据，内部调试仍隔离。版本与构建号在 `Shared/version.json` 声明，发布前检查三端原生元数据一致。
 
 目录与脚本职责见 [项目结构与构建文件管理](Docs/PROJECT_STRUCTURE.md) 和 [脚本入口](Scripts/README.md)。
 
-Android 的签名前 APK、DEX、资源包只写临时组装目录，失败或成功均清理；测试兼容链接 `.build/work/android/MiniVoice-debug.apk` 指向体验发布包。内部平台脚本仍可用于定向开发，`install-mac.sh` 只负责经过校验的 Mac 应用替换。
+Android 的签名前 APK、DEX、资源包只写临时组装目录，失败或成功均清理；测试兼容链接 `.build/work/android/MiniVoice-debug.apk` 指向正式发布包。内部平台脚本仍可用于定向开发，`install-mac.sh` 只负责经过校验的 Mac 应用替换。
 
 iOS 正式/体验 IPA 使用现有共享界面宿主和 Xcode archive + exportArchive，需设置 `MINIVOICE_IOS_TEAM`（开发团队）和 `MINIVOICE_IOS_EXPORT_OPTIONS`（有效 ExportOptions.plist 路径），并在本机准备对应证书和描述文件。缺失配置时明确失败，不导出无法安装的未签名压缩包。体验版可用 `MINIVOICE_IOS_EXPERIENCE_TEAM`、`MINIVOICE_IOS_EXPERIENCE_EXPORT_OPTIONS` 覆盖签名配置（未设置时继承通用配置）。正式包标识为 `com.xcosmos.MiniVoice.ios`，体验包为 `com.xcosmos.MiniVoice.ios.experience`；手动签名配置需覆盖对应标识。固定产物为 `.build/dist/MiniVoice-ios.ipa` 和 `MiniVoice-ios-experience.ipa`。iOS 的 deploy 生成 IPA，不自动安装到手机。`build-ios.sh` 仍用于模拟器或未签名编译检查，不是 IPA 发布入口。
 
-需要 Node.js LTS / npm、Xcode、Android SDK/NDK 及仓库 Git LFS 资源。Android 默认仍使用仓库固定开发签名，本文“正式”指旧界面版本，不代表已配置商店发行证书。
+需要 Node.js LTS / npm、Xcode、Android SDK/NDK 及仓库 Git LFS 资源。Android 默认仍使用仓库固定开发签名，正式功能渠道不代表已配置商店发行证书。
 
-当前版本 **2.7.0**（构建号 9），Electron 外层和 Swift 后台版本在打包时同步。DMG 输出 `.build/dist/MiniVoice-mac.dmg`（体验版为 `MiniVoice-mac-experience.dmg`）。安装布局由脚本直接写入 `.DS_Store`，无需 Finder 自动化权限；首次运行会在 `.build/cache/dmg-tools` 中建立独立 Python 环境并安装 `Scripts/assets/dmg-requirements.txt` 固定版本依赖。仍支持 `--reuse-layout` 或 `--layout-from /absolute/path/previous.dmg` 复用布局。
+当前版本 **3.0.0**（构建号 30000），Electron 外层和 Swift 后台版本在打包时同步。DMG 输出 `.build/dist/MiniVoice-mac.dmg`。安装布局由脚本直接写入 `.DS_Store`，无需 Finder 自动化权限；首次运行会在 `.build/cache/dmg-tools` 中建立独立 Python 环境并安装 `Scripts/assets/dmg-requirements.txt` 固定版本依赖。仍支持 `--reuse-layout` 或 `--layout-from /absolute/path/previous.dmg` 复用布局。
 
 唯一主应用继续使用已安装版本的标识 `com.xcosmos.MiniVoice.electron`，保留现有签名身份与 `~/Library/Application Support/minivoice-desktop/` 前端偏好路径。内置服务保留 `com.xcosmos.MiniVoice` 偏好域，沿用音乐库、收藏、歌单及原生设置；这两个内部标识不代表两套可运行的主窗口。更早的 `local.fanchen.MiniVoice` / `com.local.minivoice` 配置由后台迁移，已有新配置优先。原生资源目录 `~/Library/Application Support/MiniVoice/` 及缓存目录保持不变。
 

@@ -5,7 +5,7 @@ import MiniVoiceShared
 import Combine
 
 /// The Electron shell owns every main-window pixel. This process owns audio,
-/// library/cache access, tag writes and the original auxiliary windows.
+/// library/cache access, tag writes and operating-system integration.
 @MainActor
 final class DesktopEngine {
     private let defaults: UserDefaults
@@ -14,7 +14,6 @@ final class DesktopEngine {
     private let volume = SystemVolume()
     private let lyricsSync = LyricsSyncCoordinator()
     private let songIndex = SongListIndex()
-    private let desktopLyrics = DesktopLyricsController()
     private lazy var panels = DesktopPanels(library: library, lyricsSync: lyricsSync, volume: volume) { [weak self] action in
         self?.send(["event": "shell", "data": action])
     }
@@ -52,7 +51,7 @@ final class DesktopEngine {
         library = MusicLibrary(defaults: self.defaults, scanOnLaunch: false)
         collections = LibraryCollections(defaults: self.defaults)
         volume.connect(library: library)
-        desktopLyrics.connect(library: library)
+        // Electron owns desktop lyrics for production and development alike.
     }
 
     private func send(_ message: [String: Any]) {
@@ -165,7 +164,7 @@ final class DesktopEngine {
                 "artists": ["field": defaults.string(forKey: "MiniVoice.artistSortField") ?? "name", "ascending": defaults.object(forKey: "MiniVoice.artistSortAscending") == nil ? true : defaults.bool(forKey: "MiniVoice.artistSortAscending")] as [String: Any],
                 "albums": ["field": defaults.string(forKey: "MiniVoice.albumSortField") ?? "name", "ascending": defaults.object(forKey: "MiniVoice.albumSortAscending") == nil ? true : defaults.bool(forKey: "MiniVoice.albumSortAscending")] as [String: Any]
             ],
-            "appearance": defaults.string(forKey: "MiniVoice.appearance") ?? "system", "desktopLyrics": desktopLyrics.isEnabled,
+            "appearance": defaults.string(forKey: "MiniVoice.appearance") ?? "system", "desktopLyrics": false,
             "closeBehavior": defaults.string(forKey: "MiniVoice.closeBehavior") ?? "background",
             "playbackShortcuts": PlaybackShortcutAction.allCases.map { action -> [String: Any] in
                 let key = "MiniVoice.playbackShortcut.\(action.rawValue)"
@@ -215,10 +214,10 @@ final class DesktopEngine {
                     "capabilities": ["favorite", "mode", "queueSelect", "createPlaylist", "addToPlaylist", "settings"],
                     "current": library.playingTrack?.id.uuidString as Any? ?? NSNull(), "position": Int(library.playbackTime*1000), "playing": library.isPlaying, "rawLyrics": library.playingTrack?.lyrics ?? ""] as [String: Any]
         case "openSettings":
-            if AppIdentity.isDebug { send(["event":"uiSurface","data":["type":"settings"]]) } else { panels.showSettings() }; return true
+            send(["event":"uiSurface","data":["type":"settings"]]); return true
         case "openEditor":
             let selected = try track(payload)
-            if AppIdentity.isDebug { send(["event":"uiSurface","data":["type":"editor","id":selected.id.uuidString]]) } else { panels.showEditor(selected) }; return true
+            send(["event":"uiSurface","data":["type":"editor","id":selected.id.uuidString]]); return true
         case "interfaceStyle":
             if let value = payload["value"] as? String, PlayerInterfaceStyle(rawValue: value) != nil {
                 // The renderer already applied this explicit change.
@@ -364,7 +363,7 @@ final class DesktopEngine {
         case "detail": return detail(await library.resolveTrack(try track(payload).id))
         case "reveal": NSWorkspace.shared.activateFileViewerSelecting([try track(payload).url]); return true
         case "desktopLyrics":
-            if AppIdentity.isDebug { send(["event":"hostSurface","data":["type":"desktopLyrics"]]);return true };desktopLyrics.toggle(); return desktopLyrics.isEnabled
+            send(["event":"hostSurface","data":["type":"desktopLyrics"]]); return true
         case "outputDevice": volume.selectOutputDevice(UInt32(max(0, min(Double(UInt32.max), finite(payload, "id"))))); return ["ok": volume.error == nil, "error": volume.error ?? ""] as [String: Any]
         case "clearError": library.errorMessage = nil; return true
         case "artworkSearch":

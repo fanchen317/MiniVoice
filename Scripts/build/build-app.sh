@@ -2,6 +2,7 @@
 # Builds the Electron + Swift desktop application.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+node "$ROOT/Scripts/checks/check-release-config.mjs"
 CONFIGURATION="${1:-release}"
 source "$ROOT/Scripts/common/desktop-common.sh"
 case "${MINIVOICE_BUILD_CHANNEL:-release}" in

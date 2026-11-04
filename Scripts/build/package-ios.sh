@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+node "$ROOT/Scripts/checks/check-release-config.mjs"
 VARIANT="${1:-release}"
 case "$VARIANT" in
   release) NAME=MiniVoice-ios; BUNDLE=com.xcosmos.MiniVoice.ios ;;

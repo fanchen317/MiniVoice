@@ -3,6 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+node "$ROOT/Scripts/checks/check-release-config.mjs"
 DESTINATION="${1:-simulator}"
 CONFIGURATION="${2:-Debug}"
 case "$DESTINATION" in

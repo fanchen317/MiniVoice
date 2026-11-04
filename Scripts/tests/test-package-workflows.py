@@ -14,7 +14,7 @@ class Workflows(unittest.TestCase):
             (scripts/'tools/archive-legacy-packages.py').write_text('')
             for name in ['package-mac','build-android','package-ios']:
                 (scripts/'build'/(name+'.sh')).write_text('printf "%s %s\\n" "'+name+'" "$*" >> "$(dirname "$0")/../../calls"\n[[ "${FAIL_PLATFORM:-}" != "'+name+'" ]]\n')
-            for entry,action,variant in [('build','build','release'),('build-experience','build','experience'),('deploy','deploy','release'),('deploy-experience','deploy','experience')]:
+            for entry,action,variant in [('build','build','release'),('build-experience','build','release'),('deploy','deploy','release'),('deploy-experience','deploy','release')]:
                 result=subprocess.run(['bash',str(scripts/(entry+'.sh')),'--no-launch'],capture_output=True,text=True)
                 self.assertEqual(result.returncode,0,result.stderr)
                 calls=(root/'calls').read_text().splitlines(); (root/'calls').unlink()

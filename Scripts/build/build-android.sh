@@ -2,8 +2,9 @@
 # Assembles the Android package from the shared UI and the shared C++ core.
 set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
-VARIANT="${1:-experience}"
+VARIANT="${1:-release}"
 case "$VARIANT" in release|experience) ;; *) echo '用法：build-android.sh [release|experience]' >&2; exit 2 ;; esac
+node "$repo_root/Scripts/checks/check-release-config.mjs"
 node "$repo_root/Scripts/checks/check-ui-standards.mjs"
 source "$repo_root/Scripts/common/android-sdk.sh"
 sdk_root="$(minivoice_find_sdk build)"
@@ -21,20 +22,9 @@ work="$(mktemp -d "$output/package.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/classes" "$work/dex" "$work/generated" "$repo_root/.build/dist"
 cp "$repo_root/Android/app/src/main/AndroidManifest.xml" "$work/AndroidManifest.xml"
-if [[ "$VARIANT" == release ]]; then
-  python3 - "$work/AndroidManifest.xml" <<'MANIFEST'
-import sys
-import xml.etree.ElementTree as ET
-p=sys.argv[1]; ET.register_namespace('android','http://schemas.android.com/apk/res/android')
-t=ET.parse(p); ns='{http://schemas.android.com/apk/res/android}'; app=t.getroot().find('application')
-a={v.get(ns+'name'):v for v in app.findall('activity')}
-old=a['.PortablePlayerActivity']; new=a['.MainActivity']
-for f in list(old.findall('intent-filter')): old.remove(f); new.append(f)
-old.set(ns+'exported','false'); new.set(ns+'exported','true'); t.write(p,encoding='utf-8',xml_declaration=True)
-MANIFEST
-fi
+# The shared player is now the production launcher. The old experience argument
+# remains a compatibility alias and must never switch back to MainActivity.
 artifact="$repo_root/.build/dist/MiniVoice-android.apk"
-[[ "$VARIANT" != experience ]] || artifact="$repo_root/.build/dist/MiniVoice-android-experience.apk"
 "$build_tools/aapt2" compile --dir "$repo_root/Android/app/src/main/res" -o "$work/resources.zip"
 "$build_tools/aapt2" link -o "$work/MiniVoice-unsigned.apk" -I "$android_jar" --manifest "$work/AndroidManifest.xml" -R "$work/resources.zip" --java "$work/generated" --auto-add-overlay -A "$repo_root/.build/work/shared-ui"
 javac -source 17 -target 17 -cp "$android_jar" -d "$work/classes" "$work/generated/com/xcosmos/minivoice/R.java" "$repo_root"/Android/app/src/main/java/com/xcosmos/minivoice/*.java
@@ -47,5 +37,5 @@ javac -source 17 -target 17 -cp "$android_jar" -d "$work/classes" "$work/generat
 mv -f "$work/signed.apk" "$artifact"
 # Internal compatibility for instrumentation, not an extra public package.
 rm -rf "$output/classes"; mv "$work/classes" "$output/classes"
-if [[ "$VARIANT" == experience ]]; then ln -sfn ../../dist/MiniVoice-android-experience.apk "$output/MiniVoice-debug.apk"; fi
+ln -sfn ../../dist/MiniVoice-android.apk "$output/MiniVoice-debug.apk"
 printf 'APK: %s\n' "$artifact"

@@ -1,0 +1,23 @@
+// Validate shipping identities and duplicated native version declarations before packaging.
+import {readFile} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const root=new URL('../../',import.meta.url);
+const read=path=>readFile(new URL(path,root),'utf8');
+const {version,build}=JSON.parse(await read('Shared/version.json'));
+assert.match(version,/^\d+\.\d+\.\d+$/);assert.ok(Number.isInteger(build)&&build>9);
+const plist=await read('MacOS/AppBundle/Info.plist');
+for(const [key,value] of [['CFBundleShortVersionString',version],['CFBundleVersion',build]])assert.ok(plist.includes(`<key>${key}</key>\n\t<string>${value}</string>`),`Mac ${key}`);
+const pkg=JSON.parse(await read('MacOS/Desktop/package.json')),lock=JSON.parse(await read('MacOS/Desktop/package-lock.json'));
+assert.equal(pkg.version,version);assert.equal(lock.version,version);assert.equal(lock.packages[''].version,version);
+const manifest=await read('Android/app/src/main/AndroidManifest.xml'),gradle=await read('Android/app/build.gradle');
+assert.ok(manifest.includes(`android:versionName="${version}"`)&&manifest.includes(`android:versionCode="${build}"`));
+assert.ok(gradle.includes(`versionCode ${build}; versionName '${version}'`));
+assert.ok(manifest.match(/<activity\b[^>]*android:name="\.PortablePlayerActivity"[^>]*>[\s\S]*?android.intent.category.LAUNCHER/),'Production Android must launch shared UI');
+const ios=await read('iOS/MiniVoice.xcodeproj/project.pbxproj');
+assert.deepEqual([...ios.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map(m=>m[1]),[version,version]);
+assert.deepEqual([...ios.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map(m=>m[1]),[String(build),String(build)]);
+assert.ok((await read('Android/app/src/main/java/com/xcosmos/minivoice/Diagnostics.java')).includes(`return "${version}"`));
+assert.ok(!(await read('Scripts/build/build-android.sh')).includes("new=a['.MainActivity']"),'Release builder must not restore legacy launcher');
+const engine=await read('MacOS/Sources/MiniVoice/DesktopEngine.swift');
+assert.ok(!engine.includes('panels.showSettings()')&&!engine.includes('panels.showEditor(selected)'),'Production must use current own panels');
+console.log(`PASS 三端正式配置 ${version} (${build})、Android 共享入口、Mac 自有面板`);
