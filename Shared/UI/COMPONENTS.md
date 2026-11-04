@@ -477,3 +477,18 @@ iOS 系统滚动后的交互规则补充：双击在墙面捕获阶段按第一�
 `hostPolling.startSnapshotPolling` 由 PortablePlayer 持有；隐藏暂停、显示恢复、单在途，卸载清理监听和定时器。状态读取失败渐进退避，连续三次报告一次，成功发 recovered；业务写命令不走自动重试。通信超时以可响应前台时间计数，挂起后不让过期墙钟定时器先于队列回复误拒绝请求，前台真实无响应保持错误。最多32个在途请求；dispose拒绝遗留请求并清理监听。`host-lifecycle.test.mjs` 注入单调时钟、事件目标和定时器覆盖生命周期，无真实睡眠。
 
 移动收藏按钮的受控 saved/selected 只改变爱心填充和强调色；常驻圆底、边框、阴影为无，按压才显示圆底，focus-visible仍服务键盘导航。作用域为移动 mv-favorite 或含 heart 图标的 mv-button，不影响工具栏其他玻璃按钮。
+
+## 2026-11-04 逐项复核修订（覆盖本日较早实现）
+
+- `ArtworkModeScope` owns local clear/blurred state, renders the actual article/section with its ref forwarded, and shares state with `ArtworkModeButton`/`ArtworkBlur` by context. Real decoded preview pixels crossfade, not just a dataset assertion. `ArtworkBlur` never joins the Mac sharp-image counter-transform load handler. Different sharp/soft SVGs and no expanded contour. No persistence or business side effects.
+- `artworkFocus` caches thumbnail pixels by canonical artwork identity (quality/source variants share one record), and up to8 aspect choices per record,128 records. A candidate visible-window score replaces centroid-only cropping for asymmetric viewports; fixed anchors survive detail decoding. No semantic face-recognition guarantee. Only low-resolution canvas samples are allocated.
+- iOS focus uses one final root layout, compositor transform through intermediate frames, then real final geometry. Image and mask overscan the same clipping region by1px to avoid an unshaded edge. Original/footer nodes remain live.
+- Mobile wall lyric gap/padding/translation size use em-based ratios. Width-derived font scales continuously; previous active font overrides reset before remeasure.
+- Search state machine moved into shared `searchMotion.js`, Mac re-exports it. Search phase holds expansion until initial growth, fixed-size backdrop samples through a rounded clip, transparent input and inner press surface. Motion/focus cleanup remains owned by SearchControl.
+- DrawerLayer is controlled by `open`, retains its one root/content tree, uses current visual transform when interrupted, and has no exit clone. Closed root is inert/aria-hidden and becomes invisible after exit; reduced motion is immediate. Page-level depth transform replaces per-poster geometry work. Directory anchors survive close/reopen.
+- Selection suppresses long-press/context menu while retaining explicit bulk operations; changes in long-press availability cancel pending timers.
+- Independent Mac panel style is established before mount; root modal motion disabled for native panel windows. Playback selectors prevent unrelated state invalidations; original save/draft contracts retained. Artist field bounded, artwork stage unframed.
+
+MenuPopover通过portal挂到body下独立的data-mv-component=menu-layer固定层，pointer-events:none仅菜单内容可交互；其滚动条只挂在此固定宿主，不能修改.app或body的定位。position仍按视口避让，Esc/Tab/外部点击与焦点恢复不变；墙皮肤由body:has(.app.style-wall)选择。
+
+移动音乐墙的非播放聚焦卡片使用 `.mv-wall-focus-outline` 独立绘制完整白色内边框，不依赖短暂 touch 类；播放卡片使用绿色 current outline，展开时隐藏两种轮廓。边框位于遮罩上方且不改变卡片尺寸。回归：`Scripts/tests/test-mobile-wall-outline.cjs`。

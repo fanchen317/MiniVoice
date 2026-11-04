@@ -34,9 +34,9 @@
 /* The wall sidebar uses the same glass family, with its native 15pt corners. */
 .app.style-wall .sidebar.custom-liquid-glass{background:linear-gradient(145deg,#ffffff0d,transparent 38%,#0000000d),#1c1c1c26!important;backdrop-filter:var(--glass-lens) blur(3px) saturate(1.3);-webkit-backdrop-filter:var(--glass-lens) blur(3px) saturate(1.3);border-color:#ffffff2b;box-shadow:inset 0 1px 1px #ffffff40,inset 0 -1px 1px #ffffff21,0 12px 48px #0006}
 .app.style-wall .player.compact .icon-button{color:#fff}
-.app.style-wall .context-menu{background:#252525db;color:#fff;border-color:#ffffff2b;backdrop-filter:blur(18px) saturate(1.25);box-shadow:0 8px 25px #0006}
-.app.style-wall .context-menu>strong{color:#ffffff9e}
-.app.style-wall .context-menu>button:hover{background:#ffffff18}
+body:has(.app.style-wall) .context-menu{background:#252525db;color:#fff;border-color:#ffffff2b;backdrop-filter:blur(18px) saturate(1.25);box-shadow:0 8px 25px #0006}
+body:has(.app.style-wall) .context-menu>strong{color:#ffffff9e}
+body:has(.app.style-wall) .context-menu>button:hover{background:#ffffff18}
 /* Native card typography must not inherit the general paragraph's 1.7 line height. */
 .wall-card-content.has-playback>header>p{line-height:1.2}
 .wall-card-content .wall-card-transport{gap:7px 12px}

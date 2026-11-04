@@ -29,13 +29,14 @@ export function browseGridMetrics(panelWidth,artist){
 
 // Counteract the card's FLIP stretch on artwork alone. Covers keep their
 // intrinsic aspect ratio and continue to fill the animated clipping rectangle.
-export function posterArtworkMotion(from,to,ratio,progressAt,samples=53,focus={x:.5,y:.5}){
+export function posterArtworkMotion(from,to,ratio,progressAt,samples=53,focus={x:.5,y:.5},fromFocus=focus){
   ratio=Number.isFinite(ratio)&&ratio>0?ratio:1;
-  const width=Math.max(to.width,to.height*ratio),height=width/ratio;
+  const width=Math.max(to.width+2,(to.height+2)*ratio),height=width/ratio;
   const frames=Array.from({length:samples},(_,index)=>{
     const offset=index/(samples-1),p=progressAt(offset),sx=(from.width+(to.width-from.width)*p)/to.width,sy=(from.height+(to.height-from.height)*p)/to.height;
-    const fill=Math.max(to.width*sx/width,to.height*sy/height);
-    return {offset,transform:`translate(${-focus.x*100}%,${-focus.y*100}%) scale(${fill/sx},${fill/sy})`};
+    const fill=Math.max((to.width*sx+2)/width,(to.height*sy+2)/height);
+    const ax=fill/sx,ay=fill/sy,fx=fromFocus.x+(focus.x-fromFocus.x)*p,fy=fromFocus.y+(focus.y-fromFocus.y)*p;
+    return {offset,transform:`translate(${fx*(to.width-width*ax)}px,${fy*(to.height-height*ay)}px) scale(${ax},${ay})`};
   });
   return {width,height,frames};
 }

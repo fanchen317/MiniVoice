@@ -3,6 +3,7 @@ import {useEffect,useRef} from 'react';
 export function useLongPress(onOpen,{delay=500,tolerance=8}={}){
  const open=useRef(onOpen),pending=useRef(null),timer=useRef(null),suppress=useRef(false),opened=useRef(0);open.current=onOpen;
  const cancel=()=>{clearTimeout(timer.current);pending.current=null;};
+ useEffect(()=>{if(!onOpen){cancel();suppress.current=false;}},[Boolean(onOpen)]);
  useEffect(()=>{const blur=()=>cancel();window.addEventListener('blur',blur);return()=>{cancel();window.removeEventListener('blur',blur);};},[]);
  return {
   onPointerDown(event,item){if(event.button!==0||!open.current||event.target.closest('button,input,[role=slider],[role=scrollbar]'))return;cancel();suppress.current=false;pending.current={id:event.pointerId,x:event.clientX,y:event.clientY,item};timer.current=setTimeout(()=>{const value=pending.current;if(!value)return;suppress.current=true;opened.current=Date.now();pending.current=null;open.current?.(value.item);},delay);},

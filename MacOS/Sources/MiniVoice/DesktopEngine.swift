@@ -357,6 +357,10 @@ final class DesktopEngine {
             }
             guard let bytes = original, library.tracks.contains(where: { $0.id == item.id && $0.artworkKey == key }) else { throw CocoaError(.fileReadCorruptFile) }
             try ResourceCache.atomicWrite(bytes, to: target); return true
+        case "artworkSubjects":
+            let item = try track(payload)
+            guard let data = ResourceCache.artworkData(item.artworkKey, detail: false) else { return [[String: Double]]() }
+            return try await ArtworkSubjects.detect(data)
         case "detail": return detail(await library.resolveTrack(try track(payload).id))
         case "reveal": NSWorkspace.shared.activateFileViewerSelecting([try track(payload).url]); return true
         case "desktopLyrics":

@@ -198,10 +198,12 @@ img{-webkit-user-drag:none}
 /* Hover outlines were being interpolated into card focus as a white seam. */
 .wall-poster:hover:not(.focused):not(.playing)>.poster-face{outline:0}
 .wall-poster{border:0}
-.wall-poster .poster-artwork::after{content:'';position:absolute;inset:-24px;background-image:var(--artwork-cover);background-size:cover;background-position:center;filter:blur(24px);opacity:0;transition:opacity 420ms ease;pointer-events:none}
-.wall-surface.is-immersive .wall-poster[data-artwork-mode=blurred] .poster-artwork::after{opacity:1}
 .wall-card-content .artwork-mode-toggle{display:grid;place-items:center;width:var(--wall-button,32px);height:var(--wall-button,32px);padding:4px;background:transparent;color:inherit;border:0;border-radius:50%}
 .wall-card-content .artwork-mode-toggle .mv-icon{width:100%;height:100%}
 .wall-card-content .artwork-mode-toggle[aria-pressed=true]{color:var(--wall-mint)}
-@media(prefers-reduced-motion:reduce){.wall-poster .poster-artwork::after{transition:none}}
-.reduce-motion .wall-poster .poster-artwork::after{transition:none}
+@media(prefers-reduced-motion:reduce){}
+
+/* The image and shade extend past the same clip edge. A fractional FLIP edge
+   must never reveal an unshaded last row of a light cover. */
+.wall-poster>.poster-face{background:#000}
+.wall-poster>.poster-face>.poster-shade{inset:-1px}

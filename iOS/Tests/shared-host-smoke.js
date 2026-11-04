@@ -110,9 +110,9 @@ try {
  const beforeDrawerScale=camera().scale;
  button('打开侧边栏').click();await delay(90);
  const drawerMoving=await wallProbe({});
- check(drawerMoving.depth>.92&&drawerMoving.depth<1,'侧栏缩小有真实相机中间帧');
+ check(drawerMoving.depth>.96&&drawerMoving.depth<1,'侧栏页面整体缩小有真实中间帧');
  await delay(350);
- check(Math.abs((await wallProbe({})).depth-.92)<.001&&camera().scale===beforeDrawerScale,'侧栏深度不改变持久比例');
+ check(Math.abs((await wallProbe({})).depth-.96)<.001&&camera().scale===beforeDrawerScale,'侧栏深度不改变持久比例');
  for(const target of ['simple','library','wall']){
    document.querySelector('.mv-brand-logo').click();
    await wait(()=>document.querySelector('main').dataset.styleBusy==='false'&&document.querySelector('main').dataset.style===target,'实时样式切换 '+target);
@@ -265,7 +265,8 @@ try {
  if(globalThis.MINIVOICE_WALL_ONLY){
    const matrixSnapshot=await send({kind:'snapshot'});
    if(!matrixSnapshot.favorites.includes(matrixSnapshot.songs[0].id))await send({kind:'action',name:'favorite',payload:{id:matrixSnapshot.songs[0].id}});
-   const matrixPlaylist=await send({kind:'action',name:'createPlaylist',payload:{name:'音乐墙页面矩阵',ids:matrixSnapshot.songs.slice(0,4).map(song=>song.id)}});
+   const matrixName='音乐墙页面矩阵 '+Date.now();
+   const matrixPlaylist=await send({kind:'action',name:'createPlaylist',payload:{name:matrixName,ids:matrixSnapshot.songs.slice(0,4).map(song=>song.id)}});
    const verifyZoom=async label=>{
      for(const scale of [.6,1.2,.8,1]){
        const result=await wallProbe({operation:'zoom',scale});
@@ -277,7 +278,7 @@ try {
      await click(button('打开侧边栏'),'页面矩阵主题侧栏');await click(button('设置'),'页面矩阵设置');
      await click(textButton(themeLabel),themeLabel);await click(button('关闭弹窗'),'关闭矩阵设置');
      await wait(()=>document.querySelector('main').dataset.theme===theme,'矩阵主题 '+theme);
-     for(const label of ['音乐库','最近播放','收藏','歌手','专辑','音乐墙页面矩阵']){
+     for(const label of ['音乐库','最近播放','收藏','歌手','专辑',matrixName]){
        await click(button('打开侧边栏'),'矩阵导航 '+label);
        const entry=[...document.querySelectorAll('.mv-drawer nav button')].find(node=>node.textContent.trim()===label);
        await click(entry,'墙页面 '+label);await delay(150);

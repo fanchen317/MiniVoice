@@ -1,4 +1,5 @@
-import {applyArtworkFocus} from '../../../Shared/UI/src/components/artworkFocus.js';
+import {ArtworkModeScope,ArtworkBlur} from '../../../Shared/UI/src/components/ArtworkModeButton.jsx';
+import {applyArtworkFocus,warmArtworkSubjects} from '../../../Shared/UI/src/components/artworkFocus.js';
 import ActionButton from '../../../Shared/UI/src/components/ActionButton.jsx';
 import Slider from '../../../Shared/UI/src/components/Slider.jsx';
 import {wallZoomStops,nextWallZoomStop} from './wallZoom';
@@ -15,11 +16,12 @@ import { springEasing,springProgress,posterArtworkMotion } from './motion';
 const reflowEasing=`linear(${Array.from({length:53},(_,i)=>`${reflowProgress(i*10).toFixed(5)} ${(i/52*100).toFixed(2)}%`).join(',')})`;
 const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, onMenu,onPlay,onExpand,expanded,transitioning,reduceMotion,visible,onReveal,grouped,onGroupMenu }) {
   const element=useRef(),previous=useRef(),animation=useRef(),artwork=useRef(),artworkAnimation=useRef();
+  useEffect(()=>{if(focused)warmArtworkSubjects(artworkURL(track,false),()=>command('artworkSubjects',{id:track.id}));},[focused,track.id,track.artworkRevision]);
   useLayoutEffect(()=>{
     const before=previous.current;previous.current=tile;
-    const node=element.current,matrix=new DOMMatrix(getComputedStyle(node).transform),image=artwork.current?.querySelector('img');
-    const focal={x:Number(image?.dataset.focalX??.5),y:Number(image?.dataset.focalY??.5)};const artworkMotion=posterArtworkMotion(before||tile,tile,image?.naturalWidth/ image?.naturalHeight,p=>p,53,focal);
-    if(image){image.style.width=`${artworkMotion.width}px`;image.style.height=`${artworkMotion.height}px`;}
+    const node=element.current,matrix=new DOMMatrix(getComputedStyle(node).transform),image=artwork.current?.querySelector('img.cover');
+    const fromFocal={x:Number(image?.dataset.focalX??.5),y:Number(image?.dataset.focalY??.5)};const surface=node.closest('.wall-surface');const focal=image?.naturalWidth?applyArtworkFocus(image,{key:artworkURL(track,false),viewportAspect:surface.clientWidth/surface.clientHeight,useSubjects:expanded}):{x:.5,y:.5};if(image){image.style.left='0';image.style.top='0';image.style.transformOrigin='0 0';}const artworkMotion=posterArtworkMotion(before||tile,tile,image?.naturalWidth/ image?.naturalHeight,p=>p,53,focal);
+    if(image){image.style.width=`${artworkMotion.width}px`;image.style.height=`${artworkMotion.height}px`;image.style.transform=artworkMotion.frames.at(-1).transform;}
     if(!before||reduceMotion){animation.current?.cancel();artworkAnimation.current?.cancel();return;}
     const from=animation.current?{x:matrix.e,y:matrix.f,width:before.width*matrix.a,height:before.height*matrix.d}:before;
     animation.current?.cancel();artworkAnimation.current?.cancel();
@@ -27,19 +29,19 @@ const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, on
     node.style.willChange='transform';
     const current=node.animate([{transform:`translate3d(${from.x}px,${from.y}px,0) scale(${from.width/tile.width},${from.height/tile.height})`},{transform:`translate3d(${tile.x}px,${tile.y}px,0) scale(1,1)`}],{duration:transitioning?600:520,easing:transitioning?'cubic-bezier(.22,1,.36,1)':reflowEasing});
     if(image){
-      const duration=transitioning?600:520,motion=posterArtworkMotion(from,tile,image.naturalWidth/image.naturalHeight,p=>transitioning?focusProgress(p):reflowProgress(p*520),transitioning?61:53,focal);
+      const duration=transitioning?600:520,motion=posterArtworkMotion(from,tile,image.naturalWidth/image.naturalHeight,p=>transitioning?focusProgress(p):reflowProgress(p*520),transitioning?61:53,focal,fromFocal);
       image.style.width=`${motion.width}px`;image.style.height=`${motion.height}px`;
       artworkAnimation.current=image.animate(motion.frames,{duration,easing:'linear'});
     }
     animation.current=current;current.finished.catch(()=>{}).finally(()=>{if(animation.current===current){animation.current=null;node.style.willChange='';}});
   },[tile.x,tile.y,tile.width,tile.height,reduceMotion]);
   useEffect(()=>()=>{animation.current?.cancel();artworkAnimation.current?.cancel();},[]);
-  return <article ref={element} className={`wall-poster ${focused?'focused':''} ${playing?'playing':''}`} 
+  return <ArtworkModeScope as="article" ref={element} className={`wall-poster ${focused?'focused':''} ${playing?'playing':''}`}
     style={{'--artwork-cover':`url("${artworkURL(track,false)}")`,'--caption-inset':`${Math.min(14,Math.max(8,tile.width*.06))}px`,'--poster-title':`${Math.min(30,Math.max(18,tile.width*.105))}px`,'--poster-subtitle':`${Math.min(13,Math.max(10,tile.width*.045))}px`,width:tile.width,height:tile.height,transform:`translate3d(${tile.x}px,${tile.y}px,0)`}}
     inert={!visible} onFocusCapture={event=>{const rect=event.target.getBoundingClientRect();if(rect.right<0||rect.left>innerWidth||rect.bottom<0||rect.top>innerHeight)onReveal();}} onClick={event=>onFocus(tile,track,event)} onContextMenu={event=>grouped?onGroupMenu(event):onMenu(event,track)} tabIndex={visible?0:-1} data-track-id={track.id} role="button" aria-label={grouped?`打开 ${track.title}`:`聚焦 ${track.title}，双击播放`} onKeyDown={event=>{if(event.key==='Enter'&&event.target===event.currentTarget)onFocus(tile,track,event);}}>
-    <div className="poster-face"><div className="poster-artwork" ref={artwork} onLoadCapture={event=>{const image=event.target;if(image.tagName!=='IMG')return;const focal=applyArtworkFocus(image);image.style.left=`${focal.x*100}%`;image.style.top=`${focal.y*100}%`;image.style.transform=`translate(${-focal.x*100}%,${-focal.y*100}%)`;const motion=posterArtworkMotion(tile,tile,image.naturalWidth/image.naturalHeight,p=>p);image.style.width=`${motion.width}px`;image.style.height=`${motion.height}px`;}}><Cover track={track} detail={focused} presentation="wall"/></div><div className="poster-shade"/>{!focused&&<><span className="poster-number">{String(tile.index+1).padStart(3,'0')}</span><div className="poster-caption"><h2>{track.title}</h2><p>{track.artist}</p></div></>}
+    <div className="poster-face"><div className="poster-artwork" ref={artwork} onLoadCapture={event=>{const image=event.target;if(!image.matches('img.cover')||artworkAnimation.current?.playState==='running')return;const wall=image.closest('.wall-surface');const focal=image.dataset.focalX!==undefined?{x:Number(image.dataset.focalX),y:Number(image.dataset.focalY)}:applyArtworkFocus(image,{key:artworkURL(track,false),viewportAspect:wall.clientWidth/wall.clientHeight,useSubjects:expanded});image.style.left='0';image.style.top='0';image.style.transformOrigin='0 0';const motion=posterArtworkMotion(tile,tile,image.naturalWidth/image.naturalHeight,p=>p,53,focal);image.style.transform=motion.frames.at(-1).transform;image.style.width=`${motion.width}px`;image.style.height=`${motion.height}px`;}}><Cover track={track} detail={focused} presentation="wall"/>{expanded&&focused&&<ArtworkBlur src={artworkURL(track,false)}/>}</div><div className="poster-shade"/>{!focused&&<><span className="poster-number">{String(tile.index+1).padStart(3,'0')}</span><div className="poster-caption"><h2>{track.title}</h2><p>{track.artist}</p></div></>}
     {focused&&<WallCardPlayer size={tile} track={track} playing={playing} onPlay={onPlay} onExpand={onExpand} expanded={expanded}/>}</div>
-  </article>;
+  </ArtworkModeScope>;
 });
 export function Wall({ tracks, playingID, onMenu, locateToken, selectedID,locateID,locateAnimated=true, reduceMotion,onImmersive,onChromeHidden,leadingInset=0,groups,onOpenGroup,sorting,emptyTitle,contentKey,onEscapeSidebar,onFocusChange }) {
   const grouped=Boolean(groups);

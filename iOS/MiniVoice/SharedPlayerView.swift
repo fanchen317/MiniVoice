@@ -388,6 +388,10 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
         case "queueSelect":
             guard let id = payload["id"] as? String, player.queue.contains(where: { $0.id == id }) else { throw failure("歌曲不在播放队列中") }
             player.play(try allowedSong(id), queue: player.queue, library: library); return true
+        case "artworkSubjects":
+            let song = try allowedSong(payload["id"] as? String ?? "")
+            let data = try await library.artworkData(for: song, original: false, wall: true)
+            return try await ArtworkSubjects.detect(data)
         case "readLyrics":
             let song = try allowedSong(payload["id"] as? String ?? "")
             return ["title": song.title, "raw": library.lyrics(for: song) ?? ""]

@@ -8,8 +8,8 @@ export function displayLine(line,nextStart,duration){
   return {...line,words:characters.map((text,index)=>({text,start:start+index*step,end:start+(index+1)*step}))};
 }
 export function wallLyricsMetrics(width,height){
-  const singleLine=height<28,fontSize=Math.min(34,Math.max(9,Math.min(width*.062,height/7)));
-  const rowHeight=singleLine?height:Math.min(height/3,fontSize*2.15+8);
+  const singleLine=height<20,fontSize=Math.min(34,Math.max(10,width*.058));
+  const rowHeight=fontSize*2.25;
   return {singleLine,fontSize,rowHeight,visibleRadius:singleLine?0:Math.max(4,Math.ceil(height/Math.max(1,rowHeight)))};
 }
 

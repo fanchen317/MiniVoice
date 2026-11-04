@@ -33,5 +33,6 @@ sign_desktop_app "$APP"
 verify_desktop_app "$APP"
 # Release and debug are separate public artifacts.
 if [[ -e "$DESKTOP_APP_PATH" ]]; then rm -rf "$DESKTOP_APP_PATH"; fi
+mkdir -p "$(dirname "$DESKTOP_APP_PATH")"
 mv "$APP" "$DESKTOP_APP_PATH"
 echo "$DESKTOP_APP_PATH"

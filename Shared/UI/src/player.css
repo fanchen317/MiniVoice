@@ -175,7 +175,7 @@
 /* Recess ordinary pages, while the wall renders a wider camera view all the
    way to the screen edges. Neither mode adds a duplicate wallpaper layer. */
 [data-presentation=mobile]>.mv-scene.is-drawer-behind{border-radius:24px}
-[data-presentation=mobile].style-wall>.mv-scene.is-drawer-behind{transform:none;border-radius:0;overflow:hidden}
+[data-presentation=mobile].style-wall>.mv-scene.is-drawer-behind{transform:translate(10px,8px) scale(.96);border-radius:24px;overflow:hidden}
 .wp-scale-controls .mv-slider{--mv-slider-knob-size:16px}
 /* One actual backdrop sample + one tint, matching the wall toolbar material. */
 [data-presentation=mobile].style-wall .mv-drawer,[data-presentation=mobile] .mv-modal{background:var(--mv-material-shine),var(--mv-material-tint)!important;backdrop-filter:blur(var(--mv-material-blur)) saturate(var(--mv-material-saturation,1.4)) brightness(var(--mv-panel-brightness,1))!important;-webkit-backdrop-filter:blur(var(--mv-material-blur)) saturate(var(--mv-material-saturation,1.4)) brightness(var(--mv-panel-brightness,1))!important}

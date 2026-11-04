@@ -273,10 +273,20 @@
 .mv-wall-card.active::after{display:none}
 .mv-wall-card.active>.mv-wall-press-surface::after{content:'';position:absolute;inset:0;border:3px solid #32d8b5;box-shadow:inset 0 0 18px #32d8b555;opacity:.8;z-index:3;pointer-events:none}
 .mv-wall-press-surface{transform-box:border-box}
-/* Blur uses the preview cover and opacity crossfade, never a per-frame blur radius. */
-.mv-wall-focused.is-expanded>.mv-wall-press-surface::before{content:'';position:absolute;inset:-24px;background-image:var(--wall-cover);background-position:center;background-size:cover;filter:blur(24px);opacity:0;transition:opacity 420ms ease;z-index:1;pointer-events:none}
 .mv-wall-focused.is-expanded[data-artwork-mode=blurred]>.mv-wall-press-surface::before{opacity:1}
 .artwork-mode-toggle{width:44px;height:44px;display:grid;place-items:center;border-radius:50%;color:inherit;background:transparent;border:0}
 .artwork-mode-toggle[aria-pressed=true]{color:#67e5cd;background:#ffffff18}
-@media(prefers-reduced-motion:reduce){.mv-wall-focused.is-expanded>.mv-wall-press-surface::before{transition:none}}
-.reduce-motion .mv-wall-focused.is-expanded>.mv-wall-press-surface::before{transition:none}
+@media(prefers-reduced-motion:reduce){}
+
+/* Match image/shade coverage during fractional card reflow on both mobile hosts. */
+.mv-wall-press-surface{background:#000}
+.mv-wall-card>.mv-wall-press-surface>img,.mv-wall-focused-art{inset:-1px!important;width:calc(100% + 2px)!important;height:calc(100% + 2px)!important;max-width:none;max-height:none}
+.mv-wall-card>.mv-wall-press-surface::before,.mv-wall-focused>.mv-wall-press-surface::after{inset:-1px}
+.mv-wall-artwork-stack{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
+/* A complete white press contour is intentional; it is separate from any
+   unshaded bottom-edge artefact. Same feedback on Android and iOS. */
+[data-presentation=mobile] .is-touch-pressed>.mv-wall-press-surface{outline:1.5px solid #fffffff2;outline-offset:-1.5px}
+
+/* Keep the selected preview contour above artwork and shade, including after touch release. */
+.mv-wall-focus-outline{position:absolute;inset:0;border:1.5px solid #fffffff2;box-sizing:border-box;z-index:5;pointer-events:none}
+.mv-wall-focused.is-expanded .mv-wall-focus-outline,.mv-cover-wall.is-expanding .mv-wall-focus-outline{display:none}
