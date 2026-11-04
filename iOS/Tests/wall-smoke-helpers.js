@@ -37,10 +37,10 @@ export function createWallProbe({delay}){
   const c=camera(),plane=wall.querySelector('.mv-wall-plane'),f=box(),r=f?.getBoundingClientRect(),content=f?.querySelector('.mv-wall-focus-content'),cr=content?.getBoundingClientRect();
   const images=[...wall.querySelectorAll('.mv-wall-card img')];
   const visible=images.filter(node=>{const r=node.getBoundingClientRect();return r.right>0&&r.bottom>0&&r.left<innerWidth&&r.top<innerHeight;});
-  const mask=f&&getComputedStyle(f,'::after'),outline=f?.querySelector('.mv-wall-current-outline'),or=outline?.getBoundingClientRect();
+  const maskSurface=f?.querySelector('.mv-wall-press-surface'),mask=maskSurface&&getComputedStyle(maskSurface,'::after'),outline=f?.querySelector('.mv-wall-current-outline'),or=outline?.getBoundingClientRect();
   return {active:wall.dataset.wallRenderer==='native-scroll-single-surface',mounted:images.length,decoded:visible.filter(n=>n.complete&&n.naturalWidth>0).length,visibleBlank:visible.filter(n=>!n.complete||!n.naturalWidth).length,boundedArtwork:visible.every(n=>n.naturalWidth<=320&&n.naturalHeight<=320),
    ...c,focused:f?.dataset.wallId||'',square:r&&Math.abs(r.width-r.height)<1.5,
-   maskAligned:!f||(Math.abs(parseFloat(mask.width)-r.width)<1.5&&Math.abs(parseFloat(mask.height)-r.height)<1.5),
+   maskAligned:!f||(mask?.display!=='none'&&Math.abs(parseFloat(mask.width)-r.width)<1.5&&Math.abs(parseFloat(mask.height)-r.height)<1.5),
    contourAligned:!outline||(Math.abs(or.width-r.width)<1.5&&Math.abs(or.height-r.height)<1.5),
    contourVisible:!!outline&&getComputedStyle(outline).display!=='none',
    contentAligned:!content||(Math.abs(cr.width-r.width)<1.5&&Math.abs(cr.height-r.height)<1.5),

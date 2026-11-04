@@ -29,4 +29,4 @@ document.documentElement.dataset.presentation=presentation.family;
 document.documentElement.dataset.reference=presentation.reference;
 const desktopRoot=()=>document.documentElement;
 function DesktopApplication(){usePresentation(desktopRoot,presentation);return <App/>;}
-const surface=new URLSearchParams(location.search).get('surface');root.render(surface==='panel'?<OwnPanelWindow/>:surface==='desktopLyrics'?<OwnDesktopLyrics/>:surface==='desktopLyricsUnlock'?<DesktopLyricsUnlock/>:<DesktopApplication/>);
+const surface=new URLSearchParams(location.search).get('surface');if(surface==='panel')document.documentElement.classList.add('own-panel-window');root.render(surface==='panel'?<OwnPanelWindow/>:surface==='desktopLyrics'?<OwnDesktopLyrics/>:surface==='desktopLyricsUnlock'?<DesktopLyricsUnlock/>:<DesktopApplication/>);

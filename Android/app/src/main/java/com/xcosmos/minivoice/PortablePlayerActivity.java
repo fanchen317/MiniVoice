@@ -58,10 +58,26 @@ public final class PortablePlayerActivity extends Activity {
         bound=bindService(new Intent(this,PlaybackService.class),connection,BIND_AUTO_CREATE);
         worker.execute(()->{try{readLibrary();main.post(()->{if(!closed)web.loadUrl(ORIGIN+"/index.html");});}catch(Exception failure){main.post(()->{if(!closed)finish();});}});
         LibraryScanService.observe(scanObserver);acceptNavigation(getIntent());
-        requestScanNotifications();if(!getIntent().getBooleanExtra("minivoice.uiRegression",false))LibraryScanService.request(this,false,true,false);
+        if(!getIntent().getBooleanExtra("minivoice.uiRegression",false))requestInitialPermissions();if(!getIntent().getBooleanExtra("minivoice.uiRegression",false))LibraryScanService.request(this,false,true,false);
+    }
+    private void requestInitialPermissions(){
+        SharedPreferences prefs=getSharedPreferences("library",0);
+        if(prefs.getBoolean("initial_permissions_introduced",false))return;
+        prefs.edit().putBoolean("initial_permissions_introduced",true).apply();
+        boolean prompt=Build.VERSION.SDK_INT>=33&&checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED&&!prefs.getBoolean("scan_notification_permission_asked",false);
+        requestScanNotifications();
+        if(!prompt)requestInitialFolder();
+    }
+    private void requestInitialFolder(){
+        if(getSharedPreferences("library",0).getStringSet("music_folders",Collections.emptySet()).isEmpty())
+            startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION),81);
+    }
+    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){
+        super.onRequestPermissionsResult(request,permissions,results);
+        if(request==42)requestInitialFolder();
     }
     private void requestScanNotifications(){
-        if(Build.VERSION.SDK_INT>=33&&!getSharedPreferences("library",0).getStringSet("music_folders",Collections.emptySet()).isEmpty()&&checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED&&!getSharedPreferences("library",0).getBoolean("scan_notification_permission_asked",false)){
+        if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED&&!getSharedPreferences("library",0).getBoolean("scan_notification_permission_asked",false)){
             getSharedPreferences("library",0).edit().putBoolean("scan_notification_permission_asked",true).apply();
             requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},42);
         }

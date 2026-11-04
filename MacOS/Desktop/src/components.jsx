@@ -1,3 +1,5 @@
+import ArtworkModeButton from '../../../Shared/UI/src/components/ArtworkModeButton.jsx';
+import {playbackTime} from '../../../Shared/UI/src/components/playbackClock.js';
 import {regularLyricMetrics} from '../../../Shared/UI/src/components/lyricPresentation.js';
 import {useIdleCollapse} from '../../../Shared/UI/src/components/useIdleCollapse.js';
 import {Icon as AppIcon} from '../../../Shared/UI/src/components/PlayerControls.jsx';
@@ -7,7 +9,7 @@ import ActionButton from '../../../Shared/UI/src/components/ActionButton.jsx';
 import {useListColumnMotion} from './listColumnMotion';
 import {createPortal} from 'react-dom';
 import {usePopoverPosition} from './usePopoverPosition';
-import {paintLyricSweep} from './lyricSweep';
+import {paintLyricSweep,clearLyricSweep} from './lyricSweep';
 import {flyPlaybackArtwork} from './transitions';
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useScrollThumb } from './scrollbar';
@@ -65,18 +67,18 @@ export function Lyrics({ track, expanded=false, workspace=false, onEdit }) {
       const height=el.clientHeight,width=el.clientWidth,bilingual=showLyricsTranslation&&lines.some(l=>l.translation);
       const metrics=regularLyricMetrics(width,height,expanded,bilingual),row=metrics.row;
       el.style.setProperty('--lyric-row',`${row}px`);el.style.setProperty('--lyric-font',`${metrics.font}px`);
-      el.style.setProperty('--lyric-padding',`${height/2}px`);fitLyricContent(el);if(performance.now()>=manualUntil.current)align(activeRef.current,false);const sample=clockRef.current;paintLyricSweep(el.querySelector('.current .lyric-content'),sample.time+(sample.playing?Math.min(.24,Math.max(0,(performance.now()-sample.sampledAt)/1000)):0),{reduced:document.documentElement.classList.contains('reduce-motion')});
+      el.style.setProperty('--lyric-padding',`${height/2}px`);fitLyricContent(el);if(performance.now()>=manualUntil.current)align(activeRef.current,false);const sample=clockRef.current;paintLyricSweep(el.querySelector('.current .lyric-content'),playbackTime(sample,performance.now()),{reduced:document.documentElement.classList.contains('reduce-motion')});
     });observer.observe(el);
-    const manual=()=>{cancelAnimationFrame(scrollFrame.current);manualUntil.current=performance.now()+2000;};el.addEventListener('wheel',manual,{passive:true});el.addEventListener('pointerdown',manual);
-    return()=>{observer.disconnect();el.removeEventListener('wheel',manual);el.removeEventListener('pointerdown',manual);cancelAnimationFrame(scrollFrame.current);};
+    let resume;const manual=()=>{cancelAnimationFrame(scrollFrame.current);manualUntil.current=performance.now()+2000;clearTimeout(resume);resume=setTimeout(()=>align(activeRef.current,true),2016);};el.addEventListener('wheel',manual,{passive:true});el.addEventListener('pointerdown',manual);
+    return()=>{clearTimeout(resume);observer.disconnect();el.removeEventListener('wheel',manual);el.removeEventListener('pointerdown',manual);cancelAnimationFrame(scrollFrame.current);};
   },[track?.id,lines,expanded,showLyricsTranslation]);
   useEffect(()=>{
     const el=root.current;if(!el)return;let frame=0;
     function update(){
-      const time=clock.time+(clock.playing?Math.min(.24,(performance.now()-clock.sampledAt)/1000):0);let index=-1;
+      const time=playbackTime(clock,performance.now());let index=-1;
       for(let i=0;i<lines.length;i++)if(lines[i].time!==null&&lines[i].time<=time)index=i;
       if(index!==activeRef.current){const previous=activeRef.current;activeRef.current=index;
-        for(const line of el.querySelectorAll('[data-lyric]')){const n=Number(line.dataset.lyric);line.classList.toggle('current',n===index);line.dataset.emphasis=index<0?'-1':String(Math.min(2,Math.abs(n-index)));}
+        for(const line of el.querySelectorAll('[data-lyric]')){const n=Number(line.dataset.lyric);if(n!==index)clearLyricSweep(line.querySelector('.lyric-content'));line.classList.toggle('current',n===index);line.dataset.emphasis=index<0?'-1':String(Math.min(2,Math.abs(n-index)));}
         if(performance.now()>=manualUntil.current)align(index,previous!==-2);
       }
       const reduced=document.documentElement.classList.contains('reduce-motion');paintLyricSweep(el.querySelector('.current .lyric-content'),time,{reduced});
@@ -193,6 +195,6 @@ export function WallCardPlayer({track,playing,onExpand,expanded,onPlay,size}){
   return <div className={`wall-card-content ${playing?'has-playback':''} ${expanded?'is-immersive':''}`} style={{padding:sizing.padding,paddingTop:sizing.padding+(expanded?30:0),'--card-gap':size.width<300?'8px':'16px','--card-title':`${sizing.title}px`,'--card-artist':`${sizing.artist}px`,'--card-status':`${sizing.status}px`,'--card-space':`${sizing.spacing}px`,'--wall-button':`${side}px`}} onClick={event=>event.stopPropagation()} onDoubleClick={event=>event.stopPropagation()}>
     <header>{playing&&<div className={`wall-playback-status ${playing&&state.isPlaying?'animating':''}`}><span className="wall-waveform" aria-hidden="true"><i/><i/><i/></span><span>{playing?(state.preparing?'正在加载':state.isPlaying?'正在播放':'已暂停'):'预览'}</span></div>}<h2>{live.title}</h2><p>{live.artist}</p></header>
     {playing&&<WallLyrics track={live} kinetic={expanded&&kinetic}/>}
-    <div className={`wall-card-transport ${available<340?'narrow':''}`}><div className="wall-transport-buttons">{playing&&<IconButton label="上一曲" onClick={()=>command('skip',{delta:-1})}><Icon name="previousOutline"/></IconButton>}<IconButton label={playing&&state.isPlaying?'暂停':'播放歌曲'} onClick={playing?()=>command('toggle'):onPlay}><Icon name={playing&&state.isPlaying?'pause':'play'}/></IconButton>{playing&&<><IconButton label="下一曲" onClick={()=>command('skip',{delta:1})}><Icon name="nextOutline"/></IconButton><IconButton label="收藏歌曲" active={state.favorites.includes(track.path)} onClick={()=>command('favorite',{id:track.id})}><Icon name={state.favorites.includes(track.path)?'favoriteFill':'favorites'}/></IconButton><PlaybackModeMenu/><span className="transport-spacer"/>{expanded&&<IconButton label={kinetic?'切换滚动歌词':'灵动逐字'} active={kinetic} onClick={()=>command('lyricsPresentation',{style:kinetic?'scrolling':'kinetic'})}><Icon name="kinetic"/></IconButton>}<IconButton label={expanded?'收起播放器':'展开播放器'} onClick={onExpand}><Icon name={expanded?'collapse':'expand'}/></IconButton></>}</div>{playing&&<><span className="wall-playback-time">{seconds(time).padStart(5,'0')} / {seconds(live.duration).padStart(5,'0')}</span><Slider label="播放进度" min={0} max={live.duration||1} step={.1} resetKey={track.id} value={Math.min(time,live.duration||1)} onValueChange={setScrub} onCommit={value=>{pending.current=value;pending.currentAt=performance.now();setScrub(value);return command('seek',{time:value}).catch(()=>{pending.current=null;setScrub(null);});}} onCancel={()=>{setScrub(null);pending.current=null;}}/></>}</div>
+    <div className={`wall-card-transport ${available<340?'narrow':''}`}><div className="wall-transport-buttons">{playing&&<IconButton label="上一曲" onClick={()=>command('skip',{delta:-1})}><Icon name="previousOutline"/></IconButton>}<IconButton label={playing&&state.isPlaying?'暂停':'播放歌曲'} onClick={playing?()=>command('toggle'):onPlay}><Icon name={playing&&state.isPlaying?'pause':'play'}/></IconButton>{playing&&<><IconButton label="下一曲" onClick={()=>command('skip',{delta:1})}><Icon name="nextOutline"/></IconButton><IconButton label="收藏歌曲" active={state.favorites.includes(track.path)} onClick={()=>command('favorite',{id:track.id})}><Icon name={state.favorites.includes(track.path)?'favoriteFill':'favorites'}/></IconButton><PlaybackModeMenu/><span className="transport-spacer"/>{expanded&&<ArtworkModeButton/>}{expanded&&<IconButton label={kinetic?'切换滚动歌词':'灵动逐字'} active={kinetic} onClick={()=>command('lyricsPresentation',{style:kinetic?'scrolling':'kinetic'})}><Icon name="kinetic"/></IconButton>}<IconButton label={expanded?'收起播放器':'展开播放器'} onClick={onExpand}><Icon name={expanded?'collapse':'expand'}/></IconButton></>}</div>{playing&&<><span className="wall-playback-time">{seconds(time).padStart(5,'0')} / {seconds(live.duration).padStart(5,'0')}</span><Slider label="播放进度" min={0} max={live.duration||1} step={.1} resetKey={track.id} value={Math.min(time,live.duration||1)} onValueChange={setScrub} onCommit={value=>{pending.current=value;pending.currentAt=performance.now();setScrub(value);return command('seek',{time:value}).catch(()=>{pending.current=null;setScrub(null);});}} onCancel={()=>{setScrub(null);pending.current=null;}}/></>}</div>
   </div>;
 }

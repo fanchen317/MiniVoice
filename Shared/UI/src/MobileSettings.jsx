@@ -19,13 +19,12 @@ export default function MobileSettings({adapter,snapshot,style,theme,appearance,
    { [['system','跟随系统'],['light','浅色模式'],['dark','深色模式']].map(([value,label])=><ActionButton key={value} className="mv-option" aria-pressed={(appearance.theme||'system')===value} onClick={()=>onAppearance({theme:value})}>{label}<span>{(appearance.theme||'system')===value?<Icon name="checkCircle"/>:null}</span></ActionButton>)}
    <h3>音乐文件夹</h3>{!settings?<p role="status">正在读取设置…</p>:settings.folders.length===0?<p className="mv-settings-note">尚未添加音乐文件夹</p>:settings.folders.map(folder=><div className="mv-folder-row" key={folder.id}><span><strong>{folder.name}</strong><small>{folder.path}</small></span>{supports('removeFolder')&&<ActionButton aria-label={`移除文件夹 ${folder.name}`} disabled={pending} onClick={()=>setConfirm({name:'removeFolder',label:folder.name,payload:{folder:folder.id}})}>移除</ActionButton>}</div>)}
    {supports('chooseFolder')&&<ActionButton className="mv-option" disabled={pending} onClick={()=>perform('chooseFolder')}>添加音乐文件夹 <Icon name="plus"/></ActionButton>}
-   {supports('enableScanNotifications')&&<ActionButton className="mv-option" disabled={pending} onClick={()=>perform('enableScanNotifications')}>启用扫描通知</ActionButton>}
    <h3>音乐库</h3><p className="mv-settings-note">{snapshot.songs.length} 首歌曲{snapshot.scanning?' · 正在扫描':''}</p>
    {supports('recursive')&&<label className="mv-option">包含子文件夹<CheckControl label="包含子文件夹" checked={settings.recursive} disabled={pending} onCheckedChange={value=>perform('recursive',{value})}/></label>}
    {supports('rescan')&&<ActionButton className="mv-option" disabled={pending||snapshot.scanning} onClick={()=>perform('rescan')}>{snapshot.scanning?snapshot.scanDetail||'正在扫描…':'重新扫描音乐库'}</ActionButton>}
    {supports('clearRecent')&&<ActionButton className="mv-option" disabled={pending} onClick={()=>setConfirm({name:'clearRecent',payload:{}})}>清空最近播放记录</ActionButton>}
    {supports('exportDiagnostics')&&<><h3>诊断与稳定性</h3><ActionButton className="mv-option" disabled={pending} onClick={()=>perform('exportDiagnostics')}>导出诊断报告<small>{Number.isFinite(settings.crashCount)?`${settings.crashCount} 次本地崩溃记录`:'本地诊断信息'}</small></ActionButton></>}
-   {supports('cacheInfo')&&<MobileLibraryTools adapter={adapter} snapshot={snapshot} settings={settings} onChanged={refresh}/>}<ActionButton className="mv-option" onClick={onExit}>返回播放器</ActionButton>
+   {supports('cacheInfo')&&<MobileLibraryTools adapter={adapter} snapshot={snapshot} settings={settings} onChanged={refresh}/>}
   </>}
  </div>;
 }

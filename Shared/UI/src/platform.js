@@ -1,9 +1,29 @@
 import {presentationFor} from './presentation.js';
 /** Only this module knows host APIs. Components speak the same versioned DTO protocol everywhere. */
-export function createAndroidTransport(host,timeoutMs=10000){
-  let serial=0;const pending=new Map();
-  globalThis.MiniVoiceTransport={receive(id,result){const entry=pending.get(id);if(!entry)return;clearTimeout(entry.timer);pending.delete(id);result.ok?entry.resolve(result.value):entry.reject(new Error(result.error||'请求失败'));}};
-  return request=>new Promise((resolve,reject)=>{if(pending.size>=32){reject(new Error('请求繁忙'));return;}const id=String(++serial),timer=setTimeout(()=>{pending.delete(id);reject(new Error('系统响应超时'));},timeoutMs);pending.set(id,{resolve,reject,timer});try{host.request(id,JSON.stringify({...request,version:1}));}catch(error){clearTimeout(timer);pending.delete(id);reject(error);}});
+export function createAndroidTransport(host,timeoutMs=10000,{document:page=globalThis.document,lifecycle=globalThis,now=()=>performance.now(),setTimer=setTimeout,clearTimer=clearTimeout}={}){
+  let serial=0,timer=null,last=now();const pending=new Map();
+  const pulse=Math.min(500,timeoutMs);
+  const resumed=()=>{last=now();for(const entry of pending.values())entry.last=last;};
+  page?.addEventListener('visibilitychange',resumed);
+  lifecycle.addEventListener?.('pageshow',resumed);
+  function tick(){
+    timer=null;const timestamp=now(),elapsed=timestamp-last;last=timestamp;
+    // A suspended WebView may wake overdue timers before delivering queued replies.
+    // Count responsive foreground time, rather than wall time spent suspended.
+    if(!page?.hidden&&elapsed<Math.max(2000,pulse*4))for(const [id,entry] of pending){
+      entry.remaining-=Math.min(elapsed,timestamp-entry.last);entry.last=timestamp;if(entry.remaining<=0){pending.delete(id);const error=new Error('系统响应超时，请重试');error.code='HOST_TIMEOUT';entry.reject(error);}
+    }
+    if(pending.size)timer=setTimer(tick,pulse);
+  }
+  function idle(){if(!pending.size){clearTimer(timer);timer=null;}}
+  globalThis.MiniVoiceTransport={receive(id,result){const entry=pending.get(id);if(!entry)return;pending.delete(id);idle();result.ok?entry.resolve(result.value):entry.reject(new Error(result.error||'请求失败'));}};
+  const send=request=>new Promise((resolve,reject)=>{
+    if(pending.size>=32){reject(new Error('请求繁忙'));return;}
+    const id=String(++serial);pending.set(id,{resolve,reject,remaining:timeoutMs,last:now()});if(timer===null){last=now();timer=setTimer(tick,pulse);}
+    try{host.request(id,JSON.stringify({...request,version:1}));}catch(error){pending.delete(id);idle();reject(error);}
+  });
+  send.dispose=()=>{clearTimer(timer);timer=null;page?.removeEventListener('visibilitychange',resumed);lifecycle.removeEventListener?.('pageshow',resumed);for(const entry of pending.values())entry.reject(new Error('宿主连接已关闭'));pending.clear();};
+  return send;
 }
 /** A shared catalog revision prevents retransmitting the entire library with every clock tick. */
 export function createSnapshotReader(send){let songs=[],revision='';return async()=>{const value=await send(revision);if(Array.isArray(value.songs))songs=value.songs;revision=String(value.catalogRevision??revision);return {...value,songs};};}

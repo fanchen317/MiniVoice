@@ -18,5 +18,5 @@ test('long kinetic phrases fit small viewports and seeks are immediately determi
     const before=kineticInk(glyphs[0],0,0,layout.fontSize),after=kineticInk(glyphs[0],0,20,layout.fontSize);assert.equal(before.opacity,.26);assert.equal(after.opacity,1);assert.equal(after.scale,1);
     assert.deepEqual(kineticInk(glyphs[0],0,0,layout.fontSize),before);
   }
-  assert.equal(wallLyricsMetrics(200,40).visibleRadius,0);assert.ok(wallLyricsMetrics(500,300).rowHeight<=100);
+  assert.ok(wallLyricsMetrics(200,40).visibleRadius>=1);assert.ok(wallLyricsMetrics(500,300).rowHeight<=100);
 });

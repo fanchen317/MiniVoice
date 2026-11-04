@@ -10,6 +10,7 @@ const layouts=new WeakMap();
 // that did not change, so the sweep would survive and blank the text.
 export function clearLyricSweep(surface){
   if(!surface)return;
+  layouts.delete(surface);
   surface.classList.remove('sweep-surface');
   surface.style.backgroundImage='';surface.style.backgroundPosition='';surface.style.backgroundSize='';
 }

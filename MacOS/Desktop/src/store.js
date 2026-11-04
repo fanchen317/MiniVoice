@@ -1,3 +1,4 @@
+import {samplePlaybackClock} from '../../../Shared/UI/src/components/playbackClock.js';
 import { useSyncExternalStore } from 'react';
 
 // Clock samples have their own store: playback ticks never invalidate the catalog.
@@ -13,6 +14,7 @@ export const clock = store({ time: 0, duration: 0, playing: false, sampledAt: pe
 export const signals = new EventTarget();
 export const useCatalog = () => useSyncExternalStore(catalog.subscribe, catalog.get);
 export const usePlayback = () => useSyncExternalStore(state.subscribe, state.get);
+export const usePlaybackSelector = selector => useSyncExternalStore(state.subscribe,()=>selector(state.get()));
 export const useClock = () => useSyncExternalStore(clock.subscribe, clock.get);
 export async function command(action, payload = {}, {reportError=true} = {}) {
   try { return await window.miniVoice.command(action, payload); }
@@ -25,7 +27,7 @@ window.miniVoice.subscribe(({ event, data }) => {
     const encoded = JSON.stringify(data);
     if (encoded !== state.lastEncoded) { state.lastEncoded = encoded; state.set(data); }
   }
-  else if (event === 'clock') clock.set({ ...data, sampledAt: performance.now() });
+  else if (event === 'clock') clock.set({...data,...samplePlaybackClock(clock.get(),data.time,data.playing,performance.now())});
   else signals.dispatchEvent(new CustomEvent(event, { detail: data }));
 });
 export {artwork} from './artworkUrl.js';

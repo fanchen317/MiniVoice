@@ -951,3 +951,34 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
 2026-10-30 Mac体验点击白边闪现专项：已提取用户22.25录屏接触表。清除桌面wall-poster遗留外层border，focused非playing状态明确退出hover白边层，保留正常hover/press与playing薄荷描边。静态检查、桌面64项通过/4项跳过、前端生产构建通过（/tmp/mv-mac-edge-unit.txt、/tmp/mv-mac-edge-build.txt）。独立Mac页面实际鼠标定向测试通过：hover白边保留，点击后15个中间采样无遗留border/白色contour（/tmp/mv-mac-contour-targeted.txt）。首轮fixture只接受完整入屏卡片导致无候选，改为可见交集坐标后通过，不改变生产断言。完整页面仍在移动首按钮边界失败，另轮运行出现共享页useLayoutEffect运行时错误，均未宣称完整通过（/tmp/mv-mac-edge-pages.txt、/tmp/mv-mac-edge-regression.txt）。未重打包/签名Mac app或部署用户实例，实际Mac录屏白边回验待验收。
 
 2026-10-31 Android恢复与144%越界专项：确认Android展开按钮内侧留白及100%设置映射仍在；此前按钮保留仅iOS，现两移动宿主统一keepControls。确认Wall仍导入旧内部上限1.2，叠加展示×1.2导致144%，改为单一mobileWallZoom模型内部.5–1，默认1/1.2。静态检查113源文件、共享54项通过。Android新隔离会话默认100/放大110/立即恢复100、120端点内部≤1、缩小后控件数不变定向测试 /tmp/mv-hard120-final.txt；iOS合成捏合检查通过 /tmp/mv-hard120-pinch.txt。初轮默认测试因旧会话已有保存比例显示120失败，改为新隔离会话验证默认而非覆盖历史状态，/tmp/mv-hard120-reset-fresh.txt通过。AndroidAPK重建通过 /tmp/mv-hard120-build.txt。实体两端缩放上限、按钮与展开位置仍待回验，不扩称完整页面验收通过。
+
+## 2026-11-04 用户多平台修复清单
+
+实施范围与逐项修复日志：[FIX_LOG_2026-11-04.md](FIX_LOG_2026-11-04.md)。本轮按用户要求不执行此前灰屏排查。
+
+已通过：
+
+- 组件边界门禁：116 个源文件；`git diff --check` 无错误。
+- 共享单测 58/58；桌面单测 64 通过、4 跳过、0 失败。新增时钟抗回跳、字号连续、焦点裁切边界用例。
+- `test-desktop-components.sh`：按钮、菜单、滑块、选择与键盘规则。
+- `test-wall-version.sh` 完整通过：音乐墙大库、触控/键鼠、缩放与恢复、横竖屏、深浅主题、Mac 三分类编辑、搜索/导入、时间轴草稿、只读控件、Esc 和草稿保护。旧比例断言按现有 60–120% 显示映射同步，未放宽边界/容差。
+- `test-player-refinements.cjs`：iOS/Android 浏览器夹具的封面模式切换、简易多选、菜单高于侧栏、设置入口移除；Mac 分类、识别失败、歌手草稿与保存命令。它不是原生文件写入回读测试。
+- iOS 展开连续性定向测试：中间尺寸、反向打断、最终全屏与相机保持（Electron）。
+- 专用 iOS WKWebView 实际宿主测试通过：`.build/reports/ios/shared-ui/A1A82D8E-910C-4068-8FC1-1D8D5F21A010/20261104T074302Z-18576`；包含系统滚动渲染、双击命中、真实按钮/歌词保留、pinch 快照、遮罩/轮廓对齐、取消解锁及墙页面矩阵。
+- Mac 前端生产构建、iOS Debug 模拟器构建通过；Android 全量 Java 源码编译通过（android-37.0 平台包）。
+
+环境阻断：Android 体验版完整打包缺少 NDK 27.2.12479018，未产出本轮新 APK。旧 APK 不作为本轮交付。
+
+待实体设备验收：Mac 独立窗口连续拖动的帧耗时；iPhone/Android 的点卡片、搜索、侧栏开合与持续播放时温度/流畅度；横竖屏主体裁切算法的多封面目视效果。未对用户真实音乐库进行写入。本轮不宣称“全部按钮已完成真实文件级回读”“全平台无卡顿”或“热问题已解决”。
+
+回归中的失败均已保留在过程说明：旧遮罩探针仍检测已取消的伪元素、旧缩放断言混用显示比例/相机比例，已更新到实际节点与有效范围；发现的双指绘制捷径及未消费布局快照已修正并重跑 WK 测试通过。
+
+补充通过：iOS 专用模拟器系统触摸 `testUnifiedWallGesturesAndFocus`（XCUITest）执行成功，结果 `.build/reports/ios/wall-refinements-20261104.xcresult`；覆盖滑动、双击播放、双指缩放、缩放后继续拖动、定位、展开/收起、重启与旋转。该证据证明系统手势功能回归，仍不替代实体 iPhone 的温度和帧率。
+
+### 本日追加：超时反复提示、收藏按钮轮廓
+
+- 已修改：宿主活动时间超时、背景停止 snapshot、单在途/退避恢复、同一持续故障只提示一次；移动三样式收藏按钮常驻轮廓移除，保留实心爱心及按压/键盘焦点。
+- 共享测试61/61、静态边界117个源文件、iOS模拟器构建与实际WK墙矩阵通过。WK报告：`.build/reports/ios/shared-ui/A1A82D8E-910C-4068-8FC1-1D8D5F21A010/20261104T075331Z-27408`。
+- 模拟生命周期测试覆盖挂起恢复，但不等同用户设备持续运行数小时；截图只能确认共享超时提示来源，不证明所有长期前台故障均因后台暂停。Android完整包仍缺NDK，未替换用户安装包。
+
+追加定向UI验证通过：`test-player-refinements.cjs` 同时检查 iOS/Android 夹具中“已收藏时背景透明、无阴影、outline-style:none、爱心实心”，并使用真实鼠标按住验证按压背景出现。此测试覆盖CSS交互；尚不代替两端真机触摸长时间运行。

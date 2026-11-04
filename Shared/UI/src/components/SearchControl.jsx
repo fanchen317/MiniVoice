@@ -11,15 +11,14 @@ export default function SearchControl({open,onOpenChange,value,onValueChange,wal
   const actions=[...toolbar.children].filter(node=>node!==search&&node.matches('.mv-button,.mv-back'));
   const measure=()=>{
    const box=search.getBoundingClientRect();
-   for(const action of actions){const rect=action.getBoundingClientRect(),covered=open&&box.left<rect.right&&box.right>rect.left&&box.top<rect.bottom&&box.bottom>rect.top;
-    action.dataset.searchOccluded=String(covered);action.inert=covered;
-   }
+   const coverage=actions.map(action=>{const rect=action.getBoundingClientRect();return open&&box.left<rect.right&&box.right>rect.left&&box.top<rect.bottom&&box.bottom>rect.top;});
+   actions.forEach((action,index)=>{const covered=coverage[index];if(action.dataset.searchOccluded!==String(covered))action.dataset.searchOccluded=String(covered);if(action.inert!==covered)action.inert=covered;});
   };
   const observer=new ResizeObserver(measure);observer.observe(search);observer.observe(toolbar);actions.forEach(action=>observer.observe(action));measure();
   globalThis.addEventListener('minivoice-insets',measure);
   return()=>{observer.disconnect();globalThis.removeEventListener('minivoice-insets',measure);actions.forEach(action=>{delete action.dataset.searchOccluded;action.inert=false;});};
  },[open]);
- useLayoutEffect(()=>{if(open)input.current?.focus({preventScroll:true});else input.current?.blur();},[open]);
+ useEffect(()=>{if(!open){input.current?.blur();return;}const timer=setTimeout(()=>input.current?.focus({preventScroll:true}),260);return()=>clearTimeout(timer);},[open]);
  useEffect(()=>{if(!open||draft)return;const outside=event=>{if(!root.current?.contains(event.target))onOpenChange(false);};document.addEventListener('pointerdown',outside,true);return()=>document.removeEventListener('pointerdown',outside,true);},[open,draft,onOpenChange]);
  return <div ref={root} className="mv-search mv-search-control" data-mv-component="search-control" data-open={open}><span className="mv-search-leading" aria-hidden="true"><Icon name="search"/></span><input ref={input} aria-label="搜索音乐" placeholder="搜索歌曲、歌手或专辑" value={draft} onChange={event=>{const next=event.target.value;pending.current=next;setDraft(next);onValueChange(next);}} tabIndex={open?0:-1} disabled={!open} aria-hidden={!open} enterKeyHint="search" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();onOpenChange(false);}if(event.key==='Enter')event.currentTarget.blur();}}/><Button label={open?'收起搜索':'搜索音乐'} icon={open?'close':wall?'wallSearch':'search'} aria-expanded={open} onClick={()=>{if(open){pending.current="";setDraft("");onValueChange("");}onOpenChange(!open);}}/></div>;
 }

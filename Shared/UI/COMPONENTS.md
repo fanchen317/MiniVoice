@@ -461,3 +461,19 @@ iOS 系统滚动后的交互规则补充：双击在墙面捕获阶段按第一�
 2026-10-30 Mac体验墙面边缘交接：liquidGlass明确清除wall-poster外层遗留border，保留独立hover/press伪元素描边；focused非playing时明确退出hover白边/缩放，当前播放mint描边不改。内容定位和悬浮/按压比例不改。test-mac-wall-contour.cjs使用实际鼠标输入，断言hover白框及点击后15个聚焦重排中间采样无外层border/白边。移动样式不在本次改动范围。
 
 2026-10-31 移动120%硬上限统一：新增mobileWallZoom纯模型，内部.5–1对应展示60–120%，默认内部1/1.2。Wall全部手势、按钮zoomAt与历史初始化都使用该限制，重置相机使用同一默认值，避免旧clampZoom内部1.2与展示×1.2叠乘为144%。历史超过上限值读取时夹至1；有效历史比例继续恢复。两移动宿主keepControls=true，缩放不进入隐藏transport的compact分支，Android字号路径不改。
+
+## 2026-11-04 歌词、封面与编辑页契约修订
+
+- `playbackClock` 为纯模型：秒与单调时钟毫秒输入；普通采样误差以 10% 速度校正、超过 .8 秒立即跳转，暂停立即服从宿主；外部主动 seek 小于 .8 秒仍可能被当作校时，本轮未新增 seek token。最多外推 1.2 秒，宿主停止响应不无限扫描。
+- `ScrollingLyrics` 当前行由插值时钟决定，React 只在跨行时提交；尺寸、译文变化重新居中。小视口字号连续、28px 以下才使用单行。常规歌词展开/收起共用按宽度决定的字号。旧行退出必须调用 `clearLyricSweep` 同时失效缓存。
+- `ArtworkModeButton`：`data-mv-component` 继承 ActionButton，局部 boolean 控制最近 wall-poster/mv-wall-focused 的 data-artwork-mode；仅当前展开会话，无业务服务、持久化、播放变化；语义 aria-pressed 和切换标签，键鼠/触控经 ActionButton。缩略图静态模糊以透明度交接，减弱动态效果不做过渡。移动44px，桌面随 wall-button 尺寸。
+- `artworkFocus`：一次32px缩略采样，缓存上限128，像素读取失败居中；视觉对比度估计不是语义主体检测。全屏仍 cover；移动 object-position 与桌面 FLIP 锚点采用相同焦点比例。
+- iOS focus 回流内容固定目标布局后变换；pinch 使用开始时布局快照，终止提交宽高；普通异步滚动绘制捷径不消费 pinch。真实歌词/按钮不替换截图，遮罩属于同一 press-surface。
+- 移动搜索开合先完成260ms再聚焦输入，关闭清理定时器；覆盖测量批量读后写，只写变化属性。移动菜单高于侧栏，简易侧栏拥有选择与批量操作。
+- Mac 编辑页三个分类与共享 PanelFrame；时钟订阅仅在 EditorTiming，字段变更仍为草稿，保存失败保留草稿；未支持标签写入的控件保持禁用。布局、时钟与权限验证见 `Docs/FIX_LOG_2026-11-04.md`，性能仍需实体设备。
+
+### 2026-11-04 移动宿主生命周期补充
+
+`hostPolling.startSnapshotPolling` 由 PortablePlayer 持有；隐藏暂停、显示恢复、单在途，卸载清理监听和定时器。状态读取失败渐进退避，连续三次报告一次，成功发 recovered；业务写命令不走自动重试。通信超时以可响应前台时间计数，挂起后不让过期墙钟定时器先于队列回复误拒绝请求，前台真实无响应保持错误。最多32个在途请求；dispose拒绝遗留请求并清理监听。`host-lifecycle.test.mjs` 注入单调时钟、事件目标和定时器覆盖生命周期，无真实睡眠。
+
+移动收藏按钮的受控 saved/selected 只改变爱心填充和强调色；常驻圆底、边框、阴影为无，按压才显示圆底，focus-visible仍服务键盘导航。作用域为移动 mv-favorite 或含 heart 图标的 mv-button，不影响工具栏其他玻璃按钮。

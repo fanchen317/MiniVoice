@@ -20,6 +20,15 @@ struct SharedPlayerView: View {
                             immersive: { immersive = $0 }, export: { archive = $0; exporting = true })
             .ignoresSafeArea()
             .background(Color(red: 24/255, green: 39/255, blue: 32/255).ignoresSafeArea())
+            .task {
+                guard !ProcessInfo.processInfo.arguments.contains("--mv-ui-fixture") else { return }
+                let key = "notificationPermissionIntroduced"
+                guard !UserDefaults.standard.bool(forKey: key) else { return }
+                UserDefaults.standard.set(true, forKey: key)
+                do { _ = try await library.scanSession.requestNotifications() }
+                catch { library.errorMessage = "通知权限请求失败：\(error.localizedDescription)" }
+                if library.folders.isEmpty { choosingFolder = true }
+            }
             .statusBarHidden(immersive)
             .persistentSystemOverlays(immersive ? .hidden : .automatic)
             .fileExporter(isPresented: $exporting, document: DiagnosticsDocument(data: archive), contentType: .zip, defaultFilename: "MiniVoice-diagnostics.zip") { result in

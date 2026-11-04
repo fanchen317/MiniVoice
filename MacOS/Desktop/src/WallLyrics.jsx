@@ -1,3 +1,4 @@
+import {playbackTime} from '../../../Shared/UI/src/components/playbackClock.js';
 import ScrollingLyrics from '../../../Shared/UI/src/components/ScrollingLyrics.jsx';
 import ActionButton from '../../../Shared/UI/src/components/ActionButton.jsx';
 import {lyricRowOffsets} from './lyricRowLayout';
@@ -7,7 +8,7 @@ import { command, useClock, usePlayback } from './store';
 import { springEasing } from './motion';
 import { displayLine,kineticCharacters,kineticLayout,kineticInk,wallLyricsMetrics } from './kinetic';
 
-const interpolation=clock=>clock.time+(clock.playing?Math.min(.24,Math.max(0,(performance.now()-clock.sampledAt)/1000)):0);
+const interpolation=clock=>playbackTime(clock,performance.now());
 function useSize(ref){const [size,setSize]=useState({width:1,height:1});useEffect(()=>{const observer=new ResizeObserver(entries=>{const rect=entries[0].contentRect;setSize(previous=>previous.width===rect.width&&previous.height===rect.height?previous:{width:rect.width,height:rect.height});});observer.observe(ref.current);return()=>observer.disconnect();},[]);return size;}
 const activeAt=(lines,time)=>{let active=-1;for(let i=0;i<lines.length;i++)if(lines[i].time!==null&&lines[i].time<=time)active=i;return active;};
 export function WallLyrics({track,kinetic=false}){

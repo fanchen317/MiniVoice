@@ -1,3 +1,4 @@
+import ArtworkModeButton from './components/ArtworkModeButton.jsx';
 import KineticLyrics from './components/KineticLyrics.jsx';
 import ScrollingLyrics from './components/ScrollingLyrics.jsx';
 import ActionButton from './components/ActionButton.jsx';
@@ -18,9 +19,9 @@ export default function WallPlayer({song,card,current,playing,favorite,lines,fra
    <Button label={current?(playing?'暂停':'播放'):'播放这首歌曲'} icon={current&&playing?'pauseFilled':'play'} onClick={current?onToggle:onPlay} data-wall-transport="play"/>
    {!compact&&<Button label="上一首" icon="prev" disabled={!current} onClick={()=>onSkip(-1)}/>}
    {!compact&&<><Button label="下一首" icon="next" disabled={!current} onClick={()=>onSkip(1)}/><Button label={favorite?'取消收藏':'收藏歌曲'} icon="heart" selected={favorite} onClick={onFavorite}/></>}
-   {expanded&&current?<ActionButton className="mv-button wp-kinetic-toggle" aria-label={kinetic?'切换到滚动歌词':'切换到大字歌词'} aria-pressed={kinetic} onClick={onKinetic}><Icon name="lyricStyle"/></ActionButton>:<Button className="mv-button wp-expand-toggle" label={expanded?'收起播放器':'展开播放器'} icon={expanded?'collapse':'expand'} onClick={onExpand}/>}
+   {expanded&&!current&&<ArtworkModeButton/>}{expanded&&current?<ActionButton className="mv-button wp-kinetic-toggle" aria-label={kinetic?'切换到滚动歌词':'切换到大字歌词'} aria-pressed={kinetic} onClick={onKinetic}><Icon name="lyricStyle"/></ActionButton>:<Button className="mv-button wp-expand-toggle" label={expanded?'收起播放器':'展开播放器'} icon={expanded?'collapse':'expand'} onClick={onExpand}/>}
 
-   {expanded&&current&&<Button className="mv-button wp-collapse-toggle" label="收起播放器" icon="collapse" onClick={onExpand}/>}
+   {expanded&&current&&<ArtworkModeButton/>}{expanded&&current&&<Button className="mv-button wp-collapse-toggle" label="收起播放器" icon="collapse" onClick={onExpand}/>}
   </div>{!compact&&<div className="wp-seek"><span>{time(position)}</span><Slider label="播放进度" min={0} max={Math.max(1,song.duration||1)} step={100} value={position} resetKey={song.id} disabled={!current||!song.duration} valueText={value=>`${time(value)} / ${time(song.duration)}`} onCommit={onSeek}/><span>{time(song.duration)}</span></div>}</footer>
  </div>;
 }

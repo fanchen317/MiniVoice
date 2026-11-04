@@ -77,7 +77,7 @@ try {
    const layoutWidth=parseFloat(persistentContent.style.width),posterLayouts=new Map([...rootWall().querySelectorAll('.mv-wall-card')].map(node=>[node,node.style.width]));
    state=await wallProbe({operation:'motionZoom',scale});
    check(Math.abs(parseFloat(persistentContent.style.width)-layoutWidth)<.01&&[...posterLayouts].every(([node,width])=>!node.isConnected||node.style.width===width),'双指期间封面和歌词布局尺寸保持稳定，仅变换缩放 '+scale);
-   check(Math.abs(state.scale-scale)<.001&&state.contentAligned&&state.maskAligned&&state.contourAligned,'双指缩放同帧同步卡片内容、遮罩和轮廓 '+scale);
+   check(Math.abs(state.scale-Math.max(.5,Math.min(1,scale)))<.001&&state.contentAligned&&state.maskAligned&&state.contourAligned,'双指缩放同帧同步卡片内容、遮罩和轮廓 '+scale+' '+JSON.stringify(state));
    check(persistentContent.isConnected&&persistentControls.isConnected&&persistentLyrics.isConnected,'缩放不替换或截图歌词和按钮 '+scale);
    await wallProbe({operation:'endPan'});
  }
@@ -251,7 +251,7 @@ try {
  const reset=textButton('恢复 100%');
  if(reset&&!reset.disabled)await click(reset,'恢复比例');
  await click(button('放大'),'放大封面');
- check(Math.abs((await send({kind:'readState'})).pages['音乐库\n'].camera.scale-1.1)<0.01,'墙比例经共享相机持久化');
+ check(Math.abs((await send({kind:'readState'})).pages['音乐库\n'].camera.scale-110/120)<0.01,'墙比例经共享相机持久化');
  await click(button('关闭弹窗'),'关闭墙设置');
  await delay(500);
  const meter=button('展开播放条');
@@ -269,7 +269,7 @@ try {
    const verifyZoom=async label=>{
      for(const scale of [.6,1.2,.8,1]){
        const result=await wallProbe({operation:'zoom',scale});
-       check(Math.abs(result.scale-scale)<.001&&result.active&&result.mounted>0,label+' 比例往返 '+scale);
+       check(Math.abs(result.scale-Math.max(.5,Math.min(1,scale)))<.001&&result.active&&result.mounted>0,label+' 比例往返 '+scale);
        if(result.focused)check(result.maskAligned&&result.contourAligned,label+' 聚焦遮罩轮廓对齐 '+scale);
      }
    };
