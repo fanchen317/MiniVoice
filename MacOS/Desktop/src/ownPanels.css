@@ -252,3 +252,5 @@ html:has(.own-lyrics-unlock),body:has(.own-lyrics-unlock),#root:has(.own-lyrics-
 .own-artwork-editor .own-artwork-stage{border:0;background:transparent;box-shadow:none;border-radius:0}
 
 .album-artwork-picker{width:min(1000px,94vw)}.album-artwork-list{height:min(420px,48vh);min-height:180px;display:flex;flex-direction:column}.album-artwork-list>.track-list{flex:1;min-height:0}
+
+html[data-platform=windows] .own-desktop-lyrics[data-locked=false] header{-webkit-app-region:drag}html[data-platform=windows] .own-desktop-lyrics header button,html[data-platform=windows] .own-desktop-lyrics header button *{-webkit-app-region:no-drag}

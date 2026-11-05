@@ -271,3 +271,7 @@ html,body,#root{background:var(--mv-canvas-bg,#182720)}
 /* Mount effects can measure normally, but iOS must not paint a default empty
    library before the saved workspace and first catalog snapshot both arrive. */
 .mv-workspace[data-host=iOS][data-ready=false]{visibility:hidden}
+
+/* The foreground recedes; the actual wall still covers the full viewport. */
+.mv-wall-drawer-backdrop{position:absolute;inset:0;overflow:hidden;pointer-events:none;background:#0e1915;z-index:0}
+.mv-wall-drawer-backdrop img,.mv-wall-drawer-backdrop .mv-art-fallback{display:block;width:100%;height:100%;object-fit:cover}

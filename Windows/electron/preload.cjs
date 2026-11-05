@@ -11,7 +11,7 @@ contextBridge.exposeInMainWorld('miniVoiceWindows',{request:request=>ipcRenderer
 
 ipcRenderer.on('audio',(_,result)=>apply(result).catch(console.error));
 ipcRenderer.on('volume',(_,value)=>{audio.volume=value;});
-contextBridge.exposeInMainWorld('miniVoice',{dragArtwork:src=>ipcRenderer.send('editor:dragArtwork',src),command:(action,payload={})=>ipcRenderer.invoke('engine:command',{action,payload}),subscribe:callback=>{const listener=(_,event)=>callback(event);ipcRenderer.on('engine:event',listener);return()=>ipcRenderer.removeListener('engine:event',listener);}});
+contextBridge.exposeInMainWorld('miniVoice',{platform:'windows',dragArtwork:src=>ipcRenderer.send('editor:dragArtwork',src),command:(action,payload={})=>ipcRenderer.invoke('engine:command',{action,payload}),subscribe:callback=>{const listener=(_,event)=>callback(event);ipcRenderer.on('engine:event',listener);return()=>ipcRenderer.removeListener('engine:event',listener);}});
 
 const mediaCommand=(action,payload={})=>ipcRenderer.invoke('engine:command',{action,payload}).catch(console.error);
 if(!new URL(location.href).searchParams.has('surface')&&navigator.mediaSession){

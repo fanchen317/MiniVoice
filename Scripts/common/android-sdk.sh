@@ -85,3 +85,38 @@ minivoice_find_sdk() {
   printf '，并设置 ANDROID_HOME=/你的/Android/sdk。\n' >&2
   return 1
 }
+
+# SDK tools and the pinned NDK may be installed under different SDK roots.
+minivoice_ndk_valid() {
+  local ndk="$1" revision
+  [[ -f "$ndk/source.properties" ]] || return 1
+  revision="$(sed -n 's/^[[:space:]]*Pkg.Revision[[:space:]]*=[[:space:]]*//p' "$ndk/source.properties" | tr -d '\r' | sed 's/[[:space:]]*$//')"
+  [[ "$revision" == 27.2.12479018 ]] || return 1
+  local tool
+  for tool in clang clang++ llvm-strip; do
+    [[ -x "$ndk/toolchains/llvm/prebuilt/darwin-x86_64/bin/$tool" ]] || return 1
+  done
+}
+
+minivoice_find_ndk() {
+  local sdk="$1" candidate
+  # An explicit setting is authoritative; never silently replace a broken one.
+  if [[ -n "${ANDROID_NDK_HOME:-}" ]]; then
+    if minivoice_ndk_valid "$ANDROID_NDK_HOME"; then
+      printf '%s\n' "$ANDROID_NDK_HOME"; return 0
+    fi
+    printf '配置的 ANDROID_NDK_HOME 无效或版本不符：%s\n需要完整的 NDK 27.2.12479018，请检查 source.properties 与 LLVM 工具。\n' "$ANDROID_NDK_HOME" >&2
+    return 1
+  fi
+  for candidate in \
+    "$sdk/ndk/27.2.12479018" \
+    "$HOME/Library/Android/sdk/ndk/27.2.12479018" \
+    "$HOME/Android/Sdk/ndk/27.2.12479018" \
+    /opt/homebrew/share/android-commandlinetools/ndk/27.2.12479018 \
+    /usr/local/share/android-commandlinetools/ndk/27.2.12479018 \
+    "$repo_root/.build/android-sdk/ndk/27.2.12479018"; do
+    if minivoice_ndk_valid "$candidate"; then printf '%s\n' "$candidate"; return 0; fi
+  done
+  printf '未找到完整的 NDK 27.2.12479018（当前 SDK：%s）。\n请运行 sdkmanager --sdk_root="%s" "ndk;27.2.12479018"，或设置 ANDROID_NDK_HOME 指向已安装的该版本。\n' "$sdk" "$sdk" >&2
+  return 1
+}

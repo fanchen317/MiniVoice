@@ -119,3 +119,10 @@
 
 /* Wallpaper is independent of the app theme: wall system icons are white. */
 .mv-workspace[data-presentation=mobile].style-wall>.mv-statusbar-blur::before{background:linear-gradient(#11182770,transparent)}
+
+/* Wall drawers retain actual viewport posters when WebView backdrop sampling
+   crosses the recessed scene's compositing boundary. Other skins stay neutral. */
+.mv-workspace[data-presentation=mobile].style-wall .mv-drawer-material{background:transparent}
+.mv-workspace[data-presentation=mobile].style-wall .mv-drawer-sample{filter:blur(10px) saturate(1.15)}
+.mv-workspace[data-presentation=mobile].style-wall.theme-light .mv-drawer-tint{background:linear-gradient(140deg,#f8fffc38,#eaf3ee48)}
+.mv-workspace[data-presentation=mobile].style-wall.theme-dark .mv-drawer-tint{background:linear-gradient(140deg,#152d2540,#11231c55)}

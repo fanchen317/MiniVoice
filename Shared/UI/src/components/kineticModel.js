@@ -21,6 +21,8 @@ export function kineticLayout(characters,size,measure){
     });
     totalHeight=(row+1)*rowHeight;if(totalHeight<=height||attempt===23)break;fontSize*=.82;
   }
+  const rows=new Map();glyphs.forEach((point,i)=>{const key=point.y;if(!rows.has(key))rows.set(key,[]);rows.get(key).push(i);});
+  for(const indices of rows.values()){const last=indices.at(-1),edge=glyphs[last].x+Math.max(fontSize*.3,measure(characters[last].text,fontSize))/2;const shift=(size.width-16-edge)/2;indices.forEach(i=>glyphs[i].x+=Math.max(0,shift));}
   return {fontSize,glyphs:glyphs.map(point=>({...point,y:point.y+(size.height-totalHeight)/2}))};
 }
 const progress=(time,start,end)=>Math.min(1,Math.max(0,(time-start)/Math.max(.001,end-start)));
@@ -46,4 +48,28 @@ export function kineticInk(word,index,time,fontSize,characters=[word]){
 export function wallCardSizing(width,height){
   const scale=Math.min(1,Math.max(.65,Math.min(width/430,height/430)));
   return {title:Math.max(16,28*scale),artist:Math.max(10,14*scale),status:Math.max(9,11*scale),spacing:12*scale,padding:Math.max(12,22*scale)};
+}
+
+// A single phrase transform and a clipped ink pass: glyphs never spring independently.
+export function paintKineticPhrase(ctx,characters,layout,time,width,height){
+ if(!characters.length)return;
+ const start=characters[0].start,end=Math.max(start+.1,characters.at(-1).end??start+4);
+ const smooth=x=>{x=Math.max(0,Math.min(1,x));return x*x*(3-2*x);};
+ const entry=smooth((time-start)/.42),release=1-smooth((time-end)/.6);
+ // Accumulate nearby syllable onsets into one damped phrase envelope.
+ let energy=0;
+ for(const char of characters){const age=time-char.start;if(age>=0&&age<.8)energy+=Math.exp(-age*7)*Math.sin(Math.min(1,age/.12)*Math.PI/2);}
+ energy=Math.tanh(energy*.35)*release;
+ const scale=.985+.015*entry+.018*energy,y=(1-entry)*height*.035-energy*layout.fontSize*.045;
+ ctx.save();ctx.translate(width/2,height/2+y);ctx.scale(scale,scale);ctx.translate(-width/2,-height/2);
+ ctx.font=`700 ${layout.fontSize}px system-ui,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+ characters.forEach((char,i)=>{
+  const point=layout.glyphs[i],advance=ctx.measureText(char.text).width;
+  ctx.globalAlpha=.48+.12*entry;ctx.fillStyle='#fff';ctx.fillText(char.text,point.x,point.y);
+  const fill=progress(time,char.start,char.end??char.start+.3);
+  if(fill<=0)return;
+  ctx.save();ctx.beginPath();ctx.rect(point.x-advance/2-1,point.y-layout.fontSize, (advance+2)*fill,layout.fontSize*2);ctx.clip();
+  ctx.globalAlpha=1;ctx.fillStyle='#fff';ctx.fillText(char.text,point.x,point.y);ctx.restore();
+ });
+ ctx.restore();
 }

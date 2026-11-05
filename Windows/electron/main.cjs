@@ -7,7 +7,18 @@ const {collectionAction}=require('./collections.cjs');
 const pending=[];
 function coreRequest(request){return new Promise((resolve,reject)=>{if(!core)return reject(new Error('共享核心不可用'));pending.push({resolve,reject});core.stdin.write(JSON.stringify({...request,version:1})+'\n');});}
 function save(){const data=JSON.stringify(state);writes=writes.catch(()=>{}).then(async()=>{const target=path.join(app.getPath('userData'),'state.json');await fs.writeFile(target+'.tmp',data);await fs.rename(target+'.tmp',target);});return writes;}
-async function rescan(){if(scanning)throw Error('正在扫描');scanning=true;state.importing=true;try{const songs=await scan(state.folders,{recursive:state.recursive!==false,excluded:state.excluded||[],previous:state.songs,metadata:file=>require('./metadata.cjs').readMetadata(file,{cacheDir:path.join(app.getPath('cache'),'MiniVoice','Artwork')}),onProgress:progress=>{state.scanSummary=`已扫描 ${progress.count} 首`;}});state.songs=songs;const ids=new Set(songs.map(s=>s.id));state.queue=state.queue.filter(id=>ids.has(id));if(!ids.has(state.current)){state.current='';state.position=0;playing=false;}await save();}finally{scanning=false;state.importing=false;}}
+let scanController;
+async function rescan(){
+ if(scanning)throw Error('正在扫描');scanController=new AbortController();scanning=true;state.importing=true;state.scanCancellable=true;state.tasks={...state.tasks,hasUnread:false};
+ try{
+  const cacheDir=path.join(app.getPath('cache'),'MiniVoice','Artwork');
+  const songs=await scan(state.folders,{signal:scanController.signal,recursive:state.recursive!==false,excluded:state.excluded||[],previous:state.songs,reusable:async song=>{if(!song.artworkKey)return true;try{await fs.access(path.join(cacheDir,song.artworkKey));return true;}catch{return false;}},metadata:file=>require('./metadata.cjs').readMetadata(file,{cacheDir}),onProgress:progress=>{state.scanSummary=`已扫描 ${progress.count} 首`;}});
+  state.songs=songs;const ids=new Set(songs.map(song=>song.id));state.queue=state.queue.filter(id=>ids.has(id));if(!ids.has(state.current)){state.current='';state.position=0;playing=false;window?.webContents.send('audio',playback());}
+  state.scanSummary=`扫描完成 · ${songs.length} 首`;state.tasks.notice={title:'音乐库扫描完成',message:state.scanSummary};
+ }catch(error){const cancelled=scanController.signal.aborted;state.scanSummary=cancelled?'扫描已取消，保留上次完整音乐库':'扫描失败，保留上次完整音乐库';state.tasks.notice={title:cancelled?'扫描已取消':'扫描失败',message:cancelled?state.scanSummary:error.message};}
+ finally{scanning=false;scanController=null;state.importing=false;state.scanCancellable=false;state.tasks.hasUnread=true;await save();}
+}
+
 function playback(){return {value:true,audio:{id:state.current,position:state.position,playing}};}
 function select(id,ids){if(!state.songs.some(s=>s.id===id))throw Error('歌曲已不在授权音乐库内');if(ids){if(!Array.isArray(ids)||ids.some(id=>!state.songs.some(s=>s.id===id)))throw Error('无效队列');state.queue=[...new Set(ids)];}state.current=id;state.position=0;state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,200);}
 async function request(r){if(!r||r.version!==1||JSON.stringify(r).length>4*1024*1024)throw Error('无效协议');const p=r.payload||{};
@@ -28,7 +39,8 @@ async function request(r){if(!r||r.version!==1||JSON.stringify(r).length>4*1024*
  case 'chooseFolder':{const result=await dialog.showOpenDialog(window,{properties:['openDirectory']});if(!result.canceled){const folder=await fs.realpath(result.filePaths[0]);if(!state.folders.includes(folder))state.folders.push(folder);await rescan();}return true;}
  case 'removeFolder':state.folders=state.folders.filter(f=>f!==p.folder);await rescan();return playback();
  case 'recursive':state.recursive=Boolean(p.value);await rescan();return playback();
- case 'rescan':await rescan();return playback();
+ case 'rescan':if(scanning)throw Error('正在扫描');void rescan().catch(error=>{audioError=error.message;});return true;
+ case 'tasks':switch(p.operation){case 'cancelScan':scanController?.abort();return true;case 'read':state.tasks={...state.tasks,hasUnread:false};break;case 'clearNotice':case 'clearAll':state.tasks={...state.tasks,notice:null,hasUnread:false};if(!scanning)state.scanSummary='';break;default:throw Error('不支持的任务操作');}break;
  case 'clearRecent':state.recent=[];break;
  case 'mode':if(!Number.isInteger(p.value)||p.value<0||p.value>4)throw Error('无效模式');state.mode=p.value;break;
  case 'queueSelect':select(p.id);playing=true;await save();return playback();
@@ -56,7 +68,7 @@ app.whenReady().then(async()=>{
  ipcMain.handle('engine:command',async(e,{action,payload})=>{if(!BrowserWindow.getAllWindows().some(w=>w.webContents===e.sender)||e.senderFrame!==e.sender.mainFrame)throw Error('非法来源');return desktop.command(action,payload,e.sender);});
  ipcMain.handle('request',(e,r)=>{trusted(e);return request(r);});ipcMain.handle('clock',(e,value)=>{trusted(e);if(value.id===state.current&&Number.isFinite(value.position)){state.position=Math.max(0,value.position);playing=Boolean(value.playing);const song=state.songs.find(s=>s.id===value.id);if(song&&Number.isFinite(value.duration))song.duration=value.duration;desktop.emit('clock',{time:state.position/1000,duration:value.duration/1000,playing});return save();}});ipcMain.handle('audio-error',(e,message)=>{trusted(e);playing=false;audioError=String(message);});
  window.webContents.session.webRequest.onHeadersReceived((details,callback)=>callback({responseHeaders:{...details.responseHeaders,'Content-Security-Policy':["default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' minivoice-art: data: blob:; media-src mv-audio:; connect-src 'self'; object-src 'none'; base-uri 'none'"]}}));
- window.webContents.setWindowOpenHandler(()=>({action:'deny'}));window.webContents.on('will-navigate',e=>e.preventDefault());await window.loadFile(path.join(__dirname,'..','ui','index.html'));Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'MiniVoice',submenu:[{label:'设置',click:()=>desktop.command('openSettings').catch(console.error)},{label:'解锁桌面歌词',click:()=>desktop.command('desktopLyricsConfig',{locked:false}).catch(console.error)},{type:'separator'},{role:'quit'}]},{label:'编辑',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]}]));await desktop.publish(true);const timer=setInterval(()=>desktop.publish().catch(console.error),1000);window.on('closed',()=>clearInterval(timer));
+ window.webContents.setWindowOpenHandler(()=>({action:'deny'}));window.webContents.on('will-navigate',e=>e.preventDefault());await window.loadFile(path.join(__dirname,'..','ui','index.html'));Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'MiniVoice',submenu:[{label:'设置',click:()=>desktop.command('openSettings').catch(console.error)},{label:'解锁桌面歌词',click:()=>desktop.command('desktopLyricsConfig',{locked:false}).catch(console.error)},{type:'separator'},{role:'quit'}]},{label:'编辑',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]}]));await desktop.publish(true);await desktop.restore();const timer=setInterval(()=>desktop.publish().catch(console.error),1000);window.on('closed',()=>clearInterval(timer));
 });
-app.on('before-quit',()=>{quitting=true;});
+app.on('before-quit',()=>{quitting=true;app.minivoiceQuitting=true;});
 app.on('window-all-closed',()=>app.quit());app.on('will-quit',()=>core?.kill());

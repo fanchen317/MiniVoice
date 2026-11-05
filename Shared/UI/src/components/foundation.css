@@ -121,3 +121,6 @@
 .wall-surface.is-immersive .wall-poster::after,.mv-wall-focused.is-expanded .mv-wall-current-outline{display:none!important}
 @media(prefers-reduced-motion:reduce){.mv-artwork-blur{transition:none}}
 .reduce-motion .mv-artwork-blur{transition:none}
+/* Blur stays inside the artwork plane, below all text and controls. */
+.poster-artwork,.mv-wall-artwork-stack{isolation:isolate}
+.poster-artwork>.mv-artwork-blur,.mv-wall-artwork-stack>.mv-artwork-blur{z-index:2!important}

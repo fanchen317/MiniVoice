@@ -124,3 +124,6 @@
 .mv-workspace[data-presentation=mobile] .mv-search-control input{left:calc(var(--search-side) - 10px);width:calc(100% - var(--search-side) - 4px)}
 @media(prefers-reduced-motion:reduce){.mv-workspace[data-presentation=mobile] .mv-search-control{scale:1!important;translate:0 0!important}}
 .reduce-motion .mv-search-control{scale:1!important;translate:0 0!important}
+/* Preview cards have no T toggle: the artwork button starts the trailing group. */
+.mv-workspace[data-presentation=mobile] .wp-player.is-expanded.is-preview .wp-controls>.artwork-mode-toggle{margin-left:auto}
+.mv-workspace[data-presentation=mobile] .mv-kinetic-translation{font-size:clamp(17px,4.2vw,25px);line-height:1.55;opacity:.94;text-wrap:pretty;padding:0 18px;margin:0 0 14px;text-shadow:0 2px 10px #0009;flex-shrink:0}
