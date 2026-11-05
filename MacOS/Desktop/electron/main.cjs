@@ -1,3 +1,4 @@
+let sharedArtworkService;
 const { app, BrowserWindow, ipcMain, protocol, net, dialog, Menu, nativeImage, screen, clipboard } = require('electron');
 const { spawn } = require('node:child_process');
 const { createInterface } = require('node:readline');
@@ -6,14 +7,11 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { cachedArtworkFile } = require('./artwork-files.cjs');
 
-// The packaged channel controls identity before Chromium creates profiles/locks.
+// Set the stable production profile before Chromium creates locks.
 const {desktopIdentity} = require('./build-identity.cjs');
-let channel = 'release';
-if(app.isPackaged){try{channel=JSON.parse(fs.readFileSync(path.join(process.resourcesPath,'build-channel.json'),'utf8')).channel;}catch{}}
-const identity=desktopIdentity(channel,app.getPath('appData'));
+const identity=desktopIdentity(app.getPath('appData'));
 app.setName(identity.name);
 app.setPath('userData',identity.userData);
-if(identity.debug){app.setPath('sessionData',identity.userData);app.setAppLogsPath(path.join(app.getPath('home'),'Library','Logs',identity.name));}
 if (!app.requestSingleInstanceLock()) app.exit(0);
 app.on('second-instance', () => showMainWindow());
 
@@ -56,19 +54,30 @@ const pending = new Map(), latest = new Map();
 let engineRestarts = [], restartTimer;
 const panelWindows=require('./panel-windows.cjs').createPanelWindows({BrowserWindow,screen,index:path.resolve(__dirname,'../dist/index.html'),preload:path.join(__dirname,'preload.cjs'),parent:()=>window,events:()=>latest,isQuitting:()=>quitting});
 const artworkIO=require('./artwork-transfer.cjs').artworkTransfer({nativeImage,clipboard,resolveFile:src=>cachedArtworkFile(artworkRoot,src),directory:path.join(app.getPath('temp'),'MiniVoice-artwork-'+process.pid)});
-const actions = new Set(['prepareOriginalArtwork','artworkSearch','artworkDownload','desktopSettings','desktopPreference','desktopShortcut','lyricsModel','sharedCore','portableSnapshot','sorting','tasks','deleteTracks','addManyToPlaylist','removeManyFromPlaylist','openSettings','openEditor','interfaceStyle','orderedTracks','lyricsPresentation','favoriteMany','appearance','snapshot','play','select','toggle','pause','seek','skip','volume','mode','favorite','rescan','removeFolder','recursive','createPlaylist','renamePlaylist','deletePlaylist','addToPlaylist','removeFromPlaylist','clearRecent','detail','reveal','desktopLyrics','outputDevice','clearError','lyricsSearch','syncLyrics','saveMetadata','removeTrack']);
+const actions = new Set(['artworkSubjects','prepareOriginalArtwork','artworkSearch','artworkDownload','desktopSettings','desktopPreference','desktopShortcut','lyricsModel','sharedCore','portableSnapshot','sorting','tasks','deleteTracks','addManyToPlaylist','removeManyFromPlaylist','openSettings','openEditor','interfaceStyle','orderedTracks','lyricsPresentation','favoriteMany','appearance','snapshot','play','select','toggle','pause','seek','skip','volume','mode','favorite','rescan','removeFolder','recursive','createPlaylist','renamePlaylist','deletePlaylist','addToPlaylist','removeFromPlaylist','clearRecent','detail','reveal','desktopLyrics','outputDevice','clearError','lyricsSearch','syncLyrics','saveMetadata','syncAlbumArtwork','removeTrack']);
 const stateFile = () => path.join(app.getPath('userData'), 'window.json');
 const packagedEngine = () => path.join(process.resourcesPath, 'Native', 'MiniVoice.app', 'Contents', 'MacOS', 'MiniVoice');
 function request(action, payload = {}) {
   return new Promise((resolve, reject) => {
     if (!engine?.stdin.writable) return reject(new Error('播放后台未连接，请重新打开应用。'));
     const id = require('node:crypto').randomUUID();
-    const timeout = setTimeout(() => { pending.delete(id); reject(new Error('后台响应超时，请检查后台任务。')); }, ['artworkSearch','artworkDownload','lyricsSearch','saveMetadata'].includes(action) ? 180000 : 30000);
+    const timeout = setTimeout(() => { pending.delete(id); reject(new Error('后台响应超时，请检查后台任务。')); }, action==='syncAlbumArtwork'?1800000:['artworkSearch','artworkDownload','lyricsSearch','saveMetadata'].includes(action) ? 180000 : 30000);
     pending.set(id, { resolve, reject, timeout });
     engine.stdin.write(JSON.stringify({ id, action, payload }) + '\n');
   });
 }
+
+function sharedService(name){try{return require('./shared-services/'+name+'.cjs');}catch(error){if(error.code!=='MODULE_NOT_FOUND')throw error;return require('../../../Shared/DesktopServices/'+name+'.cjs');}}
+const automaticEnrichment=sharedService('automatic-enrichment').automaticEnrichment({
+ directory:app.getPath('userData'),command:(action,payload)=>request(action,payload),
+ nativeSearch:query=>request('artworkSearch',query),nativeDownload:query=>request('artworkDownload',query),
+ validateImage:data=>{const image=nativeImage.createFromDataURL(data),size=image.getSize();return !image.isEmpty()&&Math.min(size.width,size.height)>=600&&size.width*size.height<=40000000?size.width*size.height:0;},
+ onError:message=>{logEngine('自动补齐：'+message);emit('engineError','自动补齐：'+message);}
+});
+
 function emit(event, data) {
+  if(event==='state')void automaticEnrichment.observe(data);
+  if(event==='clock'&&latest.get('state'))void automaticEnrichment.observe(latest.get('state'));
   if(event==='uiSurface'&&['settings','editor'].includes(data?.type)){panelWindows.open(data);return;}
   if(event==='uiSurface')showMainWindow();
   if(event==='hostSurface'&&data?.type==='desktopLyrics'){toggleOwnLyrics();return;}
@@ -131,7 +140,7 @@ function createWindow() {
     // visual-effect surface needlessly recomposites the whole window on resize.
     backgroundColor: '#111615',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false } });
-  window.webContents.on('page-title-updated',event=>{if(identity.debug){event.preventDefault();window.setTitle(identity.name);}});
+  window.webContents.on('page-title-updated',event=>{event.preventDefault();window.setTitle(identity.name);});
   const index = path.resolve(__dirname, '../dist/index.html');
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event, url) => { if (url !== pathToFileURL(index).href) event.preventDefault(); });
@@ -194,6 +203,15 @@ app.whenReady().then(() => {
     if (action === 'portableExit') { await window.loadFile(path.resolve(__dirname, '../dist/index.html')); return true; }
     if (action === 'quit') { app.quit(); return true; }
     if (!actions.has(action) || !require('./command-payload.cjs').validCommandPayload(action,payload)) throw new Error('无效的后台命令');
+    if(action==='artworkSearch'||action==='artworkDownload'){
+      if(!sharedArtworkService){let service;try{service=require('./shared-services/online-artwork.cjs');}catch(error){if(error.code!=='MODULE_NOT_FOUND')throw error;service=require('../../../Shared/DesktopServices/online-artwork.cjs');}sharedArtworkService=service.artworkService({nativeSearch:query=>request('artworkSearch',query),nativeDownload:query=>request('artworkDownload',query)});}
+      return action==='artworkSearch'?sharedArtworkService.search(payload):sharedArtworkService.download(payload);
+    }
+    if(action==='lyricsSearch'){
+      let service;try{service=require('./shared-services/online-lyrics.cjs');}catch(error){if(error.code!=='MODULE_NOT_FOUND')throw error;service=require('../../../Shared/DesktopServices/online-lyrics.cjs');}
+      const song=await request('detail',{id:payload.id});
+      return service.searchLyrics({title:payload.title||song.title,artist:payload.artist||song.artist,duration:song.duration},{additional:[()=>request(action,payload)]});
+    }
     return request(action, payload);
   });
   ipcMain.on('editor:dragArtwork',(event,src)=>{if(!panelWindows.owns(event.sender)||event.senderFrame!==event.sender.mainFrame)return;try{artworkIO.drag(event.sender,src);}catch(error){event.sender.send('engine:event',{event:'error',data:error.message});}});

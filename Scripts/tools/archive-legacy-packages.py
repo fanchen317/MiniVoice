@@ -4,7 +4,7 @@ from pathlib import Path
 from datetime import datetime
 import shutil
 root=Path(__file__).resolve().parent.parent.parent/'.build'
-canonical={'MiniVoice-android.apk','MiniVoice-android-experience.apk','MiniVoice-mac.dmg','MiniVoice-mac-experience.dmg','MiniVoice-ios.ipa'}
+canonical={'MiniVoice-android.apk','MiniVoice-mac.dmg','MiniVoice-ios.ipa'}
 archive=root/'archive'/'installers'/datetime.now().strftime('%Y%m%d-%H%M%S-%f')
 for directory in (root/'work/android',root/'dist'):
     if not directory.exists(): continue

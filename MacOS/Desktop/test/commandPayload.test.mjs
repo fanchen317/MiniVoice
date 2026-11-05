@@ -8,3 +8,8 @@ test('image metadata can cross the ordinary command limit without widening other
  assert.equal(limits.validCommandPayload('saveMetadata',{artwork:'A'.repeat(33*1024*1024)}),false);
  for(const value of [null,[],true,'image'])assert.equal(limits.validCommandPayload('saveMetadata',value),false);
 });
+
+test('album artwork sync accepts the same image boundary as metadata writes',()=>{
+ assert.equal(limits.validCommandPayload('syncAlbumArtwork',{id:'source',ids:['target'],artwork:'A'.repeat(5*1024*1024)}),true);
+ assert.equal(limits.validCommandPayload('syncAlbumArtwork',{artwork:'A'.repeat(33*1024*1024)}),false);
+});

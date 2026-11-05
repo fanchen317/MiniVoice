@@ -19,10 +19,10 @@ if '-exportPath' in sys.argv:
             options=root/'Export Options.plist';options.write_bytes(plistlib.dumps({'method':'development'}))
             env={k:v for k,v in os.environ.items() if not k.startswith('MINIVOICE_IOS_')}
             env.update(PATH=str(binary)+':'+env['PATH'],CALLS=str(root/'calls'))
-            failed=subprocess.run(['bash',str(scripts/'package-ios.sh'),'experience'],env=env,capture_output=True)
+            failed=subprocess.run(['bash',str(scripts/'package-ios.sh'),'release'],env=env,capture_output=True)
             self.assertNotEqual(failed.returncode,0);self.assertFalse((root/'calls').exists())
-            env.update(MINIVOICE_IOS_TEAM='TEAM',MINIVOICE_IOS_EXPORT_OPTIONS=str(options),MINIVOICE_IOS_EXPERIENCE_TEAM='EXPTEAM')
-            for channel,suffix,bundle,team in [('release','','com.xcosmos.MiniVoice.ios','TEAM'),('experience','-experience','com.xcosmos.MiniVoice.ios.experience','EXPTEAM')]:
+            env.update(MINIVOICE_IOS_TEAM='TEAM',MINIVOICE_IOS_EXPORT_OPTIONS=str(options))
+            for channel,suffix,bundle,team in [('release','','com.xcosmos.MiniVoice.ios','TEAM')]:
                 result=subprocess.run(['bash',str(scripts/'package-ios.sh'),channel],env=env,capture_output=True,text=True)
                 self.assertEqual(result.returncode,0,result.stderr)
                 self.assertTrue((root/f'.build/dist/MiniVoice-ios{suffix}.ipa').is_file())

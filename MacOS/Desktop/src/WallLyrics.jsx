@@ -27,7 +27,7 @@ function KineticLyrics({track,size,showTranslation}){
     const layout=kineticLayout(characters,{width,height},(text,fontSize)=>{context.font=`700 ${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;return context.measureText(text).width;});
     let frame=0,last=-Infinity;
     function draw(now){if(now-last>=1000/30||!clockRef.current.playing){last=now;context.clearRect(0,0,width,height);const time=interpolation(clockRef.current);context.font=`700 ${layout.fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;context.textAlign='center';context.textBaseline='middle';
-      characters.forEach((word,i)=>{const ink=kineticInk(word,i,time,layout.fontSize),point=layout.glyphs[i];context.save();context.globalAlpha=ink.opacity;context.translate(point.x,point.y+ink.y);context.rotate(ink.rotation);context.scale(ink.scale,ink.scale);context.fillStyle=ink.color;context.shadowColor=`rgba(0,255,255,${ink.shadow})`;context.shadowBlur=ink.shadowRadius;context.fillText(word.text,0,0);context.restore();});
+      characters.forEach((word,i)=>{const ink=kineticInk(word,i,time,layout.fontSize,characters),point=layout.glyphs[i];context.save();context.globalAlpha=ink.opacity;context.translate(point.x,point.y+ink.y);context.rotate(ink.rotation);context.scale(ink.scale,ink.scale);context.fillStyle=ink.color;context.shadowColor=`rgba(0,255,255,${ink.shadow})`;context.shadowBlur=ink.shadowRadius;context.fillText(word.text,0,0);context.restore();});
     }if(clockRef.current.playing)frame=requestAnimationFrame(draw);}
     draw(performance.now());return()=>cancelAnimationFrame(frame);
   },[characters,size.width,height,clock.playing,clock.playing?null:clock.time,waiting,reduced]);

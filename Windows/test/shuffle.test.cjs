@@ -1,0 +1,2 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),{shuffleNext}=require('../electron/shuffle.cjs');
+test('shuffle visits a full round without repeats and previous/next traverse history',()=>{const s={current:'a'},ids=['a','b','c','d'],round=['a'];for(let i=0;i<3;i++){s.current=shuffleNext(s,ids,1,()=>0);round.push(s.current);}assert.equal(new Set(round).size,4);s.current=shuffleNext(s,ids,-1);assert.equal(s.current,round[2]);s.current=shuffleNext(s,ids,1);assert.equal(s.current,round[3]);});

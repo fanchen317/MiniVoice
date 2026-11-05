@@ -37,8 +37,7 @@ fi
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
 OUTPUT_DIR="$ROOT/.build/dist"
 APP_NAME="$(basename "$APP_PATH" .app)"
-OUTPUT="$OUTPUT_DIR/MiniVoice-mac.dmg"
-if [[ "${MINIVOICE_BUILD_CHANNEL:-release}" == debug ]]; then OUTPUT="$OUTPUT_DIR/MiniVoice-mac-experience.dmg"; fi
+OUTPUT="$OUTPUT_DIR/MiniVoice-${VERSION}-mac.dmg"
 if [[ "$REUSE_LAYOUT" == true ]]; then
   LAYOUT_SOURCE="${LAYOUT_SOURCE:-$OUTPUT}"
   if [[ ! -f "$LAYOUT_SOURCE" ]]; then

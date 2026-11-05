@@ -9,3 +9,8 @@ if(ANDROID)
     target_sources(minivoice_core PRIVATE Adapters/android_jni.cpp)
     target_link_options(minivoice_core PRIVATE "-Wl,-z,max-page-size=16384")
 endif()
+
+# Desktop JSON-lines host uses the same core as mobile and Mac.
+add_executable(minivoice-core Tests/cli.cpp Sources/MiniVoiceCore/core.cpp Sources/MiniVoiceCore/vendor/utf8proc.c)
+target_include_directories(minivoice-core PRIVATE Sources/MiniVoiceCore)
+target_compile_definitions(minivoice-core PRIVATE UTF8PROC_STATIC)

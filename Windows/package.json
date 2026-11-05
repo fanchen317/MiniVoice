@@ -1,0 +1,19 @@
+{
+  "name": "minivoice-windows",
+  "version": "3.0.0",
+  "private": true,
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "package": "electron-packager . MiniVoice --platform=win32 --arch=x64 --out=../.build/dist --asar --asar.unpack=resources/** --overwrite"
+  },
+  "devDependencies": {
+    "@electron/packager": "19.0.3",
+    "electron": "44.8.0"
+  },
+  "dependencies": {
+    "music-metadata": "12.0.0",
+    "node-id3": "0.2.9"
+  }
+}

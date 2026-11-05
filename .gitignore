@@ -27,3 +27,6 @@ Android/signing/*
 node_modules/
 .vite/
 .vite-temp/
+
+# Generated shared desktop service bundle
+MacOS/Desktop/electron/shared-services/

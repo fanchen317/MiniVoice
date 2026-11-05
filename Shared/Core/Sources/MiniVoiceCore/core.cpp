@@ -39,6 +39,34 @@ Anchor restoreAnchor(const std::vector<std::string> &items,const std::string &id
 bool canSnapshot(const std::vector<std::string> &rendered,const std::vector<std::string> &current,int first,int last){return first>=0&&last>=first&&last<int(current.size())&&rendered==current;}
 std::vector<Line> parseLyrics(const std::string &raw){
     if(raw.size()>1024*1024)throw std::invalid_argument("Lyrics exceed 1 MiB");
+    // Remove all envelopes before recursive parsing, preventing nested payloads.
+    static const std::regex translationTag(R"(\[translation:([A-Za-z0-9+/=]+)\])");
+    std::smatch translationMatch;
+    if(std::regex_search(raw,translationMatch,translationTag)){
+        auto original=parseLyrics(std::regex_replace(raw,translationTag,""));
+        const std::string alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        std::string decoded;unsigned buffer=0;int bits=0;bool padded=false,valid=true;
+        for(char c:translationMatch[1].str()){
+            if(c=='='){padded=true;continue;}
+            auto value=alphabet.find(c);if(padded||value==std::string::npos){valid=false;break;}
+            buffer=(buffer<<6)|unsigned(value);bits+=6;
+            if(bits>=8){bits-=8;decoded.push_back(char((buffer>>bits)&255));}
+        }
+        if(valid&&!decoded.empty()){
+            auto translated=parseLyrics(std::regex_replace(decoded,translationTag,""));
+            bool timed=std::any_of(original.begin(),original.end(),[](const Line &line){return line.ms>=0;});
+            for(size_t n=0;n<translated.size();n++){
+                const auto &row=translated[n];size_t best=original.size();int64_t distance=751;
+                if(!timed&&translated.size()==original.size())best=n;
+                else if(row.ms>=0)for(size_t i=0;i<original.size();i++)if(original[i].ms>=0){auto delta=std::abs(original[i].ms-row.ms);if(delta<distance){distance=delta;best=i;}}
+                if(best<original.size()&&!row.text.empty()){
+                    auto &text=original[best].translation;
+                    if(text!=row.text)text+=(text.empty()?"":"\n")+row.text;
+                }
+            }
+        }
+        return original;
+    }
     static const std::regex stamps(R"(\[([0-9]{1,3}):([0-9]{2})(?:[.:]([0-9]{1,3}))?\])");
     static const std::regex markers(R"(<([0-9]{1,3}):([0-9]{2})(?:[.:]([0-9]{1,3}))?>)");
     static const std::regex yrc(R"(^\[([0-9]{1,10}),([0-9]{1,10})\](.*)$)");

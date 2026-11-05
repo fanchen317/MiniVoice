@@ -1,0 +1,4 @@
+node_modules/
+ui/
+resources/
+electron/shared-services/

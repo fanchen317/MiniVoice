@@ -24,10 +24,24 @@ export function kineticLayout(characters,size,measure){
   return {fontSize,glyphs:glyphs.map(point=>({...point,y:point.y+(size.height-totalHeight)/2}))};
 }
 const progress=(time,start,end)=>Math.min(1,Math.max(0,(time-start)/Math.max(.001,end-start)));
-export function kineticInk(word,index,time,fontSize){
-  const entrance=progress(time,word.start,word.start+.34),p=progress(time,word.start,Math.max(word.start+.24,word.end??word.start+.5));
-  const pulse=time>=word.start?Math.max(0,Math.sin(p*Math.PI)):0,bounce=Math.sin(entrance*Math.PI)*(1-entrance)*fontSize*.19;
-  return {opacity:time < word.start ? .26 : .82+.18*entrance,y:(1-entrance)*fontSize*.12-bounce-pulse*fontSize*.08,rotation:Math.sin(index*1.7)*3*Math.sin(entrance*Math.PI)*Math.PI/180,scale:.94+.06*entrance+.12*pulse,color:`rgb(${(1-.45*pulse)*255},${(1-.12*pulse)*255},255)`,shadow:pulse*.6,shadowRadius:10*pulse};
+// One phrase envelope keeps the baseline coherent; timing controls cadence, never
+// a separate entrance spring for each glyph. Pure playback-time sampling is seekable.
+export function kineticInk(word,index,time,fontSize,characters=[word]){
+  const first=characters[0],last=characters[characters.length-1];
+  const start=first.start,end=Math.max(start+.25,last.end??last.start+.5);
+  const span=end-start,local=time-start;
+  const envelope=Math.sin(progress(time,start,end)*Math.PI);
+  const cadence=Math.min(2.2,Math.max(.55,characters.length/span/3));
+  const phase=local*cadence*Math.PI*2;
+  const center=(word.start+(word.end??word.start+.3))/2;
+  const focus=Math.exp(-Math.pow((time-center)/.42,2))*envelope;
+  const wave=Math.sin(phase-index*.10)*envelope;
+  const sung=progress(time,word.start,word.start+.22);
+  return {opacity:time<word.start?.46:.82+.18*sung,
+    y:-fontSize*(.025*Math.sin(phase)*envelope+.012*wave+.014*focus),
+    rotation:0,scale:1+.016*envelope*Math.sin(phase)+.018*focus,
+    color:`rgb(${Math.round(255-42*focus)},${Math.round(255-12*focus)},255)`,
+    shadow:focus*.28,shadowRadius:6*focus};
 }
 export function wallCardSizing(width,height){
   const scale=Math.min(1,Math.max(.65,Math.min(width/430,height/430)));

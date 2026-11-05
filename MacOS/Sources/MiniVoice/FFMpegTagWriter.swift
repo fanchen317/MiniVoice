@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import CryptoKit
 
 enum TagWriteError: LocalizedError {
     case missingFFmpeg
@@ -13,6 +14,14 @@ enum TagWriteError: LocalizedError {
         case .failed(let message): return message
         }
     }
+}
+
+private func tagFileDigest(_ url: URL) throws -> SHA256.Digest {
+ let handle = try FileHandle(forReadingFrom: url)
+ defer { try? handle.close() }
+ var hash = SHA256()
+ while let bytes = try handle.read(upToCount: 1024 * 1024), !bytes.isEmpty { hash.update(data: bytes) }
+ return hash.finalize()
 }
 
 enum MediaTools {
@@ -67,6 +76,7 @@ enum FFMpegTagWriter {
         }
         let directory = track.url.deletingLastPathComponent()
         let output = directory.appendingPathComponent(".minivoice-\(UUID().uuidString).\(ext)")
+        let originalDigest = try tagFileDigest(track.url)
         let cover = directory.appendingPathComponent(".minivoice-cover-\(UUID().uuidString).png")
         defer { try? FileManager.default.removeItem(at: output); try? FileManager.default.removeItem(at: cover) }
         var args = ["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", track.url.path]
@@ -85,11 +95,28 @@ enum FFMpegTagWriter {
         args += ["-metadata", "title=\(track.title)", "-metadata", "artist=\(track.artist)",
                  "-metadata", "album=\(track.album)", "-metadata", "lyrics=\(track.lyrics)", output.path]
         _ = try MediaTools.run("ffmpeg", args)
+        let checkData = try MediaTools.run("ffprobe", ["-v", "error", "-show_format", "-of", "json", output.path])
+        guard let check = try JSONSerialization.jsonObject(with: checkData) as? [String: Any],
+              let format = check["format"] as? [String: Any] else { throw TagWriteError.failed("标签回读失败，原文件未更改") }
+        let tags = (format["tags"] as? [String: String] ?? [:]).reduce(into: [String: String]()) { $0[$1.key.lowercased()] = $1.value }
+        guard (tags["title"] ?? "") == track.title, (tags["artist"] ?? "") == track.artist,
+              (tags["album"] ?? "") == track.album, (tags["lyrics"] ?? tags["unsyncedlyrics"] ?? "") == track.lyrics else {
+            throw TagWriteError.failed("标签内容校验失败，原文件未更改")
+        }
+        let audioHashArgs = ["-v", "error", "-i"]
+        let originalAudio = try MediaTools.run("ffmpeg", audioHashArgs + [track.url.path, "-map", "0:a", "-c", "copy", "-f", "hash", "-hash", "sha256", "-"])
+        let outputAudio = try MediaTools.run("ffmpeg", audioHashArgs + [output.path, "-map", "0:a", "-c", "copy", "-f", "hash", "-hash", "sha256", "-"])
+        guard originalAudio == outputAudio, try tagFileDigest(track.url) == originalDigest else {
+            throw TagWriteError.failed("音频或原文件校验失败，原文件未更改")
+        }
         // Keep recoverable originals together and out of the music library scan.
         let backupDirectory = directory.appendingPathComponent("backup", isDirectory: true)
         try FileManager.default.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
         let backup = backupDirectory.appendingPathComponent("\(track.url.lastPathComponent).minivoice-backup-\(UUID().uuidString)")
         try FileManager.default.copyItem(at: track.url, to: backup)
+        guard try tagFileDigest(backup) == originalDigest, try tagFileDigest(track.url) == originalDigest else {
+            throw TagWriteError.failed("备份或原文件校验失败，原文件未更改")
+        }
         _ = try FileManager.default.replaceItemAt(track.url, withItemAt: output)
     }
 }

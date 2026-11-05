@@ -142,8 +142,32 @@ function Lyrics({lines,frame,seek,hasTranslation,showTranslation,onTranslation,p
  const resumeTimer=useRef(null),swept=useRef(null),[resumeTick,setResumeTick]=useState(0);
  const ref=useRef(null),manualUntil=useRef(0),scrollFrame=useRef(0),clock=useRef(null),[contentHeight,setContentHeight]=useState(0),normalized=useMemo(()=>normalizeLyrics(lines),[lines]),display=useMemo(()=>normalized.map((line,index)=>displayLine(line,normalized.slice(index+1).find(next=>next.time>line.time)?.time,duration/1000)),[normalized,duration]);
  clock.current=samplePlaybackClock(clock.current,position/1000,playing,performance.now());
- useEffect(()=>{const view=ref.current,measure=()=>{const metrics=regularLyricMetrics(view.clientWidth,view.clientHeight,expanded,hasTranslation&&showTranslation);view.style.setProperty('--mv-regular-font',`${metrics.font}px`);view.style.setProperty('--mv-regular-row',`${metrics.row}px`);view.style.setProperty('--mv-lyric-padding',`${view.clientHeight/2}px`);setContentHeight(view.scrollHeight);if(performance.now()>=manualUntil.current){const current=view.querySelector('[data-active=true]');if(current)view.scrollTop+=current.getBoundingClientRect().top-view.getBoundingClientRect().top-view.clientHeight/2+current.clientHeight/2;}};const observer=new ResizeObserver(measure);observer.observe(view);measure();return()=>observer.disconnect();},[display,expanded,hasTranslation,showTranslation]);
- useEffect(()=>{let resume;const center=()=>{if(performance.now()<manualUntil.current){resume=setTimeout(center,manualUntil.current-performance.now()+16);return;}const view=ref.current,target=view?.querySelector('[data-active=true]');if(!target)return;cancelAnimationFrame(scrollFrame.current);const from=view.scrollTop,to=from+target.getBoundingClientRect().top-view.getBoundingClientRect().top-view.clientHeight/2+target.clientHeight/2,began=performance.now();const tick=now=>{const reduced=document.documentElement.classList.contains('reduce-motion')||matchMedia('(prefers-reduced-motion:reduce)').matches,p=reduced?1:Math.min(1,(now-began)/400),eased=p<.5?2*p*p:1-(-2*p+2)**2/2;view.scrollTop=from+(to-from)*eased;if(p<1)scrollFrame.current=requestAnimationFrame(tick);};scrollFrame.current=requestAnimationFrame(tick);};center();return()=>{clearTimeout(resume);cancelAnimationFrame(scrollFrame.current);};},[frame.index,display,resumeTick]);
+ useEffect(()=>{
+  const view=ref.current;let pending=0,disposed=false;
+  const center=()=>{
+   if(disposed)return;
+   // Geometry changes invalidate the destination of any in-flight scroll.
+   cancelAnimationFrame(scrollFrame.current);
+   setContentHeight(view.scrollHeight);
+   if(performance.now()<manualUntil.current)return;
+   const current=view.querySelector('[data-active=true]');
+   if(current)view.scrollTop+=current.getBoundingClientRect().top-view.getBoundingClientRect().top-view.clientHeight/2+current.getBoundingClientRect().height/2;
+  };
+  const measure=()=>{
+   const metrics=regularLyricMetrics(view.clientWidth,view.clientHeight,expanded,hasTranslation&&showTranslation);
+   view.style.setProperty('--mv-regular-font',`${metrics.font}px`);
+   view.style.setProperty('--mv-regular-row',`${metrics.row}px`);
+   view.style.setProperty('--mv-lyric-padding',`${view.clientHeight/2}px`);
+   cancelAnimationFrame(pending);pending=requestAnimationFrame(center);
+  };
+  const observer=new ResizeObserver(measure);observer.observe(view);
+  // Wrapping, translation and font loading can change row heights without
+  // resizing the viewport. Recenter after those layouts settle as well.
+  view.querySelectorAll('[data-active]').forEach(row=>observer.observe(row));
+  document.fonts?.ready.then(()=>{if(!disposed)measure();});measure();
+  return()=>{disposed=true;observer.disconnect();cancelAnimationFrame(pending);};
+ },[display,expanded,hasTranslation,showTranslation]);
+ useEffect(()=>{let resume;const center=()=>{if(performance.now()<manualUntil.current){resume=setTimeout(center,manualUntil.current-performance.now()+16);return;}const view=ref.current,target=view?.querySelector('[data-active=true]');if(!target)return;cancelAnimationFrame(scrollFrame.current);const from=view.scrollTop,to=from+target.getBoundingClientRect().top-view.getBoundingClientRect().top-view.clientHeight/2+target.clientHeight/2,began=performance.now();const tick=now=>{const reduced=document.documentElement.classList.contains('reduce-motion')||matchMedia('(prefers-reduced-motion:reduce)').matches,p=reduced?1:Math.min(1,(now-began)/400),eased=p<.5?2*p*p:1-(-2*p+2)**2/2;view.scrollTop=from+(to-from)*eased;if(p<1)scrollFrame.current=requestAnimationFrame(tick);};scrollFrame.current=requestAnimationFrame(tick);};center();return()=>{clearTimeout(resume);cancelAnimationFrame(scrollFrame.current);};},[frame.index,display,resumeTick,expanded,hasTranslation,showTranslation]);
  useEffect(()=>{let animation;const paint=()=>{const sample=clock.current,reduced=document.documentElement.classList.contains('reduce-motion')||matchMedia('(prefers-reduced-motion:reduce)').matches,time=playbackTime(sample,performance.now());const surface=ref.current?.querySelector('[data-active=true]>.lyric-content');if(swept.current&&swept.current!==surface)clearLyricSweep(swept.current);swept.current=surface;paintLyricSweep(surface,time,{reduced});if(sample.playing&&!reduced)animation=requestAnimationFrame(paint);};paint();return()=>cancelAnimationFrame(animation);},[display,frame.index,playing,playing?null:position]);
  useEffect(()=>()=>clearTimeout(resumeTimer.current),[]);
  const manual=()=>{manualUntil.current=performance.now()+2000;cancelAnimationFrame(scrollFrame.current);clearTimeout(resumeTimer.current);resumeTimer.current=setTimeout(()=>setResumeTick(value=>value+1),2016);};

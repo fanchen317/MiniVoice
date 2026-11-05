@@ -1,0 +1,39 @@
+$ErrorActionPreference = 'Stop'
+function Run([scriptblock]$Command) { & $Command; if ($LASTEXITCODE -ne 0) { throw "构建失败：$Command" } }
+$Repo = Split-Path $PSScriptRoot
+Push-Location $Repo
+try {
+ Write-Host 'MiniVoice · Windows 构建' -ForegroundColor Cyan
+ Run { node Scripts/checks/check-ui-standards.mjs }
+ $Version = Get-Content Shared/version.json -Raw | ConvertFrom-Json
+ $Package = Get-Content Windows/package.json -Raw | ConvertFrom-Json
+ if ($Version.version -ne $Package.version) { throw 'Windows 版本与 Shared/version.json 不一致' }
+ Run { npm --prefix Shared/UI ci }
+ Run { node Shared/UI/node_modules/vite/bin/vite.js build --config Windows/vite.config.mjs }
+ Run { node Scripts/build/package-shared-notices.mjs Windows/ui Shared/UI }
+ Run { cmake -S Shared/Core -B .build/cache/windows-core }
+ Run { cmake --build .build/cache/windows-core --config Release --target minivoice-core }
+ New-Item -ItemType Directory -Force Windows/resources | Out-Null
+ Copy-Item .build/cache/windows-core/Release/minivoice-core.exe Windows/resources/ -Force
+ New-Item -ItemType Directory -Force Windows/electron/shared-services | Out-Null
+ Copy-Item Shared/DesktopServices/*.cjs Windows/electron/shared-services/ -Force
+ Run { npm --prefix Windows ci }
+ Run { npm --prefix Windows test }
+ Write-Host "── Windows 应用打包 · $($Version.version) ──" -ForegroundColor Cyan
+ Run { npm --prefix Windows run package -- --app-version=$($Version.version) --build-version=$($Version.build) }
+ $Compiler = Get-Command makensis.exe -ErrorAction SilentlyContinue
+ if (-not $Compiler) { throw '缺少 NSIS 3：安装后将 makensis.exe 加入 PATH，再执行构建以生成安装包。' }
+ $AppDir = Join-Path $Repo '.build/dist/MiniVoice-win32-x64'
+ $Installer = Join-Path $Repo ".build/dist/MiniVoice-$($Version.version)-windows-x64-setup.exe"
+ $UninstallFiles = Join-Path $Repo '.build/work/windows-uninstall.nsh'
+ New-Item -ItemType Directory -Force (Split-Path $UninstallFiles) | Out-Null
+ Run { node Windows/generate-uninstall.mjs $AppDir $UninstallFiles }
+ $Temporary = "$Installer.pending.exe"
+ try {
+  Run { & $Compiler.Source "/DVERSION=$($Version.version)" "/DAPP_DIR=$AppDir" "/DOUTPUT=$Temporary" "/DUNINSTALL_FILES=$UninstallFiles" Windows/installer.nsi }
+  if (-not (Test-Path $Temporary)) { throw 'NSIS 未生成安装包' }
+  Move-Item $Temporary $Installer -Force
+ } finally { if (Test-Path $Temporary) { Remove-Item $Temporary -Force } }
+ Write-Host "[成功] MiniVoice $($Version.version) Windows 安装包" -ForegroundColor Green
+ Write-Host "  $Installer"
+} finally { Pop-Location }

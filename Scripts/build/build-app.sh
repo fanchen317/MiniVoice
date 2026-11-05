@@ -5,11 +5,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 node "$ROOT/Scripts/checks/check-release-config.mjs"
 CONFIGURATION="${1:-release}"
 source "$ROOT/Scripts/common/desktop-common.sh"
-case "${MINIVOICE_BUILD_CHANNEL:-release}" in
-  release) export MINIVOICE_APP_NAME="MiniVoice" MINIVOICE_APP_IDENTIFIER="com.xcosmos.MiniVoice.electron" ;;
-  debug) export MINIVOICE_APP_NAME="MiniVoice-debug" MINIVOICE_APP_IDENTIFIER="com.xcosmos.MiniVoice.electron.debug" ;;
-  *) echo 'error: unsupported MINIVOICE_BUILD_CHANNEL' >&2; exit 2 ;;
-esac
+export MINIVOICE_APP_NAME="MiniVoice" MINIVOICE_APP_IDENTIFIER="com.xcosmos.MiniVoice.electron"
 source "$ROOT/Scripts/common/node-runtime.sh"
 minivoice_select_node_runtime
 # Build the existing Swift audio backend and its bundled FFmpeg/lyrics runtime.
@@ -25,14 +21,9 @@ ELECTRON_CACHE="$ROOT/.build/cache/electron" npm --prefix MacOS/Desktop run pack
 APP="$ROOT/.build/work/staging/$MINIVOICE_APP_NAME-darwin-arm64/$MINIVOICE_APP_NAME.app"
 mkdir -p "$APP/Contents/Resources/Native"
 ditto "$ROOT/.build/work/native/MiniVoice.app" "$APP/Contents/Resources/Native/MiniVoice.app"
-if [[ "${MINIVOICE_BUILD_CHANNEL:-release}" == "debug" ]]; then
-  echo '{"channel":"debug"}' > "$APP/Contents/Resources/build-channel.json"
-  /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier com.xcosmos.MiniVoice.debug' "$APP/Contents/Resources/Native/MiniVoice.app/Contents/Info.plist"
-  /usr/libexec/PlistBuddy -c 'Set :CFBundleName MiniVoice-debug' "$APP/Contents/Resources/Native/MiniVoice.app/Contents/Info.plist"
-fi
 sign_desktop_app "$APP"
 verify_desktop_app "$APP"
-# Release and debug are separate public artifacts.
+# One production artifact; compiler configuration does not change identity.
 if [[ -e "$DESKTOP_APP_PATH" ]]; then rm -rf "$DESKTOP_APP_PATH"; fi
 mkdir -p "$(dirname "$DESKTOP_APP_PATH")"
 mv "$APP" "$DESKTOP_APP_PATH"

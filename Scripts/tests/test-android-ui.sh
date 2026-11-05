@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT="$repo_root"
+source "$ROOT/Scripts/common/release-output.sh"
 source "$repo_root/Scripts/common/android-sdk.sh"
 sdk_root="$(minivoice_find_sdk build)"
 build_tools="$(minivoice_find_build_tools "$sdk_root")"
@@ -23,7 +25,7 @@ minivoice_check_signing "$repo_root"
 "$build_tools/apksigner" sign --ks "$keystore" --ks-key-alias "$key_alias" --ks-pass env:MINIVOICE_STORE_PASSWORD --key-pass env:MINIVOICE_KEY_PASSWORD --out "$output/MiniVoice-ui-tests.apk" "$output/aligned.apk"
 if [[ -z "$serial" ]]; then echo "已构建界面测试 APK。传入专用模拟器 serial 可执行：bash Scripts/tests/test-android-ui.sh emulator-5554"; exit 0; fi
 adb="$sdk_root/platform-tools/adb"
-"$adb" -s "$serial" install -r "$repo_root/.build/work/android/MiniVoice-debug.apk"
+"$adb" -s "$serial" install -r "$repo_root/.build/dist/MiniVoice-${MV_VERSION}-android.apk"
 "$adb" -s "$serial" install -r "$output/MiniVoice-ui-tests.apk"
 "$adb" -s "$serial" shell pm clear com.xcosmos.minivoice
 "$adb" -s "$serial" shell pm grant com.xcosmos.minivoice android.permission.POST_NOTIFICATIONS

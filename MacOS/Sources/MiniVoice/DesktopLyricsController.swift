@@ -33,7 +33,7 @@ final class DesktopLyricsController: ObservableObject {
     private let positionKey = "MiniVoice.desktopLyricsPosition"
 
     init() {
-        isEnabled = !AppIdentity.isDebug && UserDefaults.standard.bool(forKey: "MiniVoice.desktopLyrics")
+        isEnabled = UserDefaults.standard.bool(forKey: "MiniVoice.desktopLyrics")
         isLocked = UserDefaults.standard.bool(forKey: "MiniVoice.desktopLyricsLocked")
     }
 

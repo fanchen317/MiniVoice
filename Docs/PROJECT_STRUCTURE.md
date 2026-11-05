@@ -30,7 +30,7 @@ node Shared/Tooling/prepare-dependencies.mjs desktop
 | `.build/archive/` | 旧安装包、历史项目副本、与新产物重名的旧文件 | 确认不再回退或参考后再删除 |
 | `.build/dist/` | 当前两版 App、DMG、APK 和实际导出的 IPA | 用户安装与交付使用的产物 |
 
-正式 App：`.build/dist/MiniVoice.app`。正式版现使用原体验版共享主界面、自有设置/编辑窗口与桌面歌词；Mac-debug 仅作内部隔离调试。公开 experience 命令映射正式渠道，旧体验数据不自动覆盖正式数据。
+正式 App：`.build/dist/MiniVoice.app`。正式版现使用原体验版共享主界面、自有设置/编辑窗口与桌面歌词；旧体验构建脚本已移除，旧体验数据不自动覆盖正式数据。
 
 新产物写入上述目录，不在根 `.build` 生成日志或安装包。测试 APK、截图和日志在 `.build/reports/android/`，Electron 页面验证在 `.build/reports/ui/`。Swift 主构建使用 `.build/cache/swift`，共享核心单独 Swift 验证使用 `.build/cache/swift-shared-core`。
 
@@ -46,3 +46,8 @@ python3 Scripts/tools/migrate-build-layout.py --apply  # 移动并记录清单
 旧 Clang 模块缓存包含绝对路径，不能搬迁后直接复用；旧缓存保留在 `.build/cache/legacy/clang-modules`，新位置重新生成。旧实验 CMake Python 环境同样保留在 legacy 下，需要时按实验 README 重建工具环境。历史 Swift 缓存保留在 `.build/cache/legacy-swift`，不作为新路径的编译输入；仅复用 checkouts/repositories 和依赖状态。已有依赖齐备时，可设置 `MINIVOICE_LOCKED_BUILD=1` 使用锁定依赖，避免联网更新。
 
 本轮只迁移和停止跟踪误入库缓存，没有清空缓存、模型、历史包或验收证据。
+
+
+## 2026-11-04 构建交付更新
+
+用户最新要求覆盖此前固定文件名和公共 iOS 打包约定。build 默认按主机生成 Mac App/DMG/Android APK 或 Windows 安装包，显式平台列表仅接受 mac/android/windows；deploy 只安装已生成当前版本 Mac App，不触发构建。公开文件名含 Shared/version.json 版本，格式见 Scripts/README.md。旧版本保留，公共构建不自动执行历史包归档。

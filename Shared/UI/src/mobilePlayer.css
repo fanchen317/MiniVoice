@@ -16,7 +16,7 @@
 .mv-workspace[data-presentation=mobile] .wp-player.is-expanded .wp-controls>.mv-button{width:44px;height:44px;min-width:44px;flex:0 0 44px;margin:0}
 .mv-workspace[data-presentation=mobile] .wp-player.is-expanded .wp-controls>.wp-kinetic-toggle{margin-left:auto}
 /* Preview expansion owns the right anchor when no lyric-mode action is present. */
-.mv-workspace[data-presentation=mobile] .wp-player.is-expanded .wp-controls>.wp-expand-toggle{margin-left:auto}
+.mv-workspace[data-presentation=mobile] .wp-player.is-expanded .wp-controls>.wp-expand-toggle{margin-left:0}
 .mv-workspace[data-presentation=mobile] .wp-player.is-expanded .wp-controls>.wp-collapse-toggle{margin-left:0}
 .mv-workspace[data-presentation=mobile] .wp-player.is-expanded .wp-seek{width:100%;min-width:0}
 @media(orientation:landscape){
@@ -111,8 +111,8 @@
 .reduce-motion .mv-drawer-shade[data-open=false]{transition:none!important}
 /* Keep the background mode next to the rightmost expand action. */
 .mv-workspace[data-presentation=mobile] .wp-controls>.artwork-mode-toggle{margin-left:auto}
-.mv-workspace[data-presentation=mobile] .wp-player.is-expanded .wp-controls>.wp-kinetic-toggle{margin-left:0}
-.mv-workspace[data-presentation=mobile] .wp-player.is-expanded .wp-controls>.artwork-mode-toggle{margin-left:auto}
+.mv-workspace[data-presentation=mobile] .wp-player.is-expanded .wp-controls>.wp-kinetic-toggle{margin-left:auto}
+.mv-workspace[data-presentation=mobile] .wp-player.is-expanded .wp-controls>.artwork-mode-toggle{margin-left:0}
 /* Mac reference: one search symbol moves with the left edge of the field;
    the lens stays enlarged after opening, with one spring/ease for reversal. */
 .mv-workspace[data-presentation=mobile] .mv-toolbar>.mv-search-control{transform-origin:calc(100% - var(--search-side)/2) 50%;transition:width 360ms cubic-bezier(.2,.8,.2,1),scale 360ms cubic-bezier(.2,.8,.2,1),translate 360ms cubic-bezier(.2,.8,.2,1);scale:1;translate:0 0}

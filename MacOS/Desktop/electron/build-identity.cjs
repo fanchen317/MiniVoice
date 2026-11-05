@@ -1,6 +1,3 @@
 const path=require('node:path');
-function desktopIdentity(channel,appData){
- const debug=channel==='debug';
- return {debug,name:debug?'MiniVoice-debug':'MiniVoice',userData:path.join(appData,debug?'minivoice-desktop-debug':'minivoice-desktop')};
-}
+function desktopIdentity(appData){return {name:'MiniVoice',userData:path.join(appData,'minivoice-desktop')};}
 module.exports={desktopIdentity};

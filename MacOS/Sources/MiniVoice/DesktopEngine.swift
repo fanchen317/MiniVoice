@@ -14,11 +14,12 @@ final class DesktopEngine {
     private let volume = SystemVolume()
     private let lyricsSync = LyricsSyncCoordinator()
     private let songIndex = SongListIndex()
-    private lazy var panels = DesktopPanels(library: library, lyricsSync: lyricsSync, volume: volume) { [weak self] action in
+    private lazy var panels = DesktopPanels(library: library) { [weak self] action in
         self?.send(["event": "shell", "data": action])
     }
     private var artworkSearches: [String: (UUID, OnlineArtworkResult)] = [:]
     private var artworkSearchRevision = 0
+    private var albumArtworkSyncing = false
     private var lastInterfaceStyle: String?
     private var observations = Set<AnyCancellable>()
     private var input = Data()
@@ -95,11 +96,13 @@ final class DesktopEngine {
 
     private func receive(_ data: Data) {
         input.append(data)
-        guard input.count <= 8 * 1024 * 1024 else { input.removeAll(); return }
+        guard input.count <= 32 * 1024 * 1024 else { input.removeAll(); return }
         while let newline = input.firstIndex(of: 10) {
             let line = input[..<newline]; input.removeSubrange(...newline)
             guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
                   let id = object["id"] as? String, let action = object["action"] as? String else { continue }
+            let limit = ["saveMetadata", "syncAlbumArtwork"].contains(action) ? 32 : 8
+            guard line.count <= limit * 1024 * 1024 else { send(["id": id, "error": "命令内容超过大小限制"]); continue }
             let payload = object["payload"] as? [String: Any] ?? [:]
             Task {
                 do {
@@ -412,6 +415,33 @@ final class DesktopEngine {
             return text
         case "syncLyrics":
             if let resolved = await library.resolveTrack(try track(payload).id) { lyricsSync.start(track: resolved, destination: .sidecar, library: library) }; return true
+        case "syncAlbumArtwork":
+            guard !albumArtworkSyncing else { throw TagWriteError.failed("正在同步专辑插图，请稍候") }
+            let source = try track(payload)
+            let album = source.album.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !album.isEmpty, album != "未知专辑", let ids = payload["ids"] as? [String], !ids.isEmpty, ids.count <= 2000, Set(ids).count == ids.count else { throw CocoaError(.coderInvalidValue) }
+            let image: NSImage
+            if let artwork = payload["artwork"] as? String {
+                guard artwork.hasPrefix("data:image/"), let separator = artwork.firstIndex(of: ","), let data = Data(base64Encoded: String(artwork[artwork.index(after: separator)...])), data.count <= 20*1024*1024, let decoded = NSImage(data: data), decoded.size.width > 0, decoded.size.height > 0 else { throw CocoaError(.coderInvalidValue) }
+                image = decoded
+            } else {
+                guard let resolved = await library.resolveTrack(source.id, fullResolution: true), let original = resolved.artwork else { throw TagWriteError.failed("当前歌曲没有可同步的插图") }
+                image = original
+            }
+            albumArtworkSyncing = true
+            defer { albumArtworkSyncing = false }
+            var results: [[String: Any]] = []
+            for raw in ids {
+                do {
+                    let item = try track(["id": raw])
+                    guard item.album.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == album else { throw TagWriteError.failed("歌曲已不属于此专辑") }
+                    guard var resolved = await library.resolveTrack(item.id, fullResolution: true), resolved.canWriteTags else { throw TagWriteError.failed("此歌曲不支持写入插图") }
+                    resolved.artwork = image; resolved.artworkWasEdited = true
+                    try await library.save(resolved, lyricsDestination: .tags)
+                    results.append(["id": raw, "ok": true])
+                } catch { results.append(["id": raw, "ok": false, "error": error.localizedDescription]) }
+            }
+            return results
         case "saveMetadata":
             let base = try track(payload)
             guard var resolved = await library.resolveTrack(base.id, fullResolution: true) else { throw CocoaError(.fileReadNoSuchFile) }
@@ -426,8 +456,8 @@ final class DesktopEngine {
                 guard artwork.hasPrefix("data:image/"),let separator=artwork.firstIndex(of:","),let data=Data(base64Encoded:String(artwork[artwork.index(after:separator)...])),data.count<=20*1024*1024,let image=NSImage(data:data),image.size.width>0,image.size.height>0 else { throw CocoaError(.coderInvalidValue) }
                 resolved.artwork=image;resolved.artworkWasEdited=true
             }
-            let destination: LyricsDestination = payload["destination"] as? String == "tags" ? .tags : .sidecar
-            try await library.save(resolved, lyricsDestination: destination); return true
+            let destination: LyricsDestination = payload["destination"] as? String == "tags" ? .tags : payload["destination"] as? String == "both" ? .both : .sidecar
+            try await library.save(resolved, lyricsDestination: destination, forceTagWrite: payload["automatic"] as? Bool == true && destination != .sidecar); return true
         case "deleteTracks":
             let ids = Set((payload["ids"] as? [String] ?? []).compactMap(UUID.init(uuidString:)))
             library.deleteTracks(ids: ids, moveFilesToTrash: payload["trash"] as? Bool ?? false); return true

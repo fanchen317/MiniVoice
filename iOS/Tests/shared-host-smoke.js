@@ -76,7 +76,7 @@ try {
  for(const scale of [.6,1.2,.8,1]){
    const layoutWidth=parseFloat(persistentContent.style.width),posterLayouts=new Map([...rootWall().querySelectorAll('.mv-wall-card')].map(node=>[node,node.style.width]));
    state=await wallProbe({operation:'motionZoom',scale});
-   check(Math.abs(parseFloat(persistentContent.style.width)-layoutWidth)<.01&&[...posterLayouts].every(([node,width])=>!node.isConnected||node.style.width===width),'双指期间封面和歌词布局尺寸保持稳定，仅变换缩放 '+scale);
+   check(getComputedStyle(persistentContent).transform==='none'&&[...persistentContent.querySelectorAll('.mv-synced-line')].every(node=>parseFloat(getComputedStyle(node).fontSize)<=34.01)&&[...posterLayouts].every(([node,width])=>!node.isConnected||node.style.width===width),'双指期间封面保持缓存布局，文字用实际尺寸排版且不超过上限 '+scale);
    check(Math.abs(state.scale-Math.max(.5,Math.min(1,scale)))<.001&&state.contentAligned&&state.maskAligned&&state.contourAligned,'双指缩放同帧同步卡片内容、遮罩和轮廓 '+scale+' '+JSON.stringify(state));
    check(persistentContent.isConnected&&persistentControls.isConnected&&persistentLyrics.isConnected,'缩放不替换或截图歌词和按钮 '+scale);
    await wallProbe({operation:'endPan'});

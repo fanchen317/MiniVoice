@@ -11,3 +11,6 @@ await mkdir(path.join(output,'assets'),{recursive:true});await writeFile(path.jo
 await copyFile(path.join(root,'Android/app/src/main/res/drawable/minivoice_icon.png'),path.join(output,'assets/minivoice_icon.png'));
 
 const icons=path.join(root,'Android/app/src/main/res/drawable');await mkdir(path.join(output,'assets/icons'),{recursive:true});for(const name of await readdir(icons))if(name.startsWith('icon_')&&name.endsWith('.png'))await copyFile(path.join(icons,name),path.join(output,'assets/icons',name));
+
+// Desktop hosts ship the same service implementation inside their app archive.
+try { await readdir(path.join(ui,'electron')); const destination=path.join(ui,'electron/shared-services'); await mkdir(destination,{recursive:true}); for(const name of await readdir(path.join(root,'Shared/DesktopServices')))if(name.endsWith('.cjs'))await copyFile(path.join(root,'Shared/DesktopServices',name),path.join(destination,name)); } catch(error){if(error.code!=='ENOENT')throw error;}

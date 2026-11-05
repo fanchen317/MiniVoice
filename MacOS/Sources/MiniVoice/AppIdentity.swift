@@ -1,9 +1,8 @@
 import Foundation
 
 enum AppIdentity {
-    static let isDebug = Bundle.main.bundleIdentifier == "com.xcosmos.MiniVoice.debug"
-    static let storageName = isDebug ? "MiniVoice-debug" : "MiniVoice"
-    static let bundleIdentifier = isDebug ? "com.xcosmos.MiniVoice.debug" : "com.xcosmos.MiniVoice"
+    static let storageName = "MiniVoice"
+    static let bundleIdentifier = "com.xcosmos.MiniVoice"
     static let legacyBundleIdentifiers = ["local.fanchen.MiniVoice", "com.local.minivoice"]
 }
 
@@ -12,7 +11,7 @@ enum PreferencesMigration {
 
     static func runIfNeeded() {
         // SwiftPM tests and helper executables must never migrate real settings.
-        guard !AppIdentity.isDebug, Bundle.main.bundleIdentifier == AppIdentity.bundleIdentifier else { return }
+        guard Bundle.main.bundleIdentifier == AppIdentity.bundleIdentifier else { return }
         migrate(defaults: .standard, targetDomain: AppIdentity.bundleIdentifier,
                 legacyDomains: AppIdentity.legacyBundleIdentifiers)
     }

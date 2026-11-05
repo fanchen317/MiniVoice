@@ -1,0 +1,12 @@
+import React,{useMemo,useState} from 'react';
+import ActionButton from '../../../Shared/UI/src/components/ActionButton.jsx';
+import {albumArtworkTracks} from '../../../Shared/UI/src/albumArtwork.js';
+import {VirtualList} from './components';
+import {Modal} from './Modal';
+import {command,useCatalog} from './store';
+export default function AlbumArtworkPicker({source,artwork,onClose}){
+ const catalog=useCatalog(),tracks=useMemo(()=>albumArtworkTracks(catalog,source.album),[catalog,source.album]);
+ const [selection,setSelection]=useState(new Set()),[busy,setBusy]=useState(false),[results,setResults]=useState(null),[error,setError]=useState('');
+ async function save(){if(busy||!selection.size)return;setBusy(true);setError('');try{const value=await command('syncAlbumArtwork',{id:source.id,ids:[...selection],...(artwork?{artwork}:{})});setResults(value);setSelection(new Set(value.filter(item=>!item.ok).map(item=>item.id)));}catch(failure){setError(failure.message);}finally{setBusy(false);}}
+ return <Modal title="同步专辑插图" className="album-artwork-picker" onClose={busy?undefined:onClose}><div data-mv-component="album-artwork-picker"><h3>{source.album}</h3><p>将当前插图直接保存到所选歌曲；每首歌曲保留原文件备份。</p>{error&&<p role="alert">{error}</p>}<div className="own-editor-tools"><ActionButton disabled={busy||!tracks.length} onClick={()=>setSelection(selection.size===tracks.length?new Set():new Set(tracks.map(track=>track.id)))}>{selection.size===tracks.length?'取消全选':'全选'}</ActionButton><span>已选择 {selection.size} / {tracks.length} 首</span></div><div className="songs-panel album-artwork-list"><VirtualList library selectionOnly tracks={tracks} favorites={new Set()} multiple selection={selection} onSelect={track=>{if(!busy)setSelection(previous=>{const next=new Set(previous);next.has(track.id)?next.delete(track.id):next.add(track.id);return next;});}} onMenu={event=>event.preventDefault()}/></div>{!tracks.length&&<p>没有可同步的同专辑歌曲。请先保存有效的专辑名称。</p>}{results&&<div role="status"><p>保存成功 {results.filter(item=>item.ok).length} 首，失败 {results.filter(item=>!item.ok).length} 首</p>{results.filter(item=>!item.ok).map(item=><p key={item.id}>{tracks.find(track=>track.id===item.id)?.title||item.id}：{item.error}</p>)}</div>}<div className="dialog-actions"><ActionButton disabled={busy} onClick={onClose}>关闭</ActionButton><ActionButton className="own-primary" disabled={busy||!selection.size} onClick={save}>{busy?'正在逐首保存…':`保存插图到 ${selection.size} 首歌曲`}</ActionButton></div></div></Modal>;
+}

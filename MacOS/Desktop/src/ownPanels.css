@@ -250,3 +250,5 @@ html:has(.own-lyrics-unlock),body:has(.own-lyrics-unlock),#root:has(.own-lyrics-
 .own-editor .own-artist-field>button{align-self:flex-start;min-height:32px;padding:6px 10px}
 .own-editor .own-artist-field input{height:38px;min-height:38px}
 .own-artwork-editor .own-artwork-stage{border:0;background:transparent;box-shadow:none;border-radius:0}
+
+.album-artwork-picker{width:min(1000px,94vw)}.album-artwork-list{height:min(420px,48vh);min-height:180px;display:flex;flex-direction:column}.album-artwork-list>.track-list{flex:1;min-height:0}

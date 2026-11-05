@@ -646,7 +646,7 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         isPlaying = player?.play() == true
         if isPlaying {
             playingID = track.id
-            downloadMissingLyricsAutomatically(for: track.id)
+            if !CommandLine.arguments.contains("--desktop-engine") { downloadMissingLyricsAutomatically(for: track.id) }
             recentPaths.removeAll { $0 == track.url.path }
             recentPaths.insert(track.url.path, at: 0)
             recentPaths = Array(recentPaths.prefix(200))
@@ -686,11 +686,11 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
         if resume { play() }
     }
 
-    func save(_ updated: Track, lyricsDestination: LyricsDestination = .tags) async throws {
+    func save(_ updated: Track, lyricsDestination: LyricsDestination = .tags, forceTagWrite: Bool = false) async throws {
         guard let existing = await resolveTrack(updated.id, fullResolution: true) else {
             throw TagWriteError.failed("无法读取歌曲文件，未保存修改。请检查文件是否存在及访问权限。")
         }
-        guard updated.hasFileChanges(comparedTo: existing) else { return }
+        guard forceTagWrite || updated.hasFileChanges(comparedTo: existing) else { return }
         let nonLyricsChanged = updated.title != existing.title || updated.artist != existing.artist || updated.album != existing.album || updated.artworkWasEdited
         let lyricsChanged = updated.lyrics != existing.lyrics
         let needsTagWrite = nonLyricsChanged || lyricsDestination != .sidecar

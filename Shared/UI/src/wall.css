@@ -290,3 +290,20 @@
 /* Keep the selected preview contour above artwork and shade, including after touch release. */
 .mv-wall-focus-outline{position:absolute;inset:0;border:1.5px solid #fffffff2;box-sizing:border-box;z-index:5;pointer-events:none}
 .mv-wall-focused.is-expanded .mv-wall-focus-outline,.mv-cover-wall.is-expanding .mv-wall-focus-outline{display:none}
+
+/* Typography follows the card layout, never a frozen pinch raster or WebKit text inflation. */
+[data-presentation=mobile] .mv-cover-wall{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+[data-presentation=mobile] .wp-player:not(.is-expanded) .wp-heading h1{font-size:clamp(14px,var(--wall-title-font,20px),26px)}
+[data-presentation=mobile] .wp-player:not(.is-expanded) .wp-heading p{font-size:clamp(10px,var(--wall-artist-font,13px),13px)}
+
+/* Expanded mobile reading typography is independent of poster zoom metrics. */
+[data-presentation=mobile] .wp-player.is-expanded .mv-synced-lyrics[data-lyric-presentation=wall-expanded] .mv-synced-line{font-weight:600;line-height:1.45;gap:.35em;padding:.18em 0}
+[data-presentation=mobile] .wp-player.is-expanded .mv-synced-lyrics[data-lyric-presentation=wall-expanded] .mv-synced-line>.lyric-content{line-height:1.45}
+[data-presentation=mobile] .wp-player.is-expanded .mv-synced-lyrics[data-lyric-presentation=wall-expanded] .mv-synced-line>small{font-size:.58em;font-weight:400;line-height:1.5}
+
+/* Retain decoded focus underlays for reflow, but do not expose their full-size
+   artwork behind the smaller pressed surface after the handoff completes. */
+.mv-wall-card.is-focus-underlay.is-focus-settled{visibility:hidden;pointer-events:none}
+[data-presentation=mobile] .mv-wall-card,
+[data-presentation=mobile] .mv-wall-focused:not(.is-expanded){background:transparent;box-shadow:none}
+[data-presentation=mobile] .mv-wall-focused:not(.is-expanded)::before{display:none}
