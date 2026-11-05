@@ -551,3 +551,24 @@ Wall展开中间帧由expansionValue和paint管理，避免nativeScrolling逐帧
 Mac/iOS T 样式统一：桌面 WallLyrics 仅适配秒制时钟/歌词数据，复用 KineticLyrics 组件及 kineticLyrics.css；移除移动端专属同名规则。颜色、波形、换行、原译文层级、下一句布局共享，尺寸根据组件盒计算，不按平台分支决定视觉。构建通过，设备并排验证待完成。
 
 Mac 音乐墙轮廓契约：普通卡片空闲不显示；hover/active 与非播放 focused 使用完整白色覆盖轮廓；playing 使用绿色轮廓；全屏隐藏。不能为消除底部亮线而取消正常交互轮廓。回归 Scripts/tests/test-review-items.cjs 同时验证四边与底部图片遮罩覆盖。
+
+轮廓几何补充：Mac 白/绿轮廓是 poster-face 的覆盖伪元素，不允许绘制在未按压缩放的外层 article。移动按压使用图片容器内的 border 层，聚焦底层不再重复绘制边框。这样既保留完整交互轮廓，又避免边框与图片拥有不同变换或重复残边。
+
+WallDrawerBackdrop延展层必须与前景scene共享中心原点、translate(10px,8px) scale(.96)和320ms曲线，只去除前景裁切而不保留未变换的第二份画面；避免边界重复。移动WallPlayer未展开高度<300px时footer反向纵排，按钮行置于进度下方，保留全部事件和触控目标。音乐墙长按菜单不提供onSelectMany，其余样式沿用选择入口。
+
+### 2026-11-05 全平台音乐墙：最终显示区域先行的构图规划
+
+- 共用 `artworkViewport` 用最终背景的 CSS 宽高定义裁切，displayWidth/Height 与 DPR 只用于实际像素预算；不拿设备 screen.width/height 代替应用内容区域。全屏由宿主布局实际填满的 wall 区域测量，窗口/分屏/旋转同样生效；展开最终目标与动画当前尺寸分别持有。
+- `measureArtworkViewport` 按同一变换根归一化文字、歌词及控件遮挡，文字Range不包含整行空白，滚动裁切祖先外的隐藏歌词不参与评分；只在布局、解码、识别或目标变化时重算，不订阅逐帧时钟。
+- 共用构图器采用二维主体框/置信度去重、完整可容纳人脸组保护、文字/人体与像素多尺度显著性，以及重叠遮挡的max-opacity掩码。缓存包括最终宽高、遮挡和图像坐标空间，preview/original不互借裁边坐标；原图自然尺寸改变时重新采样。无原生检测器的平台仍使用同一像素/裁切核心，不能称各平台识别模型能力完全相同。
+- 识图前warmArtworkSubjects传最终target到宿主；只在采样质量档升级时重做模型工作，避免每像素resize都重跑。Mac/iOS使用实际展开原图，不能先拿去白边列表图分析再把坐标应用到原图。Android按目标比例选择有界高质量源与置信框。
+- Mac载图发生在FLIP动画中时按当前动画时间重建原图的等比反变换，结束后再次校准；晚到识别在稳定布局上240ms过渡，减少突跳。移动展开规划一开始即使用最终viewport，不依赖expansion中间宽高。两条路径的清晰与模糊层使用相同已解码图源和构图。
+- 回归入口 `bash Scripts/tests/test-wall-artwork.sh`；包含合成预览1:1→原图3:2延迟加载、展开/超宽resize、移动投影/原生滚动两路径、旋转、blur对齐。实际用户图片观感、低端设备时延与实体GPU仍需设备验收。
+
+移动未展开WallPlayer不再依赖300px高度切换footer顺序；所有缩放尺寸保持进度上/按钮下。内边距由Wall.paint与标题字号同步逐帧写入CSS变量，展开仍用独立排版。WallDrawerBackdrop的普通封面遮罩与原卡片#00000057一致，避免裸封面延展产生亮度差。
+
+移动WallPlayer固定按钮上/进度下，去除此前反序设计但不恢复高度阈值。paintKineticPhrase的裁切高亮不叠加shadowBlur，避免跨引擎的光晕裁切接缝；彩色填充和波动模型不变，真实设备短线修正待验收。
+
+用户最新视觉要求覆盖此前去除光晕的记录：paintKineticPhrase保留裁切彩色文字的palette.glow和字号比例shadowBlur；不新增独立装饰线。移动与桌面共用，跨引擎像素观感待验收。
+
+KineticLyrics新增showSeam（默认false），桌面WallLyrics开启；由paintKineticSeam显式绘制移动端短线观感，避免依赖Chromium/WebKit光晕差异。位置依据当前时序字所在行，受画布边界约束，颜色与原光晕一致；移动端保持原样，减弱动态不额外绘制。

@@ -390,8 +390,9 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
             player.play(try allowedSong(id), queue: player.queue, library: library); return true
         case "artworkSubjects":
             let song = try allowedSong(payload["id"] as? String ?? "")
-            let data = try await library.artworkData(for: song, original: false, wall: true)
-            return try await ArtworkSubjects.detect(data)
+            let data = try await library.artworkData(for: song, original: true)
+            let viewport = payload["viewport"] as? [String: Any] ?? [:]
+            return try await ArtworkSubjects.detect(data, viewportWidth: viewport["width"] as? Double, viewportHeight: viewport["height"] as? Double)
         case "readLyrics":
             let song = try allowedSong(payload["id"] as? String ?? "")
             return ["title": song.title, "raw": library.lyrics(for: song) ?? ""]

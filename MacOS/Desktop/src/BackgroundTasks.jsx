@@ -8,12 +8,12 @@ import {Icon,IconButton} from './components';
 import {backgroundTaskState} from './backgroundTaskState';
 
 export function BackgroundTasks(){
-  const state=usePlayback(),tasks=state.tasks||{};
+  const state=usePlayback(),tasks=state.tasks||{},wordTask=tasks.wordTiming;
   const [open,setOpen]=useState(false),[hideScan,setHideScan]=useState(false),[unread,setUnread]=useState(false);
   const root=useRef(),panel=useRef(),previous=useRef(state.importing);
   const position=usePopoverPosition(root,panel,open);
   const {active,hasScan,hasRecords,failed}=backgroundTaskState(state,hideScan);
-  const canClear=Boolean((hasScan&&!state.importing)||(state.jobs||[]).some(job=>job.finished)||tasks.notice||(tasks.modelStatus&&!tasks.downloadingModel));
+  const canClear=Boolean((hasScan&&!state.importing)||(state.jobs||[]).some(job=>job.finished)||wordTask&&wordTask.phase!=='analyzing'||tasks.notice||(tasks.modelStatus&&!tasks.downloadingModel));
   const action=(operation,id)=>command('tasks',{operation,id});
   useEffect(()=>{
     if(state.importing)setHideScan(false);
@@ -45,6 +45,7 @@ export function BackgroundTasks(){
       {hasRecords&&<div className="background-tasks-scroll">
         {state.importing&&state.scanCancellable&&<ActionButton onClick={()=>action('cancelScan')}>取消音乐库扫描</ActionButton>}
         {tasks.downloadingModel&&tasks.modelCancellable&&<ActionButton onClick={()=>action('cancelModel')}>取消模型下载</ActionButton>}
+        {wordTask&&wordTask.phase!=='idle'&&<div className="task-row"><Icon name="lyrics"/><div><strong>逐行歌词音频对齐缓存</strong><p>{wordTask.message||({analyzing:`正在分析《${wordTask.title||'歌曲'}》`,waitingForModel:'安装本地模型后可生成逐字缓存',ready:'逐字缓存已更新',needsReview:'结果待校正，保留逐行歌词',failed:'分析未完成，保留原歌词',cacheMiss:'缓存失效，将重新分析'}[wordTask.phase])}</p><small>完成 {wordTask.completed||0} 首 · 待校正 {wordTask.failed||0} 首 · 队列 {wordTask.pending||0} 首</small></div>{wordTask.phase==='analyzing'&&<span className="spinner"/>}</div>}
         {tasks.modelStatus&&<div className="task-row"><Icon name="download"/><div><strong>AI 模型</strong><p>{tasks.modelStatus}</p>{tasks.downloadingModel&&tasks.modelProgress!=null&&<progress aria-label="模型下载进度" max={1} value={tasks.modelProgress}/>}</div>{tasks.downloadingModel?<span className="spinner"/>:<>{tasks.modelFailed&&<IconButton label="重试下载" disabled={active>0} onClick={()=>action('retryModel')}><Icon name="refresh"/></IconButton>}<IconButton label="清理下载记录" onClick={()=>action('clearModel')}><Icon name="close"/></IconButton></>}</div>}
         {hasScan&&<div className="task-row"><Icon name="folder"/><div><strong>扫描音乐库</strong><p>{state.scanSummary}</p>{Boolean(state.issues?.length)&&<Disclosure title={`${state.issues.length} 项无法读取`}>{state.issues.map((issue,index)=><p key={index}>{issue}</p>)}</Disclosure>}</div>{state.importing?<span className="spinner"/>:<>{Boolean(state.issues?.length)&&<IconButton label="重新扫描" onClick={()=>command('rescan')}><Icon name="refresh"/></IconButton>}<IconButton label="清理扫描记录" onClick={()=>setHideScan(true)}><Icon name="close"/></IconButton></>}</div>}
         {[...(state.jobs||[])].reverse().map(job=><div className="task-row" key={job.id}><Icon name="lyrics"/><div><strong>AI 歌词匹配 · {job.title}</strong><p>{job.detail}</p><small>{!job.finished?(job.detail==='等待处理'?'排队中':'进行中'):job.failed?'失败':'已结束'}</small></div>{!job.finished?<><span className="spinner"/>{job.cancellable&&<ActionButton onClick={()=>action('cancel',job.id)}>取消匹配</ActionButton>}</>:<>{job.failed&&<IconButton label="重试歌词匹配" disabled={tasks.downloadingModel} onClick={()=>action('retry',job.id)}><Icon name="refresh"/></IconButton>}<IconButton label="清理任务记录" onClick={()=>action('clear',job.id)}><Icon name="close"/></IconButton></>}</div>)}

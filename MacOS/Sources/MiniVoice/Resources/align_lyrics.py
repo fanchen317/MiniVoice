@@ -78,6 +78,173 @@ def retry_missing(model, audio, segments, language, status):
     return segments
 
 
+
+def _number(value):
+    """Booleans and non-finite values are never valid model timestamps."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def validated_words(text, words, start, end, minimum_probability=0.35):
+    """Keep measured model words only, mapped back onto the exact source string.
+
+    Alignment tokenization can move spaces but may not alter or drop characters.
+    No character timestamps are invented for multi-character model words.
+    """
+    if not (_number(start) and _number(end) and 0 <= start < end):
+        return []
+    measured = []
+    for word in words or []:
+        token = getattr(word, "word", None)
+        if token is None:
+            token = getattr(word, "text", None)
+        if not isinstance(token, str):
+            return []
+        compact = "".join(token.split())
+        if not compact:
+            continue
+        begin, finish = getattr(word, "start", None), getattr(word, "end", None)
+        probability = getattr(word, "probability", None)
+        if (not _number(begin) or not _number(finish) or begin < start - 0.02 or
+                finish > end + 0.02 or finish - begin < 0.02 or
+                measured and begin < measured[-1]["end"] - 0.02):
+            return []
+        if probability is not None and (not _number(probability) or
+                                        not minimum_probability <= probability <= 1):
+            return []
+        entry = {"compact": compact, "start": max(start, begin), "end": min(end, finish)}
+        if measured:
+            # Only absorb a rounding-sized overlap, never stretch an invalid word.
+            entry["start"] = max(entry["start"], measured[-1]["end"])
+        if entry["end"] - entry["start"] < 0.02 - 1e-9:
+            return []
+        if probability is not None:
+            entry["probability"] = probability
+        measured.append(entry)
+    if not measured or "".join(row["compact"] for row in measured) != "".join(text.split()):
+        return []
+    cursor = 0
+    output = []
+    for index, row in enumerate(measured):
+        first, remaining = cursor, len(row["compact"])
+        while cursor < len(text) and remaining:
+            if not text[cursor].isspace():
+                remaining -= 1
+            cursor += 1
+        # Preserve all original whitespace, attached to the preceding measured word.
+        while cursor < len(text) and text[cursor].isspace():
+            cursor += 1
+        if index == len(measured) - 1:
+            cursor = len(text)
+        entry = {"text": text[first:cursor], "start": round(row["start"], 4),
+                 "end": round(row["end"], 4)}
+        if "probability" in row:
+            entry["probability"] = row["probability"]
+        output.append(entry)
+    return output if "".join(row["text"] for row in output) == text else []
+
+
+def word_alignment_windows(lines, anchors, duration, coarse=None):
+    """Use real line anchors as hard boundaries; missing anchors need model evidence."""
+    if not _number(duration) or duration <= 0 or not lines or len(lines) > 2000:
+        raise AlignmentFailure("逐字分析缺少有效歌词或歌曲时长。")
+    if any(not isinstance(line, str) or not line.strip() or "\n" in line or "\r" in line for line in lines):
+        raise AlignmentFailure("逐字分析的歌词分行无效。")
+    if anchors is None:
+        anchors = [None] * len(lines)
+    if not isinstance(anchors, list) or len(anchors) != len(lines):
+        raise AlignmentFailure("已有歌词时间点数量不一致。")
+    previous = -1.0
+    for anchor in anchors:
+        if anchor is None:
+            continue
+        if not _number(anchor) or anchor < 0 or anchor >= duration or anchor <= previous:
+            raise AlignmentFailure("已有歌词时间点无效或发生倒退。")
+        previous = anchor
+    if coarse is not None and len(coarse) != len(lines):
+        raise AlignmentFailure("歌词分段未能完整匹配。")
+    starts = list(anchors)
+    for index, anchor in enumerate(anchors):
+        if anchor is not None or coarse is None:
+            continue
+        segment = coarse[index]
+        candidate = getattr(segment, "start", None)
+        text = getattr(segment, "text", None)
+        left = next((value for value in reversed(starts[:index]) if value is not None), -1.0)
+        right = next((value for value in anchors[index + 1:] if value is not None), duration)
+        if (isinstance(text, str) and "".join(text.split()) == "".join(lines[index].split()) and
+                _number(candidate) and 0 <= candidate < duration and left < candidate < right):
+            starts[index] = candidate
+    windows = []
+    for index, start in enumerate(starts):
+        if start is None:
+            windows.append(None)
+            continue
+        end = next((value for value in starts[index + 1:] if value is not None), duration)
+        if anchors[index] is None and coarse is not None:
+            coarse_end = getattr(coarse[index], "end", None)
+            if _number(coarse_end) and coarse_end > start:
+                end = min(end, coarse_end)
+        windows.append({"text": lines[index], "start": start, "end": end} if end - start >= 0.04 else None)
+    return windows
+
+
+def align_word_rows(model, audio, request, status):
+    """Stable-ts 2.19.1 align_words confines each lyric to its known audio range."""
+    lines, duration = request["lines"], min(len(audio) / 16000, request["duration"])
+    anchors = request.get("anchors")
+    # Validate supplied anchors before starting any inference.
+    word_alignment_windows(lines, anchors, duration)
+    supplied = anchors if anchors is not None else [None] * len(lines)
+    coarse = None
+    if any(value is None for value in supplied):
+        status("正在建立缺失的逐行音频边界…")
+        result = model.align(audio, "\n".join(lines), language=request["language"],
+                             original_split=True, regroup=False, verbose=None,
+                             nonspeech_skip=None)
+        if result is None:
+            raise AlignmentFailure("未找到可靠的逐行音频边界。")
+        coarse = result.segments
+    windows = word_alignment_windows(lines, anchors, duration, coarse)
+    indices = [index for index, window in enumerate(windows) if window is not None]
+    if not indices:
+        raise AlignmentFailure("逐字分析没有可靠的音频区间。")
+    status("正在依据逐行时间点分析真实词级节奏…")
+    def progress(current, total):
+        if _number(current) and _number(total) and total > 0:
+            status(f"正在分析词级节奏… {min(99, max(0, int(current / total * 100)))}%")
+    # Stable-ts normalizes only whitespace and supplies Whisper's expected
+    # leading-space token. Exact output text is restored by validated_words.
+    result = model.align_words(audio, [windows[index] for index in indices],
+                               language=request["language"], normalize_text=True,
+                               inplace=False, regroup=False, verbose=None,
+                               min_word_dur=0.02, progress_callback=progress)
+    if result is None or len(result.segments) != len(indices):
+        raise AlignmentFailure("逐字分析结果与歌词行数不一致。")
+    output = [{"text": text, "start": supplied[index], "end": None, "words": []}
+              for index, text in enumerate(lines)]
+    for index, segment in zip(indices, result.segments):
+        window = windows[index]
+        if "".join(getattr(segment, "text", "").split()) != "".join(lines[index].split()):
+            continue
+        words = validated_words(lines[index], getattr(segment, "words", []),
+                                window["start"], window["end"])
+        if words:
+            output[index] = {"text": lines[index], "start": window["start"],
+                             "end": words[-1]["end"], "words": words}
+    if not any(row["words"] for row in output):
+        raise AlignmentFailure("没有得到可靠的词级时间点，保留原逐行歌词。")
+    return output
+
+
+def alignment_thread_count(request):
+    if request.get("granularity") != "word":
+        return max(1, min(4, os.cpu_count() or 1))
+    try:
+        return max(1, min(4, int(os.environ.get("MINIVOICE_ALIGNMENT_THREADS", "2"))))
+    except (TypeError, ValueError):
+        return 2
+
+
 def main():
     request_path, output_path, status_path = map(Path, sys.argv[1:4])
     request = json.loads(request_path.read_text(encoding="utf-8"))
@@ -110,7 +277,7 @@ def main():
     status(f"正在加载 Whisper {model_name}…")
     import stable_whisper
     import torch
-    torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
+    torch.set_num_threads(alignment_thread_count(request))
     model_path = Path(request["modelDirectory"]) / (model_name + ".pt")
     if not model_path.is_file():
         raise AlignmentFailure("应用缺少本地模型，请重新安装完整版本。")
@@ -121,14 +288,17 @@ def main():
         if total:
             status(f"正在匹配歌词… {min(99, int(current / total * 100))}%")
 
-    result = model.align(audio, "\n".join(request["lines"]), language=request["language"],
-                         original_split=True, regroup=False, verbose=False, progress_callback=progress)
-    if result is None:
-        raise AlignmentFailure("未找到可用的歌词时间轴。请检查歌词版本，或先保存文本。")
-    segments = validated_segments(request["lines"], result.segments, min(duration, request["duration"]))
-    if any(segment["start"] is None for segment in segments):
-        segments = retry_missing(model, audio, segments, request["language"], status)
-    ensure_coverage(segments)
+    if request.get("granularity") == "word":
+        segments = align_word_rows(model, audio, request, status)
+    else:
+        result = model.align(audio, "\n".join(request["lines"]), language=request["language"],
+                             original_split=True, regroup=False, verbose=False, progress_callback=progress)
+        if result is None:
+            raise AlignmentFailure("未找到可用的歌词时间轴。请检查歌词版本，或先保存文本。")
+        segments = validated_segments(request["lines"], result.segments, min(duration, request["duration"]))
+        if any(segment["start"] is None for segment in segments):
+            segments = retry_missing(model, audio, segments, request["language"], status)
+        ensure_coverage(segments)
     output_path.write_text(json.dumps(segments, ensure_ascii=False, allow_nan=False), encoding="utf-8")
     status("歌词匹配完成")
 
@@ -138,6 +308,9 @@ if __name__ == "__main__":
     # tracker. Handle those arguments before treating them as alignment inputs.
     import multiprocessing
     multiprocessing.freeze_support()
+    if sys.argv[1] == "--capabilities":
+        print(json.dumps({"protocolVersion": 1, "wordAlignment": 1, "anchoredWordAlignment": 1}))
+        sys.exit(0)
     if sys.argv[1] == "--self-test":
         import stable_whisper
         import torch

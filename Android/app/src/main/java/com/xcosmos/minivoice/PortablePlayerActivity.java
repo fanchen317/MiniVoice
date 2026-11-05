@@ -109,7 +109,7 @@ public final class PortablePlayerActivity extends Activity {
                     case "core":JSONObject result=new JSONObject(SharedCore.execute(request.getJSONObject("request").toString()));if(!result.optBoolean("ok"))throw new IllegalArgumentException(result.optString("error"));reply(id,result.opt("value"),null);return;
                     case "readState":JSONObject saved=new JSONObject(getSharedPreferences("portable",0).getString("workspace","{\"version\":1,\"pages\":{}}"));main.post(()->applyChrome(saved));reply(id,saved,null);return;
                     case "writeState":JSONObject value=request.getJSONObject("state");if(value.optInt("version")!=1)throw new IllegalArgumentException("无效的页面状态");if(!getSharedPreferences("portable",0).edit().putString("workspace",value.toString()).commit())throw new IOException("页面状态保存失败");main.post(()->applyChrome(value));reply(id,true,null);return;
-                    case "action":String action=request.getString("name");if(action.equals("artworkSubjects")){reply(id,artworkSubjects(request.getJSONObject("payload").getString("id")),null);return;}if(PortableMetadataActions.handles(action)){reply(id,metadataAction(action,request.getJSONObject("payload")),null);return;}if(PortableLibraryActions.handles(action)){Object actionResult=PortableLibraryActions.execute(PortablePlayerActivity.this,songs,action,request.optJSONObject("payload")==null?new JSONObject():request.getJSONObject("payload"));if(action.equals("removeFolder")||action.equals("recursive")||action.equals("artistAlias")||action.equals("clearArtistAliases")){readLibrary();List<Song> allowed=new ArrayList<>(songs);main.post(()->{if(!closed&&playback!=null)playback.retainLibrary(allowed);});}reply(id,actionResult,null);}else main.post(()->playbackRequest(id,kind,request));return;
+                    case "action":String action=request.getString("name");if(action.equals("artworkSubjects")){reply(id,artworkSubjects(request.getJSONObject("payload").getString("id"),request.getJSONObject("payload").optJSONObject("viewport")),null);return;}if(PortableMetadataActions.handles(action)){reply(id,metadataAction(action,request.getJSONObject("payload")),null);return;}if(PortableLibraryActions.handles(action)){Object actionResult=PortableLibraryActions.execute(PortablePlayerActivity.this,songs,action,request.optJSONObject("payload")==null?new JSONObject():request.getJSONObject("payload"));if(action.equals("removeFolder")||action.equals("recursive")||action.equals("artistAlias")||action.equals("clearArtistAliases")){readLibrary();List<Song> allowed=new ArrayList<>(songs);main.post(()->{if(!closed&&playback!=null)playback.retainLibrary(allowed);});}reply(id,actionResult,null);}else main.post(()->playbackRequest(id,kind,request));return;
                     case "snapshot":case "play":case "toggle":case "seek":case "skip":case "exit":main.post(()->playbackRequest(id,kind,request));return;
                     default:throw new IllegalArgumentException("不支持的系统操作");
                 }
@@ -216,15 +216,18 @@ public final class PortablePlayerActivity extends Activity {
             default:throw new IllegalArgumentException("此平台暂不支持该操作");
         }
     }
-    private JSONArray artworkSubjects(String id)throws Exception{
+    private JSONArray artworkSubjects(String id,JSONObject viewport)throws Exception{
         Song selected=null;for(Song song:songs)if(Long.toString(song.id).equals(id)){selected=song;break;}
         if(selected==null)throw new IllegalArgumentException("歌曲未授权");
-        android.graphics.Bitmap source=ArtworkCache.load(this,selected,320);JSONArray result=new JSONArray();if(source==null)return result;
+        double vw=viewport==null?1:viewport.optDouble("width",1),vh=viewport==null?1:viewport.optDouble("height",1);
+        double aspect=Double.isFinite(vw)&&Double.isFinite(vh)&&vw>0&&vh>0?vw/vh:1;
+        int analysisSide=aspect>2.1||aspect<.48?1024:640;
+        android.graphics.Bitmap source=ArtworkCache.load(this,selected,analysisSide);JSONArray result=new JSONArray();if(source==null)return result;
         if(source.getWidth()<2||source.getHeight()<2)return result;
         android.graphics.Bitmap cropped=source.getWidth()%2==0?source:android.graphics.Bitmap.createBitmap(source,0,0,source.getWidth()-1,source.getHeight());
         android.graphics.Bitmap bitmap=cropped.copy(android.graphics.Bitmap.Config.RGB_565,false);if(cropped!=source)cropped.recycle();if(bitmap==null)return result;
         try{android.media.FaceDetector.Face[] faces=new android.media.FaceDetector.Face[8];int count=new android.media.FaceDetector(bitmap.getWidth(),bitmap.getHeight(),8).findFaces(bitmap,faces);
-            for(int i=0;i<count;i++){android.media.FaceDetector.Face face=faces[i];if(face.confidence()<.4f)continue;android.graphics.PointF point=new android.graphics.PointF();face.getMidPoint(point);float d=face.eyesDistance(),w=bitmap.getWidth(),h=bitmap.getHeight();result.put(new JSONObject().put("x",Math.max(0,(point.x-d*1.1)/w)).put("y",Math.max(0,(point.y-d*.55)/h)).put("width",Math.min(1,d*2.2/w)).put("height",Math.min(1,d*2.7/h)).put("face",1));}
+            for(int i=0;i<count;i++){android.media.FaceDetector.Face face=faces[i];if(face.confidence()<.4f)continue;android.graphics.PointF point=new android.graphics.PointF();face.getMidPoint(point);float d=face.eyesDistance(),w=bitmap.getWidth(),h=bitmap.getHeight();result.put(new JSONObject().put("x",Math.max(0,(point.x-d*1.1)/w)).put("y",Math.max(0,(point.y-d*.55)/h)).put("width",Math.min(1,d*2.2/w)).put("height",Math.min(1,d*2.7/h)).put("face",1).put("confidence",face.confidence()));}
         }finally{bitmap.recycle();}return result;
     }
     private void reply(String id,Object value,String error){try{JSONObject envelope=new JSONObject().put("ok",error==null);if(error==null)envelope.put("value",value==null?JSONObject.NULL:value);else envelope.put("error",error);String script="globalThis.MiniVoiceTransport?.receive("+JSONObject.quote(id)+","+envelope+")";main.post(()->{if(!closed)web.evaluateJavascript(script,null);});}catch(JSONException ignored){}}

@@ -15,15 +15,15 @@
 .app.style-wall .custom-liquid-glass:active{box-shadow:inset 0 1px 2px #ffffff59,inset 0 -1px 1px #ffffff21,0 2px 7px #0003}
 /* The contour must be above artwork, gradients, lyrics and controls. */
 .wall-poster.playing>.poster-face,.wall-poster.playing:hover>.poster-face{outline:0!important}
-.wall-poster.playing:after{
+.wall-poster.playing>.poster-face::after{
   content:"";position:absolute;inset:0;z-index:10;pointer-events:none;
   border:calc(3px / var(--wall-camera-scale,1)) solid color-mix(in srgb,var(--wall-mint) 85%,transparent);
   box-shadow:0 0 calc(28px / var(--wall-camera-scale,1)) color-mix(in srgb,var(--wall-mint) 50%,transparent);
 }
-.wall-surface.is-immersive .wall-poster.focused:after,.wall-surface.is-expanding .wall-poster.focused:after{opacity:0}
+.wall-surface.is-immersive .wall-poster.focused>.poster-face::after,.wall-surface.is-expanding .wall-poster.focused>.poster-face::after{opacity:0}
 /* One overlay contour; the face itself never adds a duplicate stroke. */
-.wall-poster:not(.playing)::after{content:"";position:absolute;inset:0;z-index:10;pointer-events:none;display:none;box-sizing:border-box;border:calc(1.5px / var(--wall-camera-scale,1)) solid #fffffff2}
-.wall-poster:not(.playing):is(:hover,:active,.focused)::after{display:block}
+.wall-poster:not(.playing)>.poster-face::after{content:"";position:absolute;inset:0;z-index:10;pointer-events:none;display:none;box-sizing:border-box;border:calc(1.5px / var(--wall-camera-scale,1)) solid #fffffff2}
+.wall-poster:not(.playing):is(:hover,:active,.focused)>.poster-face::after{display:block}
 .wall-poster:hover:not(.focused):not(.playing)>.poster-face{outline:0!important}
 /* A neutral mask disc protects the light SF Symbol from the refracted cover. */
 .style-wall .window-tools .glyph,.wall-search-button .glyph,.wall-settings>.glyph{flex-shrink:0;position:relative;z-index:1;opacity:1}
@@ -57,12 +57,19 @@ html,body,#root{width:100%;height:100%;overflow:hidden}
 .wall-poster.focused>.poster-face>.poster-shade{opacity:1}
 
 /* Playback contour enters once when the current card changes, then stays still. */
-.wall-poster.playing::after{animation:mv-current-enter .48s ease-out}
-@media(prefers-reduced-motion:reduce){.wall-poster.playing::after{animation:none}}
-.reduce-motion .wall-poster.playing::after{animation:none}
+.wall-poster.playing>.poster-face::after{animation:mv-current-enter .48s ease-out}
+@media(prefers-reduced-motion:reduce){.wall-poster.playing>.poster-face::after{animation:none}}
+.reduce-motion .wall-poster.playing>.poster-face::after{animation:none}
 
 /* A single contour owns the edge. The legacy article border otherwise
    flashes underneath the transformed face when focus reflow starts. */
 .wall-poster,.wall-poster:hover,.wall-poster:active{border:0}
 .wall-poster.focused:not(.playing)>.poster-face{outline:0!important}
-.wall-poster.focused:not(.playing)::after{transform:none;transition:none}
+.wall-poster.focused:not(.playing)>.poster-face::after{transform:none;transition:none}
+
+/* The contour shares the pressed face transform; no stale edge on the outer article. */
+.wall-poster::after{content:none!important;display:none!important}
+
+/* Explicit compositor clips are shared by the photo, shade and contour. */
+.wall-poster>.poster-face{clip-path:inset(0);isolation:isolate;mask-image:linear-gradient(#000,#000);-webkit-mask-image:linear-gradient(#000,#000)}
+.wall-poster>.poster-face>.poster-artwork{clip-path:inset(0)}

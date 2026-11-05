@@ -1,4 +1,4 @@
-let sharedArtworkService;
+let sharedArtworkService,wordTimingStatus,wordTimingNativeState;
 const { app, BrowserWindow, ipcMain, protocol, net, dialog, Menu, nativeImage, screen, clipboard } = require('electron');
 const { spawn } = require('node:child_process');
 const { createInterface } = require('node:readline');
@@ -24,7 +24,7 @@ const lyricsFile=path.join(app.getPath('userData'),'own-desktop-lyrics.json');
 let lyricsOptions=lyricsWindowState();try{lyricsOptions=lyricsWindowState(JSON.parse(fs.readFileSync(lyricsFile,'utf8')));}catch{}
 function saveLyricsOptions(){fs.mkdirSync(path.dirname(lyricsFile),{recursive:true});fs.writeFileSync(lyricsFile,JSON.stringify(lyricsOptions));}
 function lyricsState(data){return {...data,desktopLyrics:lyricsOptions.enabled,desktopLyricsLocked:lyricsOptions.locked,desktopLyricsFont:lyricsOptions.font,desktopLyricsVertical:lyricsOptions.vertical};}
-function refreshLyricsState(){const current=latest.get('state');if(current)emit('state',current);}
+function refreshLyricsState(){const current=wordTimingNativeState||latest.get('state');if(current)emit('state',current);}
 function syncLyricsUnlock(){
  if(!lyricsOptions.locked||!lyricsWindow||lyricsWindow.isDestroyed()) {lyricsUnlockWindow?.close();lyricsUnlockWindow=null;return;}
  const bounds=lyricsUnlockBounds(lyricsWindow.getBounds(),screen.getDisplayMatching(lyricsWindow.getBounds()).workArea,lyricsOptions.vertical);
@@ -61,8 +61,8 @@ function request(action, payload = {}) {
   return new Promise((resolve, reject) => {
     if (!engine?.stdin.writable) return reject(new Error('播放后台未连接，请重新打开应用。'));
     const id = require('node:crypto').randomUUID();
-    const timeout = setTimeout(() => { pending.delete(id); reject(new Error('后台响应超时，请检查后台任务。')); }, action==='syncAlbumArtwork'?1800000:['artworkSearch','artworkDownload','lyricsSearch','saveMetadata'].includes(action) ? 180000 : 30000);
-    pending.set(id, { resolve, reject, timeout });
+    const timeout = setTimeout(() => { pending.delete(id); reject(new Error('后台响应超时，请检查后台任务。')); }, action==='analyzeWordTiming'?3600000:action==='syncAlbumArtwork'?1800000:['artworkSearch','artworkDownload','lyricsSearch','saveMetadata'].includes(action) ? 180000 : 30000);
+    pending.set(id, { resolve, reject, timeout, action, payload });
     engine.stdin.write(JSON.stringify({ id, action, payload }) + '\n');
   });
 }
@@ -75,9 +75,16 @@ const automaticEnrichment=sharedService('automatic-enrichment').automaticEnrichm
  onError:message=>{logEngine('自动补齐：'+message);emit('engineError','自动补齐：'+message);}
 });
 
+const wordTimings=sharedService('word-timing-cache').wordTimingCache({
+ directory:path.join(app.getPath('userData'),'Cache'),command:(action,payload)=>request(action,payload),
+ onUpdate:()=>{if(wordTimingNativeState)emit('state',wordTimingNativeState);},
+ onStatus:status=>{wordTimingStatus=status;if(wordTimingNativeState)emit('state',wordTimingNativeState);}
+});
+
 function emit(event, data) {
-  if(event==='state')void automaticEnrichment.observe(data);
-  if(event==='clock'&&latest.get('state'))void automaticEnrichment.observe(latest.get('state'));
+  if(event==='catalog')wordTimings.catalog(data);
+  if(event==='state'){wordTimingNativeState=data;wordTimings.observe(data);data=wordTimings.decorate(data);if(wordTimingStatus)data={...data,tasks:{...data.tasks,wordTiming:wordTimingStatus}};void automaticEnrichment.observe(data);}
+  if(event==='clock'&&latest.get('state')){void automaticEnrichment.observe(latest.get('state'));if(wordTimingNativeState)wordTimings.observe(wordTimingNativeState);}
   if(event==='uiSurface'&&['settings','editor'].includes(data?.type)){panelWindows.open(data);return;}
   if(event==='uiSurface')showMainWindow();
   if(event==='hostSurface'&&data?.type==='desktopLyrics'){toggleOwnLyrics();return;}
@@ -102,7 +109,7 @@ function startEngine() {
     if (message.id) {
       const item = pending.get(message.id); if (!item) return;
       clearTimeout(item.timeout); pending.delete(message.id);
-      if (message.error) item.reject(new Error(message.error)); else item.resolve(message.result);
+      if (message.error) item.reject(new Error(message.error)); else {if(item.action==='saveMetadata')wordTimings.invalidate(item.payload.id);item.resolve(message.result);}
     } else if (message.event) {
       if (message.event === 'ready') {
         artworkRoot = message.data.artworkRoot;
@@ -207,6 +214,7 @@ app.whenReady().then(() => {
       if(!sharedArtworkService){let service;try{service=require('./shared-services/online-artwork.cjs');}catch(error){if(error.code!=='MODULE_NOT_FOUND')throw error;service=require('../../../Shared/DesktopServices/online-artwork.cjs');}sharedArtworkService=service.artworkService({nativeSearch:query=>request('artworkSearch',query),nativeDownload:query=>request('artworkDownload',query)});}
       return action==='artworkSearch'?sharedArtworkService.search(payload):sharedArtworkService.download(payload);
     }
+    if(action==='tasks'&&payload.operation==='clearFinished')wordTimingStatus=null;
     if(action==='lyricsSearch'){
       let service;try{service=require('./shared-services/online-lyrics.cjs');}catch(error){if(error.code!=='MODULE_NOT_FOUND')throw error;service=require('../../../Shared/DesktopServices/online-lyrics.cjs');}
       const song=await request('detail',{id:payload.id});
@@ -230,6 +238,7 @@ app.on('window-all-closed', () => app.quit());
 app.on('before-quit', event => {
   if (quitting) return;
   event.preventDefault(); quitting = true; clearTimeout(restartTimer);
+  wordTimings.stop();void request('cancelWordTiming').catch(()=>{});
   artworkIO.cleanup();
   // Persist the native playback position before terminating the child process.
   Promise.race([request('pause').catch(() => {}), new Promise(resolve => setTimeout(resolve, 1500))])

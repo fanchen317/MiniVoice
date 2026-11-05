@@ -1,5 +1,6 @@
 import {ArtworkModeScope,ArtworkBlur} from '../../../Shared/UI/src/components/ArtworkModeButton.jsx';
 import {applyArtworkFocus,warmArtworkSubjects,copyArtworkPresentation} from '../../../Shared/UI/src/components/artworkFocus.js';
+import {artworkViewport,measureArtworkViewport} from '../../../Shared/UI/src/components/artworkViewport.js';
 import ActionButton from '../../../Shared/UI/src/components/ActionButton.jsx';
 import Slider from '../../../Shared/UI/src/components/Slider.jsx';
 import {wallZoomStops,nextWallZoomStop} from './wallZoom';
@@ -14,33 +15,69 @@ import { Cover, Icon, WallCardPlayer } from './components';
 import { springEasing,springProgress,posterArtworkMotion } from './motion';
 
 const reflowEasing=`linear(${Array.from({length:53},(_,i)=>`${reflowProgress(i*10).toFixed(5)} ${(i/52*100).toFixed(2)}%`).join(',')})`;
-const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, onMenu,onPlay,onExpand,expanded,transitioning,reduceMotion,visible,onReveal,grouped,onGroupMenu }) {
-  const element=useRef(),previous=useRef(),animation=useRef(),artwork=useRef(),artworkAnimation=useRef(),blurAnimation=useRef();
+const wallpaperOcclusions=[
+  {selector:'.wall-card-content > header h2, .wall-card-content > header p',text:true,weight:.8},
+  {selector:'.wall-playback-status, .wall-playback-time',text:true,weight:.4},
+  {selector:'.wall-transport-buttons button, .wall-card-transport [role=slider]',weight:.6},
+  {selector:'.wall-lyrics .lyric-content, .wall-lyrics small, .mv-kinetic-upcoming > div, .mv-kinetic-translation',text:true,weight:.35},
+  {selector:'.mv-kinetic-main canvas',weight:.2},
+];
+function imageCoordinateSpace(image){try{return new URL(image.currentSrc||image.src,location.href).hostname==='detail'?'original':'preview';}catch{return 'preview';}}
+const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, onMenu,onPlay,onExpand,expanded,transitioning,reduceMotion,visible,onReveal,grouped,onGroupMenu,displayScale=1 }) {
+  const element=useRef(),previous=useRef(),animation=useRef(),artwork=useRef(),artworkAnimation=useRef(),blurAnimation=useRef(),artworkTransition=useRef(null),settleFrame=useRef(0),latest=useRef(null),previousAnalysis=useRef(0),pendingFocusTransition=useRef(false);
+  latest.current={tile,track,expanded,displayScale};
   const [analysisRevision,setAnalysisRevision]=useState(0);
-  useEffect(()=>{let active=true;if(focused)warmArtworkSubjects(artworkURL(track,false),()=>command('artworkSubjects',{id:track.id},{reportError:false})).then(()=>{if(active)setAnalysisRevision(value=>value+1);});return()=>{active=false;};},[focused,track.id,track.artworkRevision]);
-  useLayoutEffect(()=>{
-    const before=previous.current;previous.current=tile;
-    const node=element.current,matrix=new DOMMatrix(getComputedStyle(node).transform),image=artwork.current?.querySelector('img.cover');
-    const fromFocal={x:Number(image?.dataset.focalX??.5),y:Number(image?.dataset.focalY??.5)};const surface=node.closest('.wall-surface');const focal=image?.naturalWidth?applyArtworkFocus(image,{key:artworkURL(track,false),viewportAspect:tile.width/tile.height,useSubjects:expanded}):{x:.5,y:.5};if(image){image.style.left='0';image.style.top='0';image.style.transformOrigin='0 0';}const artworkMotion=posterArtworkMotion(before||tile,tile,image?.naturalWidth/ image?.naturalHeight,p=>p,53,focal);
-    if(image){image.style.width=`${artworkMotion.width}px`;image.style.height=`${artworkMotion.height}px`;image.style.transform=artworkMotion.frames.at(-1).transform;copyArtworkPresentation(image,artwork.current?.querySelector('.mv-artwork-blur'));}
-    if(!before||reduceMotion){animation.current?.cancel();artworkAnimation.current?.cancel();blurAnimation.current?.cancel();return;}
-    const from=animation.current?{x:matrix.e,y:matrix.f,width:before.width*matrix.a,height:before.height*matrix.d}:before;
-    animation.current?.cancel();artworkAnimation.current?.cancel();blurAnimation.current?.cancel();
-    if(Math.abs(from.x-tile.x)+Math.abs(from.y-tile.y)+Math.abs(from.width-tile.width)+Math.abs(from.height-tile.height)<.01)return;
-    node.style.willChange='transform';
-    const current=node.animate([{transform:`translate3d(${from.x}px,${from.y}px,0) scale(${from.width/tile.width},${from.height/tile.height})`},{transform:`translate3d(${tile.x}px,${tile.y}px,0) scale(1,1)`}],{duration:transitioning?600:520,easing:transitioning?'cubic-bezier(.22,1,.36,1)':reflowEasing});
-    if(image){
-      const duration=transitioning?600:520,motion=posterArtworkMotion(from,tile,image.naturalWidth/image.naturalHeight,p=>transitioning?focusProgress(p):reflowProgress(p*520),transitioning?61:53,focal,fromFocal);
-      image.style.width=`${motion.width}px`;image.style.height=`${motion.height}px`;
-      artworkAnimation.current=image.animate(motion.frames,{duration,easing:'linear'});const blur=artwork.current?.querySelector('.mv-artwork-blur');if(blur){copyArtworkPresentation(image,blur);blurAnimation.current=blur.animate(motion.frames,{duration,easing:'linear'});}
+  function targetViewport(){
+    const state=latest.current,node=element.current,surface=node?.closest('.wall-surface');
+    const target=artworkViewport({width:state.tile.width,height:state.tile.height,displayWidth:state.expanded?surface?.clientWidth:state.tile.width*state.displayScale,displayHeight:state.expanded?surface?.clientHeight:state.tile.height*state.displayScale});
+    return state.expanded?measureArtworkViewport(node?.querySelector('.poster-face'),target,{selectors:wallpaperOcclusions}):target;
+  }
+  // Planning always targets the final wall surface, not an interpolated card or
+  // physical screen dimensions. A windowed/fullscreen app can use either display.
+  useEffect(()=>{
+    let active=true;const surface=element.current?.closest('.wall-surface');
+    if(focused&&surface){const viewport=artworkViewport({width:surface.clientWidth,height:surface.clientHeight});warmArtworkSubjects(artworkURL(track,false),context=>command('artworkSubjects',{id:track.id,viewport:context},{reportError:false}),viewport).then(()=>{if(active)setAnalysisRevision(value=>value+1);});}
+    return()=>{active=false;};
+  },[focused,expanded,track.id,track.artworkRevision,tile.width,tile.height,displayScale]);
+  function presentArtwork(image=artwork.current?.querySelector('img.cover'),{animateFocus=false}={}){
+    if(!image?.naturalWidth||!image.naturalHeight)return;
+    const oldTransform=animateFocus?getComputedStyle(image).transform:null;
+    const state=latest.current,focal=applyArtworkFocus(image,{key:artworkURL(state.track,false),viewport:targetViewport(),coordinateSpace:imageCoordinateSpace(image),useSubjects:state.expanded}),transition=artworkTransition.current,parent=animation.current;
+    const running=transition&&parent?.playState==='running',motion=running?posterArtworkMotion(transition.from,state.tile,image.naturalWidth/image.naturalHeight,transition.progressAt,transition.samples,focal,transition.fromFocal):posterArtworkMotion(state.tile,state.tile,image.naturalWidth/image.naturalHeight,p=>p,2,focal);
+    artworkAnimation.current?.cancel();blurAnimation.current?.cancel();artworkAnimation.current=null;blurAnimation.current=null;
+    image.style.left='0';image.style.top='0';image.style.transformOrigin='0 0';image.style.width=`${motion.width}px`;image.style.height=`${motion.height}px`;image.style.transform=motion.frames.at(-1).transform;
+    const blur=artwork.current?.querySelector('.mv-artwork-blur');copyArtworkPresentation(image,blur);
+    if(!running&&animateFocus&&!reduceMotion&&oldTransform&&oldTransform!=='none'){
+      const frames=[{transform:oldTransform},{transform:motion.frames.at(-1).transform}];artworkAnimation.current=image.animate(frames,{duration:240,easing:'cubic-bezier(.2,.8,.2,1)'});if(blur)blurAnimation.current=blur.animate(frames,{duration:240,easing:'cubic-bezier(.2,.8,.2,1)'});
     }
-    animation.current=current;current.finished.catch(()=>{}).finally(()=>{if(animation.current===current){animation.current=null;node.style.willChange='';}});
+    if(running){
+      // Original pixels may decode halfway through a FLIP. Rebuild their aspect
+      // compensation at the parent's exact current time instead of dropping load.
+      artworkAnimation.current=image.animate(motion.frames,{duration:transition.duration,easing:'linear'});artworkAnimation.current.currentTime=parent.currentTime;
+      if(blur){blurAnimation.current=blur.animate(motion.frames,{duration:transition.duration,easing:'linear'});blurAnimation.current.currentTime=parent.currentTime;}
+    }
+  }
+  function settleArtwork(){cancelAnimationFrame(settleFrame.current);settleFrame.current=requestAnimationFrame(()=>{settleFrame.current=0;const animateFocus=pendingFocusTransition.current;pendingFocusTransition.current=false;presentArtwork(undefined,{animateFocus});});}
+  useLayoutEffect(()=>{
+    const before=previous.current;previous.current=tile;const analysisChanged=previousAnalysis.current!==analysisRevision;previousAnalysis.current=analysisRevision;
+    const node=element.current,matrix=new DOMMatrix(getComputedStyle(node).transform),image=artwork.current?.querySelector('img.cover');
+    const fromFocal={x:Number(image?.dataset.focalX??.5),y:Number(image?.dataset.focalY??.5)};
+    const changed=before&&Math.abs(before.x-tile.x)+Math.abs(before.y-tile.y)+Math.abs(before.width-tile.width)+Math.abs(before.height-tile.height)>=.01;
+    if(!changed&&!reduceMotion){if(analysisChanged&&animation.current?.playState==='running')pendingFocusTransition.current=true;else presentArtwork(undefined,{animateFocus:analysisChanged});return;}
+    const from=before&&(animation.current?{x:matrix.e,y:matrix.f,width:before.width*matrix.a,height:before.height*matrix.d}:before);
+    animation.current?.cancel();artworkAnimation.current?.cancel();blurAnimation.current?.cancel();animation.current=null;artworkTransition.current=null;
+    if(!before||reduceMotion){presentArtwork();return;}
+    node.style.willChange='transform';
+    const duration=transitioning?600:520,progressAt=p=>transitioning?focusProgress(p):reflowProgress(p*520),samples=transitioning?61:53;
+    const current=node.animate([{transform:`translate3d(${from.x}px,${from.y}px,0) scale(${from.width/tile.width},${from.height/tile.height})`},{transform:`translate3d(${tile.x}px,${tile.y}px,0) scale(1,1)`}],{duration,easing:transitioning?'cubic-bezier(.22,1,.36,1)':reflowEasing});
+    animation.current=current;artworkTransition.current={from,duration,progressAt,samples,fromFocal};presentArtwork();
+    current.finished.catch(()=>{}).finally(()=>{if(animation.current===current){animation.current=null;artworkTransition.current=null;node.style.willChange='';settleArtwork();}});
   },[tile.x,tile.y,tile.width,tile.height,reduceMotion,expanded,analysisRevision]);
-  useEffect(()=>()=>{animation.current?.cancel();artworkAnimation.current?.cancel();blurAnimation.current?.cancel();},[]);
+  useEffect(()=>()=>{cancelAnimationFrame(settleFrame.current);animation.current?.cancel();artworkAnimation.current?.cancel();blurAnimation.current?.cancel();},[]);
   return <ArtworkModeScope as="article" ref={element} className={`wall-poster ${focused?'focused':''} ${playing?'playing':''}`}
-    style={{'--artwork-cover':`url("${artworkURL(track,false)}")`,'--caption-inset':`${Math.min(14,Math.max(8,tile.width*.06))}px`,'--poster-title':`${Math.min(30,Math.max(18,tile.width*.105))}px`,'--poster-subtitle':`${Math.min(13,Math.max(10,tile.width*.045))}px`,width:tile.width,height:tile.height,transform:`translate3d(${tile.x}px,${tile.y}px,0)`}}
+    style={{'--artwork-cover':`url("${artworkURL(track,expanded&&focused)}")`,'--caption-inset':`${Math.min(14,Math.max(8,tile.width*.06))}px`,'--poster-title':`${Math.min(30,Math.max(18,tile.width*.105))}px`,'--poster-subtitle':`${Math.min(13,Math.max(10,tile.width*.045))}px`,width:tile.width,height:tile.height,transform:`translate3d(${tile.x}px,${tile.y}px,0)`}}
     inert={!visible} onFocusCapture={event=>{const rect=event.target.getBoundingClientRect();if(rect.right<0||rect.left>innerWidth||rect.bottom<0||rect.top>innerHeight)onReveal();}} onClick={event=>onFocus(tile,track,event)} onContextMenu={event=>grouped?onGroupMenu(event):onMenu(event,track)} tabIndex={visible?0:-1} data-track-id={track.id} role="button" aria-label={grouped?`打开 ${track.title}`:`聚焦 ${track.title}，双击播放`} onKeyDown={event=>{if(event.key==='Enter'&&event.target===event.currentTarget)onFocus(tile,track,event);}}>
-    <div className="poster-face"><div className="poster-artwork" ref={artwork} onLoadCapture={event=>{const image=event.target;if(image.matches('.mv-artwork-blur')){copyArtworkPresentation(artwork.current?.querySelector('img.cover'),image);return;}if(!image.matches('img.cover')||artworkAnimation.current?.playState==='running')return;const wall=image.closest('.wall-surface');const focal=image.dataset.focalX!==undefined?{x:Number(image.dataset.focalX),y:Number(image.dataset.focalY)}:applyArtworkFocus(image,{key:artworkURL(track,false),viewportAspect:tile.width/tile.height,useSubjects:expanded});image.style.left='0';image.style.top='0';image.style.transformOrigin='0 0';const motion=posterArtworkMotion(tile,tile,image.naturalWidth/image.naturalHeight,p=>p,53,focal);image.style.transform=motion.frames.at(-1).transform;image.style.width=`${motion.width}px`;image.style.height=`${motion.height}px`;copyArtworkPresentation(image,artwork.current?.querySelector('.mv-artwork-blur'));}}><Cover track={track} detail={focused} presentation="wall"/>{expanded&&focused&&<ArtworkBlur src={artworkURL(track,false)}/>}</div><div className="poster-shade"/>{!focused&&<><span className="poster-number">{String(tile.index+1).padStart(3,'0')}</span><div className="poster-caption"><h2>{track.title}</h2><p>{track.artist}</p></div></>}
+    <div className="poster-face"><div className="poster-artwork" ref={artwork} onLoadCapture={event=>{const image=event.target;if(image.matches('.mv-artwork-blur')){copyArtworkPresentation(artwork.current?.querySelector('img.cover'),image);return;}if(image.matches('img.cover'))presentArtwork(image);}}><Cover track={track} detail={focused} presentation="wall"/>{expanded&&focused&&<ArtworkBlur src={artworkURL(track,true)}/>}</div><div className="poster-shade"/>{!focused&&<><span className="poster-number">{String(tile.index+1).padStart(3,'0')}</span><div className="poster-caption"><h2>{track.title}</h2><p>{track.artist}</p></div></>}
     {focused&&<WallCardPlayer size={tile} track={track} playing={playing} onPlay={onPlay} onExpand={onExpand} expanded={expanded}/>}</div>
   </ArtworkModeScope>;
 });
@@ -231,7 +268,7 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID,locate
       const side=Math.max(260,Math.min(preferredSide,viewport.current.width-leadingInset-40,viewport.current.height-150));
       const size=immersive?{width:viewport.current.width/camera.current.scale,height:viewport.current.height/camera.current.scale}:{width:side,height:Math.max(320,side)};
       const frame=reflowFrame(tile,activeFocus?.tile,size),c=camera.current,visible=frame.x*c.scale+c.x<viewport.current.width+200&&(frame.x+frame.width)*c.scale+c.x> -200&&frame.y*c.scale+c.y<viewport.current.height+200&&(frame.y+frame.height)*c.scale+c.y> -200;
-      return <Poster key={tile.id} tile={frame} grouped={grouped} visible={visible} onReveal={()=>center(tile,false)} track={track} focused={focused} playing={playingCell?.id===tile.id} onMenu={onMenu} onGroupMenu={event=>{event.preventDefault();setGroupMenu({name:groups[tile.index].name,x:Math.max(8,Math.min(event.clientX,innerWidth-248)),y:Math.max(8,Math.min(event.clientY,innerHeight-80))});}} expanded={immersive} transitioning={transitioning} reduceMotion={reduceMotion||performance.now()<resizingUntil.current} onExpand={expand} onPlay={()=>groups?onOpenGroup(groups[tile.index].name):playPoster(track.id)}
+      return <Poster key={tile.id} tile={frame} grouped={grouped} visible={visible} onReveal={()=>center(tile,false)} track={track} focused={focused} playing={playingCell?.id===tile.id} onMenu={onMenu} onGroupMenu={event=>{event.preventDefault();setGroupMenu({name:groups[tile.index].name,x:Math.max(8,Math.min(event.clientX,innerWidth-248)),y:Math.max(8,Math.min(event.clientY,innerHeight-80))});}} expanded={immersive} displayScale={camera.current.scale} transitioning={transitioning} reduceMotion={reduceMotion||performance.now()<resizingUntil.current} onExpand={expand} onPlay={()=>groups?onOpenGroup(groups[tile.index].name):playPoster(track.id)}
         onFocus={(_,__,event)=>{if(suppressClick.current){suppressClick.current=false;return;}if(groups){onOpenGroup(groups[tile.index].name);return;}if(focus?.tile.id===tile.id)return;prepareFocus(tile);setFocus({tile,track});center(tile);}}/>
 
     })}</div>

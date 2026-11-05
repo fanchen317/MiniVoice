@@ -11,10 +11,18 @@ enum LyricsModel: String, CaseIterable, Identifiable {
     }
 }
 
+struct AlignedWord: Codable, Sendable {
+    let text: String
+    let start: Double
+    let end: Double
+    var probability: Double? = nil
+}
+
 struct AlignedLyric: Codable, Sendable {
     let text: String
     let start: Double?
     let end: Double?
+    var words: [AlignedWord]? = nil
 }
 
 enum LyricsAlignmentError: LocalizedError {
@@ -30,7 +38,7 @@ enum LyricsAlignmentError: LocalizedError {
 final class LyricsAlignment: ObservableObject {
     @Published private(set) var status = ""
     @Published private(set) var warning: String?
-    private static var isBusy = false
+    private(set) static var isBusy = false
     private static let runtimeVersion = "stable-ts-2.19.1-v1"
     private let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("\(AppIdentity.storageName)/LyricsAI", isDirectory: true)
@@ -122,7 +130,7 @@ final class LyricsAlignment: ObservableObject {
     }
 
     /// Validate again at the application boundary; preserve any manually supplied anchors.
-    nonisolated static func merge(_ result: [AlignedLyric], source: String, duration: Double) throws -> String {
+    nonisolated static func merge(_ result: [AlignedLyric], source: String, duration: Double, wordTiming: Bool = false) throws -> String {
         let lines = LRCParser.parse(LRCParser.imported(source), placeholder: false).filter { !$0.text.isEmpty }
         guard duration.isFinite, duration > 0, !lines.isEmpty, result.count == lines.count else {
             throw LyricsAlignmentError.failed("歌词未能完整匹配，原歌词未改动。")
@@ -132,7 +140,8 @@ final class LyricsAlignment: ObservableObject {
         let metadata = source.components(separatedBy: .newlines).filter {
             $0.range(of: #"^\s*\[(?!offset:)[A-Za-z]+:.*\]\s*$"#, options: [.regularExpression, .caseInsensitive]) != nil
         }
-        let timed = try zip(lines, result).map { line, aligned in
+        let timed = try zip(lines, result).enumerated().map { index, pair in
+            let (line, aligned) = pair
             guard aligned.text == line.text else {
                 throw LyricsAlignmentError.failed("对齐结果与歌词原文不一致，请重试。")
             }
@@ -156,6 +165,19 @@ final class LyricsAlignment: ObservableObject {
             previous = (time * 100).rounded()
             matchedCount += 1
             if !line.words.isEmpty { return LyricsTiming.encoded([line]) }
+            if wordTiming, let alignedWords = aligned.words, !alignedWords.isEmpty {
+                let next = lines.dropFirst(index + 1).compactMap(\.timestamp).first(where: { $0 > time }) ?? duration
+                let words = alignedWords.map { LyricWord(text: $0.text, start: $0.start, end: $0.end) }
+                let reliable = alignedWords.enumerated().allSatisfy { index, word in
+                    word.start.isFinite && word.end.isFinite && word.end > word.start &&
+                    (word.probability.map { $0.isFinite && $0 >= 0.35 && $0 <= 1 } ?? true) &&
+                    (index == 0 || word.start >= alignedWords[index - 1].end - 0.02)
+                }
+                let valid = LyricsTiming.validated(words, text: line.text, start: time, end: next)
+                if reliable, valid.count == words.count, words.map(\.text).joined() == line.text {
+                    return LyricsTiming.encoded([LyricLine(timestamp: time, text: line.text, endTime: words.last?.end, words: valid)])
+                }
+            }
             return LRCParser.stamp(time, text: line.text)
         }
         guard Double(matchedCount) / Double(lines.count) >= 0.65 else {
@@ -164,10 +186,10 @@ final class LyricsAlignment: ObservableObject {
         return (metadata + timed).joined(separator: "\n")
     }
 
-    func align(source: String, audioURL: URL, duration: Double, title: String = "") async throws -> String {
+    func align(source: String, audioURL: URL, duration: Double, title: String = "", wordTiming: Bool = false) async throws -> String {
         warning = nil
         let normalized = Self.alignmentSource(source, title: title)
-        guard Self.needsAlignment(normalized) else { return normalized }
+        guard wordTiming || Self.needsAlignment(normalized) else { return normalized }
         try Task.checkCancellation()
         let model = LyricsModel.selected
         guard installedModels.contains(model) else {
@@ -191,18 +213,23 @@ final class LyricsAlignment: ObservableObject {
         recognizer.processString(lines.joined(separator: "\n"))
         let detected = recognizer.dominantLanguage?.rawValue ?? "en"
         let language = detected.hasPrefix("zh") ? "zh" : detected
-        let request: [String: Any] = ["audioPath": audioURL.path, "lines": lines,
+        var request: [String: Any] = ["audioPath": audioURL.path, "lines": lines,
                                      "duration": duration, "language": language,
                                      "modelDirectory": modelURL(model).deletingLastPathComponent().path, "model": model.rawValue]
+        if wordTiming {
+            let parsed = LRCParser.parse(normalized, placeholder: false).filter { !$0.text.isEmpty }
+            request["granularity"] = "word"
+            request["anchors"] = parsed.map { $0.timestamp.map { $0 as Any } ?? NSNull() }
+        }
         let requestURL = work.appendingPathComponent("request.json")
         try JSONSerialization.data(withJSONObject: request).write(to: requestURL)
         let output = work.appendingPathComponent("result.json")
         let progress = work.appendingPathComponent("status.txt")
         status = "正在加载本地 AI 模型…"
         try await run(python, [worker.path, requestURL.path, output.path, progress.path], work: work,
-                      statusFile: progress, timeout: 3600)
+                      statusFile: progress, timeout: 3600, background: wordTiming)
         let result = try JSONDecoder().decode([AlignedLyric].self, from: Data(contentsOf: output))
-        let merged = try Self.merge(result, source: normalized, duration: duration)
+        let merged = try Self.merge(result, source: normalized, duration: duration, wordTiming: wordTiming)
         let unmatched = LRCParser.parse(merged, placeholder: false).filter { $0.timestamp == nil }.count
         if unmatched > 0 {
             warning = "已保存可同步的歌词。还有 \(unmatched) 行未能匹配，已保留原文，不会自动高亮。可在编辑窗口为这些行手动打点，或检查歌词版本后重新同步。"
@@ -234,7 +261,7 @@ final class LyricsAlignment: ObservableObject {
     }
 
     private func run(_ executable: URL, _ arguments: [String], work: URL,
-                     statusFile: URL? = nil, timeout: TimeInterval = 1800) async throws {
+                     statusFile: URL? = nil, timeout: TimeInterval = 1800, background: Bool = false) async throws {
         try Task.checkCancellation()
         let log = work.appendingPathComponent("process-\(UUID()).log")
         FileManager.default.createFile(atPath: log.path, contents: nil)
@@ -251,6 +278,7 @@ final class LyricsAlignment: ObservableObject {
         environment.removeValue(forKey: "PYTHONHOME")
         environment.removeValue(forKey: "PYTHONPATH")
         environment["PYTHONUNBUFFERED"] = "1"
+        if background { process.qualityOfService = .background; environment["MINIVOICE_ALIGNMENT_THREADS"] = "2" }
         process.environment = environment
         process.standardOutput = handle
         process.standardError = handle

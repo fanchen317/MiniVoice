@@ -162,3 +162,34 @@ final class LyricsAlignmentTests: XCTestCase {
         XCTAssertEqual(service.status, "")
     }
 }
+
+extension LyricsAlignmentTests {
+    func testAudioWordsRespectLineAnchorsAndExactSource() throws {
+        let rows = [AlignedLyric(text: "Hello world", start: 1, end: 3, words: [
+            AlignedWord(text: "Hello ", start: 1.2, end: 1.7, probability: 0.9),
+            AlignedWord(text: "world", start: 2.1, end: 2.9, probability: 0.9)
+        ])]
+        let source = "[00:01.00]Hello world"
+        let value = try LyricsAlignment.merge(rows, source: source, duration: 10, wordTiming: true)
+        let line = try XCTUnwrap(LRCParser.parse(value).first)
+        XCTAssertEqual(line.timestamp, 1)
+        XCTAssertEqual(line.text, "Hello world")
+        XCTAssertEqual(line.words.count, 2)
+        XCTAssertEqual(line.words[0].start, 1.2, accuracy: 0.001)
+        XCTAssertEqual(line.words[1].start, 2.1, accuracy: 0.001)
+    }
+
+    func testInvalidAudioWordsFallBackWithoutChangingOriginalAnchor() throws {
+        for words in [
+            [AlignedWord(text: "错误文本", start: 1.2, end: 2)],
+            [AlignedWord(text: "原文", start: 0.5, end: 2)],
+            [AlignedWord(text: "原文", start: 1.2, end: 2, probability: 0.1)]
+        ] {
+            let value = try LyricsAlignment.merge([AlignedLyric(text: "原文", start: 1, end: 2, words: words)], source: "[00:01.00]原文", duration: 10, wordTiming: true)
+            let line = try XCTUnwrap(LRCParser.parse(value).first)
+            XCTAssertEqual(line.timestamp, 1)
+            XCTAssertEqual(line.text, "原文")
+            XCTAssertTrue(line.words.isEmpty)
+        }
+    }
+}

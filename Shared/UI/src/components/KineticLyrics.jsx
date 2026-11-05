@@ -2,9 +2,9 @@ import './kineticLyrics.css';
 import {samplePlaybackClock,playbackTime} from './playbackClock.js';
 import React,{useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {normalizeLyrics,displayLine} from './lyricPresentation.js';
-import {kineticCharacters,kineticLayout,paintKineticPhrase} from './kineticModel.js';
+import {kineticCharacters,kineticLayout,paintKineticPhrase,paintKineticSeam} from './kineticModel.js';
 /** Controlled lyrics/time; only canvas size and motion preferences are local. */
-export default function KineticLyrics({lines:source,time=0,duration=0,playing=false,showTranslation=true}){
+export default function KineticLyrics({lines:source,time=0,duration=0,playing=false,showTranslation=true,showSeam=false}){
  const root=useRef(null),canvas=useRef(null),clock=useRef({time,playing,sampledAt:performance.now()}),[size,setSize]=useState({width:1,height:1}),[reduced,setReduced]=useState(false);
  const lines=useMemo(()=>normalizeLyrics(source),[source]);let active=-1;for(let i=0;i<lines.length;i++)if(lines[i].time!==null&&lines[i].time<=time)active=i;
  const index=Math.max(0,active),line=lines[index]||{text:'',words:[]},next=lines.slice(index+1).find(row=>row.time>line.time)?.time,waiting=active<0&&lines.some(row=>row.time!==null);
@@ -18,7 +18,7 @@ export default function KineticLyrics({lines:source,time=0,duration=0,playing=fa
   const node=canvas.current;if(!node||waiting||reduced||!characters.length)return;
   const ctx=node.getContext('2d');if(!ctx)return;const scale=Math.min(2,devicePixelRatio||1),width=Math.max(1,size.width);node.width=Math.ceil(width*scale);node.height=Math.ceil(height*scale);ctx.setTransform(scale,0,0,scale,0,0);
   const layout=kineticLayout(characters,{width,height},(text,font)=>{ctx.font=`700 ${font}px system-ui,sans-serif`;return ctx.measureText(text).width;});let frame=0,last=-Infinity;
-  const draw=now=>{if(now-last>=1000/60||!clock.current.playing){last=now;ctx.clearRect(0,0,width,height);const sample=clock.current,t=playbackTime(sample,now);ctx.font=`700 ${layout.fontSize}px system-ui,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';paintKineticPhrase(ctx,characters,layout,t,width,height);}if(clock.current.playing)frame=requestAnimationFrame(draw);};draw(performance.now());return()=>cancelAnimationFrame(frame);
- },[characters,size.width,height,playing,playing?null:time,waiting,reduced]);
+  const draw=now=>{if(now-last>=1000/60||!clock.current.playing){last=now;ctx.clearRect(0,0,width,height);const sample=clock.current,t=playbackTime(sample,now);ctx.font=`700 ${layout.fontSize}px system-ui,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';paintKineticPhrase(ctx,characters,layout,t,width,height);if(showSeam)paintKineticSeam(ctx,layout,characters,t,width,height);}if(clock.current.playing)frame=requestAnimationFrame(draw);};draw(performance.now());return()=>cancelAnimationFrame(frame);
+ },[characters,size.width,height,playing,playing?null:time,waiting,reduced,showSeam]);
  return <div ref={root} className="mv-kinetic-lyrics" data-mv-component="kinetic-lyrics" aria-label="大字歌词">{!lines.length?<p>暂无歌词</p>:<><div className="mv-kinetic-main" style={{height,fontSize:Math.min(58,Math.max(24,size.width*.095))}}>{waiting?<span>•••</span>:characters.length&&!reduced?<canvas ref={canvas} role="img" aria-label={line.text} style={{width:'100%',height}}/>:<span>{line.text}</span>}</div>{showTranslation&&!waiting&&line.translation&&<p className="mv-kinetic-translation" style={{fontSize:Math.min(25,Math.max(17,size.width*.042))}}>{line.translation}</p>}<div className="mv-kinetic-upcoming" style={{fontSize:upcomingFont}}>{lines.slice(index+1,index+1+upcomingCount).map((row,i)=><div key={`${row.time}:${i}`}>{row.text}</div>)}</div></>}</div>;
 }

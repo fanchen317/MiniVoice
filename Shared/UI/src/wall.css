@@ -285,7 +285,9 @@
 .mv-wall-artwork-stack{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
 /* A complete white press contour is intentional; it is separate from any
    unshaded bottom-edge artefact. Same feedback on Android and iOS. */
-[data-presentation=mobile] .is-touch-pressed>.mv-wall-press-surface{outline:1.5px solid #fffffff2;outline-offset:-1.5px}
+.mv-wall-press-outline{position:absolute;inset:0;box-sizing:border-box;border:1.5px solid #fffffff2;z-index:5;pointer-events:none;opacity:0}
+[data-presentation=mobile] .is-touch-pressed>.mv-wall-press-surface>.mv-wall-press-outline{opacity:1}
+.mv-wall-card.is-focus-underlay>.mv-wall-press-surface>.mv-wall-press-outline,.mv-wall-card.is-focus-underlay.active>.mv-wall-press-surface::after{display:none}
 
 /* Keep the selected preview contour above artwork and shade, including after touch release. */
 .mv-wall-focus-outline{position:absolute;inset:0;border:1.5px solid #fffffff2;box-sizing:border-box;z-index:5;pointer-events:none}
@@ -307,3 +309,5 @@
 [data-presentation=mobile] .mv-wall-card,
 [data-presentation=mobile] .mv-wall-focused:not(.is-expanded){background:transparent;box-shadow:none}
 [data-presentation=mobile] .mv-wall-focused:not(.is-expanded)::before{display:none}
+
+[data-presentation=mobile] .wp-player:not(.is-expanded) .wp-footer{display:flex;flex-direction:column;flex-shrink:0;margin-top:auto}

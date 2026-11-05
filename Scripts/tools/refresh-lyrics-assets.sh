@@ -40,10 +40,10 @@ for LIBRARY in "$WORKER/_internal/torch/lib/libtorch_cpu.dylib" \
 done
 "$WORKER/lyrics-worker" --self-test "$MODEL_SOURCE"
 mkdir -p "$OUTPUT"
-cp "$MODEL_SOURCE" "$OUTPUT/small.pt"
+if [[ ! "$MODEL_SOURCE" -ef "$OUTPUT/small.pt" ]]; then cp "$MODEL_SOURCE" "$OUTPUT/small.pt"; fi
 tar -C "$DIST" -czf "$OUTPUT/lyrics-worker.tar.gz" lyrics-worker
 (
   cd "$OUTPUT"
   shasum -a 256 lyrics-worker.tar.gz small.pt > SHA256SUMS
 )
-echo "已更新 $OUTPUT；请检查并提交 Git LFS 资源。"
+echo "已更新 ${OUTPUT}；请检查并提交 Git LFS 资源。"

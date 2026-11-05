@@ -22,3 +22,14 @@ window.renderWallCardProbe=(current,expanded,compact)=>{
  cardProbeRoot.render(<WallPlayer song={songs[0]} card={{width:390,height:844,compact}} current={current} expanded={expanded} lines={[]} position={0} onExpand={()=>{}}/>);
 };
 window.removeWallCardProbe=()=>{cardProbeRoot?.unmount();cardProbeHost?.remove();cardProbeRoot=null;cardProbeHost=null;};
+
+// Isolated full-viewport probe: no user files or host audio service involved.
+let cropProbeRoot,cropProbeHost;
+window.renderWallCropProbe=async({expanded=false,nativeScrolling=false,width=390,height=844}={})=>{
+ const {default:Wall}=await import('../src/Wall.jsx');
+ if(!cropProbeHost){cropProbeHost=document.createElement('main');cropProbeHost.className='mv-workspace style-wall theme-dark';cropProbeHost.dataset.presentation='mobile';Object.assign(cropProbeHost.style,{position:'fixed',inset:'0',zIndex:9999});document.body.append(cropProbeHost);cropProbeRoot=createRoot(cropProbeHost);}
+ Object.assign(cropProbeHost.style,{width:`${width}px`,height:`${height}px`});
+ const preview='minivoice-art://cover/crop-probe',original='minivoice-art://detail/crop-probe';
+ const items=[{id:'probe',title:'Crop probe',artwork:preview,artworkWall:preview,artworkDetail:original}];
+ cropProbeRoot.render(<Wall nativeScrolling={nativeScrolling} items={items} current="probe" playingId="probe" focused expanded={expanded} page={{}} onCamera={()=>{}} onAnalyzeArtwork={async(id,viewport)=>{(window.wallFixture.cropRequests||=[]).push({id,viewport});return [{x:.16,y:.15,width:.15,height:.25,face:1,confidence:.9}];}} focusContent={()=><div className="wp-player"><header className="wp-header"><div className="wp-heading"><h1>Composition probe</h1></div></header></div>}/>);
+};

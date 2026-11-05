@@ -105,3 +105,22 @@ export function kineticPalette(index,count,elapsed){
  const hue=235+65*Math.sin(phase);
  return {top:`hsl(${hue-28},95%,82%)`,bottom:`hsl(${hue+18},92%,70%)`,glow:`hsla(${hue},95%,74%,0.65)`};
 }
+
+// Desktop Chromium does not reproduce the narrow glow seam seen on mobile.
+// Draw that small accent explicitly, without changing the mobile text raster.
+export function kineticSeam(layout,characters,time,width,height){
+ let index=-1;for(let i=0;i<characters.length;i++)if(characters[i].start<=time)index=i;
+ const point=layout.glyphs[index];if(!point)return null;
+ const length=Math.min(layout.fontSize*1.8,Math.max(0,width-32)),thickness=Math.max(1,layout.fontSize*.035);
+ const y=point.y+layout.fontSize*.78;
+ if(!length||y+thickness>height)return null;
+ return {x:(width-length)/2,y,width:length,height:thickness,index};
+}
+export function paintKineticSeam(ctx,layout,characters,time,width,height){
+ const line=kineticSeam(layout,characters,time,width,height);if(!line)return;
+ const palette=kineticPalette(line.index,characters.length,time-characters[0].start);
+ ctx.save();const gradient=ctx.createLinearGradient(line.x,0,line.x+line.width,0);
+ gradient.addColorStop(0,'transparent');gradient.addColorStop(.5,palette.bottom);gradient.addColorStop(1,'transparent');
+ ctx.globalAlpha=.6;ctx.fillStyle=gradient;ctx.shadowColor=palette.glow;ctx.shadowBlur=layout.fontSize*.05;
+ ctx.fillRect(line.x,line.y,line.width,line.height);ctx.restore();
+}

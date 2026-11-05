@@ -20,6 +20,7 @@ final class DesktopEngine {
     private var artworkSearches: [String: (UUID, OnlineArtworkResult)] = [:]
     private var artworkSearchRevision = 0
     private var albumArtworkSyncing = false
+    private var backgroundWordTask: Task<String, Error>?
     private var lastInterfaceStyle: String?
     private var observations = Set<AnyCancellable>()
     private var input = Data()
@@ -167,6 +168,7 @@ final class DesktopEngine {
                 "artists": ["field": defaults.string(forKey: "MiniVoice.artistSortField") ?? "name", "ascending": defaults.object(forKey: "MiniVoice.artistSortAscending") == nil ? true : defaults.bool(forKey: "MiniVoice.artistSortAscending")] as [String: Any],
                 "albums": ["field": defaults.string(forKey: "MiniVoice.albumSortField") ?? "name", "ascending": defaults.object(forKey: "MiniVoice.albumSortAscending") == nil ? true : defaults.bool(forKey: "MiniVoice.albumSortAscending")] as [String: Any]
             ],
+            "wordTimingCacheEnabled": defaults.string(forKey: "MiniVoice.wordTimingCache") != "disabled",
             "appearance": defaults.string(forKey: "MiniVoice.appearance") ?? "system", "desktopLyrics": false,
             "closeBehavior": defaults.string(forKey: "MiniVoice.closeBehavior") ?? "background",
             "playbackShortcuts": PlaybackShortcutAction.allCases.map { action -> [String: Any] in
@@ -230,7 +232,7 @@ final class DesktopEngine {
         case "desktopSettings":
             let windowKey = WindowToggleController.preferenceKey
             let windowShortcut = defaults.data(forKey: windowKey).flatMap { try? JSONDecoder().decode(PlaybackShortcut.self, from: $0) } ?? WindowToggleController.defaultShortcut
-            return ["closeBehavior":defaults.string(forKey:"MiniVoice.closeBehavior") ?? "background",
+            return ["wordTimingCacheEnabled":defaults.string(forKey:"MiniVoice.wordTimingCache") != "disabled", "closeBehavior":defaults.string(forKey:"MiniVoice.closeBehavior") ?? "background",
                     "statusIconStyle":defaults.string(forKey:StatusBarController.preferenceKey) ?? "colored",
                     "lyricsModel":defaults.string(forKey:"MiniVoice.lyricsModel") ?? "small",
                     "windowShortcut":["keyCode":windowShortcut.keyCode,"modifiers":windowShortcut.modifiers,"label":windowShortcut.description],
@@ -241,9 +243,11 @@ final class DesktopEngine {
                     "models":LyricsModel.allCases.map { model in ["id":model.rawValue,"name":model.title,"bundled":LyricsAlignment.isBundled(model),"installed":lyricsSync.installedModels.contains(model)] as [String:Any] }] as [String:Any]
         case "desktopPreference":
             guard let key = payload["key"] as? String, let value = payload["value"] as? String else { throw CocoaError(.coderInvalidValue) }
-            let allowed = ["closeBehavior":["background","pause","quit"],"statusIconStyle":["hidden","colored","monochrome"],"lyricsModel":["small","medium"]]
+            let allowed = ["closeBehavior":["background","pause","quit"],"statusIconStyle":["hidden","colored","monochrome"],"lyricsModel":["small","medium"],"wordTimingCache":["enabled","disabled"]]
             guard allowed[key]?.contains(value) == true else { throw CocoaError(.coderInvalidValue) }
-            defaults.set(value,forKey:"MiniVoice.\(key)");publishState();return true
+            defaults.set(value,forKey:"MiniVoice.\(key)");publishState()
+            if key == "wordTimingCache", value == "disabled", let task = backgroundWordTask { task.cancel(); _ = try? await task.value }
+            return true
         case "desktopShortcut":
             guard let action = payload["action"] as? String, let code = payload["keyCode"] as? Int, (0...126).contains(code), let flags = payload["modifiers"] as? UInt else { throw CocoaError(.coderInvalidValue) }
             let shortcut = PlaybackShortcut(keyCode:UInt16(code),modifiers:NSEvent.ModifierFlags(rawValue:flags))
@@ -361,8 +365,15 @@ final class DesktopEngine {
             try ResourceCache.atomicWrite(bytes, to: target); return true
         case "artworkSubjects":
             let item = try track(payload)
-            guard let data = ResourceCache.artworkData(item.artworkKey, detail: false) else { return [[String: Double]]() }
-            return try await ArtworkSubjects.detect(data)
+            guard let key = item.artworkKey else { return [[String: Double]]() }
+            // Analyze the same untrimmed source used by the expanded detail URL.
+            // List/Detail thumbnails may have white margins removed, so their
+            // normalized rectangles cannot be applied to an original image.
+            _ = try await command("prepareOriginalArtwork", ["key": key])
+            guard let data = try? Data(contentsOf: ResourceCache.url(key, kind: "Artwork/Original")),
+                  library.tracks.contains(where: { $0.id == item.id && $0.artworkKey == key }) else { return [[String: Double]]() }
+            let viewport = payload["viewport"] as? [String: Any] ?? [:]
+            return try await ArtworkSubjects.detect(data, viewportWidth: viewport["width"] as? Double, viewportHeight: viewport["height"] as? Double)
         case "detail": return detail(await library.resolveTrack(try track(payload).id))
         case "reveal": NSWorkspace.shared.activateFileViewerSelecting([try track(payload).url]); return true
         case "desktopLyrics":
@@ -413,7 +424,23 @@ final class DesktopEngine {
             latest.lyrics = text
             try await library.save(latest, lyricsDestination: .sidecar)
             return text
+        case "cancelWordTiming":
+            if let task = backgroundWordTask { task.cancel(); _ = try? await task.value }
+            return true
+        case "analyzeWordTiming":
+            let listed = try track(payload)
+            guard let resolved = await library.resolveTrack(listed.id, fullResolution: true),
+                  let expected = payload["source"] as? String, expected == resolved.lyrics else { throw LyricsAlignmentError.failed("歌词已变化，丢弃旧分析请求") }
+            guard defaults.string(forKey: "MiniVoice.wordTimingCache") != "disabled" else { throw LyricsAlignmentError.cancelled }
+            guard backgroundWordTask == nil else { throw LyricsAlignmentError.failed("逐字缓存正在处理另一首歌曲") }
+            let task = Task { try await LyricsAlignment().align(source: expected, audioURL: resolved.url, duration: resolved.duration, title: resolved.title, wordTiming: true) }
+            backgroundWordTask = task
+            defer { backgroundWordTask = nil }
+            let aligned = try await task.value
+            guard let current = await library.resolveTrack(listed.id, fullResolution: true), current.lyrics == expected else { throw LyricsAlignmentError.failed("歌词已变化，丢弃旧分析结果") }
+            return ["lyrics": aligned, "timingSource": "audioAligned"]
         case "syncLyrics":
+            if let task = backgroundWordTask { task.cancel(); _ = try? await task.value }
             if let resolved = await library.resolveTrack(try track(payload).id) { lyricsSync.start(track: resolved, destination: .sidecar, library: library) }; return true
         case "syncAlbumArtwork":
             guard !albumArtworkSyncing else { throw TagWriteError.failed("正在同步专辑插图，请稍候") }
@@ -443,6 +470,7 @@ final class DesktopEngine {
             }
             return results
         case "saveMetadata":
+            if let task = backgroundWordTask { task.cancel(); _ = try? await task.value }
             let base = try track(payload)
             guard var resolved = await library.resolveTrack(base.id, fullResolution: true) else { throw CocoaError(.fileReadNoSuchFile) }
             resolved.title = payload["title"] as? String ?? resolved.title
@@ -462,7 +490,7 @@ final class DesktopEngine {
             let ids = Set((payload["ids"] as? [String] ?? []).compactMap(UUID.init(uuidString:)))
             library.deleteTracks(ids: ids, moveFilesToTrash: payload["trash"] as? Bool ?? false); return true
         case "removeTrack": library.deleteTracks(ids: [try track(payload).id], moveFilesToTrash: false); return true
-        case "shutdown": library.pause(); defaults.synchronize(); NSApp.terminate(nil); return true
+        case "shutdown": backgroundWordTask?.cancel(); library.pause(); defaults.synchronize(); NSApp.terminate(nil); return true
         default: throw NSError(domain: "MiniVoice", code: 2, userInfo: [NSLocalizedDescriptionKey: "不支持的后台命令：\(action)"])
         }
     }
