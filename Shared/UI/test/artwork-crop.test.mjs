@@ -5,3 +5,12 @@ test('viewport matrix produces bounded crop positions for faces, groups and text
 test('subject completion invalidates current presentation and unsubscribe stops updates',async()=>{let count=0;const stop=subscribeArtworkSubjects('test://async-cover',()=>count++);await warmArtworkSubjects('test://async-cover',async()=>[{x:.1,y:.1,width:.2,height:.2,face:1}]);assert.equal(count,1);stop();await warmArtworkSubjects('test://async-cover',async()=>[]);assert.equal(count,1);});
 test('composition keeps an entire feasible face group including hair margins',async()=>{const {compositionCrop}=await import('../src/components/artworkComposition.js');const faces=[{x:.15,y:.2,width:.12,height:.15,face:1,confidence:.9},{x:.65,y:.23,width:.1,height:.13,face:1,confidence:.85}];const p=compositionCrop(faces,1,21/9),height=9/21,top=p.y*(1-height);for(const f of faces){assert.ok(top<=f.y-f.height*.65+1e-8);assert.ok(top+height>=f.y+f.height*1.2-1e-8);}});
 test('texture cannot pull a feasible face out of its protected crop',async()=>{const {artworkFocus}=await import('../src/components/artworkFocus.js');const data=new Uint8ClampedArray(32*32*4);for(let y=0;y<32;y++)for(let x=22;x<32;x++){const i=(y*32+x)*4;data[i]=(x+y)%2?255:0;}const face={x:.08,y:.2,width:.12,height:.18,face:1};const p=artworkFocus(data,32,32,{imageAspect:2,viewportAspect:.6,regions:[face]}),left=p.x*(1-.3);assert.ok(left<=face.x-face.width*.18+1e-8);assert.ok(left+.3>=face.x+face.width*1.18-1e-8);});
+test('visible session locks its crop against late subject results',async()=>{
+ const {stableArtworkFocus}=await import('../src/components/artworkFocus.js');
+ const image={naturalWidth:1200,naturalHeight:800,dataset:{},style:{},closest:()=>null},decisions=new Map();
+ const options={key:'test://session-lock',coordinateSpace:'original',viewport:{width:390,height:844}};
+ const before=stableArtworkFocus(image,options,decisions);
+ await warmArtworkSubjects(options.key,async()=>[{x:.02,y:.1,width:.1,height:.2,face:1,confidence:1}]);
+ assert.deepEqual(stableArtworkFocus(image,options,decisions),before);
+ assert.equal(image.style.objectPosition,`${before.x*100}% ${before.y*100}%`);
+});

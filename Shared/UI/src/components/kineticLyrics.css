@@ -5,3 +5,9 @@
 .mv-kinetic-translation{line-height:1.55;opacity:.94;text-align:center;text-wrap:pretty;padding:0 18px;margin:0 0 14px;text-shadow:0 2px 10px #0009;flex-shrink:0;font-weight:500}
 .mv-kinetic-upcoming{min-height:0;overflow:hidden;padding-inline:16px;line-height:1.65;color:#ffffff80;font-weight:700;text-align:left}
 .mv-kinetic-upcoming>div+div{opacity:.4}
+/* Translation follows the phrase, without pretending it has word timestamps. */
+.mv-kinetic-translation{align-self:center;width:90%;max-width:800px;padding:0;margin:4px 0 16px;line-height:1.5;font-weight:600;letter-spacing:.025em;overflow-wrap:anywhere;flex-shrink:1;min-height:0}
+.mv-kinetic-translation>span{display:block;color:#e0eeff;background:linear-gradient(110deg,#fff5dc,#e0eeff 50%,#dfd3ff);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:mv-translation-enter 280ms ease-out both}
+@keyframes mv-translation-enter{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.mv-kinetic-translation>span{animation:none}}
+.reduce-motion .mv-kinetic-translation>span{animation:none}

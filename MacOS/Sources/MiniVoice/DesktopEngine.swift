@@ -431,7 +431,7 @@ final class DesktopEngine {
             let listed = try track(payload)
             guard let resolved = await library.resolveTrack(listed.id, fullResolution: true),
                   let expected = payload["source"] as? String, expected == resolved.lyrics else { throw LyricsAlignmentError.failed("歌词已变化，丢弃旧分析请求") }
-            guard defaults.string(forKey: "MiniVoice.wordTimingCache") != "disabled" else { throw LyricsAlignmentError.cancelled }
+            guard defaults.string(forKey: "MiniVoice.wordTimingCache") != "disabled" else { throw CancellationError() }
             guard backgroundWordTask == nil else { throw LyricsAlignmentError.failed("逐字缓存正在处理另一首歌曲") }
             let task = Task { try await LyricsAlignment().align(source: expected, audioURL: resolved.url, duration: resolved.duration, title: resolved.title, wordTiming: true) }
             backgroundWordTask = task

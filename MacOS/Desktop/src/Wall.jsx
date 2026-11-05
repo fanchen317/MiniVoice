@@ -1,6 +1,6 @@
 import {ArtworkModeScope,ArtworkBlur} from '../../../Shared/UI/src/components/ArtworkModeButton.jsx';
-import {applyArtworkFocus,warmArtworkSubjects,copyArtworkPresentation} from '../../../Shared/UI/src/components/artworkFocus.js';
-import {artworkViewport,measureArtworkViewport} from '../../../Shared/UI/src/components/artworkViewport.js';
+import {stableArtworkFocus,warmArtworkSubjects,copyArtworkPresentation} from '../../../Shared/UI/src/components/artworkFocus.js';
+import {artworkViewport} from '../../../Shared/UI/src/components/artworkViewport.js';
 import ActionButton from '../../../Shared/UI/src/components/ActionButton.jsx';
 import Slider from '../../../Shared/UI/src/components/Slider.jsx';
 import {wallZoomStops,nextWallZoomStop} from './wallZoom';
@@ -15,22 +15,16 @@ import { Cover, Icon, WallCardPlayer } from './components';
 import { springEasing,springProgress,posterArtworkMotion } from './motion';
 
 const reflowEasing=`linear(${Array.from({length:53},(_,i)=>`${reflowProgress(i*10).toFixed(5)} ${(i/52*100).toFixed(2)}%`).join(',')})`;
-const wallpaperOcclusions=[
-  {selector:'.wall-card-content > header h2, .wall-card-content > header p',text:true,weight:.8},
-  {selector:'.wall-playback-status, .wall-playback-time',text:true,weight:.4},
-  {selector:'.wall-transport-buttons button, .wall-card-transport [role=slider]',weight:.6},
-  {selector:'.wall-lyrics .lyric-content, .wall-lyrics small, .mv-kinetic-upcoming > div, .mv-kinetic-translation',text:true,weight:.35},
-  {selector:'.mv-kinetic-main canvas',weight:.2},
-];
 function imageCoordinateSpace(image){try{return new URL(image.currentSrc||image.src,location.href).hostname==='detail'?'original':'preview';}catch{return 'preview';}}
 const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, onMenu,onPlay,onExpand,expanded,transitioning,reduceMotion,visible,onReveal,grouped,onGroupMenu,displayScale=1 }) {
+  const cropDecisions=useRef(new Map());
   const element=useRef(),previous=useRef(),animation=useRef(),artwork=useRef(),artworkAnimation=useRef(),blurAnimation=useRef(),artworkTransition=useRef(null),settleFrame=useRef(0),latest=useRef(null),previousAnalysis=useRef(0),pendingFocusTransition=useRef(false);
   latest.current={tile,track,expanded,displayScale};
   const [analysisRevision,setAnalysisRevision]=useState(0);
   function targetViewport(){
     const state=latest.current,node=element.current,surface=node?.closest('.wall-surface');
-    const target=artworkViewport({width:state.tile.width,height:state.tile.height,displayWidth:state.expanded?surface?.clientWidth:state.tile.width*state.displayScale,displayHeight:state.expanded?surface?.clientHeight:state.tile.height*state.displayScale});
-    return state.expanded?measureArtworkViewport(node?.querySelector('.poster-face'),target,{selectors:wallpaperOcclusions}):target;
+    const target=artworkViewport({width:surface?.clientWidth||state.tile.width,height:surface?.clientHeight||state.tile.height});
+    return target;
   }
   // Planning always targets the final wall surface, not an interpolated card or
   // physical screen dimensions. A windowed/fullscreen app can use either display.
@@ -42,7 +36,7 @@ const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, on
   function presentArtwork(image=artwork.current?.querySelector('img.cover'),{animateFocus=false}={}){
     if(!image?.naturalWidth||!image.naturalHeight)return;
     const oldTransform=animateFocus?getComputedStyle(image).transform:null;
-    const state=latest.current,focal=applyArtworkFocus(image,{key:artworkURL(state.track,false),viewport:targetViewport(),coordinateSpace:imageCoordinateSpace(image),useSubjects:state.expanded}),transition=artworkTransition.current,parent=animation.current;
+    const state=latest.current,focal=stableArtworkFocus(image,{key:artworkURL(state.track,false),viewport:targetViewport(),coordinateSpace:imageCoordinateSpace(image),useSubjects:true},cropDecisions.current),transition=artworkTransition.current,parent=animation.current;
     const running=transition&&parent?.playState==='running',motion=running?posterArtworkMotion(transition.from,state.tile,image.naturalWidth/image.naturalHeight,transition.progressAt,transition.samples,focal,transition.fromFocal):posterArtworkMotion(state.tile,state.tile,image.naturalWidth/image.naturalHeight,p=>p,2,focal);
     artworkAnimation.current?.cancel();blurAnimation.current?.cancel();artworkAnimation.current=null;blurAnimation.current=null;
     image.style.left='0';image.style.top='0';image.style.transformOrigin='0 0';image.style.width=`${motion.width}px`;image.style.height=`${motion.height}px`;image.style.transform=motion.frames.at(-1).transform;

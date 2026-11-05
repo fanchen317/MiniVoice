@@ -94,7 +94,9 @@ export function compositionCrop(regions,imageAspect,viewportAspect,{energy,width
    score-=(boxes.length?.01:.05)*border;
    if(mask){let unobscured=0;for(let y=0;y<24;y++)for(let x=0;x<24;x++){const ix=(x+.5)/24,iy=(y+.5)/24;if(ix<crop.x||ix>crop.right||iy<crop.y||iy>crop.bottom)continue;unobscured+=visual.coarse[y*24+x]*(1-mask.at((ix-crop.x)/cw,(iy-crop.y)/ch));}score+=(boxes.length?.08:.35)*unobscured/visual.total;}
   }
-  score-=.06*Math.abs(at-travel/2)/travel;
+  // Pixel contrast alone is weaker evidence than a detected subject. Keep
+  // abstract art near its original composition rather than chasing busy edges.
+  score-=(boxes.length?.06:.18)*Math.abs(at-travel/2)/travel;
   if(score>best+1e-9){best=score;start=at;}
  }
  return horizontal?{x:clamp(start/travel),y:.5}:{x:.5,y:clamp(start/travel)};

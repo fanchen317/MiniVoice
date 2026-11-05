@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {kineticSeam} from '../src/components/kineticModel.js';
-test('desktop seam stays below the timed row and inside the canvas',()=>{
- const chars=[{start:1},{start:3}],layout={fontSize:30,glyphs:[{x:50,y:30},{x:50,y:90}]};
- assert.equal(kineticSeam(layout,chars,0,200,150),null);
- const a=kineticSeam(layout,chars,2,200,150),b=kineticSeam(layout,chars,4,200,150);
- assert.ok(a.y>30&&a.y<90);assert.ok(b.y>a.y);assert.equal(a.x+a.width/2,100);
- assert.equal(kineticSeam(layout,chars,4,200,100),null);
+import {paintKineticPhrase} from '../src/components/kineticModel.js';
+test('light traces share glyph transforms and are absent before highlight',()=>{
+ const draw=(time,showSeam)=>{const calls=[];const ctx=new Proxy({measureText:()=>({width:24}),createLinearGradient:()=>({addColorStop(){}})},{get:(target,key)=>key in target?target[key]:(...args)=>calls.push([key,...args])});
+ paintKineticPhrase(ctx,[{text:'字',start:1,end:2}],{fontSize:30,glyphs:[{x:50,y:50}]},time,200,120,{showSeam});return calls;};
+ assert.equal(draw(0,true).filter(c=>c[0]==='fillRect').length,0);
+ assert.equal(draw(1.5,false).filter(c=>c[0]==='fillRect').length,0);
+ const calls=draw(1.5,true),at=calls.findIndex(c=>c[0]==='fillRect');assert.ok(at>0);
+ assert.equal(calls[at-1][0],'fillText');assert.equal(calls[at+1][0],'restore');
 });

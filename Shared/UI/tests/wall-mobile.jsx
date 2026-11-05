@@ -27,9 +27,11 @@ window.removeWallCardProbe=()=>{cardProbeRoot?.unmount();cardProbeHost?.remove()
 let cropProbeRoot,cropProbeHost;
 window.renderWallCropProbe=async({expanded=false,nativeScrolling=false,width=390,height=844}={})=>{
  const {default:Wall}=await import('../src/Wall.jsx');
+ const {default:ArtworkModeButton}=await import('../src/components/ArtworkModeButton.jsx');
+ const {default:KineticLyrics}=await import('../src/components/KineticLyrics.jsx');
  if(!cropProbeHost){cropProbeHost=document.createElement('main');cropProbeHost.className='mv-workspace style-wall theme-dark';cropProbeHost.dataset.presentation='mobile';Object.assign(cropProbeHost.style,{position:'fixed',inset:'0',zIndex:9999});document.body.append(cropProbeHost);cropProbeRoot=createRoot(cropProbeHost);}
  Object.assign(cropProbeHost.style,{width:`${width}px`,height:`${height}px`});
  const preview='minivoice-art://cover/crop-probe',original='minivoice-art://detail/crop-probe';
  const items=[{id:'probe',title:'Crop probe',artwork:preview,artworkWall:preview,artworkDetail:original}];
- cropProbeRoot.render(<Wall nativeScrolling={nativeScrolling} items={items} current="probe" playingId="probe" focused expanded={expanded} page={{}} onCamera={()=>{}} onAnalyzeArtwork={async(id,viewport)=>{(window.wallFixture.cropRequests||=[]).push({id,viewport});return [{x:.16,y:.15,width:.15,height:.25,face:1,confidence:.9}];}} focusContent={()=><div className="wp-player"><header className="wp-header"><div className="wp-heading"><h1>Composition probe</h1></div></header></div>}/>);
+ cropProbeRoot.render(<Wall nativeScrolling={nativeScrolling} items={items} current="probe" playingId="probe" focused expanded={expanded} page={{}} onCamera={()=>{}} onAnalyzeArtwork={async(id,viewport)=>{(window.wallFixture.cropRequests||=[]).push({id,viewport});return [{x:.16,y:.15,width:.15,height:.25,face:1,confidence:.9}];}} focusContent={()=><div className="wp-player"><header className="wp-header"><div className="wp-heading"><h1>Composition probe</h1></div><ArtworkModeButton/></header>{expanded&&<KineticLyrics lines={[{time:0,text:"展开音乐墙测试",translation:"A translated phrase with enough text to check wrapping and layout."}]} time={1} duration={5}/>}</div>}/>);
 };

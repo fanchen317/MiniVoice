@@ -95,7 +95,7 @@ export function TranslationToggle({track}){
   const state=usePlayback();
   if(!track?.lines?.some(line=>line.translation))return null;
   const enabled=state.showLyricsTranslation!==false;
-  return <ActionButton className={`translation-toggle ${enabled?'active':''}`} aria-label={enabled?'隐藏译文':'显示译文'} aria-pressed={enabled} onClick={()=>command('lyricsPresentation',{translation:!enabled})}>译文</ActionButton>;
+  return <ActionButton className={`translation-toggle ${enabled?'active':''}`} aria-label={enabled?'隐藏译文':'显示译文'} aria-pressed={enabled} onClick={()=>command('lyricsPresentation',{translation:!enabled})}>{enabled?'译文 · 开':'译文 · 关'}</ActionButton>;
 }
 export function NowPlayingIndicator({playing,inline=false}){
   const root=useRef();useEffect(()=>{let frame=0,last=0;const bars=[...root.current.children],reduced=document.documentElement.classList.contains('reduce-motion');

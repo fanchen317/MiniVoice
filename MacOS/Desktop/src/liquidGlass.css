@@ -69,7 +69,3 @@ html,body,#root{width:100%;height:100%;overflow:hidden}
 
 /* The contour shares the pressed face transform; no stale edge on the outer article. */
 .wall-poster::after{content:none!important;display:none!important}
-
-/* Explicit compositor clips are shared by the photo, shade and contour. */
-.wall-poster>.poster-face{clip-path:inset(0);isolation:isolate;mask-image:linear-gradient(#000,#000);-webkit-mask-image:linear-gradient(#000,#000)}
-.wall-poster>.poster-face>.poster-artwork{clip-path:inset(0)}

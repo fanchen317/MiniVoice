@@ -53,14 +53,14 @@ export function applyArtworkFocus(image,{key=image.currentSrc||image.src,viewpor
  const space=['original','preview'].includes(coordinateSpace)?coordinateSpace:'auto',signature=`${space}:${image.naturalWidth}x${image.naturalHeight}`;
  let sample=entry.samples.get(signature);
  if(!sample){
-  try{const canvas=document.createElement('canvas');canvas.width=canvas.height=96;const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(image,0,0,96,96);const data=context.getImageData(0,0,96,96);sample={pixels:data.data,width:data.width||Math.sqrt(data.data.length/4),height:data.height||Math.sqrt(data.data.length/4),imageAspect:image.naturalWidth/image.naturalHeight,choices:new Map()};}
+  try{const canvas=document.createElement('canvas');canvas.width=canvas.height=96;const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(image,0,0,96,96);const data=context.getImageData(0,0,96,96);sample={pixels:data.data,width:data.width||Math.sqrt(data.data.length/4),height:data.height||Math.sqrt(data.data.length/4),imageAspect:image.naturalWidth/image.naturalHeight,choices:new Map()};sample.energy=energyMap(sample.pixels,sample.width,sample.height);}
   catch{sample={imageAspect:image.naturalWidth/image.naturalHeight,choices:new Map()};}
   if(entry.samples.size>=3)entry.samples.delete(entry.samples.keys().next().value);entry.samples.set(signature,sample);
  }
  const target=compositionViewport(viewport,viewportAspect);if(!(Number.isFinite(target.aspect)&&target.aspect>0))target.aspect=1;
  const activeSubjects=useSubjects&&space!=='preview',bucket=`${activeSubjects?'subject':'visual'}:${viewportKey(target)}`;
  let focus=sample.choices.get(bucket);
- if(!focus){const options={imageAspect:sample.imageAspect,viewportAspect:target.aspect,viewport,regions:activeSubjects?(subjects.get(key)||[]):[]};focus=sample.pixels?artworkFocus(sample.pixels,sample.width,sample.height,options):compositionCrop(options.regions,options.imageAspect,target.aspect,{viewport})||{x:.5,y:.5};if(sample.choices.size>=8)sample.choices.delete(sample.choices.keys().next().value);sample.choices.set(bucket,focus);}
+ if(!focus){const options={imageAspect:sample.imageAspect,viewportAspect:target.aspect,viewport,regions:activeSubjects?(subjects.get(key)||[]):[]};focus=compositionCrop(options.regions,options.imageAspect,target.aspect,{viewport,energy:sample.energy,width:sample.width,height:sample.height})||{x:.5,y:.5};if(sample.choices.size>=8)sample.choices.delete(sample.choices.keys().next().value);sample.choices.set(bucket,focus);}
  return setArtworkAnchor(image,focus);
 }
 
@@ -70,4 +70,11 @@ export function setArtworkAnchor(image,focus){image.dataset.focalX=String(focus.
 export function copyArtworkPresentation(reference,layer){
  if(!reference||!layer)return;
  for(const key of ['left','top','width','height','transformOrigin','transform','objectPosition'])layer.style[key]=reference.style[key];
+}
+
+/** Session-owned decisions: late detection must not pan an already visible cover. */
+export function stableArtworkFocus(image,options,decisions){
+ const viewport=options.viewport||{},key=JSON.stringify([options.key,options.coordinateSpace,image.naturalWidth,image.naturalHeight,Math.round(viewport.width),Math.round(viewport.height)]);
+ const prior=decisions.get(key);if(prior)return setArtworkAnchor(image,prior);
+ const focus=applyArtworkFocus(image,options);if(decisions.size>=8)decisions.delete(decisions.keys().next().value);decisions.set(key,focus);return focus;
 }

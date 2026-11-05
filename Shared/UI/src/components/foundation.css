@@ -124,3 +124,14 @@
 /* Blur stays inside the artwork plane, below all text and controls. */
 .poster-artwork,.mv-wall-artwork-stack{isolation:isolate}
 .poster-artwork>.mv-artwork-blur,.mv-wall-artwork-stack>.mv-artwork-blur{z-index:2!important}
+/* Overscan the filtered raster so its transparent filter fringe cannot expose
+   a sharp strip. Independent scale preserves the host's crop compensation. */
+.poster-artwork>.mv-artwork-blur,.mv-wall-artwork-stack>.mv-artwork-blur{scale:1.12}
+.poster-artwork>.mv-artwork-blur{translate:-6% -6%}
+[data-artwork-mode=blurred][data-artwork-blur-ready=true] .poster-artwork>img.cover,
+[data-artwork-mode=blurred][data-artwork-blur-ready=true] .mv-wall-artwork-stack>img:not(.mv-artwork-blur){opacity:0!important}
+.mv-wall-focused-art:not(.mv-artwork-blur){transition:object-position 420ms cubic-bezier(.2,.8,.2,1)}
+@media(prefers-reduced-motion:reduce){.mv-wall-focused-art:not(.mv-artwork-blur){transition:none}}
+.reduce-motion .mv-wall-focused-art:not(.mv-artwork-blur){transition:none}
+:is(.wp-translation-toggle,.mv-translation-toggle,.translation-toggle)[aria-pressed=true]{background:#29bf922e!important;color:#75f0c7!important;border:1px solid #61e6b780!important;font-weight:700}
+:is(.wp-translation-toggle,.mv-translation-toggle,.translation-toggle)[aria-pressed=false]{background:#26332e!important;color:#c1cbc6!important;border:1px solid #a3b3aa70!important;font-weight:500}

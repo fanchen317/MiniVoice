@@ -311,3 +311,5 @@
 [data-presentation=mobile] .mv-wall-focused:not(.is-expanded)::before{display:none}
 
 [data-presentation=mobile] .wp-player:not(.is-expanded) .wp-footer{display:flex;flex-direction:column;flex-shrink:0;margin-top:auto}
+/* The final-size content is independent of the animated background clip. */
+.mv-wall-focus-content{contain:layout style}

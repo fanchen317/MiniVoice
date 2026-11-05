@@ -572,3 +572,21 @@ WallDrawerBackdrop延展层必须与前景scene共享中心原点、translate(10
 用户最新视觉要求覆盖此前去除光晕的记录：paintKineticPhrase保留裁切彩色文字的palette.glow和字号比例shadowBlur；不新增独立装饰线。移动与桌面共用，跨引擎像素观感待验收。
 
 KineticLyrics新增showSeam（默认false），桌面WallLyrics开启；由paintKineticSeam显式绘制移动端短线观感，避免依赖Chromium/WebKit光晕差异。位置依据当前时序字所在行，受画布边界约束，颜色与原光晕一致；移动端保持原样，减弱动态不额外绘制。
+
+当前代码续修：WallDrawerBackdrop依赖open/wall/sourceKey，挂载后等待非空且稳定的相机采样，最多60帧，避免跨样式挂载时序遗漏；非iOS移动悦动显式开启showSeam，显式光痕按当前字坐标与填充进度定位，不使用固定居中装饰位置，iOS维持原效果。跨设备视觉待验收。
+
+### 2026-11-05 歌词逐字缓存呈现
+- 共享ScrollingLyrics仅消费宿主提供的words；估时回退标记timingSource=estimated，音频对齐为audioAligned，原生逐字保持原数据。组件不运行模型、不读写缓存、不提交草稿；换歌曲使用现有身份与时钟重置，外观/动画沿用三样式规则。
+- 桌面OwnSettings新增后台分析CheckControl，受desktopSettings控制，保存失败沿用错误提示；键盘Space/Enter单次提交，忙碌禁用。BackgroundTasks从tasks.wordTiming读取状态/计数，分析显示忙碌，低可靠显示保留逐行；清理与关闭复用ActionButton。
+- 验证：test-word-timing-ui.sh 实际Electron合成页面覆盖深浅色/窄窗、键盘开关回读、任务分析/待校正/清理。源数据不被decorate修改、重启缓存、编辑并发与关闭重开由Windows缓存服务测试覆盖；真实歌曲准确率和设备性能待验收。
+
+非iOS悦动光痕不再单独定位/绘制：showSeam传入paintKineticPhrase，在每字相同变换与逐字高亮裁切作用域中绘制，跟随文字起伏旋转和缩放。iOS原有效果不变；跨端像素观感仍需视频对照验收。
+
+### 2026-11-05 展开背景与译文
+- FocusArtwork构图使用稳定最终视口；采样能量复用，精确裁切不随实时歌词位置变动。开合保持聚焦原图源；受控expanded负责布局，移动全屏遮挡期间普通卡片停止无效逐帧写入，收起恢复。
+- ArtworkBlur在decode后标记所属scope就绪，只有对应源就绪才隐藏清晰底图；独立overscan覆盖模糊边缘，卸载清理就绪标记。按钮行为和模式状态仍复用ArtworkModeScope。
+- KineticLyrics译文用整句身份切换，局部进入动画遵守减弱动态效果；颜色与大小由共享样式及容器/文字长度决定，原歌词计时不改，译文无独立词时间不逐字伪对齐。验证见test-wall-artwork.sh合成译文与模糊按钮截图；真实设备长译文/帧耗时待验收。
+
+### 构图会话锁与译文状态续修
+- stableArtworkFocus由调用组件持有有界Map，按图片身份/坐标空间/尺寸/最终视口锁定焦点；已显示时晚到识图不重排，卸载后重新选择，尺寸变化单独规划。Mac Poster与移动FocusArtwork共用此规则。
+- 翻译开关保留ActionButton、aria-pressed和原命令协议，文字直接显示开/关并用底色和描边冗余表达状态；不以颜色作为唯一状态。

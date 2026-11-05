@@ -123,3 +123,15 @@ test('previously measured disk cache plays after restart even when model files w
  const second=f.create();await f.prime(second);assert.equal(f.count('analyzeWordTiming'),1);
  assert.equal(second.decorate(f.state()).playing.wordTiming.source,'audioAligned');
 });
+
+test('disable during analysis discards late results and re-enable resumes',async t=>{
+ const f=await fixture(t),service=f.create(),started=deferred(),finish=deferred();
+ f.analyze(async()=>{started.resolve();await finish.promise;return {lyrics:JSON.stringify(f.parsed),timingSource:'audioAligned'};});
+ service.catalog([f.song]);service.observe(f.state());await started.promise;
+ service.observe(f.state({wordTimingCacheEnabled:false}));finish.resolve();await service.whenIdle();
+ assert.ok(!f.statuses.some(status=>status.phase==='ready'));
+ assert.equal(service.decorate(f.state()).playing.wordTiming,undefined);
+ service.observe(f.state({wordTimingCacheEnabled:true}));await service.whenIdle();
+ assert.equal(f.count('analyzeWordTiming'),2);
+ assert.equal(service.decorate(f.state()).playing.wordTiming.source,'audioAligned');
+});
