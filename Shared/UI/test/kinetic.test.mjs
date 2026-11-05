@@ -18,3 +18,10 @@ test('ribbon wave stays continuous across glyph boundaries and settles after the
  assert.ok(kineticWave(chars,.8,2,50).scale>1.08);
  assert.ok(kineticWave(chars,.8,3,50).scale>1.03);
 });
+
+test('colored ribbon is deterministic, varies across the phrase and with playback time',async()=>{
+ const {kineticPalette}=await import('../src/components/kineticModel.js');
+ assert.deepEqual(kineticPalette(2,8,1),kineticPalette(2,8,1));
+ assert.notDeepEqual(kineticPalette(2,8,1),kineticPalette(6,8,1));
+ assert.notDeepEqual(kineticPalette(2,8,1),kineticPalette(2,8,2));
+});

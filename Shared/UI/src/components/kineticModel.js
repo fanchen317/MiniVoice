@@ -13,10 +13,14 @@ export function kineticLayout(characters,size,measure){
   const width=Math.max(1,size.width-32),height=Math.max(1,size.height-32);
   let fontSize=Math.min(58,Math.max(20,size.width*.095)),glyphs=[],totalHeight=0;
   for(let attempt=0;attempt<24;attempt++){
-    const rowHeight=fontSize*1.8;let x=0,row=0;
+    const rowHeight=fontSize*1.65;
+    const advances=characters.map(word=>Math.max(fontSize*.3,measure(word.text,fontSize))+fontSize*.12);
+    const total=advances.reduce((a,b)=>a+b,0),rowCount=Math.max(1,Math.ceil(total/width));
+    const rowWidth=Math.min(width,total/rowCount+Math.max(...advances,0)*.45);
+    let x=0,row=0;
     glyphs=characters.map(word=>{
       const advance=Math.max(fontSize*.3,measure(word.text,fontSize))+fontSize*.12;
-      if(x>0&&x+advance>width){row++;x=0;}
+      if(x>0&&x+advance>rowWidth){row++;x=0;}
       const point={x:16+x+advance/2,y:row*rowHeight+rowHeight/2};x+=advance;return point;
     });
     totalHeight=(row+1)*rowHeight;if(totalHeight<=height||attempt===23)break;fontSize*=.82;
@@ -79,14 +83,25 @@ export function paintKineticPhrase(ctx,characters,layout,time,width,height){
   const point=layout.glyphs[i],advance=ctx.measureText(char.text).width;
   const wave=kineticWave(characters,time,i,layout.fontSize);
   ctx.save();ctx.translate(point.x,point.y+wave.y);ctx.rotate(wave.rotation);ctx.scale(wave.scale,wave.scale);
-  ctx.globalAlpha=.46;ctx.fillStyle='#fff';ctx.fillText(char.text,0,0);
+  ctx.globalAlpha=.62;ctx.fillStyle='#dce7f4';ctx.fillText(char.text,0,0);
   const fill=progress(time,char.start,char.end??char.start+.3);
   if(fill>0){
    ctx.save();ctx.beginPath();ctx.rect(-advance/2-1,-layout.fontSize,(advance+2)*fill,layout.fontSize*2);ctx.clip();
-   ctx.globalAlpha=1;ctx.fillStyle='#fff';ctx.shadowColor=`rgba(113,240,230,${wave.glow*.45})`;ctx.shadowBlur=layout.fontSize*.12*wave.glow;
+   ctx.globalAlpha=1;
+   const palette=kineticPalette(i,characters.length,time-characters[0].start);
+   const gradient=ctx.createLinearGradient(-advance/2,-layout.fontSize*.5,advance/2,layout.fontSize*.5);
+   gradient.addColorStop(0,palette.top);gradient.addColorStop(1,palette.bottom);
+   ctx.fillStyle=gradient;ctx.shadowColor=palette.glow;ctx.shadowBlur=layout.fontSize*(.08+.2*wave.glow);
    ctx.fillText(char.text,0,0);ctx.restore();
   }
   ctx.restore();
  });
  ctx.restore();
+}
+
+// A bounded cyan / violet / rose ribbon, continuous in both space and playback time.
+export function kineticPalette(index,count,elapsed){
+ const phase=index/Math.max(1,count-1)*1.5+elapsed*.32;
+ const hue=235+65*Math.sin(phase);
+ return {top:`hsl(${hue-28},95%,82%)`,bottom:`hsl(${hue+18},92%,70%)`,glow:`hsla(${hue},95%,74%,0.65)`};
 }

@@ -31,3 +31,11 @@ Windows NSIS 安装包为当前用户安装，包含开始菜单与卸载入口�
 内部脚本按 build/common/checks/tests/tools/assets 分类；iOS 的定向开发脚本保留，但不参与上述公共流程。旧 experience 公开入口已撤除，不重新添加。
 
 正式构建只有一个渠道。Debug/Release 只表示编译配置，不改变应用标识和数据路径；旧体验版打包脚本已删除。
+
+## Mac 生成 Windows 安装包（新增）
+
+Mac 的 `build.sh` 默认平台现为 mac,android,windows；只需本机两端可显式 `--platforms mac,android`。
+
+在 Mac 上生成 Windows 安装包需 NSIS 3（makensis在PATH），并设置 `MINIVOICE_WINDOWS_RESOURCES=/绝对路径/Windows资源`。目录包含Windows x64原生minivoice-core.exe、ffmpeg.exe、ffprobe.exe、LICENSE.txt及LyricsAI/python.exe、models/small.pt、LICENSES目录和完整Python依赖。脚本校验x64 PE标头后构建共享前端、打包Windows Electron并生成带版本号的setup.exe；不执行Windows工具，也不等于实机验证。资源目录应来自已验证Windows构建；缺资源时失败，不跳过或制造成功提示。
+
+执行 `bash Scripts/build.sh --platforms windows` 可只打Windows安装包。Windows主机仍使用PowerShell完整编译入口。

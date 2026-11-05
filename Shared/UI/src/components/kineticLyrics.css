@@ -1,0 +1,7 @@
+/* One visual contract for Mac, iOS and Android; size comes from the component box. */
+.mv-kinetic-lyrics{position:relative;flex:1;height:100%;min-height:0;min-width:0;overflow:hidden;color:#fff;display:flex;flex-direction:column;justify-content:center;width:100%;box-sizing:border-box}
+.mv-kinetic-main{flex:none;display:grid;place-items:center;font-weight:700;min-width:0;text-align:center}
+.mv-kinetic-main canvas{display:block;max-width:100%}
+.mv-kinetic-translation{line-height:1.55;opacity:.94;text-align:center;text-wrap:pretty;padding:0 18px;margin:0 0 14px;text-shadow:0 2px 10px #0009;flex-shrink:0;font-weight:500}
+.mv-kinetic-upcoming{min-height:0;overflow:hidden;padding-inline:16px;line-height:1.65;color:#ffffff80;font-weight:700;text-align:left}
+.mv-kinetic-upcoming>div+div{opacity:.4}

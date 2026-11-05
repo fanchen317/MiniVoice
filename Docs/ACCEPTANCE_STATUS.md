@@ -1228,3 +1228,65 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
 - Windows构建要求MINIVOICE_WINDOWS_MEDIA_TOOLS提供Windows原生ffmpeg.exe/ffprobe.exe及LICENSE.txt并打包，当前仓库尚未提供经审核的固定版本Windows工具原件；不把Mac工具改名充数。
 - 通过：本机真实FFmpeg合成FLAC/M4A标签与歌词回读、原文件备份一致及音频流校验，3项定向测试。未使用用户歌曲，不是Windows实机证据。
 - 待验收：Windows原生媒体工具供应、许可/版本/哈希固化，封面各格式组合、超大文件、Windows参数长度/占用、当前播放直接保存。该项尚不能标为全部完成。
+
+### Windows 对齐续接（2026-11-05）：当前播放文件保存
+
+- 已接入普通标签保存与同专辑插图同步：当前歌曲通过受限audio RPC抓取实际位置/播放状态，暂停并卸载音频源，等待emptied后写入；成功/失败均尝试重新加载并恢复原进度与播放/暂停状态。
+- 保存期间拦截播放/暂停/切歌/seek和新扫描，不接受临时卸载触发的clock覆盖；扫描期间拒绝启动文件写回，避免并发目录提交冲突。后台非当前歌曲写入不打断播放。
+- 通过：Windows27项Node测试，新增播放/暂停分别恢复、写入失败恢复、释放失败不写入、无关歌曲不打断；宿主语法与组件门禁。
+- 待验收：真实Windows Chromium文件句柄释放时序、系统输出恢复、各格式写回与恢复失败提示。自动化为宿主协议测试，不是实际播放占用验收；AI及其他台账缺口仍未关闭。
+
+### Windows 对齐续接（2026-11-05）：本地AI任务桥接
+
+- 直接复用Mac align_lyrics.py，Windows构建复制原脚本，不重写推理逻辑。新增Shared歌词任务进程协议、状态轮询、取消、超时、退出终止；任务面板可取消/重试/清理，异常重启将未完成任务标为可重试。
+- 接入syncLyrics：校验本地Python和small模型、已保存歌词、歌曲授权；校验返回原文/时间轴/65%覆盖率，保存前检测歌词变化；同目录LRC备份保存，保留translation字段。显式sidecar保存后优先展示用户选择的LRC，避免旧内嵌文本遮盖编辑结果。
+- 通过：Windows28项测试，新增使用测试进程的任务协议与原文完整性校验；同源前端构建、组件门禁。该测试没有加载AI，不是实际模型推理证据。
+- 未完成：Windows可再分发Python/PyTorch/stable-whisper运行时与模型打包、模型下载管理、真实推理及取消子进程实机验证。开发接入可用MINIVOICE_WINDOWS_AI_PYTHON/MINIVOICE_WINDOWS_AI_MODELS指定环境；当前不能称AI开箱即用或与Mac完整一致。
+
+### 2026-11-05 动态歌词彩色恢复
+- 已修改共用画布渲染：扫亮层恢复连续蓝紫/粉色渐变及对应光晕，颜色随字位置及播放时间缓慢流动，保留连续波浪；背景字使用浅色而非黑色。共享移动界面与桌面入口共用实现。换行改为按总宽度均衡分配目标行宽。
+- 通过：3 项 kinetic 模型测试、组件边界、共享 UI 与桌面 Vite 构建。
+- 待验收：各平台安装包、真实设备动态观感、长句布局与深浅模式；未安装更新，不以源码/构建通过代替实际运行验收。
+
+### Windows 对齐续接（2026-11-05）：AI模型管理与构建门禁
+
+- 已接原设置/任务页面：Small/Medium模型实际存在状态、模型选择、下载/取消/重试、用户下载模型删除；内置模型与运行中任务使用的资源禁止删除。
+- 下载复用Mac worker --download-model及Whisper校验，先写独立临时目录，完成后移入用户模型目录；取消/失败清理临时文件，不把半模型显示为已安装。进度由原worker报告。
+- Windows构建要求MINIVOICE_WINDOWS_AI_RUNTIME含python.exe、models/small.pt及LICENSES，复制运行时后执行原worker --self-test及small模型编码器推理自检；缺失或失败明确阻断。
+- 通过：Windows29项Node测试，新增内置/下载模型区分、任务中禁止删除与非法模型拒绝；组件门禁和宿主语法。测试用合成占位文件验证状态，不是模型推理或实际下载验证。
+- 尚缺：经审核、固定版本/依赖/哈希与许可的Windows离线AI原件；真实PowerShell自检、下载断点/取消及模型推理。当前未生成完整Windows发行包，不能称与Mac AI全部对齐。
+
+### 2026-11-05 iOS音乐墙展开开销
+- 代码定位：nativeScrolling展开每帧setExpansion导致React重渲染、卡片可见窗口/歌词反复测量；全屏侧栏背景在关闭后仍保留封面。
+- 修正：展开中间帧使用既有imperative paint，React expansion仅结束提交；expanded标志立即维持滚动锁。侧栏背景退出340ms后释放封面，关闭动画期间保留，重开取消清理。
+- 通过：组件门禁、共享构建与共享测试。页面回归见/tmp/mv-expand-render.log；iOS真机帧耗时、展开/反向打断/收起与歌词最终布局待验收，未声称已恢复流畅。
+
+### 2026-11-05 Mac/iOS T 歌词组件统一
+- Mac 桌面删除独立 T 歌词画布/译文/下一句实现，改用移动端同一个 KineticLyrics；组件自带独立 CSS，移除 mobilePlayer 的同名专属覆盖。字号根据组件宽度计算，避免桌面/手机 viewport 单位造成差异。
+- 通过：3 项 kinetic 测试、组件边界、共享 UI 与桌面构建。
+- 待验收：Mac/iOS 安装更新后的并排视觉与动态对比；尚未打包或更新运行中的 App，不能视为设备验收通过。
+
+### 本机范围持续对齐（2026-11-05）：依赖审计与平台文案
+
+- 用户明确暂不提供Windows测试机/CI，先完成本机可开发和验证范围；不因此取消实机待验收项，也不宣布完整对齐。
+- Windows Electron固定44.10.2、packager固定20.3.0，定向固定glob14.0.2/minimatch11.0.1修复传递依赖问题；npm audit本轮0项。packager升级要求Node22.12以上，构建新增检查；按新CLI改为asar.unpackDir=resources，避免--asar和子属性混用。
+- 新增真实ASAR打包/解包UTF-8资源回归通过，Windows共30项测试通过；同源桌面构建、组件门禁通过。未执行Electron下载后的Windows安装包完整编译。
+- 同源页面新增平台标签配置，Windows资源管理器、托盘、Ctrl/Alt/Windows文案与Mac分别展示，保持组件和页面共用。
+- 剩余本机可开发项仍未全部完成；依赖审计清零仅代表当前依赖报告，不代表Windows发布验收通过。
+
+### build新增Mac组装Windows安装包
+
+- Mac默认构建列表增加windows；非Windows宿主接package-windows-cross.sh，使用预构建Windows资源与NSIS生成版本化setup.exe。Windows宿主原PowerShell编译路径保留。
+- 校验原生核心、媒体工具、Python为Windows x64 PE并要求模型/许可存在；没有资源或NSIS明确失败。产物仍待Windows运行验收。
+- 通过：隔离构建路由测试、Bash语法、跨平台资源PE校验/拒绝错误二进制测试。当前没有完整Windows资源和NSIS，本轮未生成实际安装包。
+
+### 2026-11-05 Android/iOS用户视频对照：统一音乐墙输入与投影
+- 已查看两段用户录屏抽帧（.build/reports/ios-wall-comparison/）。代码确认PortablePlayer仅iOS启用nativeScrolling：pinch冻结盒子+transform，松手解除冻结后重排；Android直接投影。该分支是文字手势中/结束后几何不一致的明确风险，不能以截图推算FPS。
+- 修改：正式移动入口两端统一nativeScrolling=false，沿用Android逐卡投影、pointer捕获与惯性；iOS宿主已禁用WK页面滚动/原生pinch，不改系统缩放能力。旧native实现暂保留供后续清理，正式入口不再选用。
+- 通过：共享生产构建、组件门禁、80项共享测试。页面回归见/tmp/mv-ios-unified-render.log。未完成真实WKWebView及用户iPhone同场景回验，不宣称帧率/流畅度达标，未打包安装。
+
+### 2026-11-05 Mac 音乐墙白色交互轮廓恢复
+- 原因：liquidGlass.css 仍隐藏所有非播放卡片的 ::after，并把非播放聚焦轮廓设为透明；旧 test-review-items.cjs 还把没有白框当成预期。此前把正常完整轮廓与底部异常亮线混为一类。
+- 修复：非播放卡片仅在 hover/active/focused 显示完整白色覆盖层，置于图片/遮罩上方，不添加布局 border 或图片 outline；播放态保留绿色，全屏不显示轮廓。
+- 页面回归包含真实鼠标悬浮/按下/松开聚焦、指针移出后保留、深浅主题、播放绿色轮廓、全屏隐藏，并继续检查图片/遮罩底边覆盖与聚焦宽度单向过渡。具体运行结果见本轮交付说明，真机 GPU 闪烁仍需验收。
+- 本轮结果：上述页面回归全部通过；正式 Mac App/DMG 重建成功，ASAR 内已核对包含恢复白框的规则。未替换已安装应用。

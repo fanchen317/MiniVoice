@@ -3,6 +3,7 @@ function Run([scriptblock]$Command) { & $Command; if ($LASTEXITCODE -ne 0) { thr
 $Repo = Split-Path $PSScriptRoot
 Push-Location $Repo
 try {
+ Run { node -e "const [major,minor]=process.versions.node.split('.').map(Number);if(major<22||(major===22&&minor<12))throw Error('Windows打包需要Node.js 22.12以上');" }
  Write-Host 'MiniVoice · Windows 构建' -ForegroundColor Cyan
  Run { node Scripts/checks/check-ui-standards.mjs }
  $Version = Get-Content Shared/version.json -Raw | ConvertFrom-Json
@@ -14,6 +15,7 @@ try {
  Run { cmake -S Shared/Core -B .build/cache/windows-core }
  Run { cmake --build .build/cache/windows-core --config Release --target minivoice-core }
  New-Item -ItemType Directory -Force Windows/resources | Out-Null
+ Copy-Item MacOS/Sources/MiniVoice/Resources/align_lyrics.py Windows/resources/align_lyrics.py -Force
  Copy-Item .build/cache/windows-core/Release/minivoice-core.exe Windows/resources/ -Force
  if (-not $env:MINIVOICE_WINDOWS_MEDIA_TOOLS) { throw '请设置 MINIVOICE_WINDOWS_MEDIA_TOOLS，指向已审核的 Windows FFmpeg/FFprobe 目录（包含 LICENSE.txt）。' }
  foreach ($Tool in @('ffmpeg.exe','ffprobe.exe','LICENSE.txt')) {
@@ -21,6 +23,14 @@ try {
   if (-not (Test-Path $Source -PathType Leaf)) { throw "缺少 Windows 媒体工具或许可：$Source" }
   Copy-Item $Source (Join-Path 'Windows/resources' $Tool) -Force
  }
+ if (-not $env:MINIVOICE_WINDOWS_AI_RUNTIME) { throw '请设置 MINIVOICE_WINDOWS_AI_RUNTIME，提供含 python.exe、models/small.pt、LICENSES 的离线 AI 运行环境。' }
+ foreach ($Resource in @('python.exe','models/small.pt','LICENSES')) {
+  if (-not (Test-Path (Join-Path $env:MINIVOICE_WINDOWS_AI_RUNTIME $Resource))) { throw "AI 运行时缺少资源：$Resource" }
+ }
+ $AIRoot = Join-Path $Repo 'Windows/resources/LyricsAI'
+ if (Test-Path $AIRoot) { Remove-Item $AIRoot -Recurse -Force }
+ Copy-Item $env:MINIVOICE_WINDOWS_AI_RUNTIME $AIRoot -Recurse
+ Run { & (Join-Path $AIRoot 'python.exe') Windows/resources/align_lyrics.py --self-test (Join-Path $AIRoot 'models/small.pt') }
  New-Item -ItemType Directory -Force Windows/electron/shared-services | Out-Null
  Copy-Item Shared/DesktopServices/*.cjs Windows/electron/shared-services/ -Force
  Run { npm --prefix Windows ci }

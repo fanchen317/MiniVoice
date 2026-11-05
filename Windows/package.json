@@ -6,14 +6,18 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/*.test.cjs",
-    "package": "electron-packager . MiniVoice --platform=win32 --arch=x64 --out=../.build/dist --asar --asar.unpack=resources/** --overwrite"
+    "package": "electron-packager . MiniVoice --platform=win32 --arch=x64 --out=../.build/dist --asar.unpackDir=resources --overwrite"
   },
   "devDependencies": {
-    "@electron/packager": "19.0.3",
-    "electron": "44.8.0"
+    "@electron/packager": "20.3.0",
+    "electron": "44.10.2"
   },
   "dependencies": {
     "music-metadata": "12.0.0",
     "node-id3": "0.2.9"
+  },
+  "overrides": {
+    "glob": "14.0.2",
+    "minimatch": "11.0.1"
   }
 }

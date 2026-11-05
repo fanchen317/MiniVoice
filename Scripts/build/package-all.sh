@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ACTION="$1"; VARIANT="$2"; shift 2
 case "$VARIANT" in release) ;; *) echo "未知版本渠道：$VARIANT" >&2; exit 2 ;; esac
 source "$ROOT/Scripts/common/release-output.sh"
-case "$(uname -s)" in Darwin) PLATFORMS=mac,android ;; MINGW*|MSYS*|CYGWIN*) PLATFORMS=windows ;; *) PLATFORMS=android ;; esac
+case "$(uname -s)" in Darwin) PLATFORMS=mac,android,windows ;; MINGW*|MSYS*|CYGWIN*) PLATFORMS=windows ;; *) PLATFORMS=android ;; esac
 LAUNCH=true
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -13,7 +13,7 @@ while [[ $# -gt 0 ]]; do
     --no-launch) LAUNCH=false ;;
     --help|-h)
       echo '用法：Scripts/build.sh [--platforms mac,android,windows] [--no-launch]'
-      echo 'Mac 默认构建 mac,android；Windows 默认 windows；暂不包含 iOS。跨平台原生产物需在对应主机生成。'
+      echo 'Mac 默认构建 mac,android,windows（Windows需预构建资源和NSIS）；Windows 默认 windows；暂不包含 iOS。跨平台原生产物需在对应主机生成。'
       exit 0 ;;
     *) echo "未知参数：$1" >&2; exit 2 ;;
   esac

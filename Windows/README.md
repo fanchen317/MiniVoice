@@ -44,3 +44,15 @@ MP3 写回使用固定 node-id3 0.2.9，保持音频 payload 不变，原有已�
 ### 流式写回续接
 
 已新增共用FFmpeg事务，内置工具存在时启用MP3/FLAC/M4A及流式大文件处理；原MP3内存回退仍有256MB限制。Windows构建需设置MINIVOICE_WINDOWS_MEDIA_TOOLS，目录包含ffmpeg.exe、ffprobe.exe和LICENSE.txt；仓库尚无固定来源/版本/哈希的Windows工具包，须补齐发行资源。已用本机真实工具测试合成FLAC/M4A，不代表Windows占用、大文件和封面组合验收。当前播放歌曲的直接保存尚未完成。
+
+### 当前播放文件保存续接
+
+当前歌曲已接“释放音频源→安全写回→恢复歌曲/进度/原播放状态”协议，普通标签保存与专辑插图同步共用该流程；写入失败也恢复。旧说明中必须先切换歌曲的限制已移除。保存时暂不接受切歌/seek及新扫描。此流程协议测试通过，仍待Windows真实文件占用与音频恢复验收。
+
+### 本地 AI 开发接入
+
+syncLyrics已接原Mac align_lyrics.py及共用进程协议，提供状态、取消、重试和结果校验。设置MINIVOICE_WINDOWS_AI_PYTHON为含原Mac worker依赖的Windows python.exe，MINIVOICE_WINDOWS_AI_MODELS为含small.pt的目录，另需内置FFmpeg。没有这些资源时明确失败；当前尚未提供完整可再分发运行时/模型下载管理，不能作为正式AI完整支持。测试仅验证进程协议，未运行真实Windows模型。
+
+### 模型管理与离线打包续接
+
+模型页面已接Small/Medium选择、下载/取消/重试、用户模型删除；内置模型不可删除。下载复用原worker并先写临时目录，成功校验后发布。Windows完整构建还需MINIVOICE_WINDOWS_AI_RUNTIME，包含python.exe、models/small.pt和LICENSES目录；构建运行--self-test与small模型编码器检查。当前未提供经版本/哈希/许可审定的运行时原件，也未执行Windows实际模型测试；状态测试不代表推理验证。

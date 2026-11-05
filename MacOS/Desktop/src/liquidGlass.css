@@ -21,8 +21,9 @@
   box-shadow:0 0 calc(28px / var(--wall-camera-scale,1)) color-mix(in srgb,var(--wall-mint) 50%,transparent);
 }
 .wall-surface.is-immersive .wall-poster.focused:after,.wall-surface.is-expanding .wall-poster.focused:after{opacity:0}
-/* Hover must not introduce a second contour or resize the visual crop. */
-.wall-poster:not(.playing)::after{display:none}
+/* One overlay contour; the face itself never adds a duplicate stroke. */
+.wall-poster:not(.playing)::after{content:"";position:absolute;inset:0;z-index:10;pointer-events:none;display:none;box-sizing:border-box;border:calc(1.5px / var(--wall-camera-scale,1)) solid #fffffff2}
+.wall-poster:not(.playing):is(:hover,:active,.focused)::after{display:block}
 .wall-poster:hover:not(.focused):not(.playing)>.poster-face{outline:0!important}
 /* A neutral mask disc protects the light SF Symbol from the refracted cover. */
 .style-wall .window-tools .glyph,.wall-search-button .glyph,.wall-settings>.glyph{flex-shrink:0;position:relative;z-index:1;opacity:1}
@@ -64,4 +65,4 @@ html,body,#root{width:100%;height:100%;overflow:hidden}
    flashes underneath the transformed face when focus reflow starts. */
 .wall-poster,.wall-poster:hover,.wall-poster:active{border:0}
 .wall-poster.focused:not(.playing)>.poster-face{outline:0!important}
-.wall-poster.focused:not(.playing)::after{border-color:transparent;transform:none;transition:none}
+.wall-poster.focused:not(.playing)::after{transform:none;transition:none}
