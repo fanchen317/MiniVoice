@@ -15,6 +15,12 @@ try {
  Run { cmake --build .build/cache/windows-core --config Release --target minivoice-core }
  New-Item -ItemType Directory -Force Windows/resources | Out-Null
  Copy-Item .build/cache/windows-core/Release/minivoice-core.exe Windows/resources/ -Force
+ if (-not $env:MINIVOICE_WINDOWS_MEDIA_TOOLS) { throw '请设置 MINIVOICE_WINDOWS_MEDIA_TOOLS，指向已审核的 Windows FFmpeg/FFprobe 目录（包含 LICENSE.txt）。' }
+ foreach ($Tool in @('ffmpeg.exe','ffprobe.exe','LICENSE.txt')) {
+  $Source = Join-Path $env:MINIVOICE_WINDOWS_MEDIA_TOOLS $Tool
+  if (-not (Test-Path $Source -PathType Leaf)) { throw "缺少 Windows 媒体工具或许可：$Source" }
+  Copy-Item $Source (Join-Path 'Windows/resources' $Tool) -Force
+ }
  New-Item -ItemType Directory -Force Windows/electron/shared-services | Out-Null
  Copy-Item Shared/DesktopServices/*.cjs Windows/electron/shared-services/ -Force
  Run { npm --prefix Windows ci }

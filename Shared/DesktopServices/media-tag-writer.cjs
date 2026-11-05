@@ -1,0 +1,15 @@
+const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('node:crypto'),{createReadStream}=require('node:fs'),{execFile}=require('node:child_process'),{promisify}=require('node:util');
+const execute=promisify(execFile),locks=new Set();
+async function digest(file){const hash=crypto.createHash('sha256');for await(const chunk of createReadStream(file))hash.update(chunk);return hash.digest('hex');}
+function tagArguments(file,output,patch,cover){const ext=path.extname(file).toLowerCase();const args=['-nostdin','-hide_banner','-loglevel','error','-y','-i',file];if(cover)args.push('-i',cover);args.push('-map','0:a','-map_metadata','0','-c','copy');if(!cover&&!patch.removeArtwork)args.push('-map','0:v?');if(cover)args.push('-map','1:v:0','-disposition:v:0','attached_pic','-metadata:s:v:0','title=Cover','-metadata:s:v:0','comment=Cover (front)');if(ext==='.mp3')args.push('-id3v2_version','3');for(const key of ['title','artist','album','lyrics'])if(patch[key]!==undefined)args.push('-metadata',`${key}=${patch[key]}`);return [...args,output];}
+async function writeMediaTags(file,patch,{ffmpeg,ffprobe,beforeCommit=async()=>{}}={}){
+ if(!['.mp3','.flac','.m4a'].includes(path.extname(file).toLowerCase()))throw Error('此格式不支持标签写回');if(!ffmpeg||!ffprobe)throw Error('缺少已打包的 FFmpeg/FFprobe');if(locks.has(file))throw Error('此歌曲正在保存');locks.add(file);
+ const directory=path.dirname(file),token=crypto.randomUUID(),output=path.join(directory,`.minivoice-${token}${path.extname(file)}`),cover=patch.image?path.join(directory,`.minivoice-cover-${token}.png`):null;
+ const run=async(tool,args)=>(await execute(tool,args,{windowsHide:true,maxBuffer:4*1024*1024,timeout:600000})).stdout;
+ try{const original=await digest(file),stat=await fs.stat(file);if(cover)await fs.writeFile(cover,patch.image.imageBuffer,{flag:'wx'});await run(ffmpeg,tagArguments(file,output,patch,cover));
+ const check=JSON.parse(await run(ffprobe,['-v','error','-show_format','-of','json',output]));const tags=Object.fromEntries(Object.entries(check.format?.tags||{}).map(([key,value])=>[key.toLowerCase(),value]));for(const key of ['title','artist','album','lyrics'])if(patch[key]!==undefined&&(tags[key]??(key==='lyrics'?tags.unsyncedlyrics:'')??'')!==patch[key])throw Error('标签回读校验失败，原文件未修改');
+ const audio=target=>run(ffmpeg,['-v','error','-i',target,'-map','0:a','-c','copy','-f','hash','-hash','sha256','-']);if(await audio(file)!==await audio(output))throw Error('音频数据校验失败');await beforeCommit();if(await digest(file)!==original)throw Error('文件已被其他程序修改');
+ const backups=path.join(directory,'backup');await fs.mkdir(backups,{recursive:true});const backup=path.join(backups,path.basename(file)+'.minivoice-backup-'+token);await fs.copyFile(file,backup,fs.constants.COPYFILE_EXCL);if(await digest(backup)!==original)throw Error('备份校验失败');await fs.chmod(output,stat.mode);await fs.rename(output,file);return {backup};
+ }finally{await fs.rm(output,{force:true});if(cover)await fs.rm(cover,{force:true});locks.delete(file);}
+}
+module.exports={writeMediaTags,tagArguments};

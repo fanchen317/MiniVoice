@@ -50,26 +50,43 @@ export function wallCardSizing(width,height){
   return {title:Math.max(16,28*scale),artist:Math.max(10,14*scale),status:Math.max(9,11*scale),spacing:12*scale,padding:Math.max(12,22*scale)};
 }
 
-// A single phrase transform and a clipped ink pass: glyphs never spring independently.
+// A continuous singing cursor drives a wide spatial wave, rather than per-letter springs.
+export function kineticWave(characters,time,index,fontSize){
+ if(!characters.length)return {y:0,scale:1,rotation:0,glow:0};
+ const smooth=value=>{const x=Math.max(0,Math.min(1,value));return x*x*(3-2*x);};
+ let cursor=-.5;
+ for(let i=0;i<characters.length;i++){
+  const char=characters[i],next=characters[i+1];
+  if(time<char.start)break;
+  const end=Math.max(char.start+.001,next?.start??char.end??char.start+.5);
+  cursor=i-.5+smooth((time-char.start)/(end-char.start));
+ }
+ const first=characters[0],last=characters.at(-1),end=last.end??last.start+.5;
+ const envelope=smooth((time-first.start+.18)/.38)*(1-smooth((time-end)/.65));
+ const distance=index-cursor;
+ // Wide support couples neighbors. The trailing trough makes a rolling ribbon.
+ const crest=Math.exp(-distance*distance/3.8);
+ const trough=Math.exp(-Math.pow(distance+2.2,2)/5.5);
+ const wave=(crest-.34*trough)*envelope;
+ return {y:-fontSize*.17*wave,scale:1+.15*crest*envelope,
+  rotation:Math.max(-1,Math.min(1,distance))*.018*crest*envelope,glow:crest*envelope};
+}
 export function paintKineticPhrase(ctx,characters,layout,time,width,height){
  if(!characters.length)return;
- const start=characters[0].start,end=Math.max(start+.1,characters.at(-1).end??start+4);
- const smooth=x=>{x=Math.max(0,Math.min(1,x));return x*x*(3-2*x);};
- const entry=smooth((time-start)/.42),release=1-smooth((time-end)/.6);
- // Accumulate nearby syllable onsets into one damped phrase envelope.
- let energy=0;
- for(const char of characters){const age=time-char.start;if(age>=0&&age<.8)energy+=Math.exp(-age*7)*Math.sin(Math.min(1,age/.12)*Math.PI/2);}
- energy=Math.tanh(energy*.35)*release;
- const scale=.985+.015*entry+.018*energy,y=(1-entry)*height*.035-energy*layout.fontSize*.045;
- ctx.save();ctx.translate(width/2,height/2+y);ctx.scale(scale,scale);ctx.translate(-width/2,-height/2);
+ ctx.save();
  ctx.font=`700 ${layout.fontSize}px system-ui,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
  characters.forEach((char,i)=>{
   const point=layout.glyphs[i],advance=ctx.measureText(char.text).width;
-  ctx.globalAlpha=.48+.12*entry;ctx.fillStyle='#fff';ctx.fillText(char.text,point.x,point.y);
+  const wave=kineticWave(characters,time,i,layout.fontSize);
+  ctx.save();ctx.translate(point.x,point.y+wave.y);ctx.rotate(wave.rotation);ctx.scale(wave.scale,wave.scale);
+  ctx.globalAlpha=.46;ctx.fillStyle='#fff';ctx.fillText(char.text,0,0);
   const fill=progress(time,char.start,char.end??char.start+.3);
-  if(fill<=0)return;
-  ctx.save();ctx.beginPath();ctx.rect(point.x-advance/2-1,point.y-layout.fontSize, (advance+2)*fill,layout.fontSize*2);ctx.clip();
-  ctx.globalAlpha=1;ctx.fillStyle='#fff';ctx.fillText(char.text,point.x,point.y);ctx.restore();
+  if(fill>0){
+   ctx.save();ctx.beginPath();ctx.rect(-advance/2-1,-layout.fontSize,(advance+2)*fill,layout.fontSize*2);ctx.clip();
+   ctx.globalAlpha=1;ctx.fillStyle='#fff';ctx.shadowColor=`rgba(113,240,230,${wave.glow*.45})`;ctx.shadowBlur=layout.fontSize*.12*wave.glow;
+   ctx.fillText(char.text,0,0);ctx.restore();
+  }
+  ctx.restore();
  });
  ctx.restore();
 }

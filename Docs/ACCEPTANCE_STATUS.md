@@ -1207,3 +1207,24 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
 - 修复：共享 SDK 脚本增加固定版本 NDK 查找，优先显式 ANDROID_NDK_HOME 和当前 SDK，再查常用 Android/Homebrew 安装目录。校验 source.properties 的精确版本及 clang/clang++/llvm-strip。显式配置错误仍明确失败，不静默替换；日志打印实际 NDK 路径。原生缓存戳包含 NDK 版本与查找脚本。
 - 通过：test-android-ndk.py 验证分离目录回退、当前 SDK 优先、显式目录优先、错误版本/不完整工具/不存在目录拒绝；UI 门禁；取消 ANDROID_NDK_HOME 后完整构建正式 APK 成功，SDK 与 Build Tools 与用户日志相同（~/Library/Android/sdk、36.0.0），自动定位 Homebrew NDK。APK 签名验证及 3.0.0 / 30000 元数据核对通过。
 - 产物：.build/dist/MiniVoice-3.0.0-android.apk。未安装到手机。
+
+### Windows 对齐续接（2026-11-05）：扫描取消与缓存恢复
+
+- 已接入共用后台任务界面：Windows扫描取消、真实计数与完成/失败/取消提醒、已读和清理已结束记录。Mac不声明scanCancellable时原界面行为不变。
+- 扫描使用AbortSignal在目录/文件及元数据处理后检查取消；取消/失败不提交半次目录结果，保留上次完整索引。取消属于文件边界协作取消，不中断正在解析的单文件。
+- 未变化文件复用前检查封面资源存在性；资源丢失会重新读原文件元数据重建。启动清除上次异常退出遗留的扫描忙碌状态并提示重试。
+- 通过：Windows20项Node测试，新增取消不返回部分目录、缓存缺失重建；同源前端构建、组件门禁及主进程语法。未读写真实用户音乐。
+- 待验收：Windows真实大曲库取消时延、I/O异常和重启恢复；完整缓存管理/AI后台任务及其他对齐缺口未关闭。
+
+### 2026-11-05 连续波浪律动调整
+- 按用户确认恢复明显字形放大/跃动：以连续演唱游标驱动宽波峰和尾部波谷，相邻字共同起伏，不使用独立入场弹簧；平滑穿过字边界，句尾渐退，暂停/跳转仍由播放时间直接采样。
+- 通过：2 项 kinetic 测试，含密集时间采样的边界连续性、邻字联动及句尾复位；组件边界检查。
+- 待验收：手机/桌面真实歌曲观感与长音、快句、换行，未打包安装；此前页面回归空节点异常尚未关闭。
+
+### Windows 对齐续接（2026-11-05）：流式格式写回
+
+- 新增 Shared/DesktopServices/media-tag-writer.cjs 通用流式事务：FFmpeg音频码流复制、FFprobe标签回读、音频流SHA校验、原文件并发修改检测、备份校验与同目录原子替换。Windows普通编辑与同专辑插图同步接同一写回适配；已有Mac Swift实现保持不变，后续需继续收敛协议测试。
+- Windows有内置FFmpeg/FFprobe时启用MP3/FLAC/M4A写回，使用流式文件摘要避免原MP3内存实现的256MB限制。开发环境无工具时仅保留原MP3回退；当前播放歌曲仍要求切换后保存。
+- Windows构建要求MINIVOICE_WINDOWS_MEDIA_TOOLS提供Windows原生ffmpeg.exe/ffprobe.exe及LICENSE.txt并打包，当前仓库尚未提供经审核的固定版本Windows工具原件；不把Mac工具改名充数。
+- 通过：本机真实FFmpeg合成FLAC/M4A标签与歌词回读、原文件备份一致及音频流校验，3项定向测试。未使用用户歌曲，不是Windows实机证据。
+- 待验收：Windows原生媒体工具供应、许可/版本/哈希固化，封面各格式组合、超大文件、Windows参数长度/占用、当前播放直接保存。该项尚不能标为全部完成。

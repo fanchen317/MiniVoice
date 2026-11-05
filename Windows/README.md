@@ -40,3 +40,7 @@ MP3 写回使用固定 node-id3 0.2.9，保持音频 payload 不变，原有已�
 ### 最新续接（覆盖上方历史缺口中对应条目）
 
 封面复制/粘贴/向外拖出已接共用服务，支持 Electron 44 异步剪贴板；媒体键/系统媒体面板已编写 MediaSession 适配；设备列表与输出切换已接 audio RPC，失败不写偏好；窗口全局快捷键已接注册与冲突回退。这些系统能力仍无 Windows 实机证据。只检测指定 sink 消失暂停，默认输出耳机断开与系统主音量联动仍未接入。
+
+### 流式写回续接
+
+已新增共用FFmpeg事务，内置工具存在时启用MP3/FLAC/M4A及流式大文件处理；原MP3内存回退仍有256MB限制。Windows构建需设置MINIVOICE_WINDOWS_MEDIA_TOOLS，目录包含ffmpeg.exe、ffprobe.exe和LICENSE.txt；仓库尚无固定来源/版本/哈希的Windows工具包，须补齐发行资源。已用本机真实工具测试合成FLAC/M4A，不代表Windows占用、大文件和封面组合验收。当前播放歌曲的直接保存尚未完成。
