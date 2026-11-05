@@ -105,15 +105,19 @@ export function paintKineticPhrase(ctx,characters,layout,time,width,height,{show
    // the slit instead of being cut into one narrow rectangular underline.
    if(showSeam&&char.text.trim()&&wave.glow>.02){
     const y=layout.fontSize*.78,thickness=Math.max(1.6,layout.fontSize*.065);
-    ctx.save();ctx.translate(0,y);ctx.scale(advance*.85,layout.fontSize*.24);
+    // An emissive outer field needs additive light over bright artwork, not
+    // source-over purple paint which disappears into the cover.
+    ctx.save();ctx.globalCompositeOperation='screen';
+    ctx.translate(0,y);ctx.scale(advance*1.25,layout.fontSize*.32);
     const halo=ctx.createRadialGradient(0,0,0,0,0,1);
-    halo.addColorStop(0,palette.bottom);halo.addColorStop(.25,palette.glow);halo.addColorStop(1,'transparent');
-    ctx.globalAlpha=.7*wave.glow*fill;ctx.fillStyle=halo;ctx.shadowBlur=0;
+    halo.addColorStop(0,palette.top);halo.addColorStop(.16,palette.bottom);halo.addColorStop(.5,palette.glow);halo.addColorStop(1,'transparent');
+    ctx.globalAlpha=.6*wave.glow*wave.glow*fill;ctx.fillStyle=halo;ctx.shadowBlur=0;
     ctx.fillRect(-1,-1,2,2);ctx.restore();
     const trace=ctx.createLinearGradient(-advance*.6,0,advance*.6,0);
     trace.addColorStop(0,'transparent');trace.addColorStop(.35,palette.bottom);trace.addColorStop(.5,palette.top);trace.addColorStop(.65,palette.bottom);trace.addColorStop(1,'transparent');
-    ctx.fillStyle=trace;ctx.globalAlpha=.9*wave.glow*fill;ctx.shadowColor=palette.glow;ctx.shadowBlur=layout.fontSize*.12;
-    ctx.fillRect(-advance*.6,y-thickness/2,advance*1.2,thickness);
+    ctx.save();ctx.globalCompositeOperation='screen';
+    ctx.fillStyle=trace;ctx.globalAlpha=.9*wave.glow*wave.glow*fill;ctx.shadowColor=palette.glow;ctx.shadowBlur=layout.fontSize*.16;
+    ctx.fillRect(-advance*.6,y-thickness/2,advance*1.2,thickness);ctx.restore();
    }
   }
   ctx.restore();

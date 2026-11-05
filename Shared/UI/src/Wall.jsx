@@ -43,7 +43,7 @@ function FocusArtwork({src,preview,shouldDefer,smoothUpgrade=false,target,expand
   const blur=artworkRoot.current?.querySelector('.mv-artwork-blur');if(blur&&blur.naturalWidth&&blur.getAttribute('src')===shown&&(shown===src||shown===preview))plan(blur,blur.getAttribute('src'));
  },[target.width,target.height,preview,src,expanded,analysisRevision,shown]);
  const sources=[...new Set((smoothUpgrade?[preview,...revealed,shown,src]:[shown,preview,src]).filter(Boolean))];
- return <div ref={artworkRoot} className="mv-wall-artwork-stack" data-artwork-target={`${Math.round(target.width)}x${Math.round(target.height)}`}>{sources.map(source=><Artwork key={source} className="mv-wall-focused-art" src={source} draggable={false} style={smoothUpgrade?{visibility:'visible',opacity:(!expanded&&source===preview)||revealed.includes(source)||shown===source?1:0,zIndex:source===preview?0:1,transition:reduced()?'none':'opacity 180ms ease-out'}:{visibility:shown===source?'visible':'hidden'}} onLoad={async event=>{
+ return <div ref={artworkRoot} className="mv-wall-artwork-stack" data-artwork-target={`${Math.round(target.width)}x${Math.round(target.height)}`}>{sources.map(source=><Artwork key={source} className="mv-wall-focused-art" src={source} draggable={false} style={smoothUpgrade?{visibility:'visible',opacity:(!expanded&&source===preview)||revealed.includes(source)||shown===source?1:0,zIndex:source===preview?0:1,transition:reduced()?'none':'opacity 180ms ease-out'}:{visibility:shown===source?'visible':'hidden',transition:'none'}} onLoad={async event=>{
   const node=event.currentTarget;
   try{await node.decode();if(source===src)await waitArtworkSubjects(preview||src);}catch{return;}
   if(!node.isConnected)return;
@@ -51,7 +51,7 @@ function FocusArtwork({src,preview,shouldDefer,smoothUpgrade=false,target,expand
   const reveal=()=>{if(!node.isConnected||requested.current!==source)return;if(source!==preview&&shouldDefer?.()){revealFrame.current=setTimeout(reveal,80);return;}latestTarget.current.plan(node,source);if(smoothUpgrade)setRevealed(previous=>[...previous.filter(value=>value!==source),source].slice(-3));setShown(source);};
   if(source===requested.current){clearTimeout(revealFrame.current);reveal();}
   else if(source===preview&&node.isConnected&&!expanded){setShown(previous=>previous||source);}
- }}/>)}{expanded&&<ArtworkBlur className="mv-wall-focused-art" src={shown||preview||src} onLoad={event=>{const source=event.currentTarget.getAttribute('src');if(source===shown)latestTarget.current.plan(event.currentTarget,source);}}/>} </div>;
+ }}/>)}{expanded&&<ArtworkBlur className="mv-wall-focused-art" src={shown||preview||src} onLoad={event=>{const source=event.currentTarget.getAttribute('src');if(source===shown&&(source===src||source===preview))latestTarget.current.plan(event.currentTarget,source);}}/>} </div>;
 }
 /** A full-surface wall. Camera, focus reflow and expansion have distinct ownership. */
 export default forwardRef(function Wall({nativeScrolling=false,items,current,playingId=current,playing=false,page,onCamera,onScale,onSelect,onDoubleSelect,onContext,onAnalyzeArtwork,focused,expanded=false,blocked=false,recessed=false,focusContent,location=0,locationId=null,loading=false,grouped=false},api){
