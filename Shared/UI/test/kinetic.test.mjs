@@ -25,3 +25,12 @@ test('colored ribbon is deterministic, varies across the phrase and with playbac
  assert.notDeepEqual(kineticPalette(2,8,1),kineticPalette(6,8,1));
  assert.notDeepEqual(kineticPalette(2,8,1),kineticPalette(2,8,2));
 });
+
+test('singing wave keeps moving across evenly timed glyph boundaries',async()=>{
+ const {kineticWave}=await import('../src/components/kineticModel.js');
+ const chars=Array.from({length:8},(_,i)=>({text:'字',start:i,end:i+1}));
+ const sample=t=>kineticWave(chars,t,4,50).y;
+ const before=sample(2.999)-sample(2.998),after=sample(3.002)-sample(3.001);
+ assert.ok(Math.abs(before)>.001,'wave must not ease to a stop at each character');
+ assert.ok(Math.abs(after/before-1)<.02,'velocity stays continuous across the boundary');
+});

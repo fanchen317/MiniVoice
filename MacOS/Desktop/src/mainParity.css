@@ -207,3 +207,7 @@ img{-webkit-user-drag:none}
    must never reveal an unshaded last row of a light cover. */
 .wall-poster>.poster-face{background:#000}
 .wall-poster>.poster-face>.poster-shade{inset:-1px}
+/* Clip artwork, shade and contour as one group while FLIP changes aspect.
+   overflow alone can clip separately composited image/shade edges. Keep the
+   mask on the persistent face, never on an individual image or the wall. */
+.wall-poster>.poster-face{isolation:isolate;-webkit-mask-image:linear-gradient(#000,#000);mask-image:linear-gradient(#000,#000);mask-size:100% 100%;mask-repeat:no-repeat}

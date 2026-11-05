@@ -7,12 +7,12 @@ const overlap=(a,b)=>({x:Math.max(a.x,b.x),y:Math.max(a.y,b.y),right:Math.min(a.
 export function compositionViewport(viewport,viewportAspect){
  const measured=finitePositive(viewport?.width)&&finitePositive(viewport?.height);
  const aspect=measured?viewport.width/viewport.height:viewportAspect;
- const occlusions=(Array.isArray(viewport?.occlusions)?viewport.occlusions:[]).filter(box=>[box.x,box.y,box.width,box.height].every(Number.isFinite)&&box.width>0&&box.height>0).slice(0,16).map(box=>({x:clamp(box.x),y:clamp(box.y),right:clamp(box.x+box.width),bottom:clamp(box.y+box.height),weight:clamp(Number.isFinite(box.weight)?box.weight:.85)})).filter(box=>area(box)>0&&box.weight>0);
+ const occlusions=(Array.isArray(viewport?.occlusions)?viewport.occlusions:[]).filter(box=>box&&[box.x,box.y,box.width,box.height].every(Number.isFinite)&&box.width>0&&box.height>0).slice(0,16).map(box=>({x:clamp(box.x),y:clamp(box.y),right:clamp(box.x+box.width),bottom:clamp(box.y+box.height),weight:clamp(Number.isFinite(box.weight)?box.weight:.85)})).filter(box=>area(box)>0&&box.weight>0);
  return {aspect,width:measured?viewport.width:0,height:measured?viewport.height:0,occlusions};
 }
 
 function subjectBoxes(regions){
- const boxes=(Array.isArray(regions)?regions:[]).filter(box=>[box.x,box.y,box.width,box.height].every(Number.isFinite)&&box.width>0&&box.height>0).slice(0,48).map(region=>{
+ const boxes=(Array.isArray(regions)?regions:[]).filter(box=>box&&[box.x,box.y,box.width,box.height].every(Number.isFinite)&&box.width>0&&box.height>0).slice(0,48).map(region=>{
   const core={x:clamp(region.x),y:clamp(region.y),right:clamp(region.x+region.width),bottom:clamp(region.y+region.height)};
   const face=region.face===1||region.face===true,text=region.text===1||region.text===true,person=region.person===1||region.person===true;
   const confidence=clamp(Number.isFinite(region.confidence)?region.confidence:.8,.1,1);
@@ -50,19 +50,42 @@ function exclusionMask(occlusions){
  return {at:(x,y)=>cells[Math.min(n-1,Math.max(0,Math.floor(y*n)))*n+Math.min(n-1,Math.max(0,Math.floor(x*n)))],covered:box=>Math.max(0,integral(box.right,box.bottom)-integral(box.x,box.bottom)-integral(box.right,box.y)+integral(box.x,box.y))};
 }
 
+/** Content evidence, rather than image aspect, selects the framing policy.
+ * No detections means unknown scenery/abstract content, not a claimed landscape.
+ */
+export function compositionContent(regions){
+ const boxes=subjectBoxes(regions),faces=boxes.filter(b=>b.face&&b.confidence>=.35),people=boxes.filter(b=>b.person&&b.confidence>=.35);
+ // A face and its enclosing body describe one person, not two.
+ const bodies=people.filter(body=>!faces.some(face=>area(overlap(body.core,face.core))/area(face.core)>.6));
+ const count=faces.length+bodies.length;
+ const text=boxes.filter(b=>b.text&&b.confidence>=.35);
+ // Album titles should not lose to many tiny credit lines. Use relative
+ // character height and area, without pretending to understand OCR wording.
+ const largestText=Math.max(0,...text.map(b=>area(b.core))),tallestText=Math.max(0,...text.map(b=>b.core.bottom-b.core.y));
+ const titles=text.filter(b=>area(b.core)>=largestText*.25&&(b.core.bottom-b.core.y)>=tallestText*.45);
+ const primaryPeople=[...faces,...bodies];
+ return {kind:count>2?'group':count===2?'pair':count===1?'portrait':text.length?'typography':'scenery-or-abstract',count,primary:primaryPeople.length?primaryPeople:titles,boxes};
+}
+
 /** Cover geometry has one travelling axis; all scoring uses full 2D subject boxes. */
 export function compositionCrop(regions,imageAspect,viewportAspect,{energy,width,height,viewport}={}){
  const target=compositionViewport(viewport,viewportAspect);viewportAspect=target.aspect;
  if(!finitePositive(imageAspect)||!finitePositive(viewportAspect))return null;
  const horizontal=viewportAspect<imageAspect,cw=Math.min(1,viewportAspect/imageAspect),ch=Math.min(1,imageAspect/viewportAspect),extent=horizontal?cw:ch,travel=1-extent;
- const boxes=subjectBoxes(regions),visual=energyProfile(energy,width,height,horizontal),mask=exclusionMask(target.occlusions);
+ const content=compositionContent(regions),boxes=content.boxes,visual=energyProfile(energy,width,height,horizontal),mask=exclusionMask(target.occlusions);
  if(!boxes.length&&!visual)return null;
  if(travel<.001)return boxes.length?{x:.5,y:.5}:{x:clamp(visual.cx,.3,.7),y:clamp(visual.cy,.3,.65)};
  const low=box=>horizontal?box.x:box.y,high=box=>horizontal?box.right:box.bottom;
- const primary=boxes.some(box=>box.face)?boxes.filter(box=>box.face):boxes.filter(box=>box.text);
+ const primary=content.primary;
  const groupStart=Math.min(...primary.map(box=>low(box.padded))),groupEnd=Math.max(...primary.map(box=>high(box.padded)));
  const protectGroup=primary.length>0&&groupEnd-groupStart<=extent;
- const candidates=new Set([travel/2]);for(let i=0;i<=192;i++)candidates.add(travel*i/192);
+ // Wallpaper framing centres the subject, not the original canvas. Face
+ // centres outrank body centres; padded boxes only enforce headroom.
+ const coreStart=Math.min(...primary.map(box=>low(box.core))),coreEnd=Math.max(...primary.map(box=>high(box.core)));
+ const subjectCentre=(coreStart+coreEnd)/2;
+ const centredStart=primary.length?clamp(subjectCentre-extent/2,0,travel):travel/2;
+ const candidates=new Set([travel/2,centredStart]);
+ if(primary.length)candidates.add(clamp((groupStart+groupEnd-extent)/2,0,travel));for(let i=0;i<=192;i++)candidates.add(travel*i/192);
  for(const box of boxes){
   for(const rect of [box.core,box.padded]){
    for(const value of [low(rect),high(rect)-extent,(low(rect)+high(rect)-extent)/2])candidates.add(clamp(value,0,travel));
@@ -71,20 +94,33 @@ export function compositionCrop(regions,imageAspect,viewportAspect,{energy,width
    for(const exclusion of target.occlusions)for(const value of [high(rect)-low(exclusion)*extent,low(rect)-high(exclusion)*extent])candidates.add(clamp(value,0,travel));
   }
  }
- const totalWeight=boxes.reduce((sum,box)=>sum+box.weight,0);
+ // Small credits remain a secondary cue; their count must not outweigh a title.
+ const weights=new Map(boxes.map(box=>[box,box.weight*(content.kind==='typography'&&!primary.includes(box)?.15:1)]));
+ const totalWeight=boxes.reduce((sum,box)=>sum+weights.get(box),0);
  let best=-Infinity,start=travel/2;
  for(const at of candidates){
   if(protectGroup&&(at>groupStart+1e-8||at+extent<groupEnd-1e-8))continue;
-  const crop={x:horizontal?at:0,y:horizontal?0:at,right:horizontal?at+cw:1,bottom:horizontal?1:at+ch};let score=0;
+  const crop={x:horizontal?at:0,y:horizontal?0:at,right:horizontal?at+cw:1,bottom:horizontal?1:at+ch};let score=0,leastVisible=1,primaryVisible=0;
   for(const box of boxes){
    const core=clamp(area(overlap(box.core,crop))/area(box.core)),padded=clamp(area(overlap(box.padded,crop))/area(box.padded));let value=core*core*2+padded*.45;
+   if(primary.includes(box)){leastVisible=Math.min(leastVisible,core);primaryVisible+=core;}
    if(core>.999)value+=.65;
    if(core>0&&core<.999)value-=(box.face?1.2:box.text?.55:.15)*(1-core);
    if(box.face&&!horizontal&&at>box.core.y&&at<box.core.bottom)value-=.8;
    if(mask){const projected={x:(box.core.x-crop.x)/cw,y:(box.core.y-crop.y)/ch,right:(box.core.right-crop.x)/cw,bottom:(box.core.bottom-crop.y)/ch};const hidden=mask.covered(projected)/area(projected);value-=hidden*(box.face?2.6:box.text?1.7:1.2);}
-   score+=box.weight*value;
+   score+=weights.get(box)*value;
   }
   if(totalWeight)score/=totalWeight;
+  // When a group cannot fit, do not gain a whole-face bonus by deleting
+  // another member. Prefer shared coverage before fine visual texture.
+  if(primary.length>1&&!protectGroup)score+=leastVisible*3+primaryVisible/primary.length;
+  if(primary.length){
+   // Normalise by crop size: a displacement occupying a large fraction of a
+   // phone wallpaper must not look cheap merely because source travel is small.
+   const displacement=Math.abs(at-centredStart)/extent;
+   score-=displacement*(content.kind==='portrait'?2.4:content.kind==='pair'||content.kind==='group'?1.2:.45);
+  }
+  if(content.kind==='typography')score-=primary.filter(box=>{const visible=area(overlap(box.core,crop))/area(box.core);return visible>0&&visible<.999;}).length*.35;
   if(visual){
    const retained=(visual.integral(at+extent)-visual.integral(at))/visual.total;
    score+=(boxes.length?.18:1)*retained;

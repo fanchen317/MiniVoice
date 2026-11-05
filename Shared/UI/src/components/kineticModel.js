@@ -9,14 +9,19 @@ export function kineticCharacters(line,nextStart){
     return characters.map((text,i)=>({text,start:word.start+i*step,end:word.start+(i+1)*step}));
   });
 }
-export function kineticLayout(characters,size,measure){
+export function kineticLayout(characters,size,measure,{reference=false}={}){
   const width=Math.max(1,size.width-32),height=Math.max(1,size.height-32);
   let fontSize=Math.min(58,Math.max(20,size.width*.095)),glyphs=[],totalHeight=0;
+  if(reference){
+    // Prefer one coherent phrase; wrap only when fitting would make it unreadable.
+    const total=characters.reduce((sum,char)=>sum+Math.max(fontSize*.3,measure(char.text,fontSize))+fontSize*.12,0);
+    fontSize=Math.min(fontSize,Math.max(24,fontSize*width/Math.max(1,total)));
+  }
   for(let attempt=0;attempt<24;attempt++){
     const rowHeight=fontSize*1.65;
     const advances=characters.map(word=>Math.max(fontSize*.3,measure(word.text,fontSize))+fontSize*.12);
     const total=advances.reduce((a,b)=>a+b,0),rowCount=Math.max(1,Math.ceil(total/width));
-    const rowWidth=Math.min(width,total/rowCount+Math.max(...advances,0)*.45);
+    const rowWidth=reference?width:Math.min(width,total/rowCount+Math.max(...advances,0)*.45);
     let x=0,row=0;
     glyphs=characters.map(word=>{
       const advance=Math.max(fontSize*.3,measure(word.text,fontSize))+fontSize*.12;
@@ -63,7 +68,8 @@ export function kineticWave(characters,time,index,fontSize){
   const char=characters[i],next=characters[i+1];
   if(time<char.start)break;
   const end=Math.max(char.start+.001,next?.start??char.end??char.start+.5);
-  cursor=i-.5+smooth((time-char.start)/(end-char.start));
+  // Linear travel avoids stopping and restarting at every glyph boundary.
+  cursor=i-.5+Math.max(0,Math.min(1,(time-char.start)/(end-char.start)));
  }
  const first=characters[0],last=characters.at(-1),end=last.end??last.start+.5;
  const envelope=smooth((time-first.start+.18)/.38)*(1-smooth((time-end)/.65));
@@ -83,7 +89,8 @@ export function paintKineticPhrase(ctx,characters,layout,time,width,height,{show
   const point=layout.glyphs[i],advance=ctx.measureText(char.text).width;
   const wave=kineticWave(characters,time,i,layout.fontSize);
   ctx.save();ctx.translate(point.x,point.y+wave.y);ctx.rotate(wave.rotation);ctx.scale(wave.scale,wave.scale);
-  ctx.globalAlpha=.62;ctx.fillStyle='#dce7f4';ctx.fillText(char.text,0,0);
+  ctx.globalAlpha=.62;ctx.fillStyle='#dce7f4';
+  ctx.fillText(char.text,0,0);
   const fill=progress(time,char.start,char.end??char.start+.3);
   if(fill>0){
    ctx.save();ctx.beginPath();ctx.rect(-advance/2-1,-layout.fontSize,(advance+2)*fill,layout.fontSize*2);ctx.clip();
@@ -93,13 +100,21 @@ export function paintKineticPhrase(ctx,characters,layout,time,width,height,{show
    gradient.addColorStop(0,palette.top);gradient.addColorStop(1,palette.bottom);
    ctx.fillStyle=gradient;ctx.shadowColor=palette.glow;ctx.shadowBlur=layout.fontSize*(.08+.2*wave.glow);
    ctx.fillText(char.text,0,0);
-   // Match the mobile clipped light trace in the glyph's own moving space.
-   // It inherits the same wave, rotation, scale, palette and highlight clip.
-   if(showSeam&&char.text.trim()){
-    ctx.globalAlpha=.38;ctx.shadowBlur=layout.fontSize*.035;
-    ctx.fillRect(-advance/2,layout.fontSize*.78,advance,Math.max(.65,layout.fontSize*.025));
-   }
    ctx.restore();
+   // Reflection lives outside the glyph highlight clip: light must spread past
+   // the slit instead of being cut into one narrow rectangular underline.
+   if(showSeam&&char.text.trim()&&wave.glow>.02){
+    const y=layout.fontSize*.78,thickness=Math.max(1.6,layout.fontSize*.065);
+    ctx.save();ctx.translate(0,y);ctx.scale(advance*.85,layout.fontSize*.24);
+    const halo=ctx.createRadialGradient(0,0,0,0,0,1);
+    halo.addColorStop(0,palette.bottom);halo.addColorStop(.25,palette.glow);halo.addColorStop(1,'transparent');
+    ctx.globalAlpha=.7*wave.glow*fill;ctx.fillStyle=halo;ctx.shadowBlur=0;
+    ctx.fillRect(-1,-1,2,2);ctx.restore();
+    const trace=ctx.createLinearGradient(-advance*.6,0,advance*.6,0);
+    trace.addColorStop(0,'transparent');trace.addColorStop(.35,palette.bottom);trace.addColorStop(.5,palette.top);trace.addColorStop(.65,palette.bottom);trace.addColorStop(1,'transparent');
+    ctx.fillStyle=trace;ctx.globalAlpha=.9*wave.glow*fill;ctx.shadowColor=palette.glow;ctx.shadowBlur=layout.fontSize*.12;
+    ctx.fillRect(-advance*.6,y-thickness/2,advance*1.2,thickness);
+   }
   }
   ctx.restore();
  });
@@ -113,3 +128,9 @@ export function kineticPalette(index,count,elapsed){
  return {top:`hsl(${hue-28},95%,82%)`,bottom:`hsl(${hue+18},92%,70%)`,glow:`hsla(${hue},95%,74%,0.65)`};
 }
 
+
+// Match physical pixels on high density Android screens; iOS keeps its reference raster.
+export function kineticRasterScale(ratio,enhanced=false){
+ const density=Number.isFinite(ratio)&&ratio>0?ratio:1;
+ return enhanced?Math.max(1,density):Math.min(2,density);
+}

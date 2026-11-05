@@ -273,6 +273,9 @@
 .mv-wall-card.active::after{display:none}
 .mv-wall-card.active>.mv-wall-press-surface::after{content:'';position:absolute;inset:0;border:3px solid #32d8b5;box-shadow:inset 0 0 18px #32d8b555;opacity:.8;z-index:3;pointer-events:none}
 .mv-wall-press-surface{transform-box:border-box}
+/* The iOS compositor must resolve image, shade and contour before clipping
+   their moving edge. Android keeps its existing projected rendering path. */
+[data-host=iOS] .mv-wall-press-surface{isolation:isolate;-webkit-mask-image:linear-gradient(#000,#000);mask-image:linear-gradient(#000,#000);mask-size:100% 100%;mask-repeat:no-repeat}
 .mv-wall-focused.is-expanded[data-artwork-mode=blurred]>.mv-wall-press-surface::before{opacity:1}
 .artwork-mode-toggle{width:44px;height:44px;display:grid;place-items:center;border-radius:50%;color:inherit;background:transparent;border:0}
 .artwork-mode-toggle[aria-pressed=true]{color:#67e5cd;background:#ffffff18}

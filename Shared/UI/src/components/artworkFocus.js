@@ -40,6 +40,12 @@ export function warmArtworkSubjects(key,read,context){
  }).catch(()=>[]).finally(()=>{if(pendingSubjects.get(key)?.promise===task)pendingSubjects.delete(key);});
  pendingSubjects.set(key,{promise:task,quality});return task;
 }
+/** Join analysis already requested by the host before locking first presentation. */
+export async function waitArtworkSubjects(key){
+ key=identity(key);
+ // A higher-quality request may be queued behind the current one.
+ for(let i=0;i<3;i++){const task=pendingSubjects.get(key);if(!task)return;await task.promise;}
+}
 export function artworkFocus(pixels,width,height,{imageAspect=1,viewportAspect=1,viewport,regions=[]}={}){
  const valid=Number.isInteger(width)&&Number.isInteger(height)&&width>=2&&height>=2&&width*height<=262144&&pixels?.length>=width*height*4;
  const energy=valid?energyMap(pixels,width,height):null;
@@ -72,9 +78,9 @@ export function copyArtworkPresentation(reference,layer){
  for(const key of ['left','top','width','height','transformOrigin','transform','objectPosition'])layer.style[key]=reference.style[key];
 }
 
-/** Session-owned decisions: late detection must not pan an already visible cover. */
+/** Visible artwork owns its crop until the image geometry or viewport changes. */
 export function stableArtworkFocus(image,options,decisions){
- const viewport=options.viewport||{},key=JSON.stringify([options.key,options.coordinateSpace,image.naturalWidth,image.naturalHeight,Math.round(viewport.width),Math.round(viewport.height)]);
+ const viewport=options.viewport||{},key=JSON.stringify([options.key,options.coordinateSpace,Math.round(image.naturalWidth/image.naturalHeight*10000),viewportKey(compositionViewport(viewport,options.viewportAspect))]);
  const prior=decisions.get(key);if(prior)return setArtworkAnchor(image,prior);
  const focus=applyArtworkFocus(image,options);if(decisions.size>=8)decisions.delete(decisions.keys().next().value);decisions.set(key,focus);return focus;
 }
