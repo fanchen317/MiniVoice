@@ -21,6 +21,11 @@ app.whenReady().then(async()=>{try{
  win.setContentSize(1280,800);await win.loadURL(base+'/tests/wall-desktop.html');
  await waitFor("!!document.querySelector('.wall-poster.focused')",'No initial focus');await wait(900);
  await click('.wall-poster.focused [aria-label="展开播放器"]');await wait(850);
+ await js("window.beforeDecodeTrack=document.querySelector('.wall-poster.focused').dataset.trackId;window.originalDecode=HTMLImageElement.prototype.decode;window.decodeReleases=[];HTMLImageElement.prototype.decode=function(){const image=this;return new Promise((resolve,reject)=>window.decodeReleases.push(()=>window.originalDecode.call(image).then(resolve,reject)));};window.miniVoice.command('play',{id:'45'});");await wait(250);
+ check(await js("window.decodeReleases.length>0&&document.querySelector('.wall-poster.focused').dataset.trackId===window.beforeDecodeTrack"),'Old wallpaper disappeared before next original decoded');
+ await js("HTMLImageElement.prototype.decode=window.originalDecode;window.decodeReleases.forEach(release=>release());");await wait(750);
+ check(await js("document.querySelector('.wall-poster.focused').dataset.trackId==='45'"),'Decoded wallpaper did not take over');
+ console.log('PASS original decode barrier retains old immersive wallpaper');
  for(const id of ['83','17','62']){
   await js(`window.switchFrames=[];window.switchStart=performance.now();function sampleSwitch(){const n=document.querySelector('.wall-poster.focused'),s=document.querySelector('.wall-surface');if(n&&s){const r=n.getBoundingClientRect(),b=s.getBoundingClientRect();window.switchFrames.push({id:n.dataset.trackId,x:r.x-b.x,y:r.y-b.y,w:r.width/b.width,h:r.height/b.height});}if(performance.now()-window.switchStart<650)requestAnimationFrame(sampleSwitch);}sampleSwitch();window.miniVoice.command('play',{id:'${id}'});`);await wait(750);
   const frames=await js('window.switchFrames');const selected=frames.filter(f=>f.id===id);

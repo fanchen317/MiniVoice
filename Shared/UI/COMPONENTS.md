@@ -641,3 +641,9 @@ Mac poster-face 与仅 data-host=iOS 的 mv-wall-press-surface 使用 isolation:
 2026-11-05 Mac 音乐墙搜索外缘统一：搜索运行时已有 useLiquidGlass 采样，不新增第二材质层。wallControls 显式将搜索外壳描边设为与其他圆形工具相同的 .65px，半径 19px；内部按钮宽度扣除外壳两侧描边，避免 38px 子按钮将收起外壳撑成非正圆。持续容器、展开/收起、输入和焦点行为保持原规则。
 
 2026-11-05 按用户截图继续修正扩散光：光痕改 screen 混合，减少在亮色封面上呈紫色染色线的问题；外扩椭圆半径为字宽 1.25、字号 .32，峰值 .6，波峰平方抑制低强度相邻字连成下划线，保持裂缝 .065 字号厚度。iOS 不变。门禁、109项共享测试、Android release 构建通过；桌面渲染检查仅验证实现外观，安卓实体设备/iOS 对照仍待验收，未宣称一致；本轮未运行完整页面回归或 portable。
+
+2026-11-05 移动墙面跨歌曲插图隔离：FocusArtwork 恢复 key={item.id}。同歌 preview/高清/展开升级保留组件，换歌销毁 shown/revealed/cropDecisions 和定时器；旧 decode 回调因节点不再连接不得接管新歌。保留外部聚焦几何容器，不重置墙面动画。新增 iOS/Android fixture 阻塞 decode 后切歌断言，要求新歌图片栈不含旧歌 URL。
+
+Wall 随机切歌交接：展开时 revealCurrent 先在封面后同步目标相机和挂载海报窗口，再收回时复用。展开外观仍使用全屏矩形；不改变歌曲、扫描和文件数据。MINIVOICE_RANDOM_ONLY=1 页面回归检查远处随机目标图已解码及收回后节点身份。慢存储立即收回和 Android 实体 GPU 尚待验收。
+
+Mac壁纸交接由Wall提前加载原图并等待主体结果，完成后才切换聚焦歌曲；取消旧effect阻止迟到接管。展开原图准备失败时保留原画面。定向DOM测试用可控decode延迟验证交接前后身份与逐帧全屏边界。移动FocusArtwork新增analyze注入，由页面提供宿主调用，原图揭示前主动启动分析，避免仅等待已有请求造成首次分析漏用。

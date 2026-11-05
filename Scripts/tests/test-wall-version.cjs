@@ -64,6 +64,20 @@ app.whenReady().then(async()=>{try{
  await realClick('[aria-label=音乐墙设置]');await wait(100);check(await js("document.querySelectorAll('.wp-settings .mv-slider-mark').length===7&&!document.querySelector('.wp-scale-stops')&&!document.querySelector('.wp-settings').textContent.includes('播放模式')"),'Phone wall settings do not match Mac scope');
  const ratioTrack=await js("(()=>{const r=document.querySelector('.wp-settings [role=slider]').getBoundingClientRect();return {x:r.x,y:r.y+r.height/2,w:r.width}})()");win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,x:Math.round(ratioTrack.x+ratioTrack.w/3),y:Math.round(ratioTrack.y)});win.webContents.sendInputEvent({type:'mouseMove',buttons:['left'],x:Math.round(ratioTrack.x+ratioTrack.w*2/60),y:Math.round(ratioTrack.y)});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,x:Math.round(ratioTrack.x+ratioTrack.w*2/60),y:Math.round(ratioTrack.y)});await wait(250);check(await js("Math.abs(Number(document.querySelector('.mv-cover-wall').dataset.wallScale)-.62/1.2)<.011&&document.querySelector('.wp-scale-label').textContent.includes('62%')"),'Phone scale drag cannot choose 62 percent');await phoneScale(100);await realClick('[aria-label=关闭弹窗]');console.log('PASS phone translation toggle, spring overshoot, continuous scale and 62 percent');
  await click('.mv-wall-focused [aria-label="展开播放器"]');await wait(550);check(await js("Math.abs(document.querySelector('.mv-wall-focused').getBoundingClientRect().height-innerHeight)<1"),'Mobile expansion not full viewport');await shot('wall-v2-render-phone-expanded');
+ if(process.env.MINIVOICE_RANDOM_ONLY==='1'){
+ const beforeRandom=await js("window.wallFixture.state.current");
+ await js("window.wallFixture.state.current='731';window.wallFixture.state.playing=false;true");
+ await waitFor("document.querySelector('.mv-wall-focused')?.dataset.wallId==='731'",'Expanded random track did not follow playback');
+ await waitFor("Array.from(document.querySelectorAll('.mv-wall-card')).some(n=>n.dataset.wallId==='731'&&n.querySelector('img')?.naturalWidth>0)",'Random destination posters were not prepared behind expanded cover');
+ await js("window.randomPreparedPosters=new Map(Array.from(document.querySelectorAll('.mv-wall-card')).map(n=>[n.dataset.wallCell,n.querySelector('img')]));true");
+ await click('.mv-wall-focused [aria-label="收起播放器"]');await wait(600);
+ check(await js("Array.from(document.querySelectorAll('.mv-wall-card')).filter(n=>window.randomPreparedPosters.has(n.dataset.wallCell)).every(n=>n.querySelector('img')===window.randomPreparedPosters.get(n.dataset.wallCell))"),'Collapse remounted prepared random destination images');
+ console.log('PASS expanded random playback prepares and retains destination posters before collapse');
+ await js(`window.wallFixture.state.current=${JSON.stringify(beforeRandom)};true`);await wait(900);
+ await click('.mv-wall-focused [aria-label="展开播放器"]');await wait(550);
+
+ clearTimeout(timeout);win.destroy();app.exit(0);return;
+ }
  for(const current of [true,false])for(const expanded of [true,false])for(const compact of [true,false]){
   await js(`window.renderWallCardProbe(${current},${expanded},${compact});true`);await wait(80);
   check(await js("(()=>{const c=document.querySelector('#wall-card-probe .wp-controls'),b=c.querySelector('[aria-label=收起播放器],[aria-label=展开播放器]');return Math.abs(c.getBoundingClientRect().right-b.getBoundingClientRect().right)<.02})()"),'Card expand/collapse action lost right anchor');
@@ -191,6 +205,12 @@ app.whenReady().then(async()=>{try{
    check(await js(`(()=>{const n=document.querySelector('.mv-wall-focused>.mv-wall-press-surface');if(!n)return false;const s=getComputedStyle(n);return ${host==='ios'?"s.maskImage!=='none'&&s.isolation==='isolate'":"s.maskImage==='none'"}})()`),'Host clip grouping mismatch: '+host);
    if(frame===2)await shot('wall-clip-'+host+'-focus-mid');
   }
+  await wait(650);
+  await js("window.previousSongArtwork=[...document.querySelectorAll('.mv-wall-focused .mv-wall-artwork-stack img')].map(n=>n.src);window.previousSongId=document.querySelector('.mv-wall-focused').dataset.wallId;window.savedArtworkDecode=HTMLImageElement.prototype.decode;HTMLImageElement.prototype.decode=function(){return new Promise(()=>{});};document.querySelector('.mv-wall-card:not(.is-focus-underlay)').click();true");
+  await wait(80);
+  check(await js("document.querySelector('.mv-wall-focused').dataset.wallId!==window.previousSongId && [...document.querySelectorAll('.mv-wall-focused .mv-wall-artwork-stack img')].every(n=>!window.previousSongArtwork.includes(n.src))"),'Previous song artwork leaked into next song while decode pending: '+host);
+  await js("HTMLImageElement.prototype.decode=window.savedArtworkDecode;true");
+  console.log('PASS '+host+' song identity isolates artwork before delayed decode');
  }
  console.log('PASS iOS grouped clip during focus; Android mask remains unchanged (Chromium fixture)');
  clearTimeout(timeout);win.destroy();app.exit(0);

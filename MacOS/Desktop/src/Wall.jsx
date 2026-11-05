@@ -232,14 +232,29 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID,locate
   }
   useEffect(()=>{if(!showTools)return;const outside=event=>{if(!tools.current?.contains(event.target)&&!toolsButton.current?.contains(event.target))setShowTools(false);},key=event=>{if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();setShowTools(false);toolsButton.current?.focus();}};window.addEventListener('pointerdown',outside,true);window.addEventListener('keydown',key,true);return()=>{window.removeEventListener('pointerdown',outside,true);window.removeEventListener('keydown',key,true);};},[showTools]);
   useEffect(()=>{if(!groupMenu)return;const close=()=>setGroupMenu(null);window.addEventListener('pointerdown',close);return()=>window.removeEventListener('pointerdown',close);},[groupMenu]);
-  function expand(){
+  const expansionRequest=useRef(0);
+  async function expand(){
+    const request=++expansionRequest.current;
+    if(!immersive&&focus?.track){try{await prepareWallpaper(focus.track);}catch{return;}if(!surface.current||request!==expansionRequest.current)return;}
     stop();clearTimeout(expansionTimer.current);const next=!immersive;
     if(next){savedCamera.current={...camera.current,sourceID:focus?.tile.id};setShowTools(false);}else restoring.current=true;
     setTransitioning(true);onChromeHidden?.(true);setImmersive(next);onImmersive?.(next);
     expansionTimer.current=setTimeout(()=>{setTransitioning(false);if(!next)onChromeHidden?.(false);},reduceMotion?1:600);
   }
   useEffect(()=>{const key=event=>{if(document.querySelector('[aria-modal="true"]'))return;if(event.key==='Escape'){if(immersive)expand();else if(onEscapeSidebar)onEscapeSidebar();else setFocus(null);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[immersive,focus,onEscapeSidebar]);
-  useEffect(()=>{if(!playingID||grouped)return;const tile=nearestInstance(scene,tracks.findIndex(t=>t.id===playingID),camera.current,viewport.current);if(tile&&focus?.track.id!==playingID){prepareFocus(tile);setFocus({tile,track:tracks[tile.index]});center(tile,Boolean(focus)&&!live.current.immersive);}},[playingID,grouped]);
+  async function prepareWallpaper(track){
+    const target=artworkViewport(viewport.current),image=new Image();image.src=artworkURL(track,true);
+    await Promise.all([image.decode(),warmArtworkSubjects(artworkURL(track,false),context=>command('artworkSubjects',{id:track.id,viewport:context},{reportError:false}),target)]);
+  }
+  useEffect(()=>{
+    if(!playingID||grouped)return;
+    let active=true;
+    const track=tracks.find(track=>track.id===playingID);
+    if(!track||focus?.track.id===playingID)return;
+    const reveal=()=>{if(!active)return;const tile=nearestInstance(live.current.scene,live.current.tracks.findIndex(t=>t.id===playingID),camera.current,viewport.current);if(!tile)return;prepareFocus(tile);setFocus({tile,track});center(tile,Boolean(focus)&&!live.current.immersive);};
+    if(live.current.immersive)prepareWallpaper(track).then(reveal).catch(()=>{});else reveal();
+    return()=>{active=false;};
+  },[playingID,grouped]);
   useEffect(()=>{onFocusChange?.(grouped?null:focus?.track||null);},[focus,grouped,onFocusChange]);
   function playPoster(id){command('play',{id,ids:tracks.map(track=>track.id),preservePosition:true});}
   function continuedClick(event){
@@ -262,7 +277,7 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID,locate
       const side=Math.max(260,Math.min(preferredSide,viewport.current.width-leadingInset-40,viewport.current.height-150));
       const size=immersive?{width:viewport.current.width/camera.current.scale,height:viewport.current.height/camera.current.scale}:{width:side,height:Math.max(320,side)};
       const frame=reflowFrame(tile,activeFocus?.tile,size),c=camera.current,visible=frame.x*c.scale+c.x<viewport.current.width+200&&(frame.x+frame.width)*c.scale+c.x> -200&&frame.y*c.scale+c.y<viewport.current.height+200&&(frame.y+frame.height)*c.scale+c.y> -200;
-      return <Poster key={tile.id} tile={frame} grouped={grouped} visible={visible} onReveal={()=>center(tile,false)} track={track} focused={focused} playing={playingCell?.id===tile.id} onMenu={onMenu} onGroupMenu={event=>{event.preventDefault();setGroupMenu({name:groups[tile.index].name,x:Math.max(8,Math.min(event.clientX,innerWidth-248)),y:Math.max(8,Math.min(event.clientY,innerHeight-80))});}} expanded={immersive} displayScale={camera.current.scale} transitioning={transitioning} reduceMotion={reduceMotion||(immersive&&!transitioning)||performance.now()<resizingUntil.current} onExpand={expand} onPlay={()=>groups?onOpenGroup(groups[tile.index].name):playPoster(track.id)}
+      return <Poster key={immersive&&focused?`wallpaper:${tile.id}:${track.artworkRevision||0}`:tile.id} tile={frame} grouped={grouped} visible={visible} onReveal={()=>center(tile,false)} track={track} focused={focused} playing={playingCell?.id===tile.id} onMenu={onMenu} onGroupMenu={event=>{event.preventDefault();setGroupMenu({name:groups[tile.index].name,x:Math.max(8,Math.min(event.clientX,innerWidth-248)),y:Math.max(8,Math.min(event.clientY,innerHeight-80))});}} expanded={immersive} displayScale={camera.current.scale} transitioning={transitioning} reduceMotion={reduceMotion||(immersive&&!transitioning)||performance.now()<resizingUntil.current} onExpand={expand} onPlay={()=>groups?onOpenGroup(groups[tile.index].name):playPoster(track.id)}
         onFocus={(_,__,event)=>{if(suppressClick.current){suppressClick.current=false;return;}if(groups){onOpenGroup(groups[tile.index].name);return;}if(focus?.tile.id===tile.id)return;prepareFocus(tile);setFocus({tile,track});center(tile);}}/>
 
     })}</div>
