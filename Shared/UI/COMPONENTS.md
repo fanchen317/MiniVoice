@@ -647,3 +647,8 @@ Mac poster-face 与仅 data-host=iOS 的 mv-wall-press-surface 使用 isolation:
 Wall 随机切歌交接：展开时 revealCurrent 先在封面后同步目标相机和挂载海报窗口，再收回时复用。展开外观仍使用全屏矩形；不改变歌曲、扫描和文件数据。MINIVOICE_RANDOM_ONLY=1 页面回归检查远处随机目标图已解码及收回后节点身份。慢存储立即收回和 Android 实体 GPU 尚待验收。
 
 Mac壁纸交接由Wall提前加载原图并等待主体结果，完成后才切换聚焦歌曲；取消旧effect阻止迟到接管。展开原图准备失败时保留原画面。定向DOM测试用可控decode延迟验证交接前后身份与逐帧全屏边界。移动FocusArtwork新增analyze注入，由页面提供宿主调用，原图揭示前主动启动分析，避免仅等待已有请求造成首次分析漏用。
+
+Wall 随机切歌补充：跨歌曲定位先预解码目标窗口海报，保持旧墙面后交接；不把开始加载视为准备完成。预加载序号与当前歌曲保护异步结果，失败通过 allSettled 进入常规缺图处理；指针、缩放、清焦点及卸载使旧请求失效。页面层拥有播放状态，组件不改音频数据。延迟解码定向回归与完整页面回归通过，Android 真机尚待验收。
+
+### 2026-11-05 Mac切歌黑帧与二次位移
+录屏23.22.06显示切歌黑帧及背景重新定位。Wall预备图片返回实际已decode的Image，Poster在layout阶段直接挂载同一节点并计算最终几何，避免预加载后另建img等待load。展开切歌在flushSync提交内同时更新preparedWallpaper、focus与camera，避免相机先变而React仍显示旧布局。图片transform不追加CSS过渡；新图未准备好时维持旧卡片。节点卸载清理，迟到切歌仍由effect取消。测试逐帧验证新图complete/naturalWidth、transform不变及全屏边界。

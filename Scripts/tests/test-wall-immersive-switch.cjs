@@ -27,9 +27,9 @@ app.whenReady().then(async()=>{try{
  check(await js("document.querySelector('.wall-poster.focused').dataset.trackId==='45'"),'Decoded wallpaper did not take over');
  console.log('PASS original decode barrier retains old immersive wallpaper');
  for(const id of ['83','17','62']){
-  await js(`window.switchFrames=[];window.switchStart=performance.now();function sampleSwitch(){const n=document.querySelector('.wall-poster.focused'),s=document.querySelector('.wall-surface');if(n&&s){const r=n.getBoundingClientRect(),b=s.getBoundingClientRect();window.switchFrames.push({id:n.dataset.trackId,x:r.x-b.x,y:r.y-b.y,w:r.width/b.width,h:r.height/b.height});}if(performance.now()-window.switchStart<650)requestAnimationFrame(sampleSwitch);}sampleSwitch();window.miniVoice.command('play',{id:'${id}'});`);await wait(750);
+  await js(`window.switchFrames=[];window.switchStart=performance.now();function sampleSwitch(){const n=document.querySelector('.wall-poster.focused'),s=document.querySelector('.wall-surface');if(n&&s){const r=n.getBoundingClientRect(),b=s.getBoundingClientRect();const image=n.querySelector('img.cover');window.switchFrames.push({ready:!!image&&image.complete&&image.naturalWidth>0,transform:image?.style.transform,id:n.dataset.trackId,x:r.x-b.x,y:r.y-b.y,w:r.width/b.width,h:r.height/b.height});}if(performance.now()-window.switchStart<650)requestAnimationFrame(sampleSwitch);}sampleSwitch();window.miniVoice.command('play',{id:'${id}'});`);await wait(750);
   const frames=await js('window.switchFrames');const selected=frames.filter(f=>f.id===id);
-  check(selected.length>5&&selected.every(f=>Math.abs(f.x)<2&&Math.abs(f.y)<2&&Math.abs(f.w-1)<.01&&Math.abs(f.h-1)<.01),'Immersive switch moved across wall: '+JSON.stringify(selected.slice(0,5)));
+  check(selected.length>5&&selected.every(f=>f.ready&&f.transform===selected[0].transform&&Math.abs(f.x)<2&&Math.abs(f.y)<2&&Math.abs(f.w-1)<.01&&Math.abs(f.h-1)<.01),'Immersive switch moved across wall: '+JSON.stringify(selected.slice(0,5)));
  }
  await shot('mac-immersive-switch-fixed');console.log('PASS immersive distant song switches retain full-screen bounds across intermediate frames');
  clearTimeout(timeout);app.exit(0);

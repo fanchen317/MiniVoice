@@ -73,6 +73,13 @@ app.whenReady().then(async()=>{try{
  await click('.mv-wall-focused [aria-label="收起播放器"]');await wait(600);
  check(await js("Array.from(document.querySelectorAll('.mv-wall-card')).filter(n=>window.randomPreparedPosters.has(n.dataset.wallCell)).every(n=>n.querySelector('img')===window.randomPreparedPosters.get(n.dataset.wallCell))"),'Collapse remounted prepared random destination images');
  console.log('PASS expanded random playback prepares and retains destination posters before collapse');
+ await js("window.randomOldFocus=document.querySelector('.mv-wall-focused').dataset.wallId;window.randomDecodeReleases=[];window.randomOriginalDecode=HTMLImageElement.prototype.decode;HTMLImageElement.prototype.decode=function(){return this.isConnected?window.randomOriginalDecode.call(this):new Promise(resolve=>window.randomDecodeReleases.push(resolve));};window.wallFixture.state.current='903';true");
+ await waitFor("window.randomDecodeReleases.length>0",'Random handoff did not prepare destination decoding');
+ check(await js("document.querySelector('.mv-wall-focused').dataset.wallId===window.randomOldFocus"),'Random navigation exposed undecoded destination');
+ await js("HTMLImageElement.prototype.decode=window.randomOriginalDecode;window.randomDecodeReleases.forEach(resolve=>resolve());true");
+ await waitFor("document.querySelector('.mv-wall-focused')?.dataset.wallId==='903'",'Decoded random destination did not take over');
+ console.log('PASS collapsed random playback retains old wall until destination decode settles');
+
  await js(`window.wallFixture.state.current=${JSON.stringify(beforeRandom)};true`);await wait(900);
  await click('.mv-wall-focused [aria-label="展开播放器"]');await wait(550);
 
