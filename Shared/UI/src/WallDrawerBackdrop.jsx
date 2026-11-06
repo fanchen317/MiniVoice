@@ -6,6 +6,10 @@ export default function WallDrawerBackdrop({open,wall,sourceKey}){
  useLayoutEffect(()=>{
   if(!open){const timer=setTimeout(()=>setCells([]),340);return()=>clearTimeout(timer);}
   let frame=0,attempt=0,previous='',stable=0;
+  // Fill exposed viewport edges before the first recessed frame is painted.
+  // Later stable samples may refine restored camera geometry.
+  const initial=wall.current?.backdrop?.()||[];
+  if(initial.length)setCells(initial);
   const capture=()=>{const next=wall.current?.backdrop?.()||[],signature=JSON.stringify(next);stable=next.length&&signature===previous?stable+1:0;previous=signature;
    // Wall mount, measurement and camera restoration can span several frames.
    if(next.length&&(stable>=4||attempt>=59)){setCells(next);return;}

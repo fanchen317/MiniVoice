@@ -126,3 +126,19 @@
 .mv-workspace[data-presentation=mobile].style-wall .mv-drawer-sample{filter:blur(10px) saturate(1.15)}
 .mv-workspace[data-presentation=mobile].style-wall.theme-light .mv-drawer-tint{background:linear-gradient(140deg,#f8fffc38,#eaf3ee48)}
 .mv-workspace[data-presentation=mobile].style-wall.theme-dark .mv-drawer-tint{background:linear-gradient(140deg,#152d2540,#11231c55)}
+/* The frozen wall sample owns this material. Its base must occlude the live
+   lyrics/controls underneath, otherwise a transparent sample leaks sharp UI. */
+.mv-workspace[data-presentation=mobile].style-wall .mv-drawer-material{background:var(--mv-panel-base)}
+.mv-workspace[data-presentation=mobile].style-wall .mv-drawer-sample{filter:blur(24px) saturate(1.15)}
+/* A 44px action target surrounds the same small capsule as the playing badge. */
+.mv-workspace[data-presentation=mobile].style-wall .wp-header-actions .wp-translation-toggle{position:relative;isolation:isolate;min-height:44px;min-width:64px;padding:5px 10px;border-radius:100px;border:0!important;background:transparent!important;box-shadow:none;color:var(--translation-ink)!important;font-size:11px;font-weight:700;line-height:18px;letter-spacing:1px;--translation-ink:#00dac3;--translation-fill:#00dac32e;--translation-line:#00dac399}
+.mv-workspace[data-presentation=mobile].style-wall .wp-header-actions .wp-translation-toggle::before{content:'';position:absolute;inset:7px 0;border-radius:100px;background:var(--translation-fill);border:1px solid var(--translation-line);z-index:-1;pointer-events:none}
+.mv-workspace[data-presentation=mobile].style-wall .wp-header-actions .wp-translation-toggle[aria-pressed=false]{--translation-ink:#e4ece9;--translation-fill:#ffffff0d;--translation-line:#ffffff55}
+/* Status and translation share one measured row; the button's 44px target
+   centres its 30px capsule on the status instead of adding a 7px top offset. */
+.mv-workspace[data-presentation=mobile].style-wall .wp-header{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:8px;row-gap:0;align-items:center}
+.mv-workspace[data-presentation=mobile].style-wall .wp-header>.wp-heading{display:contents}
+.mv-workspace[data-presentation=mobile].style-wall .wp-header .wp-status{grid-column:1;grid-row:1;align-self:center;margin:0}
+.mv-workspace[data-presentation=mobile].style-wall .wp-header>.wp-header-actions{grid-column:2;grid-row:1;align-self:center}
+.mv-workspace[data-presentation=mobile].style-wall .wp-header .wp-heading>h1{grid-column:1 / -1;grid-row:2;min-width:0}
+.mv-workspace[data-presentation=mobile].style-wall .wp-header .wp-heading>p{grid-column:1 / -1;grid-row:3;min-width:0}

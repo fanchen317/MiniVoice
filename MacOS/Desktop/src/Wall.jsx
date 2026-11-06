@@ -70,7 +70,10 @@ const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, on
     if(!before||reduceMotion){presentArtwork();return;}
     node.style.willChange='transform';
     const duration=transitioning?600:520,progressAt=p=>transitioning?focusProgress(p):reflowProgress(p*520),samples=transitioning?61:53;
-    const current=node.animate([{transform:`translate3d(${from.x}px,${from.y}px,0) scale(${from.width/tile.width},${from.height/tile.height})`},{transform:`translate3d(${tile.x}px,${tile.y}px,0) scale(1,1)`}],{duration,easing:transitioning?'cubic-bezier(.22,1,.36,1)':reflowEasing});
+    // Parent geometry and image counter-scaling share the same sampled clock.
+    // Independent easing/interpolation can momentarily stretch the pixels.
+    const frames=Array.from({length:samples},(_,i)=>{const offset=i/(samples-1),p=progressAt(offset);return {offset,transform:`translate3d(${from.x+(tile.x-from.x)*p}px,${from.y+(tile.y-from.y)*p}px,0) scale(${(from.width+(tile.width-from.width)*p)/tile.width},${(from.height+(tile.height-from.height)*p)/tile.height})`};});
+    const current=node.animate(frames,{duration,easing:'linear'});
     animation.current=current;artworkTransition.current={from,duration,progressAt,samples,fromFocal};presentArtwork();
     current.finished.catch(()=>{}).finally(()=>{if(animation.current===current){animation.current=null;artworkTransition.current=null;node.style.willChange='';settleArtwork();}});
   },[tile.x,tile.y,tile.width,tile.height,reduceMotion,expanded,analysisRevision]);
@@ -287,7 +290,7 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID,locate
       const side=Math.max(260,Math.min(preferredSide,viewport.current.width-leadingInset-40,viewport.current.height-150));
       const size=immersive?{width:viewport.current.width/camera.current.scale,height:viewport.current.height/camera.current.scale}:{width:side,height:Math.max(320,side)};
       const frame=reflowFrame(tile,activeFocus?.tile,size),c=camera.current,visible=frame.x*c.scale+c.x<viewport.current.width+200&&(frame.x+frame.width)*c.scale+c.x> -200&&frame.y*c.scale+c.y<viewport.current.height+200&&(frame.y+frame.height)*c.scale+c.y> -200;
-      return <Poster preparedImage={immersive&&focused&&preparedWallpaper?.id===track.id?preparedWallpaper.image:null} key={immersive&&focused?`wallpaper:${tile.id}:${track.artworkRevision||0}`:tile.id} tile={frame} grouped={grouped} visible={visible} onReveal={()=>center(tile,false)} track={track} focused={focused} playing={playingCell?.id===tile.id} onMenu={onMenu} onGroupMenu={event=>{event.preventDefault();setGroupMenu({name:groups[tile.index].name,x:Math.max(8,Math.min(event.clientX,innerWidth-248)),y:Math.max(8,Math.min(event.clientY,innerHeight-80))});}} expanded={immersive} displayScale={camera.current.scale} transitioning={transitioning} reduceMotion={reduceMotion||(immersive&&!transitioning)||performance.now()<resizingUntil.current} onExpand={expand} onPlay={()=>groups?onOpenGroup(groups[tile.index].name):playPoster(track.id)}
+      return <Poster preparedImage={immersive&&focused&&preparedWallpaper?.id===track.id?preparedWallpaper.image:null} key={tile.id} tile={frame} grouped={grouped} visible={visible} onReveal={()=>center(tile,false)} track={track} focused={focused} playing={playingCell?.id===tile.id} onMenu={onMenu} onGroupMenu={event=>{event.preventDefault();setGroupMenu({name:groups[tile.index].name,x:Math.max(8,Math.min(event.clientX,innerWidth-248)),y:Math.max(8,Math.min(event.clientY,innerHeight-80))});}} expanded={immersive} displayScale={camera.current.scale} transitioning={transitioning} reduceMotion={reduceMotion||(immersive&&!transitioning)||performance.now()<resizingUntil.current} onExpand={expand} onPlay={()=>groups?onOpenGroup(groups[tile.index].name):playPoster(track.id)}
         onFocus={(_,__,event)=>{if(suppressClick.current){suppressClick.current=false;return;}if(groups){onOpenGroup(groups[tile.index].name);return;}if(focus?.tile.id===tile.id)return;prepareFocus(tile);setFocus({tile,track});center(tile);}}/>
 
     })}</div>

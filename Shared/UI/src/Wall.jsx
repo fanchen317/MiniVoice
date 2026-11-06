@@ -153,11 +153,14 @@ export default forwardRef(function Wall({nativeScrolling=false,items,current,pla
   if(!prepared&&state.focus&&state.items[state.focus.index]?.id!==state.current){
    const request=++artworkHandoff.current,id=state.current;
    const targetCamera={...live.current,x:state.viewport.x-(cell.x+cell.width/2)*live.current.scale,y:state.viewport.y-(cell.y+cell.height/2)*live.current.scale};
-   const neighbors=visibleReflowTiles(state.scene,targetCamera,state.viewport,cell,{width:state.viewport.side,height:state.viewport.side},WALL_OVERSCAN);
-   const sources=[...new Set(neighbors.map(tile=>state.items[tile.index]?.artworkWall||state.items[tile.index]?.artwork).filter(Boolean))];
+   const song=state.items[index],target=artworkViewport({width:state.viewport.width,height:state.viewport.height});
+   // Hidden neighbor posters must not gate an expanded-cover handoff.
+   const neighbors=state.expanded?[]:visibleReflowTiles(state.scene,targetCamera,state.viewport,cell,{width:state.viewport.side,height:state.viewport.side},WALL_OVERSCAN);
+   const sources=[...new Set([...(state.expanded?[song.artworkDetail||song.artworkCard||song.artwork]:[]),...neighbors.map(tile=>state.items[tile.index]?.artworkWall||state.items[tile.index]?.artwork)].filter(Boolean))];
+   const analysis=state.expanded&&state.onAnalyzeArtwork?warmArtworkSubjects(song.artworkWall||song.artwork,context=>state.onAnalyzeArtwork(song.id,context),target):Promise.resolve();
    // Keep the existing decoded wall visible until the destination is decoded.
    // Settled failures use the normal missing-cover presentation, never hang UI.
-   Promise.allSettled(sources.map(src=>new Promise(resolve=>{const image=new Image();image.onload=()=>image.decode().catch(()=>{}).then(resolve);image.onerror=resolve;image.src=src;}))).then(()=>{
+   Promise.allSettled([analysis,...sources.map(src=>new Promise(resolve=>{const image=new Image();image.onload=()=>image.decode().catch(()=>{}).then(resolve);image.onerror=resolve;image.src=src;}))]).then(()=>{
     if(request!==artworkHandoff.current||!view.current||latest.current.current!==id||!latest.current.focused)return;
     revealCurrent(animate,allowRestore,true);
    });return true;
