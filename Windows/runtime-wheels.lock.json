@@ -1,0 +1,152 @@
+[
+  {
+    "filename": "certifi-2026.10.23-py3-none-any.whl",
+    "name": "certifi",
+    "version": "2026.10.23",
+    "sha256": "e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1"
+  },
+  {
+    "filename": "charset_normalizer-3.5.2-cp311-cp311-win_amd64.whl",
+    "name": "charset-normalizer",
+    "version": "3.5.2",
+    "sha256": "87e50a3e7cb90af586b6c5faf23e302a970415ac73bd7bd90a515a04b427ef96"
+  },
+  {
+    "filename": "colorama-0.4.6-py2.py3-none-any.whl",
+    "name": "colorama",
+    "version": "0.4.6",
+    "sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"
+  },
+  {
+    "filename": "filelock-4.2.9-py3-none-any.whl",
+    "name": "filelock",
+    "version": "4.2.9",
+    "sha256": "a379c50a729e5b68c8519a4d26489f755d9769960a236ecd838190e2a78db2e9"
+  },
+  {
+    "filename": "fsspec-2026.9.0-py3-none-any.whl",
+    "name": "fsspec",
+    "version": "2026.9.0",
+    "sha256": "8dd6e646e99ea382bd85f97a45e6b526a442d79423a7dc673f1e2756d05fcb5f"
+  },
+  {
+    "filename": "idna-3.20-py3-none-any.whl",
+    "name": "idna",
+    "version": "3.20",
+    "sha256": "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c"
+  },
+  {
+    "filename": "jinja2-3.1.6-py3-none-any.whl",
+    "name": "Jinja2",
+    "version": "3.1.6",
+    "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67"
+  },
+  {
+    "filename": "llvmlite-0.44.0-cp311-cp311-win_amd64.whl",
+    "name": "llvmlite",
+    "version": "0.44.0",
+    "sha256": "d8489634d43c20cd0ad71330dde1d5bc7b9966937a263ff1ec1cebb90dc50955"
+  },
+  {
+    "filename": "markupsafe-3.0.4-cp311-cp311-win_amd64.whl",
+    "name": "MarkupSafe",
+    "version": "3.0.4",
+    "sha256": "fdb4ca07ab75ffadab4a8b135ad59cdbb3156b99310f3d565370da74a15d6bd3"
+  },
+  {
+    "filename": "more_itertools-10.8.0-py3-none-any.whl",
+    "name": "more-itertools",
+    "version": "10.8.0",
+    "sha256": "52d4362373dcf7c52546bc4af9a86ee7c4579df9a8dc268be0a2f949d376cc9b"
+  },
+  {
+    "filename": "mpmath-1.3.0-py3-none-any.whl",
+    "name": "mpmath",
+    "version": "1.3.0",
+    "sha256": "a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c"
+  },
+  {
+    "filename": "msvc_runtime-14.44.35112-cp311-cp311-win_amd64.whl",
+    "name": "msvc_runtime",
+    "version": "14.44.35112",
+    "sha256": "aba7fbe71897d25ed53fbb7f391e9f50289378a8a9ae218ba18530c663448391"
+  },
+  {
+    "filename": "networkx-3.6.1-py3-none-any.whl",
+    "name": "networkx",
+    "version": "3.6.1",
+    "sha256": "d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762"
+  },
+  {
+    "filename": "numba-0.61.2-cp311-cp311-win_amd64.whl",
+    "name": "numba",
+    "version": "0.61.2",
+    "sha256": "76bcec9f46259cedf888041b9886e257ae101c6268261b19fda8cfbc52bec9d1"
+  },
+  {
+    "filename": "numpy-2.2.6-cp311-cp311-win_amd64.whl",
+    "name": "numpy",
+    "version": "2.2.6",
+    "sha256": "e8213002e427c69c45a52bbd94163084025f533a55a59d6f9c5b820774ef3303"
+  },
+  {
+    "filename": "regex-2026.9.29-cp311-cp311-win_amd64.whl",
+    "name": "regex",
+    "version": "2026.9.29",
+    "sha256": "1043aedf5917caa861bcb25a9c11460049656bdf0017a90a309fa8f255467725"
+  },
+  {
+    "filename": "requests-2.34.2-py3-none-any.whl",
+    "name": "requests",
+    "version": "2.34.2",
+    "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0"
+  },
+  {
+    "filename": "setuptools-84.2.1-py3-none-any.whl",
+    "name": "setuptools",
+    "version": "84.2.1",
+    "sha256": "ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2"
+  },
+  {
+    "filename": "sympy-1.14.0-py3-none-any.whl",
+    "name": "sympy",
+    "version": "1.14.0",
+    "sha256": "e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5"
+  },
+  {
+    "filename": "tiktoken-0.12.0-cp311-cp311-win_amd64.whl",
+    "name": "tiktoken",
+    "version": "0.12.0",
+    "sha256": "3e68e3e593637b53e56f7237be560f7a394451cb8c11079755e80ae64b9e6def"
+  },
+  {
+    "filename": "torch-2.8.0-cp311-cp311-win_amd64.whl",
+    "name": "torch",
+    "version": "2.8.0",
+    "sha256": "8c7ef765e27551b2fbfc0f41bcf270e1292d9bf79f8e0724848b1682be6e80aa"
+  },
+  {
+    "filename": "torchaudio-2.8.0-cp311-cp311-win_amd64.whl",
+    "name": "torchaudio",
+    "version": "2.8.0",
+    "sha256": "078105bf80f725c0215a0bebac8cb2fb1b3993ab32bdc3fcd50145a5b4127001"
+  },
+  {
+    "filename": "tqdm-4.67.1-py3-none-any.whl",
+    "name": "tqdm",
+    "version": "4.67.1",
+    "sha256": "26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2"
+  },
+  {
+    "filename": "typing_extensions-4.16.0-py3-none-any.whl",
+    "name": "typing_extensions",
+    "version": "4.16.0",
+    "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
+  },
+  {
+    "filename": "urllib3-2.8.0-py3-none-any.whl",
+    "name": "urllib3",
+    "version": "2.8.0",
+    "sha256": "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3"
+  }
+]

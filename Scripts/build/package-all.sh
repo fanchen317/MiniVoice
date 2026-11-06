@@ -13,7 +13,7 @@ while [[ $# -gt 0 ]]; do
     --no-launch) LAUNCH=false ;;
     --help|-h)
       echo '用法：Scripts/build.sh [--platforms mac,android,windows] [--no-launch]'
-      echo 'Mac 默认构建 mac,android,windows（Windows需预构建资源和NSIS）；Windows 默认 windows；暂不包含 iOS。跨平台原生产物需在对应主机生成。'
+      echo 'Mac 默认构建 mac,android,windows（Windows需mingw-w64和NSIS，首次自动准备资源）；Windows 默认 windows；暂不包含 iOS。Windows安装包仍需Windows实机验收。'
       exit 0 ;;
     *) echo "未知参数：$1" >&2; exit 2 ;;
   esac

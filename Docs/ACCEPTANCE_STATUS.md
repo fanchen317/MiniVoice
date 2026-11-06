@@ -1522,3 +1522,24 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
 - 根因：DrawerMaterial未接open，挂载时墙尚未就绪的单曲回退可一直保留，后续打开不重采样。本轮传入drawer开关，每次打开重新冻结当前整墙海报；wall样式禁止单曲回退，等待墙就绪，其他样式继续当前歌曲封面。
 - 修正此前overscan重复补偿：海报已有CSS translate(24px,24px)，移除重复JS +24偏移。新增页面断言检查整墙多个海报且无直接单曲img。
 - 门禁、共享构建与109项逻辑通过；真实页面回归见drawer-wall-source-render.txt，未安装真机。
+
+### 2026-11-06 移动音乐墙四角图标可读性
+- 四角工具统一深色半透明玻璃底、纯白图标，描边从1.7调整为2.2并增加小幅暗影；保留共享边缘材质、按钮大小和搜索变形，避免封面颜色与图标混在一起。范围仅移动音乐墙四角控制，不改卡片内部播放控件。
+- 组件门禁、共享构建与109项逻辑通过；真实页面回归wall-icon-render.txt；实体设备/真实封面可读性尚待回验，未测量全图片集对比度，未安装。
+
+### 2026-11-06 移动墙播放栏可读性
+- 展开/收起播放栏共用深色玻璃与白色前景，标题加重、歌手副色分层，主播放键增加薄圆形底，次级图标微加粗与暗影，禁用状态区分；进度色调整为浅青绿。保留原位置/尺寸、自动收起、44px控件和进度提交协议。
+- 门禁、共享构建及109项共享测试通过；实际移动命中/播放/进度/自动收起/搜索开合回归通过，完整报告wall-dock-legibility-render.txt。未安装真机，不以页面回归替代实体GPU观感。
+
+### 2026-11-06 墙工具玻璃按用户反馈减淡
+- 四角工具底色从rgba(17,24,28,.64)改为rgba(38,47,50,.42)，播放栏从.68改为同色.46；稍提亮底色、提高透光，保留白色图标/线宽和边缘材质。仅调整透明底色，不改位置、交互与动画。
+- 组件门禁和共享构建通过；真实设备复杂封面可读性与玻璃观感待回验，未安装更新。
+
+### Windows x64 安装包补齐与打包失败修复（2026-11-06）
+
+- 已完成本机交叉打包：公共入口 `bash Scripts/build.sh --platforms windows` 返回成功，生成 `.build/dist/MiniVoice-3.0.0-windows-x64-setup.exe`，714,607,572 bytes（约681.5 MiB）。主程序及共享核心均为真正的 x86-64 PE；Electron 的 `win32-x64` 名称中 win32 是 Windows 平台标识，不表示32位。
+- 新增自动资源准备 `Windows/prepare-runtime.py`：MinGW静态交叉编译核心；固定Windows Python 3.11.9、FFmpeg 8.1.2、Electron 44.10.2、原版small模型与归档SHA256。全部25个Windows/通用传递wheel由runtime-requirements.txt与runtime-wheels.lock.json固定版本/哈希；AI沿用stable-ts 2.19.1、Whisper 20250625和torch/torchaudio 2.8.0。补齐MSVC应用本地DLL、Python/模型/依赖许可及FFmpeg发布说明。
+- 根因及修复：原流程没有资源供应；补齐后，Torch静态链接库/SDK造成安装数据超过NSIS约2GiB映射上限，触发SIGBUS或mmapping out-of-range。推理发行包移除不参与加载的.lib/.a/.pdb及Torch C++头文件，保留DLL/PYD/模型/许可；Windows原生构建也在自检前调用同一清理函数。资源暂存改为新目录准备后替换，修复cp合并保留旧开发库的问题；准备失败保留旧目录。
+- 通过：最终公共构建完整通过；Windows逻辑48项、Python资源准备4项、组件门禁125源文件、同源前端117模块；构建中两套npm依赖审计均0项。安装包NSIS CRC32独立复算通过（0x3de5e4b7），SHA256为c34ac7f988f26f29309547c09cad8579c803cbd69be03de6752c2ce1dfcd32a1；ASAR入口与版本核对通过，资源清单哈希与PE核对通过。
+- 证据：`.build/reports/build/windows-packaging-success.log`、`windows-installer-verification.json`、`windows-dll-imports.json`及产物旁.sha256。静态DLL扫描含可选Numba TBB和torio共享FFmpeg插件，不把可选插件可用性或静态扫描当作实际推理证据。NSIS仍有FileDescription/LegalCopyright版本字段两项非阻断警告。
+- 待验收：未签名；未在Windows执行安装/卸载、播放、文件占用恢复或AI推理；PowerShell原生流程新增清理调用仅代码检查，未在Windows执行。此项关闭“本机无法生成安装包”，不关闭Windows实机验收或与Mac完整对齐缺口。

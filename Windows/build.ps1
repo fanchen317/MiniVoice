@@ -30,6 +30,7 @@ try {
  $AIRoot = Join-Path $Repo 'Windows/resources/LyricsAI'
  if (Test-Path $AIRoot) { Remove-Item $AIRoot -Recurse -Force }
  Copy-Item $env:MINIVOICE_WINDOWS_AI_RUNTIME $AIRoot -Recurse
+ Run { & (Join-Path $AIRoot 'python.exe') Windows/prepare-runtime.py --prune-ai $AIRoot }
  Run { & (Join-Path $AIRoot 'python.exe') Windows/resources/align_lyrics.py --self-test (Join-Path $AIRoot 'models/small.pt') }
  New-Item -ItemType Directory -Force Windows/electron/shared-services | Out-Null
  Copy-Item Shared/DesktopServices/*.cjs Windows/electron/shared-services/ -Force

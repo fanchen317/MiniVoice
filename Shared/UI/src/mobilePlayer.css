@@ -119,3 +119,19 @@
 .reduce-motion .mv-search-control{scale:1!important;translate:0 0!important}
 /* Preview cards have no T toggle: the artwork button starts the trailing group. */
 .mv-workspace[data-presentation=mobile] .wp-player.is-expanded.is-preview .wp-controls>.artwork-mode-toggle{margin-left:auto}
+/* The four wall controls need stable contrast over arbitrary cover art. Keep
+   the shared glass edge, but use one darker tint and opaque white glyphs. */
+.mv-workspace[data-presentation=mobile].style-wall :is(.mv-toolbar,[data-wall-control=settings],.mv-wall-dock.is-compact){--mv-material-tint:rgba(38,47,50,.42);--mv-material-text:#fff;--wall-chrome-text:#fff;--mv-material-line:#ffffff8c;--mv-material-shine:linear-gradient(135deg,#ffffff14,transparent 65%)}
+.mv-workspace[data-presentation=mobile].style-wall :is(.mv-toolbar>.mv-button,.mv-toolbar>.mv-back,.mv-search-control>.mv-button,[data-wall-control=settings],.wp-dock-meter){color:#fff!important}
+.mv-workspace[data-presentation=mobile].style-wall :is(.mv-toolbar,[data-wall-control=settings]) .mv-icon{stroke-width:2.2;filter:drop-shadow(0 1px 1px #0008)}
+.mv-workspace[data-presentation=mobile].style-wall .wp-dock-meter{filter:drop-shadow(0 1px 1px #0008)}
+/* Expanded and collapsed playback share one legible wall material. */
+.mv-workspace[data-presentation=mobile].style-wall .mv-wall-dock{--mv-material-tint:rgba(38,47,50,.46);--mv-material-text:#fff;--wall-chrome-text:#fff;--mv-material-line:#ffffff8c;--mv-material-shine:linear-gradient(135deg,#ffffff14,transparent 65%);color:#fff}
+.mv-workspace[data-presentation=mobile].style-wall .wp-dock-row .mv-now strong{font-weight:650;color:#fff}
+.mv-workspace[data-presentation=mobile].style-wall .wp-dock-row .mv-now>span>span{color:#d6e2dc;opacity:1}
+.mv-workspace[data-presentation=mobile].style-wall .wp-dock-controls .mv-button{color:#fff}
+.mv-workspace[data-presentation=mobile].style-wall .wp-dock-controls .mv-button:not(:disabled) .mv-icon{filter:drop-shadow(0 1px 1px #0007)}
+.mv-workspace[data-presentation=mobile].style-wall .wp-dock-controls .mv-button:not([data-playback-primary]) .mv-icon{stroke-width:2.1}
+.mv-workspace[data-presentation=mobile].style-wall .wp-dock-controls .mv-button[data-playback-primary]{border-radius:50%;background:#ffffff1f;box-shadow:inset 0 0 0 1px #ffffff40}
+.mv-workspace[data-presentation=mobile].style-wall .wp-dock-controls .mv-button:disabled{opacity:.35}
+.mv-workspace[data-presentation=mobile].style-wall .wp-dock-content>.mv-slider{--mv-slider-color:#76eac7;--mv-slider-base:#ffffff52;--mv-slider-knob-size:12px}

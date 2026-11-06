@@ -670,3 +670,6 @@ Wall 的展开跨歌曲交接只等待目标清晰封面与主体分析，两者
 - test-wall-version加入实际计算样式比较：搜索与同工具栏按钮的边宽/边色/边型、背景渐变/底色、backdropFilter与boxShadow相同，伪元素不再绘制；仍运行搜索开合/返回/快速重入回归。
 - 移动WallPlayer header采用两列三行grid：首行状态/译文居中对齐，标题与歌手各占整行；wp-heading仅提供语义分组，display:contents不再独占布局列。译文44px目标内的30px胶囊与左状态共用中心线。
 - DrawerMaterial新增open受控参数（默认true兼容）；每次打开墙样式重采样，wall禁止cover回退；overscan偏移只由现有海报transform补偿一次，关闭/卸载取消采样RAF。
+- 移动音乐墙四角工具复用统一深色玻璃tint与白色前景；SVG描边2.2，小幅drop-shadow提升复杂图片辨识度。搜索容器和其他工具仍共用materials.css边框/阴影，输入/触控/开合与减少动态规则保留。
+- 移动音乐墙WallDock：同一深色玻璃贯穿收起/展开，标题白色加重、歌手浅副色、主播放键圆形强调，次级图标线宽2.1；作用域仅wp-dock-controls，不影响卡片内部控件与Mac。布局及交互仍由既有WallDock/useIdleCollapse/Slider负责。
+- 按用户反馈减淡移动墙工具/播放栏玻璃：工具tint alpha .42、播放栏.46，同一rgba(38,47,50)底色；图标与边框参数保留。
