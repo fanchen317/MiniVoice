@@ -43,7 +43,7 @@ function FocusArtwork({src,preview,shouldDefer,smoothUpgrade=false,target,expand
   const blur=artworkRoot.current?.querySelector('.mv-artwork-blur');if(blur&&blur.naturalWidth&&blur.getAttribute('src')===shown&&(shown===src||shown===preview))plan(blur,blur.getAttribute('src'));
  },[target.width,target.height,preview,src,expanded,analysisRevision,shown]);
  const sources=[...new Set((smoothUpgrade?[preview,...revealed,shown,src]:[shown,preview,src]).filter(Boolean))];
- return <div ref={artworkRoot} className="mv-wall-artwork-stack" data-artwork-target={`${Math.round(target.width)}x${Math.round(target.height)}`}>{sources.map(source=><Artwork key={source} className="mv-wall-focused-art" src={source} draggable={false} style={smoothUpgrade?{visibility:'visible',opacity:(!expanded&&source===preview)||revealed.includes(source)||shown===source?1:0,zIndex:source===preview?0:1,transition:reduced()?'none':'opacity 180ms ease-out'}:{visibility:shown===source?'visible':'hidden',transition:'none'}} onLoad={async event=>{
+ return <div ref={artworkRoot} className="mv-wall-artwork-stack" data-artwork-ready={shown===src?'true':'false'} data-artwork-target={`${Math.round(target.width)}x${Math.round(target.height)}`}>{sources.map(source=><Artwork key={source} className="mv-wall-focused-art" src={source} draggable={false} style={smoothUpgrade?{visibility:'visible',opacity:(!expanded&&source===preview)||revealed.includes(source)||shown===source?1:0,zIndex:source===preview?0:1,transition:reduced()?'none':'opacity 180ms ease-out'}:{visibility:shown===source?'visible':'hidden',transition:'none'}} onLoad={async event=>{
   const node=event.currentTarget;
   try{await node.decode();if(source===src){if(analyze)await warmArtworkSubjects(preview||src,analyze,artworkViewport(target));else await waitArtworkSubjects(preview||src);}}catch{return;}
   if(!node.isConnected)return;
@@ -173,7 +173,20 @@ export default forwardRef(function Wall({nativeScrolling=false,items,current,pla
    schedulePaint();return true;}
   focusCell(cell,{animate,move:!preserve});return true;
  }
- useImperativeHandle(api,()=>({interrupt:()=>{stop();cancelGesture();lastTap.current=null;},zoomTo:value=>{const state=latest.current;zoomAt(value,state.viewport.x,state.viewport.y);},reset:()=>{stop();cancelAnimationFrame(focusMotion.current);transition.current=null;setFocus(null);latest.current.focus=null;progressValue.current=1;setProgress(1);latest.current.progress=1;update({x:12,y:80,scale:MOBILE_DEFAULT_SCALE});save();},locate:()=>revealCurrent(true),camera:()=>({...live.current}),backdrop:()=>{const state=latest.current,camera=displayCamera();return visibleScene(220).map(cell=>{const r=frameFor(cell);return {id:cell.id,artwork:state.items[cell.index]?.artworkWall||state.items[cell.index]?.artwork,x:camera.x+r.x*camera.scale,y:camera.y+r.y*camera.scale,width:r.width*camera.scale,height:r.height*camera.scale};});}}),[]);
+ useImperativeHandle(api,()=>({prepareExpansion:async()=>{
+  const state=latest.current,id=state.current,song=state.items.find(item=>item.id===id);
+  if(!song?.artworkDetail&&!song?.artworkCard&&!song?.artwork)return true;
+  const began=performance.now();
+  while(performance.now()-began<15000){
+   if(latest.current.current!==id||!focusedNode.current)return false;
+   if(focusedNode.current.querySelector('[data-artwork-ready=true]')){
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    return latest.current.current===id;
+   }
+   await new Promise(resolve=>setTimeout(resolve,32));
+  }
+  throw Error('高清封面尚未准备好，请稍后重试');
+ },interrupt:()=>{stop();cancelGesture();lastTap.current=null;},zoomTo:value=>{const state=latest.current;zoomAt(value,state.viewport.x,state.viewport.y);},reset:()=>{stop();cancelAnimationFrame(focusMotion.current);transition.current=null;setFocus(null);latest.current.focus=null;progressValue.current=1;setProgress(1);latest.current.progress=1;update({x:12,y:80,scale:MOBILE_DEFAULT_SCALE});save();},locate:()=>revealCurrent(true),camera:()=>({...live.current}),backdrop:()=>{const state=latest.current,camera=displayCamera();return visibleScene(220).map(cell=>{const r=frameFor(cell);return {id:cell.id,artwork:state.items[cell.index]?.artworkWall||state.items[cell.index]?.artwork,x:camera.x+r.x*camera.scale,y:camera.y+r.y*camera.scale,width:r.width*camera.scale,height:r.height*camera.scale};});}}),[]);
  // The visible page owns the sidebar depth transform; never reflow every poster for it.
  useLayoutEffect(()=>{depth.current=1;paintedPosters.current=null;paintedFocus.current=null;schedulePaint();},[recessed]);
  // Android densities produce fractional CSS bounds; clientWidth/clientHeight would leave a raster seam.

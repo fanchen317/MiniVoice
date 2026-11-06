@@ -673,3 +673,4 @@ Wall 的展开跨歌曲交接只等待目标清晰封面与主体分析，两者
 - 移动音乐墙四角工具复用统一深色玻璃tint与白色前景；SVG描边2.2，小幅drop-shadow提升复杂图片辨识度。搜索容器和其他工具仍共用materials.css边框/阴影，输入/触控/开合与减少动态规则保留。
 - 移动音乐墙WallDock：同一深色玻璃贯穿收起/展开，标题白色加重、歌手浅副色、主播放键圆形强调，次级图标线宽2.1；作用域仅wp-dock-controls，不影响卡片内部控件与Mac。布局及交互仍由既有WallDock/useIdleCollapse/Slider负责。
 - 按用户反馈减淡移动墙工具/播放栏玻璃：工具tint alpha .42、播放栏.46，同一rgba(38,47,50)底色；图标与边框参数保留。
+- Wall增加prepareExpansion异步就绪接口；FocusArtwork暴露data-artwork-ready（仅最终原图已接管才true）。移动页面等待ready及两帧后提交展开，焦点变化取消旧请求，15秒超时显示错误。无图片正常展开，不用等待原图的计时器猜测完成。

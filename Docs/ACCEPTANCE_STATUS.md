@@ -1543,3 +1543,7 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
 - 通过：最终公共构建完整通过；Windows逻辑48项、Python资源准备4项、组件门禁125源文件、同源前端117模块；构建中两套npm依赖审计均0项。安装包NSIS CRC32独立复算通过（0x3de5e4b7），SHA256为c34ac7f988f26f29309547c09cad8579c803cbd69be03de6752c2ce1dfcd32a1；ASAR入口与版本核对通过，资源清单哈希与PE核对通过。
 - 证据：`.build/reports/build/windows-packaging-success.log`、`windows-installer-verification.json`、`windows-dll-imports.json`及产物旁.sha256。静态DLL扫描含可选Numba TBB和torio共享FFmpeg插件，不把可选插件可用性或静态扫描当作实际推理证据。NSIS仍有FileDescription/LegalCopyright版本字段两项非阻断警告。
 - 待验收：未签名；未在Windows执行安装/卸载、播放、文件占用恢复或AI推理；PowerShell原生流程新增清理调用仅代码检查，未在Windows执行。此项关闭“本机无法生成安装包”，不关闭Windows实机验收或与Mac完整对齐缺口。
+
+### 2026-11-06 移动展开后清晰度/取景二次跳变
+- 当前FocusArtwork等待原图decode及识图，且shouldDefer会等展开动画结束才显示原图；用户先展开时仍可看到预览到原图的事后替换。新增Wall.prepareExpansion等待当前焦点最终原图就绪并提交两帧，移动按钮在该检查成功后才写wallExpanded。切换焦点则取消旧展开，超时明确报错而非带低清图启动。
+- 原图就绪标记由实际shown===src控制，不用请求完成代替画面交接完成；保留原裁切/主体锁定。构建与共享逻辑验证见mobile-expand-ready-*；未安装用户设备，原场景实机待回验。
