@@ -590,6 +590,13 @@ private struct DiagnosticsDocument: FileDocument {
 }
 
 private final class SharedContentWebView: WKWebView {
+    // A touch beginning in the home-indicator strip belongs to iOS. Keep
+    // WebKit's inner overflow scroller from starting a competing wall pan.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if contentStyle == "wall", safeAreaInsets.bottom > 0,
+           point.y >= bounds.maxY - safeAreaInsets.bottom { return nil }
+        return super.hitTest(point, with: event)
+    }
     var contentStyle = "wall"
     var contentTheme = "system"
     private func updateCanvasBackground() {
