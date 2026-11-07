@@ -65,6 +65,17 @@ private struct SharedPlayerWebView: UIViewRepresentable {
           for (const side of ['top','right','bottom','left'])
             document.documentElement.style.setProperty('--mv-safe-' + side, 'env(safe-area-inset-' + side + ',0px)');
         });
+        addEventListener('DOMContentLoaded', () => {
+          const observer = new MutationObserver(check);
+          function check() {
+            if (!document.querySelector('.mv-workspace[data-ready="true"]')) return;
+            observer.disconnect();
+            requestAnimationFrame(() => requestAnimationFrame(() =>
+              webkit.messageHandlers.MiniVoice.postMessage({startupReady:true})));
+          }
+          observer.observe(document.documentElement, {subtree:true, childList:true, attributes:true, attributeFilter:['data-ready']});
+          check();
+        });
         globalThis.MiniVoiceHost = {
           platform: 'ios',
           wallRenderer: 'single-surface',
@@ -91,6 +102,34 @@ private struct SharedPlayerWebView: UIViewRepresentable {
         surface.addSubview(web)
         web.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([web.leadingAnchor.constraint(equalTo: surface.leadingAnchor), web.trailingAnchor.constraint(equalTo: surface.trailingAnchor), web.topAnchor.constraint(equalTo: surface.topAnchor), web.bottomAnchor.constraint(equalTo: surface.bottomAnchor)])
+        // Native startup chrome covers the web surface until the shared page has
+        // restored its initial state. It has no fixed minimum display duration.
+        let splash = UIView()
+        splash.backgroundColor = UIColor(named: "LaunchBackground")
+        splash.translatesAutoresizingMaskIntoConstraints = false
+        let logo = UIImageView(image: UIImage(named: "LaunchLogo"))
+        logo.contentMode = .scaleAspectFit
+        logo.layer.cornerRadius = 20
+        logo.clipsToBounds = true
+        logo.translatesAutoresizingMaskIntoConstraints = false
+        let title = UILabel()
+        title.text = "MiniVoice"
+        title.font = .systemFont(ofSize: 27, weight: .semibold)
+        title.textColor = .label
+        title.translatesAutoresizingMaskIntoConstraints = false
+        splash.addSubview(logo)
+        splash.addSubview(title)
+        surface.addSubview(splash)
+        NSLayoutConstraint.activate([
+            splash.leadingAnchor.constraint(equalTo: surface.leadingAnchor), splash.trailingAnchor.constraint(equalTo: surface.trailingAnchor),
+            splash.topAnchor.constraint(equalTo: surface.topAnchor), splash.bottomAnchor.constraint(equalTo: surface.bottomAnchor),
+            logo.centerXAnchor.constraint(equalTo: splash.centerXAnchor), logo.centerYAnchor.constraint(equalTo: splash.centerYAnchor, constant: -28),
+            logo.widthAnchor.constraint(equalToConstant: 88), logo.heightAnchor.constraint(equalToConstant: 88),
+            title.centerXAnchor.constraint(equalTo: splash.centerXAnchor), title.topAnchor.constraint(equalTo: logo.bottomAnchor, constant: 20)
+        ])
+        splash.isAccessibilityElement = true
+        splash.accessibilityLabel = "MiniVoice，正在载入"
+        host.startupCover = splash
         host.web = web
         web.load(URLRequest(url: URL(string: "minivoice://app/index.html")!))
         return surface
@@ -109,6 +148,7 @@ private struct SharedPlayerWebView: UIViewRepresentable {
 @MainActor
 private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSchemeHandler, WKNavigationDelegate {
     weak var web: WKWebView?
+    weak var startupCover: UIView?
     let library: MusicLibrary
     let player: MusicPlayer
     let chooseFolder: () -> Void
@@ -191,6 +231,12 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, message.frameInfo.request.url?.scheme == "minivoice",
               message.frameInfo.request.url?.host == "app", let body = message.body as? [String: Any] else { return }
+        if body["startupReady"] as? Bool == true {
+            guard let cover = startupCover else { return }
+            startupCover = nil
+            UIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.2, animations: { cover.alpha = 0 }) { _ in cover.removeFromSuperview() }
+            return
+        }
         if body["haptic"] as? Bool == true {
             UISelectionFeedbackGenerator().selectionChanged()
             return
@@ -485,6 +531,17 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
         (web as? SharedContentWebView)?.contentStyle = appearance?["style"] as? String ?? "wall"
         (web as? SharedContentWebView)?.contentTheme = appearance?["theme"] as? String ?? "system"
         (web as? SharedContentWebView)?.publishInsets()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        startupCover?.removeFromSuperview()
+        startupCover = nil
+        library.errorMessage = "界面加载失败：\(error.localizedDescription)"
+        IOSDiagnostics.shared.record(.event, "shared UI navigation failed")
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        self.webView(webView, didFailProvisionalNavigation: navigation, withError: error)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

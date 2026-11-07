@@ -1600,3 +1600,9 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
 - 通过：更新事务11项（原7项及模型未变且临时源缺失、缺失/变更模型重新安装、缺失已跳过模型拒绝、未变运行库不复制）；Windows逻辑61项及完整公共构建。真实483,617,219-byte原版small.pt在隔离目录复用验证：临时源没有模型，模型stamp未变，复制清单只有合成应用文件和清单，模型没有复制/备份。唯一small.pt打包路径已核对。
 - 已重打包：845,024,721 bytes（约806MiB），较旧约682MiB包增大，取舍为解压速度与可独立跳过模型。SHA256=bbeb3e0533c3192b42f4ce2c6f2715429fbb47682c591a2eb0d8a4b5f17195e9，独立NSIS CRC32=0x12f8865b通过。ASAR更新器与审阅源码一致。
 - 证据：.build/reports/build/windows-fast-install-build.log、windows-install-speed-tests.log、windows-model-reuse-verification.json和windows-installer-verification.json。以上模型复用验证宿主为Mac；Windows实体机首次安装/覆盖升级耗时、磁盘/杀毒影响仍待验收，未承诺提速倍数或秒数。
+
+### 2026-11-07 两端品牌开屏交付
+
+- Android：系统启动资源、自适应图标与应用内加载页统一；透明画布内居中 88dp 图标；运行时匹配应用深浅主题，页面 ready 后移除，无强制等待。用户本轮明确反馈“现在安卓端优化好了”，记录为用户设备该问题通过；不外推其他 OEM 或全主题矩阵。
+- iOS：系统 LaunchScreen 与运行时品牌占位，圆角图标及动态背景资源，页面 ready 后退出，减弱动态直接移除。仅开屏代码纳入本次提交；启动性能、Home 手势、性能采样配置均不包含。
+- 已验证：UI 门禁、Android APK/iOS 模拟器构建、图片透明度与 APK 资源检查。待验收：iOS 实机图标交接、两端系统/应用主题不一致场景；Android 专用模拟器此前因空间不足未运行。

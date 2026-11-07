@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        AC0000000000000000000001 = {isa = PBXBuildFile; fileRef = AC0000000000000000000002; };
+		AB0000000000000000000001 = {isa = PBXBuildFile; fileRef = AB0000000000000000000002; };
 		A10000000000000000000001 /* MiniVoiceApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* MiniVoiceApp.swift */; };
 		A10000000000000000000002 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* Models.swift */; };
 		A10000000000000000000003 /* MusicLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* MusicLibrary.swift */; };
@@ -34,6 +36,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+        AC0000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = image.png; path = LaunchLogo.png; sourceTree = "<group>"; };
+		AB0000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A20000000000000000000001 /* MiniVoiceApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniVoiceApp.swift; sourceTree = "<group>"; };
 		A20000000000000000000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* MusicLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLibrary.swift; sourceTree = "<group>"; };
@@ -95,6 +99,8 @@
 				A20000000000000000000005 /* HomeView.swift */,
 				A20000000000000000000009 /* WeightedWallScene.swift */,
 				A20000000000000000000006 /* Assets.xcassets */,
+                AB0000000000000000000002,
+                AC0000000000000000000002,
 				A20000000000000000000007 /* Info.plist */,
 			);
 			path = MiniVoice;
@@ -193,6 +199,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000006 /* Assets.xcassets in Resources */,
+                AB0000000000000000000001,
+                AC0000000000000000000001,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

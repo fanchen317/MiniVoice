@@ -14,6 +14,8 @@ import java.util.concurrent.*;
 public final class PortablePlayerActivity extends Activity {
     private static final String ORIGIN="https://minivoice.local";
     private WebView web;
+    private android.view.View startupCover;
+    private android.widget.TextView startupTitle;
     private PlaybackService playback;
     private boolean bound,wallChrome,immersiveChrome;
     private JSONObject lastWorkspace;
@@ -37,13 +39,26 @@ public final class PortablePlayerActivity extends Activity {
         public void onServiceDisconnected(ComponentName name){playback=null;}
     };
     @Override public void onCreate(Bundle state){super.onCreate(state);
-        web=new WebView(this);setContentView(web);applyChrome(null);
+        web=new WebView(this);
+        android.widget.FrameLayout surface=new android.widget.FrameLayout(this);
+        surface.addView(web,new android.widget.FrameLayout.LayoutParams(-1,-1));
+        android.widget.FrameLayout cover=new android.widget.FrameLayout(this);
+        cover.setBackgroundColor(getResources().getColor(R.color.launch_background,getTheme()));
+        float density=getResources().getDisplayMetrics().density;
+        android.widget.LinearLayout brand=new android.widget.LinearLayout(this);brand.setOrientation(1);brand.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
+        android.widget.ImageView logo=new android.widget.ImageView(this);logo.setImageResource(R.drawable.launch_logo);
+        brand.addView(logo,new android.widget.LinearLayout.LayoutParams((int)(88*density),(int)(88*density)));
+        android.widget.TextView name=new android.widget.TextView(this);name.setText("MiniVoice");startupTitle=name;name.setTextSize(27);name.setTypeface(null,android.graphics.Typeface.BOLD);name.setTextColor(getResources().getColor(R.color.launch_text,getTheme()));
+        android.widget.LinearLayout.LayoutParams titleLayout=new android.widget.LinearLayout.LayoutParams(-2,-2);titleLayout.topMargin=(int)(20*density);brand.addView(name,titleLayout);
+        android.widget.FrameLayout.LayoutParams brandLayout=new android.widget.FrameLayout.LayoutParams(-2,-2,android.view.Gravity.CENTER);cover.addView(brand,brandLayout);
+        brand.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->brand.setTranslationY((brand.getHeight()-logo.getHeight())/2f));
+        cover.setContentDescription("MiniVoice，正在载入");startupCover=cover;surface.addView(cover,new android.widget.FrameLayout.LayoutParams(-1,-1));setContentView(surface);applyChrome(null);
         web.setOnApplyWindowInsetsListener((view,insets)->{publishInsets(insets);return insets;});
         web.addOnLayoutChangeListener((view,l,t,r,b,oldL,oldT,oldR,oldB)->publishInsets(web.getRootWindowInsets()));
         WebSettings settings=web.getSettings();settings.setOffscreenPreRaster(true);settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(false);
         settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         web.setWebViewClient(new WebViewClient(){
-            @Override public void onPageFinished(WebView view,String url){view.requestApplyInsets();publishInsets(view.getRootWindowInsets());}
+            @Override public void onPageFinished(WebView view,String url){view.requestApplyInsets();publishInsets(view.getRootWindowInsets());view.evaluateJavascript("(()=>{const check=()=>{if(!document.querySelector('.mv-workspace[data-ready=\"true\"]'))return;observer.disconnect();requestAnimationFrame(()=>requestAnimationFrame(()=>MiniVoiceHost.startupReady()));};const observer=new MutationObserver(check);observer.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['data-ready']});check();})()",null);}
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){return true;}
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
                 Uri uri=request.getUrl();String path=uri.getPath();
@@ -94,6 +109,7 @@ public final class PortablePlayerActivity extends Activity {
     private static WebResourceResponse denied(){return new WebResourceResponse("text/plain","UTF-8",403,"Forbidden",Collections.emptyMap(),new ByteArrayInputStream(new byte[0]));}
     private long lastHaptic;
     private final class Host {
+        @JavascriptInterface public void startupReady(){main.post(()->{if(closed||startupCover==null)return;android.view.View cover=startupCover;startupCover=null;startupTitle=null;((android.view.ViewGroup)cover.getParent()).removeView(cover);});}
         @JavascriptInterface public void haptic(){main.post(()->{
             if(closed||web==null||!web.hasWindowFocus())return;
             long now=SystemClock.uptimeMillis();if(now-lastHaptic<45)return;lastHaptic=now;
@@ -152,6 +168,7 @@ public final class PortablePlayerActivity extends Activity {
         if(workspace!=null)lastWorkspace=workspace;
         SharedPreferences prefs=getSharedPreferences("library",0);JSONObject pages=lastWorkspace==null?null:lastWorkspace.optJSONObject("pages"),appearance=pages==null?null:pages.optJSONObject("appearance");String theme=appearance==null?AppAppearance.theme(prefs):appearance.optString("theme",AppAppearance.theme(prefs));String style=appearance==null?AppAppearance.style(prefs):appearance.optString("style",AppAppearance.style(prefs));boolean dark=AppAppearance.darkValue(theme,(getResources().getConfiguration().uiMode&android.content.res.Configuration.UI_MODE_NIGHT_MASK)==android.content.res.Configuration.UI_MODE_NIGHT_YES);wallChrome=style.equals("wall");if(!wallChrome)immersiveChrome=false;
         boolean landscape=getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE;boolean hideBars=landscape||wallChrome&&immersiveChrome;
+        if(startupCover!=null){startupCover.setBackgroundColor(dark?0xFF182720:0xFFEAF0EE);if(startupTitle!=null)startupTitle.setTextColor(dark?0xFFF2F2F2:0xFF182720);}
         int backing=wallChrome?(dark?0xFF10241A:0xFFDCEADE):(dark?0xFF182720:0xFFEAF0EE);
         // Reassert backing on every configuration/layout pass, even when chrome is cached.
         getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(backing));
