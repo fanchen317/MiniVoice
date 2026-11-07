@@ -1,0 +1,4 @@
+/* Windows uses the same 34px desktop chrome allocation as Mac. Native caption
+   buttons occupy the right side; no second OS title/menu row is added. */
+html[data-platform=windows]{font-family:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI","Microsoft YaHei",sans-serif}
+html[data-platform=windows] .app>.titlebar{height:32px;z-index:31;width:env(titlebar-area-width,calc(100% - 138px));right:auto;-webkit-app-region:drag}

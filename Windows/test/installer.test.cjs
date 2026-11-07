@@ -12,3 +12,13 @@ test('resource staging replaces stale files and keeps prior output when preparat
   await assert.rejects(stageResources(source,target,path.join(dir,'missing-worker')));assert.equal(await fs.readFile(path.join(target,'new.exe'),'utf8'),'synthetic');
  }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
+
+test('upgrade manifest hashes installed payload and excludes its own previous metadata',async()=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mv-upgrade-manifest-'));
+ try{
+  await fs.mkdir(path.join(dir,'resources'));await fs.writeFile(path.join(dir,'resources','app.asar'),'synthetic app');await fs.writeFile(path.join(dir,'.minivoice-install-files.json'),'old metadata');
+  const {installationManifest}=await import('../generate-uninstall.mjs');const manifest=await installationManifest(dir);
+  assert.equal(manifest.schema,1);assert.deepEqual(Object.keys(manifest.files),['resources/app.asar']);assert.equal(manifest.files['resources/app.asar'],require('node:crypto').createHash('sha256').update('synthetic app').digest('hex'));
+  const {uninstallManifest}=await import('../generate-uninstall.mjs');assert.match(await uninstallManifest(dir),/Delete "\$INSTDIR\\\.minivoice-install-files.json"/);
+ }finally{await fs.rm(dir,{recursive:true,force:true});}
+});

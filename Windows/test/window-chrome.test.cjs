@@ -1,0 +1,4 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {windowOptions,overlay}=require('../electron/window-chrome.cjs');
+test('desktop chrome reserves native Windows caption controls and uses the brand icon',()=>{const options=windowOptions({integrated:true});assert.equal(options.titleBarStyle,'hidden');assert.equal(options.titleBarOverlay.height,32);assert.equal(options.autoHideMenuBar,true);assert.match(options.icon,/assets[/\\]MiniVoice\.ico$/);assert.equal(windowOptions().titleBarStyle,undefined);});
+test('caption symbols follow explicit appearance, system changes and music-wall contrast',()=>{assert.equal(overlay({appearance:'light'},true).symbolColor,'#17241f');assert.equal(overlay({appearance:'dark'},false).symbolColor,'#f0f5f3');assert.equal(overlay({appearance:'system'},true).symbolColor,'#f0f5f3');assert.equal(overlay({appearance:'light',interfaceStyle:'wall'},false).symbolColor,'#f0f5f3');});

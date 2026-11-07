@@ -6,7 +6,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/*.test.cjs",
-    "package": "electron-packager . MiniVoice --platform=win32 --arch=x64 --out=../.build/dist --asar.unpackDir=resources --overwrite"
+    "package": "electron-packager . MiniVoice --platform=win32 --arch=x64 --out=../.build/dist --asar.unpackDir=resources --overwrite --icon=assets/MiniVoice.ico"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",

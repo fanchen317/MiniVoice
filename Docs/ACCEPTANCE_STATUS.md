@@ -1547,3 +1547,56 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
 ### 2026-11-06 移动展开后清晰度/取景二次跳变
 - 当前FocusArtwork等待原图decode及识图，且shouldDefer会等展开动画结束才显示原图；用户先展开时仍可看到预览到原图的事后替换。新增Wall.prepareExpansion等待当前焦点最终原图就绪并提交两帧，移动按钮在该检查成功后才写wallExpanded。切换焦点则取消旧展开，超时明确报错而非带低清图启动。
 - 原图就绪标记由实际shown===src控制，不用请求完成代替画面交接完成；保留原裁切/主体锁定。构建与共享逻辑验证见mobile-expand-ready-*；未安装用户设备，原场景实机待回验。
+
+### Windows 安装选项与覆盖升级（2026-11-06）
+
+- 已新增中英双语安装选项页：桌面/开始菜单快捷方式分别勾选，HKCU保存选择供后续升级恢复；完成页可选择安装后启动，静默安装不自动启动。首次可选目录，升级读取并固定原目录，同版本支持修复安装，拒绝降级；安装/卸载互斥，限定64位Windows。
+- 当前更新策略为用户运行新版完整setup覆盖升级，无自动联网更新。新增按SHA256登记全部应用文件的安装清单，以及仅用stdlib的install-update.py。先展开并校验完整新文件，Windows侧检查现有文件的独占写访问；占用时提示退出应用后重试，不强杀播放/编辑。逐文件原子写入并备份原文件，失败尝试回退，回退失败保留AppData下独立备份并告知位置。仅删除旧清单记录而新版不再需要的文件；未知文件及外部曲库/AppData偏好不清理。
+- 首次从无清单的旧简版升级时保留未知旧文件，此后按清单管理。暂存与回退会额外占用磁盘空间。卸载增加桌面快捷方式清理；卸载仍保留用户音乐和偏好。
+- 通过：Windows逻辑49项；更新事务7项，覆盖损坏新包不触及旧版、写入失败恢复旧文件和清单、占用预检、未知文件保留、无清单旧版、路径越界/链接拒绝和备份保护。实际1.6GiB应用目录在Mac上经同一helper完成完整安装文件模拟。NSIS重新编译成功，新页及相关语法已编译，不能据此宣称Windows交互验收。
+- 已替换同名安装包：714,998,511 bytes；SHA256=877fc235d936dd8b7d5e2f805d655f4f40659fdc6838648eba8840ad876e6853，独立复算NSIS CRC32=0xbe077b72通过。证据：.build/reports/build/windows-installer-options.log、windows-installer-options-tests.log、windows-installer-update-tests.log、windows-installer-options-configuration.json和windows-installer-verification.json。
+- 待验收：Windows真实安装页布局/勾选、快捷方式与注册表、旧简版/新版覆盖升级、真实文件占用、低磁盘/权限失败及回退、卸载、完成后启动。尚未签名；本轮修改安装器并复用前轮已打包应用，没有声称补齐Mac全部功能或验证实际AI推理。
+
+### Windows 安装包及快捷方式统一品牌图标（2026-11-06）
+
+- Windows/assets/MiniVoice.ico直接从现有BrandIcon.swift矢量导出，包含16/20/24/32/40/48/64/128/256像素的32位透明DIB帧。新增WindowsIconGenerator.swift，现有generate-icon.sh同时刷新Windows ICO，未另画图标或修改Mac现有图标。
+- Electron打包脚本指定ICO，主程序内嵌图标替换为MV；NSIS使用MUI_ICON/MUI_UNICON，避免Modern UI默认图标覆盖普通Icon配置。桌面/开始菜单快捷方式显式指定主程序图标索引0；已安装应用DisplayIcon使用带引号路径和索引0。保留安装选项及更新流程。
+- 通过：256px导出预览检查；从主程序和最终安装器PE资源逐帧读取，9帧全部与ICO数据一致；MUI展开结果中安装/卸载图标均指向品牌ICO；组件门禁、脚本语法、git diff检查及NSIS完整编译通过。ICO SHA256=0baee9e85082806481312844aef57ec940a43c2d037e8713e68b480cdfe78473。
+- 已替换同名setup：715,388,975 bytes，SHA256=1f51a9ff2c1ac795c85dd049ead5088b604165db0f6d82d9ebed4cdad3915ae7，独立复算NSIS CRC32=0x3bfdd1fc通过。证据：windows-icon-preview.png、windows-icon-verification.json、windows-installer-icon-preprocessed.nsi、windows-installer-icon.log和windows-installer-verification.json，均在.build/reports/build/。
+- 待验收：Windows资源管理器、安装/卸载窗口、实际桌面/开始菜单链接和图标缓存显示；本机资源验证不能替代Windows实际显示验收。
+
+### Windows 主窗口截图暴露的外壳与基础显示差异（2026-11-06）
+
+- 截图根因：Windows默认原生标题栏/菜单行叠加共享Mac界面的34px顶部预留；BrowserWindow未明确指定品牌图标，字体也未声明Windows UI/CJK字体。不能以共用页面或能生成安装包认定外观对齐。
+- 本轮修复：主窗使用hidden标题栏与Windows原生caption overlay（32px），与共享顶部空间匹配；菜单默认隐藏，Alt仍可访问，新增始终可见的设置入口和Ctrl+,。窗口与辅助面板指定品牌ICO，保留原生最小化/最大化/关闭；caption符号跟随显式深浅/系统主题，音乐墙使用浅色符号；首次绘制前隐藏窗口。Windows独立字体栈使用Segoe UI Variable/Segoe UI/Microsoft YaHei UI，Mac样式不改。
+- 通过：51项Windows逻辑（含新增窗口配置/主题对比测试）、组件门禁125源文件、同源构建118模块；生产renderer的10组截图与指标检查，覆盖三样式×深浅、空曲库、有歌曲、560px窄窗口和设置入口命令。截图检查了音乐库浅色、有歌曲播放器、音乐墙深色与窄窗简易，使用合成歌曲和专用临时配置，没有改写真实音乐库。
+- 已重新完整打包：715,474,084 bytes；SHA256=aac91a1655a55463b0e9300316b15da825c788aafee3d8df0cefbea679716afb，独立复算NSIS CRC32=0xe5333d38通过。ASAR中的main/window-chrome/desktop及ICO与本轮审阅源码一致。证据在.build/reports/build/windows-layout/、windows-layout-check.log、windows-chrome-build-success.log及windows-installer-verification.json。
+- 待验收：截图回归在Mac上运行Windows平台的同源renderer，不包含真实Windows caption按钮；Windows实际拖拽/最大化/贴靠/菜单Alt、系统缩放、字体、深浅切换、辅助面板仍须实体Windows回验。本轮仅修截图中的窗口外壳与基础显示差距，不声称完成全部功能/动画/材质对齐。
+
+### 三张Mac样式参考图的同尺寸、同状态对照（2026-11-06）
+
+- 用户进一步提供音乐库、音乐墙和简易样式Mac参考。此前1200px空曲库检查不能作为这些759×603逻辑尺寸、有封面/歌词/播放状态页面的对齐证据。本轮按1518×1206参考图对应的759×603逻辑窗口，使用同一组合成曲库、封面、歌词、暂停进度32/273秒、歌单和已完成后台任务分别运行Mac/Windows平台renderer。
+- 发现并修复实际后台缺口：Mac DesktopEngine.detail通过18×18预乘alpha采样提取封面平均色，再用0.38+0.62与0.20+0.80系数输出backdropColors；Windows未提供该字段，会长期使用浅绿默认背景。新增Windows/electron/artwork-presentation.cjs，并在selected/playing详情中补齐字段，按不可变封面哈希缓存8项、合并并发读取；缺失资源不永久缓存失败，不要求重新扫描，也不写音乐文件。
+- 通过：53项Windows逻辑，新增平均色/透明alpha/通道、并发缓存、资源缺失后恢复测试；生产renderer的三样式双平台同条件对照通过，主要容器几何差≤0.6逻辑像素，配色一致。实际测得音乐库/简易侧栏250、内容区473、两行底栏高172；音乐墙侧栏230、浮条460×64，均与参考图对应几何一致。已检查三张Windows模式合成数据截图，含展开音乐墙卡片、歌词和任务按钮；不是Windows实机截图。
+- 证据：Scripts/tests/test-desktop-platform-parity.cjs及夹具；.build/reports/build/desktop-platform-parity/内Mac/Windows三样式PNG和comparison.json，desktop-platform-parity.log；windows-reference-parity-build.log。仅使用合成封面与虚拟音乐路径，没有读写真实曲库。
+- 已完整重打包并核对ASAR后台源码：715,456,957 bytes；SHA256=bc423f0d0464db4dc7452fb80577de5b1e56433b00498814feedddc88f6f68ac，独立NSIS CRC32=0x802469c6通过。
+- 待验收：Windows原生字体、DPI缩放、caption控件、GPU玻璃/模糊、真实封面/歌词的实际观感仍需实体Windows回验。布局容器同条件通过不代表全部像素、动画或平台能力已实机对齐。
+
+### Windows 移除菜单、图标右键设置与滚动热点修复（2026-11-06）
+
+- 按用户标注，彻底移除应用菜单与每个主/辅助窗口菜单，Alt不再唤出“MiniVoice/编辑”行；移除页面顶部自有设置文字，Ctrl+,由before-input-event保留。托盘加入“打开设置”，任务栏Jump List注册同名任务，通过--open-settings启动/激活单实例并打开设置；已有设置窗口最小化时恢复。二次实例/未成功加载状态的进程不得执行退出写盘，避免默认空状态覆盖运行中应用。
+- 实际性能热点：原Windows cover/detail均直接返回原图；publish每秒序列化含rawLyrics的整库并把songs/position放入state，重复解析当前歌词；audio timeupdate频繁序列化/写整库。修复为192px列表/512px浏览PNG缓存（分类与墙面预览），32MiB压缩图内存LRU、按哈希磁盘缓存、同图并发合并及串行解码间隙让出事件循环；详情/编辑原图字节保留。Mac原有图像路由不变，不关闭玻璃或动画。
+- 后台改为轻量catalog行（保留modified/size供逐字缓存失效）、Set/Map关联收藏和路径；state剔除整库与热进度，去重后发送，clock独立更新；歌词解析按歌曲及原文缓存。状态写入合并排队，窗口变化节流；播放进度写入独立小检查点，恢复仅采纳比主状态更新且当前歌曲匹配的记录，暂停/跳转/退出保持恢复语义。
+- 通过：61项Windows逻辑，含千首合成曲库十次进度变化仅发送一次catalog/state、歌词仅解析一次、页面payload小于10KB；状态变化及强制快照仍可发布。并发写入保留最新状态、独立检查点不可覆盖较新seek/save、二次实例不写空状态、菜单移除/设置快捷键/任务栏启动参数、缩略缓存与原图保留测试通过。
+- 真实图像管线在Mac宿主验证4000×3000源图→512×384浏览图、192×144列表图；20个同图并发请求仅生成一次，重启服务可读磁盘缓存，原图字节一致。此为解码尺寸/缓存证据，不是Windows FPS。生产renderer十组空/有曲库/深浅/宽窄布局及真实Electron Ctrl+,输入事件通过，三样式同尺寸对照仍通过。
+- 已完整打包：715,452,056 bytes；SHA256=fdd675e91d4bb1a0ae892049afaf622450cc620dbbbd1afb3f8aa15a600998e5，NSIS CRC32=0x4932a7eb独立复算通过。ASAR六个后台模块与审阅源码逐字节一致。证据在.build/reports/build/windows-menu-scroll-tests.log、windows-menu-scroll-build-success.log、windows-preview-pipeline.json/log、windows-layout-check.log及desktop-platform-parity/。
+- 待验收：Windows实体机菜单/托盘/任务栏Jump List、单实例唤醒与实际滚动；没有Windows FPS采样，不能宣称所有机器卡顿完全消除。图像GPU/驱动和玻璃重绘仍需实机采样；本轮不以隐藏样式或降低编辑原图质量换性能。
+
+### Windows 安装速度与未变模型复用（2026-11-06）
+
+- 用户截图停留在small.pt解压：完整包内含约461MiB模型及完整AI运行时，旧solid-LZMA追求体积；之后更新器还会校验、备份、复制大文件。不能把本机打包时间当作Windows安装时间。
+- 按用户补充要求，模型按新包清单SHA256检查已安装内容；匹配时NSIS跳过small.pt解压指令，不生成临时模型文件。缺失/内容不同/校验失败才解压内置模型。改用非solid逐文件zlib，使跳过单个模型不必解压前置整块流；完整包仍带模型用于首次安装或修复，不是轻量差分下载包。
+- 更新器校验将保留的现有文件或将应用的新文件；相同模型/运行库不备份、不复制、不覆盖；保留完整哈希校验、文件占用检查、并发修改stamp检查和失败回退。模型在检查后变化导致失败时，重试会重新检查并按需解压模型，不默默保留坏模型。
+- 通过：更新事务11项（原7项及模型未变且临时源缺失、缺失/变更模型重新安装、缺失已跳过模型拒绝、未变运行库不复制）；Windows逻辑61项及完整公共构建。真实483,617,219-byte原版small.pt在隔离目录复用验证：临时源没有模型，模型stamp未变，复制清单只有合成应用文件和清单，模型没有复制/备份。唯一small.pt打包路径已核对。
+- 已重打包：845,024,721 bytes（约806MiB），较旧约682MiB包增大，取舍为解压速度与可独立跳过模型。SHA256=bbeb3e0533c3192b42f4ce2c6f2715429fbb47682c591a2eb0d8a4b5f17195e9，独立NSIS CRC32=0x12f8865b通过。ASAR更新器与审阅源码一致。
+- 证据：.build/reports/build/windows-fast-install-build.log、windows-install-speed-tests.log、windows-model-reuse-verification.json和windows-installer-verification.json。以上模型复用验证宿主为Mac；Windows实体机首次安装/覆盖升级耗时、磁盘/杀毒影响仍待验收，未承诺提速倍数或秒数。

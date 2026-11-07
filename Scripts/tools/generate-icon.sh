@@ -12,3 +12,8 @@ iconutil -c icns "$WORK_DIR/MiniVoice.iconset" -o "$WORK_DIR/MiniVoice.icns"
 [[ -s "$WORK_DIR/MiniVoice.icns" ]]
 cp "$WORK_DIR/MiniVoice.icns" "$ROOT/MacOS/AppBundle/MiniVoice.icns"
 echo "已更新：$ROOT/MacOS/AppBundle/MiniVoice.icns"
+
+swiftc "$ROOT/MacOS/Sources/MiniVoice/BrandIcon.swift" "$ROOT/Scripts/assets/WindowsIconGenerator.swift" -o "$WORK_DIR/windows-icon-generator" -framework AppKit
+mkdir -p "$ROOT/Windows/assets"
+"$WORK_DIR/windows-icon-generator" "$ROOT/Windows/assets/MiniVoice.ico"
+echo "已更新：$ROOT/Windows/assets/MiniVoice.ico"

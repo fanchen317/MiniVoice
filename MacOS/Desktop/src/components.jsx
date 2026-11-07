@@ -22,7 +22,7 @@ import { displayLine, wallCardSizing } from './kinetic';
 import { artwork, command, seconds, useClock, usePlayback, useCatalog } from './store';
 
 export const Cover = memo(function Cover({track,detail=false,presentation=detail?'artwork':'list'}){
-  const requested=artwork(track,detail),identity=`${track?.artworkKey||''}:${track?.artworkRevision??0}`;
+  const requested=artwork(track,detail,presentation),identity=`${track?.artworkKey||''}:${track?.artworkRevision??0}`;
   const [decoded,setDecoded]=useState(()=>({identity,url:requested}));
   useEffect(()=>{let active=true;if(!requested||decoded.url===requested)return;const image=new Image();image.src=requested;image.decode().then(()=>{if(active)setDecoded({identity,url:requested});}).catch(()=>{});return()=>{active=false;};},[requested,identity]);
   const [failed,setFailed]=useState(false),url=decoded.identity===identity?decoded.url:requested;
@@ -179,7 +179,7 @@ export function GroupGrid({ groups, artist, onOpen }) {
     <div style={{height:Math.ceil(groups.length/columns)*stride,width:metrics.available,position:'relative'}}>{groups.slice(firstRow*columns,lastRow*columns).map((group,index)=>{
       const position=firstRow*columns+index,artists=[...new Set(group.tracks.map(track=>track.artist).filter(Boolean))].sort().join(' / ')||'未知歌手',cover=group.tracks.find(track=>track.artworkKey)||group.tracks[0];
       return <ActionButton key={group.name} className={`group-card ${artist?'artist':''} ${compact?'compact-card':''}`} aria-label={`${group.name}，${group.tracks.length} 首歌曲`} style={{width,height,transform:`translate(${position%columns*(width+16)}px,${Math.floor(position/columns)*stride}px)`,'--group-art-size':`${metrics.artwork}px`}} onClick={event=>onOpen(group.name,event)}>
-        <div className={`group-art ${cover?.artworkKey?'':'group-art-empty'}`}>{cover?.artworkKey?<Cover track={cover} detail presentation="fill"/>:<Icon name={artist?'person':'albums'}/>}</div><div className="group-card-label"><strong title={group.name}>{group.name}</strong>{!artist&&<small title={artists}>{artists}</small>}<small>{group.tracks.length} 首歌曲</small></div>{compact&&<Icon name="next"/>}
+        <div className={`group-art ${cover?.artworkKey?'':'group-art-empty'}`}>{cover?.artworkKey?<Cover track={cover} detail={window.miniVoice?.platform!=='windows'} presentation="fill"/>:<Icon name={artist?'person':'albums'}/>}</div><div className="group-card-label"><strong title={group.name}>{group.name}</strong>{!artist&&<small title={artists}>{artists}</small>}<small>{group.tracks.length} 首歌曲</small></div>{compact&&<Icon name="next"/>}
       </ActionButton>;
     })}</div>
   </div>;

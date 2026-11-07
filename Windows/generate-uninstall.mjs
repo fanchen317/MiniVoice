@@ -1,3 +1,5 @@
+import {createHash} from 'node:crypto';
+import {createReadStream} from 'node:fs';
 import {readdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -7,4 +9,22 @@ export async function uninstallManifest(root){
  await walk();const escape=value=>value.replaceAll('\\','/').replaceAll('$','$$').replaceAll('"','$\\"').replaceAll('/','\\');
  return [...files.map(file=>`Delete "$INSTDIR\\${escape(file)}"`),...directories.reverse().map(dir=>`RMDir "$INSTDIR\\${escape(dir)}"`)].join('\n')+'\n';
 }
-if(process.argv[1]&&pathToFileURL(path.resolve(process.argv[1])).href===import.meta.url)await writeFile(process.argv[3],await uninstallManifest(process.argv[2]));
+export async function installationManifest(root){
+ const files={};
+ async function walk(relative=''){
+  for(const item of await readdir(path.join(root,relative),{withFileTypes:true})){
+   const name=relative?`${relative}/${item.name}`:item.name;
+   if(item.isSymbolicLink())throw Error('安装目录不允许符号链接');
+   if(item.isDirectory())await walk(name);
+   else if(item.isFile()&&name!=='.minivoice-install-files.json'){
+    const hash=createHash('sha256');for await(const chunk of createReadStream(path.join(root,name)))hash.update(chunk);
+    files[name]=hash.digest('hex');
+   }
+  }
+ }
+ await walk();return {schema:1,files};
+}
+if(process.argv[1]&&pathToFileURL(path.resolve(process.argv[1])).href===import.meta.url){
+ await writeFile(path.join(process.argv[2],'.minivoice-install-files.json'),JSON.stringify(await installationManifest(process.argv[2]))+'\n');
+ await writeFile(process.argv[3],await uninstallManifest(process.argv[2]));
+}
