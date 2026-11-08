@@ -22,4 +22,7 @@ xcodebuild -project "$ROOT/iOS/MiniVoice.xcodeproj" \
   -derivedDataPath "$ROOT/.build/cache/ios/DerivedData" \
   CODE_SIGNING_ALLOWED=NO build
 
+python3 "$ROOT/Scripts/tests/test-ios-background-audio.py" \
+  "$ROOT/.build/cache/ios/DerivedData/Build/Products/$CONFIGURATION-$SDK/MiniVoice.app/Info.plist"
+
 echo "应用：$ROOT/.build/cache/ios/DerivedData/Build/Products/$CONFIGURATION-$SDK/MiniVoice.app"

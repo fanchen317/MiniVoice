@@ -1610,3 +1610,10 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
 ### 2026-11-07 iOS Home 手势边界
 
 音乐墙 WKWebView 对底部 Home 指示条安全区放弃命中，避免退出手势同时启动墙面滚动；其他样式及安全区以上维持原行为。此前 iOS 模拟器构建与页面回归通过；UIKit 系统退出/取消/返回、横屏和多指仍待真机验收。按用户要求单独提交，不包含启动/缓存性能改动。
+
+### 2026-11-08 iOS 切到后台停止播放
+
+- 原因：主应用Info.plist的UIBackgroundModes只有processing，缺少audio。现有AVAudioSession已配置playback并激活，但仍缺系统允许后台音频的应用声明；场景失活本身没有调用暂停。Apple依据：https://developer.apple.com/documentation/avfaudio/avaudiosession/category-swift.struct/playback 。
+- 已修正：增加audio并保留processing；不修改播放/暂停、音频中断、扫描或缓存逻辑。构建入口新增源plist和实际.app/Info.plist的后台音频检查，缺audio立即失败，避免源码配置未进入产物。
+- 通过：新增检查在修复前确实拒绝缺audio配置，修复后源文件、模拟器Debug及无签名device Release产物均通过；两种完整构建、UI标准门禁、plist与shell语法、diff检查通过。报告：`.build/reports/ios/background-audio-{capability-regression,simulator-build,device-build}.log`。
+- 待验收：本机没有可用模拟器runtime，本轮未安装或实际切后台/锁屏听音。仍需用专用设备合成歌曲验证播放→Home/切无音频App停留15–20秒→返回进度继续，以及锁屏/解锁；不能将构建或手动scene标记当作系统后台播放实测。
