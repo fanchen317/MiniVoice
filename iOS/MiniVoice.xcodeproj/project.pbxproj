@@ -23,6 +23,11 @@
 		E10000000000000000000001 /* IOSDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000001 /* IOSDiagnostics.swift */; };
 		F20000000000000000000001 /* ScanBackgroundSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* ScanBackgroundSession.swift */; };
 		F30000000000000000000001 /* StyleFragmentSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000002 /* StyleFragmentSession.swift */; };
+		F40000000000000000000001 /* ArtworkCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000001 /* ArtworkCache.swift */; };
+		F40000000000000000000002 /* SnapshotMetadataCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000002 /* SnapshotMetadataCache.swift */; };
+		F40000000000000000000003 /* LibraryIndexWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000003 /* LibraryIndexWriter.swift */; };
+		F40000000000000000000004 /* FolderAccessRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000004 /* FolderAccessRegistry.swift */; };
+		F40000000000000000000005 /* WebHostDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000005 /* WebHostDiagnostics.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -54,6 +59,11 @@
 		E20000000000000000000001 /* IOSDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSDiagnostics.swift; sourceTree = "<group>"; };
 		F20000000000000000000002 /* ScanBackgroundSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanBackgroundSession.swift; sourceTree = "<group>"; };
 		F30000000000000000000002 /* StyleFragmentSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StyleFragmentSession.swift; sourceTree = "<group>"; };
+		F50000000000000000000001 /* ArtworkCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkCache.swift; sourceTree = "<group>"; };
+		F50000000000000000000002 /* SnapshotMetadataCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotMetadataCache.swift; sourceTree = "<group>"; };
+		F50000000000000000000003 /* LibraryIndexWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryIndexWriter.swift; sourceTree = "<group>"; };
+		F50000000000000000000004 /* FolderAccessRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderAccessRegistry.swift; sourceTree = "<group>"; };
+		F50000000000000000000005 /* WebHostDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebHostDiagnostics.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -94,6 +104,11 @@
 				C20000000000000000000001 /* SharedPlayerView.swift */,
 				A20000000000000000000001 /* MiniVoiceApp.swift */,
 				A20000000000000000000002 /* Models.swift */,
+				F50000000000000000000001 /* ArtworkCache.swift */,
+				F50000000000000000000002 /* SnapshotMetadataCache.swift */,
+				F50000000000000000000003 /* LibraryIndexWriter.swift */,
+				F50000000000000000000004 /* FolderAccessRegistry.swift */,
+				F50000000000000000000005 /* WebHostDiagnostics.swift */,
 				A20000000000000000000003 /* MusicLibrary.swift */,
 				A20000000000000000000004 /* MusicPlayer.swift */,
 				A20000000000000000000005 /* HomeView.swift */,
@@ -236,6 +251,11 @@
 				C10000000000000000000001 /* SharedPlayerView.swift in Sources */,
 				A10000000000000000000001 /* MiniVoiceApp.swift in Sources */,
 				A10000000000000000000002 /* Models.swift in Sources */,
+				F40000000000000000000001 /* ArtworkCache.swift in Sources */,
+				F40000000000000000000002 /* SnapshotMetadataCache.swift in Sources */,
+				F40000000000000000000003 /* LibraryIndexWriter.swift in Sources */,
+				F40000000000000000000004 /* FolderAccessRegistry.swift in Sources */,
+				F40000000000000000000005 /* WebHostDiagnostics.swift in Sources */,
 				A10000000000000000000003 /* MusicLibrary.swift in Sources */,
 				A10000000000000000000004 /* MusicPlayer.swift in Sources */,
 				A10000000000000000000005 /* HomeView.swift in Sources */,

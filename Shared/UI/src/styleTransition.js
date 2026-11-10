@@ -1,14 +1,26 @@
 import {fragmentKeyframes,fragmentSamples,prepareFragments} from './fragmentMotion.js';
 const reduced=()=>document.documentElement.classList.contains('reduce-motion')||matchMedia('(prefers-reduced-motion:reduce)').matches;
 const frames=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+/** Snapshot pixels may be a host-owned local resource or a legacy data URL. */
+export function captureStyleSnapshot(capture){
+ let lease=null,disposed=false;
+ const release=value=>{if(!value?.token)return;try{Promise.resolve(capture({phase:'release',token:value.token})).catch(()=>{});}catch{}};
+ const pending=Promise.resolve().then(()=>capture()).then(value=>{
+  if(value&&typeof value==='object'){
+   if(disposed){release(value);return null;}lease=value;return typeof value.src==='string'?value.src:null;
+  }
+  return !disposed&&typeof value==='string'?value:null;
+ },()=>null);
+ return {pending,release(){disposed=true;const value=lease;lease=null;release(value);}};
+}
 /** Same fragment grid, outward curl/rotation, 680ms sweep and icon origin as Mac. */
 export async function transitionStyle(update,root=document.querySelector('.mv-workspace'),capture,mode='fragments'){
  if(reduced()||!root){await update();return;}
- let nativeToken,canvas,frame=0,timer=0,animation,stopWait,updated=false,updateFailure,interrupted=false;
+ let nativeToken,snapshotCapture,canvas,frame=0,timer=0,animation,stopWait,updated=false,updateFailure,interrupted=false;
  const began=performance.now();let captured=began,decoded=began,prepared=began;
  const fragments=[];
  const commit=async()=>{if(!updated){updated=true;try{await update();}catch(error){updateFailure=error;throw error;}}};
- const cleanup=()=>{if(nativeToken){capture?.({phase:'cancel',token:nativeToken}).catch(()=>{});nativeToken=null;}cancelAnimationFrame(frame);canvas?.remove();fragments.forEach(value=>value.cancel());animation?.cancel();stopWait?.();};
+ const cleanup=()=>{snapshotCapture?.release();if(nativeToken){capture?.({phase:'cancel',token:nativeToken}).catch(()=>{});nativeToken=null;}cancelAnimationFrame(frame);canvas?.remove();fragments.forEach(value=>value.cancel());animation?.cancel();stopWait?.();};
  const abort=()=>{interrupted=true;cleanup();};
  const finish=()=>{if(reduced())abort();};
  const media=matchMedia('(prefers-reduced-motion:reduce)'),observer=new MutationObserver(finish);
@@ -27,7 +39,8 @@ export async function transitionStyle(update,root=document.querySelector('.mv-wo
    return;
   }
   await frames();
-  const snapshot=capture?await Promise.race([capture().catch(()=>null),new Promise(resolve=>{timer=setTimeout(()=>resolve(null),180);})]):null;clearTimeout(timer);captured=performance.now();
+  snapshotCapture=capture?captureStyleSnapshot(capture):null;
+  const snapshot=snapshotCapture?await Promise.race([snapshotCapture.pending,new Promise(resolve=>{timer=setTimeout(()=>resolve(null),180);})]):null;clearTimeout(timer);if(!snapshot)snapshotCapture?.release();captured=performance.now();
   if(snapshot&&!reduced()&&!interrupted&&root.isConnected){
    const bitmap=new Image();bitmap.src=snapshot;
    await Promise.race([bitmap.decode(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('页面画面解码超时')),250);})]);clearTimeout(timer);decoded=performance.now();
@@ -39,14 +52,16 @@ export async function transitionStyle(update,root=document.querySelector('.mv-wo
    // JPEG or upload a newly painted full-screen canvas to the compositor.
    let batch=0;
    for(const cell of plan){
-    if(batch++%8===0){await new Promise(resolve=>requestAnimationFrame(resolve));if(reduced()||interrupted){await commit();return;}}
+    if(batch&&batch%8===0){await new Promise(resolve=>requestAnimationFrame(resolve));if(reduced()||interrupted){await commit();return;}}batch++;
     const tile=document.createElement('canvas');tile.width=Math.ceil(cell.width*scale);tile.height=Math.ceil(cell.height*scale);
     Object.assign(tile.style,{position:'absolute',left:`${cell.x}px`,top:`${cell.y}px`,width:`${cell.width}px`,height:`${cell.height}px`,transformOrigin:'center',willChange:'transform,opacity'});
     const context=tile.getContext('2d');if(!context)throw Error('页面动画画布暂不可用');
     context.drawImage(bitmap,cell.x/width*bitmap.width,cell.y/height*bitmap.height,cell.width/width*bitmap.width,cell.height/height*bitmap.height,0,0,tile.width,tile.height);
     tiles.append(tile);cell.tile=tile;
    }
-   prepared=performance.now();
+   // Every tile now owns its raster. Release the native source before starting
+   // the compositor sweep; the same cropped pixels and motion plan stay intact.
+   snapshotCapture?.release();bitmap.removeAttribute('src');prepared=performance.now();
    canvas.append(tiles);document.body.append(canvas);await commit();await frames();
    if(canvas.isConnected&&!reduced()&&!interrupted){
     for(const cell of plan)fragments.push(cell.tile.animate(fragmentKeyframes(cell),{duration:480,delay:cell.delay,easing:'linear',fill:'both'}));

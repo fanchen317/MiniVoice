@@ -1,8 +1,9 @@
 import {createWallSearchMotion} from './searchMotion.js';
-import React,{useLayoutEffect,useEffect,useRef,useState} from 'react';
+import React,{useLayoutEffect,useEffect,useRef,useState,useImperativeHandle} from 'react';
 import {Button,Icon} from './PlayerControls.jsx';
-export default function SearchControl({open,onOpenChange,value,onValueChange,wall=false}){
+export default function SearchControl({open,onOpenChange,value,onValueChange,wall=false,surfaceRef}){
  const input=useRef(null),root=useRef(null),pending=useRef(null),[draft,setDraft]=useState(value);
+ useImperativeHandle(surfaceRef,()=>root.current,[]);
  const [phase,setPhase]=useState(open?'expanded':'closed'),motion=useRef(null);if(!motion.current)motion.current=createWallSearchMotion(setPhase,{reduced:()=>document.documentElement.classList.contains('reduce-motion')||matchMedia('(prefers-reduced-motion:reduce)').matches});
  useEffect(()=>{if(open)motion.current.open();else motion.current.close();},[open]);useEffect(()=>()=>motion.current.dispose(),[]);
  // Editing stays synchronous while the host persists controlled queries asynchronously.

@@ -2,6 +2,7 @@ import {compositionCrop,compositionViewport} from './artworkComposition.js';
 // Bounded samples are keyed by both artwork identity and pixel coordinate space.
 // A trimmed list thumbnail is not the same image as an uncropped original.
 const cache=new Map(),subjects=new Map(),pendingSubjects=new Map(),subjectQualities=new Map(),subjectListeners=new Map();
+let analysisRevision=0;const subjectRevisions=new Map();
 function energyMap(pixels,width,height){
  const values=new Float32Array(width*height),stride=width+1,sums=Array.from({length:3},()=>new Float64Array((width+1)*(height+1)));
  for(let y=0;y<height;y++)for(let x=0;x<width;x++)for(let channel=0;channel<3;channel++){const index=(y+1)*stride+x+1;sums[channel][index]=pixels[(y*width+x)*4+channel]+sums[channel][index-1]+sums[channel][index-stride]-sums[channel][index-stride-1];}
@@ -32,9 +33,10 @@ export function warmArtworkSubjects(key,read,context){
  const pending=pendingSubjects.get(key);
  if(pending){if(pending.quality>=quality)return pending.promise;return pending.promise.then(()=>warmArtworkSubjects(key,read,context));}
  const task=Promise.resolve().then(()=>read(context)).then(value=>{
-  const boxes=Array.isArray(value)?value:[];
-  if(subjects.size>=64&&!subjects.has(key)){const oldest=subjects.keys().next().value;subjects.delete(oldest);subjectQualities.delete(oldest);}
-  subjects.set(key,boxes);subjectQualities.set(key,quality);
+  if(!Array.isArray(value))return [];
+  const boxes=value;
+  if(subjects.size>=64&&!subjects.has(key)){const oldest=subjects.keys().next().value;subjects.delete(oldest);subjectQualities.delete(oldest);subjectRevisions.delete(oldest);}
+  subjects.set(key,boxes);subjectQualities.set(key,quality);subjectRevisions.set(key,++analysisRevision);
   for(const sample of cache.get(key)?.samples.values()||[])sample.choices.clear();
   for(const notify of subjectListeners.get(key)||[])notify();return boxes;
  }).catch(()=>[]).finally(()=>{if(pendingSubjects.get(key)?.promise===task)pendingSubjects.delete(key);});
@@ -80,7 +82,7 @@ export function copyArtworkPresentation(reference,layer){
 
 /** Visible artwork owns its crop until the image geometry or viewport changes. */
 export function stableArtworkFocus(image,options,decisions){
- const viewport=options.viewport||{},key=JSON.stringify([options.key,options.coordinateSpace,Math.round(image.naturalWidth/image.naturalHeight*10000),viewportKey(compositionViewport(viewport,options.viewportAspect))]);
+ const viewport=options.viewport||{},key=JSON.stringify([options.key,options.refreshSubjects?(subjectRevisions.get(identity(options.key))||0):0,options.coordinateSpace,Math.round(image.naturalWidth/image.naturalHeight*10000),viewportKey(compositionViewport(viewport,options.viewportAspect))]);
  const prior=decisions.get(key);if(prior)return setArtworkAnchor(image,prior);
  const focus=applyArtworkFocus(image,options);if(decisions.size>=8)decisions.delete(decisions.keys().next().value);decisions.set(key,focus);return focus;
 }

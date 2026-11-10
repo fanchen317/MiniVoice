@@ -1,0 +1,38 @@
+// Uses the actual retained drawer; isolated fixture data, never a native library.
+const {app,BrowserWindow}=require('electron');
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+app.setPath('userData',fs.mkdtempSync(path.join(os.tmpdir(),'minivoice-drawer-motion-')));
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const check=(value,message)=>{if(!value)throw Error(message);};
+const base=process.env.MINIVOICE_WALL_TEST_URL||'http://127.0.0.1:5307';
+const timeout=setTimeout(()=>{console.error('Drawer motion test timed out');app.exit(1);},30000);
+app.whenReady().then(async()=>{let win;try{
+ win=new BrowserWindow({show:false,width:390,height:844,webPreferences:{backgroundThrottling:false}});
+ const js=source=>win.webContents.executeJavaScript(source,true);
+ const until=async(source,message)=>{for(let i=0;i<80;i++){if(await js(source))return;await wait(20);}throw Error(message);};
+ const running="document.querySelector('.mv-drawer').getAnimations().some(a=>a.playState==='running')";
+ const open="document.querySelector('[aria-label=打开侧边栏]').click()";
+ const close="document.querySelector('[aria-label=关闭侧边栏]').click()";
+ await win.loadURL(base+'/tests/drawer-layer.html');
+ await until("!!document.querySelector('.mv-drawer')",'Drawer did not mount');
+ check(!await js(running)&&await js('drawerAnimationCalls.length===0'),'An initially closed drawer started a redundant animation');
+ await js(open);await wait(60);
+ check(await js(running)&&await js("drawerAnimationCalls[0]?.timing.duration===320&&drawerAnimationCalls[0]?.timing.easing==='cubic-bezier(.2,.8,.2,1)'"),'Original drawer entrance animation timing changed or is missing');
+ await js("window.retainedDrawer=document.querySelector('.mv-drawer');window.reversalFrom=getComputedStyle(retainedDrawer).transform;document.querySelector('[aria-label=关闭侧边栏]').click();true");
+ const reversal=await js("(()=>{const a=new DOMMatrixReadOnly(reversalFrom),b=new DOMMatrixReadOnly(getComputedStyle(retainedDrawer).transform);return {same:retainedDrawer===document.querySelector('.mv-drawer'),distance:Math.abs(a.m41-b.m41)}})()");
+ check(reversal.same&&reversal.distance<12,'Drawer reversal jumped or replaced its node: '+JSON.stringify(reversal));
+ await wait(70);await js(open);await wait(55);
+ await js("document.documentElement.classList.add('reduce-motion')");await wait(30);
+ check(!await js(running),'Runtime app reduced motion retained active drawer animation');
+ check(await js("getComputedStyle(document.querySelector('.mv-drawer')).transform==='none'"),'Reduced motion did not settle the open drawer');
+ await js(close);await wait(30);
+ check(!await js(running)&&await js("document.querySelector('[data-mv-component=drawer-layer]').inert&&document.querySelector('[data-mv-component=drawer-layer]').dataset.open==='false'"),'Reduced-motion close retained motion or input');
+ await js("document.documentElement.classList.remove('reduce-motion')");await js(open);await wait(55);
+ win.webContents.debugger.attach('1.3');await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});await wait(30);
+ check(!await js(running)&&await js("getComputedStyle(document.querySelector('.mv-drawer')).transform==='none'"),'Runtime system reduced motion retained active drawer animation');
+ await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[]});win.webContents.debugger.detach();
+ await js(close);await wait(400);
+ check(await js("(()=>{const p=document.querySelector('.mv-drawer'),r=document.querySelector('[data-mv-component=drawer-layer]'),m=new DOMMatrixReadOnly(getComputedStyle(p).transform);return r.inert&&m.m41<=-p.offsetWidth&&!p.getAnimations().some(a=>a.playState==='running')})()"),'Drawer did not finish at its real closed layout');
+ console.log('PASS retained drawer initial idle, original motion, continuous reversal, app/system runtime reduced motion and final closed layout');
+ clearTimeout(timeout);win.destroy();app.exit(0);
+ }catch(error){console.error(error.stack);clearTimeout(timeout);win?.destroy();app.exit(1);}});

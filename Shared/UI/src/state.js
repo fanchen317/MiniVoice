@@ -2,7 +2,7 @@
 export function createWorkspaceController(adapter){
   let state={version:1,pages:{}},queue=Promise.resolve();
   return {hydrate(value){state=value&&typeof value==='object'?value:{version:1,pages:{}};},
-    reduce(action){const work=queue.catch(()=>{}).then(async()=>{const next=await adapter.core({op:'state.reduce',state,action});await adapter.write(next);state=next;return next;});queue=work;return work;},
+    reduce(action){const work=queue.catch(()=>{}).then(async()=>{const next=await adapter.core({op:'state.reduce',state,action:typeof action==='function'?action(state):action});await adapter.write(next);state=next;return next;});queue=work;return work;},
     current(){return state;},
     flush(){return queue;}};
 }
@@ -11,6 +11,20 @@ export function stableSongs(previous=[],next=[]){
   if(previous.length!==next.length)return next;
   for(let i=0;i<next.length;i++)if(JSON.stringify(previous[i])!==JSON.stringify(next[i]))return next;
   return previous;
+}
+
+// Native deltas already share these arrays. Legacy/full hosts are normalized at
+// ingress so progress rendering never serializes whole playlists for memo keys.
+export function stableSnapshot(previous,next){
+ const value={...next,songs:stableSongs(previous.songs,next.songs)};
+ for(const key of ['favorites','recent','playlists','queue']){
+  const before=previous[key],after=next[key];
+  if(Array.isArray(before)&&Array.isArray(after)&&before!==after&&before.length===after.length){
+   const equal=key==='playlists'?before.every((item,i)=>item===after[i]||JSON.stringify(item)===JSON.stringify(after[i])):before.every((item,i)=>item===after[i]);
+   if(equal)value[key]=before;
+  }
+ }
+ return value;
 }
 
 export function playlistPageActions(state,oldId,newId){

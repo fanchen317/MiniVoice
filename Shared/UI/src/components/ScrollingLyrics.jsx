@@ -3,12 +3,14 @@ import React,{useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import ActionButton from './ActionButton.jsx';
 import {displayLine,wallLyricsMetrics,expandedWallLyricsMetrics,normalizeLyrics,lyricRowOffsets} from './lyricPresentation.js';
 import {clearLyricSweep,paintLyricSweep} from './lyricSweep.js';
+import {createLyricTimeline,lyricTimelineIndex} from './lyricTimeline.js';
 /** One natural-row, centered bilingual presentation for both app families. */
 export default function ScrollingLyrics({lines:source,time=0,duration=0,playing=false,showTranslation=true,onSeek,className='',lineClass='',label='歌词',presentation='standard'}){
  const root=useRef(null),live=useRef(null),swept=useRef(null),[size,setSize]=useState({width:1,height:1}),lines=useMemo(()=>normalizeLyrics(source),[source]);
- const [playhead,setPlayhead]=useState(time);const layout=(presentation==='wall-expanded'?expandedWallLyricsMetrics:wallLyricsMetrics)(size.width,size.height);let active=-1;for(let i=0;i<lines.length;i++)if(lines[i].time!==null&&lines[i].time>=0&&lines[i].time<=playhead)active=i;
+ const timeline=useMemo(()=>createLyricTimeline(lines),[lines]),[active,setActive]=useState(()=>lyricTimelineIndex(timeline,time)),activeRow=useRef(active);activeRow.current=active;
+ const layout=(presentation==='wall-expanded'?expandedWallLyricsMetrics:wallLyricsMetrics)(size.width,size.height);
  const index=Math.max(0,active),first=Math.max(0,index-layout.visibleRadius),shown=lines.slice(first,index+layout.visibleRadius+1);live.current=samplePlaybackClock(live.current,time,playing,performance.now());
- useEffect(()=>{let frame;const tick=()=>{const t=playbackTime(live.current,performance.now());setPlayhead(previous=>{const at=value=>lines.reduce((index,line,i)=>line.time!==null&&line.time>=0&&line.time<=value?i:index,-1);return at(previous)===at(t)?previous:t;});if(live.current.playing)frame=requestAnimationFrame(tick);};tick();return()=>cancelAnimationFrame(frame);},[playing,time,lines]);
+ useEffect(()=>{let frame;const tick=()=>{const next=lyricTimelineIndex(timeline,playbackTime(live.current,performance.now()));if(next!==activeRow.current){activeRow.current=next;setActive(next);}if(live.current.playing)frame=requestAnimationFrame(tick);};tick();return()=>cancelAnimationFrame(frame);},[playing,time,timeline]);
  useLayoutEffect(()=>{const node=root.current,measure=()=>setSize(previous=>node.clientWidth===previous.width&&node.clientHeight===previous.height?previous:{width:node.clientWidth,height:node.clientHeight});measure();const observer=new ResizeObserver(measure);observer.observe(node);return()=>observer.disconnect();},[]);
  useLayoutEffect(()=>{
   const rows=[...root.current.querySelectorAll('.mv-synced-line')],selected=rows.findIndex(row=>row.dataset.active==='true');

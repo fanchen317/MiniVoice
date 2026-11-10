@@ -17,6 +17,7 @@ struct MiniVoiceApp: App {
                 .onOpenURL { url in if url.scheme == "minivoice" { if url.host == "scan" { player.requestNavigation("SHOW_SCAN") } else if url.host == "playing" { player.requestNavigation() } } }
                 .onChange(of: scenePhase) { old, new in
                     IOSDiagnostics.shared.record(.event, "scene state=\(new)")
+                    player.setSceneActive(new == .active)
                     if new == .active {
                         library.restoreAndScan()
                         if old == .background { if library.isScanning || player.navigationAction.hasSuffix("SHOW_SCAN") { player.requestNavigation("SHOW_SCAN") } else if player.current != nil { player.requestNavigation() } }
@@ -24,6 +25,7 @@ struct MiniVoiceApp: App {
                 }
                 .onAppear {
                     IOSDiagnostics.shared.start()
+                    player.setSceneActive(scenePhase == .active)
                     library.scanSession.onOpen = { [weak player] in player?.requestNavigation("SHOW_SCAN") }
                     library.restoreAndScan()
                     #if targetEnvironment(simulator)

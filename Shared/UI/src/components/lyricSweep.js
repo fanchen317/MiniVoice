@@ -37,8 +37,10 @@ export function paintLyricSweep(surface,time,{reduced=false,wall=false}={}){
   for(const {word,fragments} of cached.ranges){
     const start=Number(word.dataset.wordStart),end=Number(word.dataset.wordEnd);
     const progress=reduced?1:Math.max(0,Math.min(1,(time-start)/Math.max(.01,end-start)));
-    word.style.setProperty('--word-progress',`${progress*100}%`);
+    // This renderer paints one background for the whole wrapped row. Per-word
+    // custom properties have no visual consumer and invalidate every word's
+    // style on high-refresh screens.
     filledFragments(fragments.map(fragment=>fragment.width),progress).forEach((width,i)=>sizes.push(`${width}px ${fragments[i].height}px`));
   }
-  surface.style.backgroundSize=[...sizes,'100% 100%'].join(',');
+  const backgroundSize=[...sizes,'100% 100%'].join(',');if(surface.style.backgroundSize!==backgroundSize)surface.style.backgroundSize=backgroundSize;
 }

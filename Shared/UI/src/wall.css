@@ -284,6 +284,10 @@
 /* Match image/shade coverage during fractional card reflow on both mobile hosts. */
 .mv-wall-press-surface{background:#000}
 .mv-wall-card>.mv-wall-press-surface>img,.mv-wall-focused-art{inset:-1px!important;width:calc(100% + 2px)!important;height:calc(100% + 2px)!important;max-width:none;max-height:none}
+/* inset does not position a static image: the previous ordinary poster grew
+   only toward its right/bottom edges, unlike the absolute focused artwork.
+   Give iOS the same symmetric bleed inside the existing shared clip. */
+[data-host=iOS] .mv-wall-card>.mv-wall-press-surface>img{position:absolute}
 .mv-wall-card>.mv-wall-press-surface::before,.mv-wall-focused>.mv-wall-press-surface::after{inset:-1px}
 .mv-wall-artwork-stack{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
 /* A complete white press contour is intentional; it is separate from any
@@ -316,3 +320,10 @@
 [data-presentation=mobile] .wp-player:not(.is-expanded) .wp-footer{display:flex;flex-direction:column;flex-shrink:0;margin-top:auto}
 /* The final-size content is independent of the animated background clip. */
 .mv-wall-focus-content{contain:layout style}
+
+/* Android cold/rebuilt posters keep the existing app placeholder underneath
+   pending pixels. An opaque decoded cover completely replaces this backing;
+   caption shade, current contour and press/focus motion remain unchanged. */
+.mv-workspace[data-host=Android].style-wall .mv-wall-card>.mv-wall-press-surface{
+ background:var(--wall-poster-pending-background,linear-gradient(135deg,#305d49,#4a415f));
+}

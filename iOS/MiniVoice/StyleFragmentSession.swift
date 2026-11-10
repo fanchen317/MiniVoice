@@ -12,7 +12,9 @@ final class StyleFragmentSession {
 
     func prepare(in view: UIView, cells: [[String: Any]]) -> String? {
         cancel()
-        guard view.window != nil, !cells.isEmpty, cells.count <= 24 else { return nil }
+        guard !UIAccessibility.isReduceMotionEnabled,
+              UIApplication.shared.applicationState == .active,
+              view.window != nil, !cells.isEmpty, cells.count <= 24 else { return nil }
         let surface = UIView(frame: view.bounds)
         surface.isUserInteractionEnabled = false
         surface.accessibilityElementsHidden = true
@@ -31,7 +33,7 @@ final class StyleFragmentSession {
         view.addSubview(surface)
         let id = UUID().uuidString
         overlay = surface; token = id; self.cells = cells
-        let expiry = DispatchWorkItem { [weak self] in self?.cancel() }
+        let expiry = DispatchWorkItem { [weak self] in self?.cancel(id) }
         timeout = expiry
         DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: expiry)
         return id
@@ -39,6 +41,15 @@ final class StyleFragmentSession {
 
     func animate(_ id: String, completion: @escaping () -> Void) {
         guard token == id, let overlay else { completion(); return }
+        guard !UIAccessibility.isReduceMotionEnabled, UIApplication.shared.applicationState == .active else {
+            cancel(id); completion(); return
+        }
+        // Duplicate start messages await the existing animation. Replacing its
+        // layers would let the earlier CATransaction remove the newer animation.
+        if let pending = self.completion {
+            self.completion = { pending(); completion() }
+            return
+        }
         self.completion = completion
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak self] in if self?.token == id { self?.cancel() } }

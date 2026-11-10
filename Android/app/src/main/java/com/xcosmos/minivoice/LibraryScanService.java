@@ -77,7 +77,7 @@ public final class LibraryScanService extends Service {
             List<Song> found=null;String error=null;boolean cancelled=false,cached=false;
             try{
                 LibraryCache.migrateLegacy(this);
-                if(request.rebuild){progress.update(0,0,"清理旧缓存…");synchronized(SOURCE_LOCK){LibrarySnapshot.invalidate(this);}ArtworkCache.clear();LibraryCache.clear(this);clearFiles(getCacheDir());clearFiles(AppStorage.temporary(this));}
+                if(request.rebuild){progress.update(0,0,"清理旧缓存…");synchronized(SOURCE_LOCK){LibrarySnapshot.invalidate(this);}ArtworkCache.clear();PortableArtworkResources.maintenance(this,()->{LibraryCache.clear(this);return null;});clearFiles(getCacheDir());clearFiles(AppStorage.temporary(this));}
                 found=request.restore&&!request.rebuild?LibrarySnapshot.read(this,source):null;cached=found!=null;
                 if(found==null){List<Song> previous=request.rebuild?null:LibrarySnapshot.read(this,source);boolean sameScope=previous!=null;if(previous==null&&!request.rebuild)previous=LibrarySnapshot.readAny(this);if(previous!=null)previous.removeIf(song->!inFolders(song,folders));found=folders.isEmpty()?new ArrayList<>():FolderLibrary.scan(this,folders,recursive,progress,previous==null?Collections.emptyList():previous,sameScope);}
                 stampDates(found,prefs);LyricsRepository.prepare(this,found,progress);ArtworkCache.prepare(this,found,progress);

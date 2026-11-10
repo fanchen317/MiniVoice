@@ -1,9 +1,13 @@
+import {coverGeometry,artworkFramingKey} from './components/artworkFraming.js';
+import {useArtworkPan} from './components/useArtworkPan.js';
 import {artworkViewport} from './components/artworkViewport.js';
 import {ArtworkModeScope,ArtworkBlur} from './components/ArtworkModeButton.jsx';
-import {stableArtworkFocus,warmArtworkSubjects,subscribeArtworkSubjects,waitArtworkSubjects} from './components/artworkFocus.js';
+import {setArtworkAnchor,stableArtworkFocus,warmArtworkSubjects,subscribeArtworkSubjects,waitArtworkSubjects} from './components/artworkFocus.js';
 import {clampMobileWallScale as clampZoom,initialMobileWallCamera,MOBILE_DEFAULT_SCALE} from './mobileWallZoom.js';
 import {projectWallFrame} from './wallProjection.js';
 import {WALL_EXPANSION_MS} from './wallMotion.js';
+import {createArtworkPreloader} from './artworkPreloader.js';
+import {wallArtworkPlan,anticipatedWallCamera} from './wallArtworkPlan.js';
 import {useActivationFeedback,emitActivationFeedback} from './components/FeedbackContext.jsx';
 import ActionButton from './components/ActionButton.jsx';
 import React,{forwardRef,useEffect,useLayoutEffect,useImperativeHandle,useMemo,useRef,useState} from 'react';
@@ -18,32 +22,41 @@ const reduced=()=>matchMedia('(prefers-reduced-motion:reduce)').matches||documen
 const safeCamera=initialMobileWallCamera;
 // Stable values must not dirty layout on every camera frame.
 function writeStyle(node,key,value){if(node.style[key]!==value)node.style[key]=value;}
+function writeVariable(node,key,value){if(node.style.getPropertyValue(key)!==value)node.style.setProperty(key,value);}
 // Never reveal a replacement cover before its pixels are decoded. The
 // retained poster below owns the image until this layer can take over.
-function FocusArtwork({src,preview,shouldDefer,smoothUpgrade=false,target,expanded,analyze}){
+function FocusArtwork({src,preview,shouldDefer,smoothUpgrade=false,target,expanded,analyze,framing,framingKey,blocked,onAnchorCommit}){
  const [analysisRevision,setAnalysisRevision]=useState(0);
  useEffect(()=>subscribeArtworkSubjects(preview||src,()=>setAnalysisRevision(value=>value+1)),[preview,src]);
  const cropDecisions=useRef(new Map());
  const artworkRoot=useRef(null),artworkAnchor=useRef(null),latestTarget=useRef();
- const [shown,setShown]=useState(null),[revealed,setRevealed]=useState([]),requested=useRef(src),revealFrame=useRef(0);requested.current=src;
+ const [shown,setShown]=useState(null),[revealed,setRevealed]=useState([]),[failedSource,setFailedSource]=useState(null),requested=useRef(src),revealFrame=useRef(0);requested.current=src;
+ const panAnchor=useRef(null),panRoot=useMemo(()=>({get current(){return artworkRoot.current?.closest('.mv-wall-focused');}}),[]);
+ const mode=framing?.mode||'smart',savedAnchor=framing?.anchors?.[framingKey];
+ useLayoutEffect(()=>{panAnchor.current=null;},[src,mode,savedAnchor]);
  const plan=(node,source)=>{
   const viewport=artworkViewport(target);
   const original=source===src;
-  const anchor=stableArtworkFocus(node,{key:preview||src,viewport,useSubjects:original,coordinateSpace:original?'original':'preview'},cropDecisions.current);
+  const anchor=expanded&&original&&mode!=='smart'?setArtworkAnchor(node,mode==='manual'?(panAnchor.current||savedAnchor||{x:.5,y:.5}):{x:.5,y:.5}):stableArtworkFocus(node,{key:preview||src,viewport,refreshSubjects:expanded,useSubjects:original,coordinateSpace:original?'original':'preview'},cropDecisions.current);
   if(original||!artworkAnchor.current)artworkAnchor.current=anchor;
   return anchor;
  };
  latestTarget.current={plan,src};
+ useArtworkPan(panRoot,{enabled:expanded&&!blocked&&mode==='manual',identity:framingKey,presentation:'mobile',getAnchor:()=>panAnchor.current||savedAnchor||{x:.5,y:.5},getGeometry:()=>{const image=artworkRoot.current?.querySelector('img[src="'+CSS.escape(src||'')+'"]');return image?.naturalWidth?coverGeometry(image.naturalWidth,image.naturalHeight,target.width,target.height):null;},onPreview:value=>{panAnchor.current=value;for(const image of artworkRoot.current?.querySelectorAll('img')||[])if(image.naturalWidth)latestTarget.current.plan(image,image.getAttribute('src'));},onCommit:value=>onAnchorCommit?.(framingKey,value)});
  useEffect(()=>()=>clearTimeout(revealFrame.current),[]);
+ // A completed quality handoff no longer needs older decoded full-size layers.
+ // Keep the preview for collapse and the current source for future expansion.
+ useEffect(()=>{if(!smoothUpgrade||!shown)return;const timer=setTimeout(()=>setRevealed(previous=>previous.length===1&&previous[0]===shown?previous:[shown]),reduced()?0:200);return()=>clearTimeout(timer);},[smoothUpgrade,shown]);
  useLayoutEffect(()=>{
   const nodes=[...(artworkRoot.current?.querySelectorAll('img:not(.mv-artwork-blur)')||[])].filter(node=>node.naturalWidth);
   // Every loaded variant keeps its own image geometry. A trimmed preview must
   // never lend its crop coordinates/aspect to the untrimmed final source.
   for(const node of nodes){const source=node.getAttribute('src');if((source===src||source===preview)&&(source===shown||revealed.includes(source)))plan(node,source);}
   const blur=artworkRoot.current?.querySelector('.mv-artwork-blur');if(blur&&blur.naturalWidth&&blur.getAttribute('src')===shown&&(shown===src||shown===preview))plan(blur,blur.getAttribute('src'));
- },[target.width,target.height,preview,src,expanded,analysisRevision,shown]);
+ },[target.width,target.height,preview,src,expanded,analysisRevision,shown,mode,savedAnchor]);
  const sources=[...new Set((smoothUpgrade?[preview,...revealed,shown,src]:[shown,preview,src]).filter(Boolean))];
- return <div ref={artworkRoot} className="mv-wall-artwork-stack" data-artwork-ready={shown===src?'true':'false'} data-artwork-target={`${Math.round(target.width)}x${Math.round(target.height)}`}>{sources.map(source=><Artwork key={source} className="mv-wall-focused-art" src={source} draggable={false} style={smoothUpgrade?{visibility:'visible',opacity:(!expanded&&source===preview)||revealed.includes(source)||shown===source?1:0,zIndex:source===preview?0:1,transition:reduced()?'none':'opacity 180ms ease-out'}:{visibility:shown===source?'visible':'hidden',transition:'none'}} onLoad={async event=>{
+ const missing=!src||failedSource===src;
+ return <div ref={artworkRoot} className="mv-wall-artwork-stack" data-artwork-ready={!missing&&shown===src?'true':'false'} data-artwork-state={missing?'missing':shown===src?'ready':'loading'} data-artwork-target={`${Math.round(target.width)}x${Math.round(target.height)}`}>{sources.map(source=><Artwork key={source} className="mv-wall-focused-art" src={source} draggable={false} style={smoothUpgrade?{visibility:'visible',opacity:(!expanded&&source===preview)||revealed.includes(source)||shown===source||!shown&&source===failedSource?1:0,zIndex:source===preview?0:1,transition:reduced()?'none':'opacity 180ms ease-out'}:{visibility:shown===source||!shown&&source===failedSource?'visible':'hidden',transition:'none'}} onError={()=>{if(source===requested.current)setFailedSource(source);}} onLoad={async event=>{
   const node=event.currentTarget;
   try{await node.decode();if(source===src){if(analyze)await warmArtworkSubjects(preview||src,analyze,artworkViewport(target));else await waitArtworkSubjects(preview||src);}}catch{return;}
   if(!node.isConnected)return;
@@ -51,10 +64,10 @@ function FocusArtwork({src,preview,shouldDefer,smoothUpgrade=false,target,expand
   const reveal=()=>{if(!node.isConnected||requested.current!==source)return;if(source!==preview&&shouldDefer?.()){revealFrame.current=setTimeout(reveal,80);return;}latestTarget.current.plan(node,source);if(smoothUpgrade)setRevealed(previous=>[...previous.filter(value=>value!==source),source].slice(-3));setShown(source);};
   if(source===requested.current){clearTimeout(revealFrame.current);reveal();}
   else if(source===preview&&node.isConnected&&!expanded){setShown(previous=>previous||source);}
- }}/>)}{expanded&&<ArtworkBlur className="mv-wall-focused-art" src={shown||preview||src} onLoad={event=>{const source=event.currentTarget.getAttribute('src');if(source===shown&&(source===src||source===preview))latestTarget.current.plan(event.currentTarget,source);}}/>} </div>;
+ }}/>)}{expanded&&(!missing||shown)&&<ArtworkBlur className="mv-wall-focused-art" src={shown||preview||src} onLoad={event=>{const source=event.currentTarget.getAttribute('src');if(source===shown&&(source===src||source===preview))latestTarget.current.plan(event.currentTarget,source);}}/>} </div>;
 }
 /** A full-surface wall. Camera, focus reflow and expansion have distinct ownership. */
-export default forwardRef(function Wall({nativeScrolling=false,items,current,playingId=current,playing=false,page,onCamera,onScale,onSelect,onDoubleSelect,onContext,onAnalyzeArtwork,focused,expanded=false,blocked=false,recessed=false,focusContent,location=0,locationId=null,loading=false,grouped=false},api){
+export default forwardRef(function Wall({nativeScrolling=false,items,current,playingId=current,playing=false,page,onCamera,onScale,onSelect,onDoubleSelect,onContext,onAnalyzeArtwork,artworkFraming,onArtworkAnchorCommit,focused,expanded=false,blocked=false,recessed=false,focusContent,location=0,locationId=null,loading=false,grouped=false},api){
  const activateFeedback=useActivationFeedback();
  const touchPress=useRef(null);
  function clearTouchPress(){const press=touchPress.current;if(press)press.node.classList.remove("is-touch-pressed");touchPress.current=null;}
@@ -66,7 +79,10 @@ export default forwardRef(function Wall({nativeScrolling=false,items,current,pla
  const [viewport,setViewport]=useState(()=>mobileWallViewport(0,0)),[cameraSnapshot,setCamera]=useState(()=>safeCamera(page.camera)),[focus,setFocus]=useState(null),[progress,setProgress]=useState(1),[expansion,setExpansion]=useState(expanded?1:0);
  const live=useRef(cameraSnapshot),latest=useRef({}),motion=useRef(0),focusMotion=useRef(0),focusCamera=useRef(false),expandMotion=useRef(0),saveTimer=useRef(null),hold=useRef(null),pointers=useRef(new Map()),gesture=useRef(null),lastTap=useRef(null),opened=useRef(0),transition=useRef(null),focusSide=useRef(320),restored=useRef(false),handledLocation=useRef(null),oldViewport=useRef(null);
  const plane=useRef(null),focusedNode=useRef(null),posterNodes=useRef(new Map()),paintFrame=useRef(0),mountedCamera=useRef(cameraSnapshot),progressValue=useRef(1),expansionValue=useRef(expanded?1:0),renderedCells=useRef([]),paintedScale=useRef(null),pendingMount=useRef(false),suppressedClick=useRef(null);
- const artworkHandoff=useRef(0);
+ const artworkHandoff=useRef(0),expansionPreparation=useRef(0);
+ const artworkPreloader=useRef(null),artworkWindow=useRef(0),previousArtworkCamera=useRef(null);
+ function getArtworkPreloader(){return artworkPreloader.current||(artworkPreloader.current=createArtworkPreloader());}
+ useEffect(()=>{const visibility=()=>{if(document.hidden){artworkWindow.current++;artworkPreloader.current?.dispose();artworkPreloader.current=null;}else warmWallArtwork();};document.addEventListener('visibilitychange',visibility);return()=>{document.removeEventListener('visibilitychange',visibility);artworkWindow.current++;artworkPreloader.current?.dispose();artworkPreloader.current=null;};},[]);
  const depth=useRef(1),depthMotion=useRef(0),paintedPosters=useRef(null),paintedFocus=useRef(null);
  // Scrolling changes the viewport without moving poster DOM nodes.
  // Rebase document coordinates only near the fixed scroll-document boundary.
@@ -106,12 +122,12 @@ export default forwardRef(function Wall({nativeScrolling=false,items,current,pla
    const transform=nativeScrolling&&(nativePinching.current||state.progress<1||depth.current!==1)?`translate(${r.x}px,${r.y}px) scale(${r.width/target.width},${r.height/target.height})`:`translate(${r.x}px,${r.y}px)`;
    // Frozen pinch boxes already scale their descendants through transform.
    // Compensate the inherited font scale so text is scaled exactly once.
-   node.style.setProperty('--wall-camera-scale',String(c.scale*target.width/r.width));
+   writeVariable(node,'--wall-camera-scale',String(c.scale*target.width/r.width));
    writeStyle(node,'transformOrigin','0 0');writeStyle(node,'willChange','auto');if(node.style.transform!==transform)node.style.transform=transform;const width=`${target.width}px`,height=`${target.height}px`;if(node.style.width!==width)node.style.width=width;if(node.style.height!==height)node.style.height=height;}paintedPosters.current=gpuPan?base:null;}
   const cell=state.focus||(state.progress<1?transition.current?.previous:null),node=focusedNode.current;
   if(gpuPan&&paintedFocus.current?.base===base&&paintedFocus.current?.cell===cell&&paintedFocus.current?.node===node)return;
   paintedFocus.current=gpuPan?{base,cell,node}:null;
-  if(cell&&node){const f=frameFor(cell),normal=projectWallFrame(f,projection,planeGuard),r=rasterRect(mixRect(normal,{x:nativeScrolling?scrollX:planeGuard,y:nativeScrolling?scrollY:planeGuard,width:state.viewport.width,height:state.viewport.height},state.expansion));const focusing=nativeScrolling&&state.progress<1&&state.expansion===0;const fixed=focusing?projectWallFrame(frameFor(cell,true),projection,planeGuard):r;writeStyle(node,'left','0px');writeStyle(node,'top','0px');writeStyle(node,'transformOrigin','0 0');writeStyle(node,'willChange',focusing?'transform':'auto');writeStyle(node,'transform',`translate3d(${r.x}px,${r.y}px,0) scale(${r.width/fixed.width},${r.height/fixed.height})`);writeStyle(node,'width',`${fixed.width}px`);writeStyle(node,'height',`${fixed.height}px`);const opacity=String(state.focus?state.progress:1-state.progress);if(node.style.getPropertyValue('--wall-surface-opacity')!==opacity)node.style.setProperty('--wall-surface-opacity',opacity);const content=node.querySelector('.mv-wall-focus-content');if(content){content.style.setProperty('--wall-card-padding',`${Math.max(10,Math.min(18,fixed.width*.045))}px`);content.style.setProperty('--wall-title-font',`${fixed.width*.07}px`);content.style.setProperty('--wall-artist-font',`${fixed.width*.038}px`);writeStyle(content,'opacity',String(state.focus?Math.min(1,Math.max(0,(state.progress-.15)/.85)):1-state.progress));
+  if(cell&&node){const f=frameFor(cell),normal=projectWallFrame(f,projection,planeGuard),r=rasterRect(mixRect(normal,{x:nativeScrolling?scrollX:planeGuard,y:nativeScrolling?scrollY:planeGuard,width:state.viewport.width,height:state.viewport.height},state.expansion));const focusing=nativeScrolling&&state.progress<1&&state.expansion===0;const fixed=focusing?projectWallFrame(frameFor(cell,true),projection,planeGuard):r;writeStyle(node,'left','0px');writeStyle(node,'top','0px');writeStyle(node,'transformOrigin','0 0');writeStyle(node,'willChange',focusing?'transform':'auto');writeStyle(node,'transform',`translate3d(${r.x}px,${r.y}px,0) scale(${r.width/fixed.width},${r.height/fixed.height})`);writeStyle(node,'width',`${fixed.width}px`);writeStyle(node,'height',`${fixed.height}px`);writeVariable(node,'--wall-surface-opacity',String(state.focus?state.progress:1-state.progress));const content=node.querySelector('.mv-wall-focus-content');if(content){writeVariable(content,'--wall-card-padding',`${Math.max(10,Math.min(18,fixed.width*.045))}px`);writeVariable(content,'--wall-title-font',`${fixed.width*.07}px`);writeVariable(content,'--wall-artist-font',`${fixed.width*.038}px`);writeStyle(content,'opacity',String(state.focus?Math.min(1,Math.max(0,(state.progress-.15)/.85)):1-state.progress));
     const final=fixed;writeStyle(content,'transformOrigin','0 0');writeStyle(content,'transform','none');if(nativeScrolling||state.progress>=1&&state.expansion===0&&!state.expanded){writeStyle(content,'width',`${final.width}px`);writeStyle(content,'height',`${final.height}px`);}
    }}
  }
@@ -121,7 +137,7 @@ export default forwardRef(function Wall({nativeScrolling=false,items,current,pla
  useLayoutEffect(()=>{paintedPosters.current=null;paintedFocus.current=null;paint();},[cameraSnapshot,viewport,focus,progress,expansion,items,playingId]);
  useEffect(()=>()=>cancelAnimationFrame(paintFrame.current),[]);
 
- function stop(){focusCamera.current=false;cancelAnimationFrame(motion.current);motion.current=0;clearTimeout(saveTimer.current);}
+ function stop(){expansionPreparation.current++;focusCamera.current=false;cancelAnimationFrame(motion.current);motion.current=0;clearTimeout(saveTimer.current);}
 
  function save(commit=true){if(commit!==false)update({...live.current},true);const state=latest.current,cell=state.focus;state.onCamera?.({...live.current,focus:cell?{songId:state.items[cell.index]?.id,column:cell.column,row:cell.row}:null});}
  function scheduleSave(){clearTimeout(saveTimer.current);saveTimer.current=setTimeout(save,180);}
@@ -135,12 +151,23 @@ export default forwardRef(function Wall({nativeScrolling=false,items,current,pla
   // A replacement animation starts at the *rendered* intermediate layout, not
   // the previous target. Keep those loaded posters until the handoff finishes.
   if(retained){const ids=new Set(cells.map(cell=>cell.id));for(const cell of retained)if(!ids.has(cell.id)){cells.push(cell);ids.add(cell.id);}}return cells;}
+ function warmWallArtwork(){
+  const state=latest.current;if(document.hidden||!state.viewport.width||!state.items.length)return;
+  const camera=displayCamera(),ahead=anticipatedWallCamera(camera,previousArtworkCamera.current);previousArtworkCamera.current={...camera};
+  const cells=visibleReflowTiles(state.scene,ahead,state.viewport,state.focus,focusSize(),WALL_OVERSCAN+240);
+  const sources=wallArtworkPlan(cells,state.items,ahead,state.viewport,cell=>frameFor(cell));
+  const revision=++artworkWindow.current;
+  // Speculation never delays a gesture or audio. Reversing direction drops old
+  // queued work; foreground focus/expansion can jump ahead of this queue.
+  getArtworkPreloader().prefetch(sources,()=>revision===artworkWindow.current&&Boolean(view.current)&&!document.hidden);
+ }
+ useEffect(()=>{warmWallArtwork();},[cameraSnapshot,viewport,items,focus,expanded]);
  function transitionCells(){return [...new Map([...renderedCells.current,...visibleScene(WALL_OVERSCAN)].map(cell=>[cell.id,cell])).values()];}
  function captureFrames(){const state=latest.current,cells=transitionCells();if(state.focus&&!cells.some(cell=>cell.id===state.focus.id))cells.push(state.focus);return new Map(cells.map(cell=>[cell.id,frameFor(cell)]));}
  function focusCell(cell,{animate=true,move=true}={}){
   if(!cell)return;stop();cancelAnimationFrame(focusMotion.current);focusCamera.current=move;const state=latest.current,old=live.current,cells=transitionCells(),frames=captureFrames();transition.current={cells,frames,previous:state.focus,layout:{focus:state.focus,size:focusSize()}};focusSide.current=state.viewport.side;setFocus(cell);latest.current.focus=cell;progressValue.current=0;setProgress(0);latest.current.progress=0;
   const target={...old,x:state.viewport.x-(cell.x+cell.width/2)*old.scale,y:state.viewport.y-(cell.y+cell.height/2)*old.scale},start=performance.now(),duration=animate&&!reduced()?520:0;
-  const tick=now=>{const t=duration?Math.min(1,(now-start)/duration):1,e=focusProgress(t);latest.current.progress=e;progressValue.current=e;schedulePaint();if(move&&focusCamera.current)update({...old,x:old.x+(target.x-old.x)*e,y:old.y+(target.y-old.y)*e});if(nativeScrolling)flushPaint();if(t<1)focusMotion.current=requestAnimationFrame(tick);else{focusMotion.current=0;focusCamera.current=false;progressValue.current=1;setProgress(1);update({...live.current},true);transition.current=null;save();}};
+  const tick=now=>{const t=duration&&!reduced()?Math.min(1,(now-start)/duration):1,e=focusProgress(t);latest.current.progress=e;progressValue.current=e;schedulePaint();if(move&&focusCamera.current)update({...old,x:old.x+(target.x-old.x)*e,y:old.y+(target.y-old.y)*e});if(nativeScrolling)flushPaint();if(t<1)focusMotion.current=requestAnimationFrame(tick);else{focusMotion.current=0;focusCamera.current=false;progressValue.current=1;setProgress(1);update({...live.current},true);transition.current=null;save();}};
   tick(start);
  }
  useEffect(()=>{const song=focus&&items[focus.index],target=artworkViewport({width:viewport.width,height:viewport.height});if(song&&onAnalyzeArtwork&&viewport.width>1&&viewport.height>1)warmArtworkSubjects(song.artworkWall||song.artwork,context=>latest.current.onAnalyzeArtwork(song.id,context),target);},[focus?.id,items,viewport.width,viewport.height]);
@@ -160,7 +187,7 @@ export default forwardRef(function Wall({nativeScrolling=false,items,current,pla
    const analysis=state.expanded&&state.onAnalyzeArtwork?warmArtworkSubjects(song.artworkWall||song.artwork,context=>state.onAnalyzeArtwork(song.id,context),target):Promise.resolve();
    // Keep the existing decoded wall visible until the destination is decoded.
    // Settled failures use the normal missing-cover presentation, never hang UI.
-   Promise.allSettled([analysis,...sources.map(src=>new Promise(resolve=>{const image=new Image();image.onload=()=>image.decode().catch(()=>{}).then(resolve);image.onerror=resolve;image.src=src;}))]).then(()=>{
+   Promise.allSettled([analysis,getArtworkPreloader().prefetch(sources,()=>request===artworkHandoff.current&&Boolean(view.current)&&latest.current.current===id&&latest.current.focused,{priority:true})]).then(()=>{
     if(request!==artworkHandoff.current||!view.current||latest.current.current!==id||!latest.current.focused)return;
     revealCurrent(animate,allowRestore,true);
    });return true;
@@ -174,19 +201,22 @@ export default forwardRef(function Wall({nativeScrolling=false,items,current,pla
   focusCell(cell,{animate,move:!preserve});return true;
  }
  useImperativeHandle(api,()=>({prepareExpansion:async()=>{
-  const state=latest.current,id=state.current,song=state.items.find(item=>item.id===id);
+  const state=latest.current,id=state.current,cell=state.focus?.id,node=focusedNode.current,request=++expansionPreparation.current,song=state.items.find(item=>item.id===id);
+  const valid=()=>request===expansionPreparation.current&&Boolean(view.current)&&focusedNode.current===node&&latest.current.focused&&!latest.current.blocked&&!latest.current.expanded&&latest.current.current===id&&latest.current.focus?.id===cell&&!document.hidden;
+  if(!song||!node||!cell||!valid())return false;
   if(!song?.artworkDetail&&!song?.artworkCard&&!song?.artwork)return true;
   const began=performance.now();
   while(performance.now()-began<15000){
-   if(latest.current.current!==id||!focusedNode.current)return false;
-   if(focusedNode.current.querySelector('[data-artwork-ready=true]')){
+   if(!valid())return false;
+   if(node.querySelector('[data-artwork-ready=true],[data-artwork-state=missing]')){
     await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-    return latest.current.current===id;
+    return valid();
    }
    await new Promise(resolve=>setTimeout(resolve,32));
   }
+  if(!valid())return false;
   throw Error('高清封面尚未准备好，请稍后重试');
- },interrupt:()=>{stop();cancelGesture();lastTap.current=null;},zoomTo:value=>{const state=latest.current;zoomAt(value,state.viewport.x,state.viewport.y);},reset:()=>{stop();cancelAnimationFrame(focusMotion.current);transition.current=null;setFocus(null);latest.current.focus=null;progressValue.current=1;setProgress(1);latest.current.progress=1;update({x:12,y:80,scale:MOBILE_DEFAULT_SCALE});save();},locate:()=>revealCurrent(true),camera:()=>({...live.current}),backdrop:()=>{const state=latest.current,camera=displayCamera();return visibleScene(220).map(cell=>{const r=frameFor(cell);return {id:cell.id,artwork:state.items[cell.index]?.artworkWall||state.items[cell.index]?.artwork,x:camera.x+r.x*camera.scale,y:camera.y+r.y*camera.scale,width:r.width*camera.scale,height:r.height*camera.scale};});}}),[]);
+ },cancelExpansion:()=>{expansionPreparation.current++;},interrupt:()=>{stop();cancelGesture();lastTap.current=null;},zoomTo:value=>{const state=latest.current;zoomAt(value,state.viewport.x,state.viewport.y);},reset:()=>{stop();cancelAnimationFrame(focusMotion.current);transition.current=null;setFocus(null);latest.current.focus=null;progressValue.current=1;setProgress(1);latest.current.progress=1;update({x:12,y:80,scale:MOBILE_DEFAULT_SCALE});save();},locate:()=>revealCurrent(true),camera:()=>({...live.current}),backdrop:()=>{const state=latest.current,camera=displayCamera();return visibleScene(220).map(cell=>{const r=frameFor(cell);return {id:cell.id,artwork:state.items[cell.index]?.artworkWall||state.items[cell.index]?.artwork,x:camera.x+r.x*camera.scale,y:camera.y+r.y*camera.scale,width:r.width*camera.scale,height:r.height*camera.scale};});}}),[]);
  // The visible page owns the sidebar depth transform; never reflow every poster for it.
  useLayoutEffect(()=>{depth.current=1;paintedPosters.current=null;paintedFocus.current=null;schedulePaint();},[recessed]);
  // Android densities produce fractional CSS bounds; clientWidth/clientHeight would leave a raster seam.
@@ -240,13 +270,16 @@ export default forwardRef(function Wall({nativeScrolling=false,items,current,pla
  function up(event){clearTimeout(hold.current);if(!pointers.current.has(event.pointerId))return;pointers.current.delete(event.pointerId);if(view.current?.hasPointerCapture(event.pointerId))view.current.releasePointerCapture(event.pointerId);const g=gesture.current;if(!g)return;
   if(pointers.current.size){const point=[...pointers.current.values()][0];gesture.current={...g,x:point.x,y:point.y,time:performance.now(),moved:true,pinched:true,pinch:null,vx:0,vy:0};return;}
   if(g.moved){suppressedClick.current={until:performance.now()+700};}if(view.current){delete view.current.dataset.dragging;delete view.current.dataset.mvDragging;}
-  if(!g.moved&&g.cell&&!g.control){const cell=rendered.find(cell=>cell.id===g.cell);activate(cell,event);}else if(g.control&&!g.moved){gesture.current=null;return;}else if(!g.pinched&&performance.now()-g.time<100&&Math.hypot(g.vx,g.vy)>.1){const old=live.current,start=performance.now(),dx=Math.max(-800,Math.min(800,g.vx*200)),dy=Math.max(-800,Math.min(800,g.vy*200));const tick=now=>{const t=Math.min(1,(now-start)/420),e=1-(1-t)**3;update({...old,x:old.x+dx*e,y:old.y+dy*e});if(t<1)motion.current=requestAnimationFrame(tick);else{motion.current=0;save();}};motion.current=requestAnimationFrame(tick);}else save();gesture.current=null;
+  if(!g.moved&&g.cell&&!g.control){const cell=rendered.find(cell=>cell.id===g.cell);activate(cell,event);}else if(g.control&&!g.moved){gesture.current=null;return;}else if(!reduced()&&!g.pinched&&performance.now()-g.time<100&&Math.hypot(g.vx,g.vy)>.1){const old=live.current,start=performance.now(),dx=Math.max(-800,Math.min(800,g.vx*200)),dy=Math.max(-800,Math.min(800,g.vy*200));const tick=now=>{if(reduced()){motion.current=0;save();return;}const t=Math.min(1,(now-start)/420),e=1-(1-t)**3;update({...old,x:old.x+dx*e,y:old.y+dy*e});if(t<1)motion.current=requestAnimationFrame(tick);else{motion.current=0;save();}};motion.current=requestAnimationFrame(tick);}else save();gesture.current=null;
  }
- const displayFocus=focus||(progressValue.current<1?transition.current?.previous:null);
+ const candidateFocus=focus||(progressValue.current<1?transition.current?.previous:null);
+ // A catalog refresh may remove the focused song before the focus effect runs.
+ // Never keep a stale geometry cell whose item no longer exists.
+ const displayFocus=candidateFocus&&items[candidateFocus.index]?candidateFocus:null;
  // The mounted window must extend beyond the 140px rebase threshold. Keep its
  // identity across playback polling so a clock tick cannot rerasterize posters.
  const cells=useMemo(()=>visibleScene(WALL_OVERSCAN),[cameraSnapshot,viewport,focus,progress,expansion,items,nativeScrolling]);
- const rendered=useMemo(()=>displayFocus&&!cells.some(cell=>cell.id===displayFocus.id)?[...cells,displayFocus]:cells,[cells,displayFocus]);
+ const rendered=useMemo(()=>{const valid=cells.filter(cell=>items[cell.index]);return displayFocus&&!valid.some(cell=>cell.id===displayFocus.id)?[...valid,displayFocus]:valid;},[cells,displayFocus,items]);
  renderedCells.current=rendered;
  // Use the same document-space origin as paint and retained posters. Pairing
  // a sampled scroll offset with a later camera render makes focus wobble.
@@ -261,7 +294,7 @@ export default forwardRef(function Wall({nativeScrolling=false,items,current,pla
  const posters=useMemo(()=>rendered.map(cell=>{const song=items[cell.index],frame=projectWallFrame(frameFor(cell),posterCamera,planeGuard);return <ActionButton type="button" feedback="none" haptic={false} ref={node=>{if(node)posterNodes.current.set(cell.id,node);else posterNodes.current.delete(cell.id);}} className={`mv-wall-card ${cell.id===playingCell?.id?'active':''} ${cell.id===displayFocus?.id?'is-focus-underlay':''} ${cell.id===displayFocus?.id&&progress>=1?'is-focus-settled':''}`} aria-hidden={cell.id===displayFocus?.id||undefined} key={cell.id} data-wall-id={song.id} data-wall-cell={cell.id} style={{left:0,top:0,transform:`translate(${frame.x}px,${frame.y}px)`,width:frame.width,height:frame.height}} onContextMenu={event=>{event.preventDefault();clearTimeout(hold.current);if(gesture.current)gesture.current.moved=true;if(Date.now()-opened.current>250){opened.current=Date.now();posterActions.current.onContext?.(song);}}} onClick={event=>{if(nativeScrolling||event.detail===0)posterActions.current.activate(cell,event);}}><div className="mv-wall-press-surface"><span className="mv-wall-press-outline" aria-hidden="true"/>{(song.artworkWall||song.artwork)?<Artwork src={song.artworkWall||song.artwork} draggable={false}/>:<span className="mv-wall-placeholder">♫</span>}<div className="mv-wall-caption"><strong>{song.title}</strong><small>{song.artist||`${song.count} 首歌曲`}</small></div></div></ActionButton>;}),[rendered,items,playingId,displayFocus,cameraSnapshot,viewport,progress,expansion]);
  return <div ref={view} className={`mv-cover-wall ${playing?'is-playing':''} ${expanded||expansion>0?'is-expanding':''}`} aria-label="音乐墙" data-mv-component="wall" data-wall-renderer={nativeScrolling?'native-scroll-single-surface':'projected-single-surface'} data-wall-scale={camera.scale} data-wall-blocked={blocked||undefined} onClickCapture={nativeClick} onTouchStartCapture={event=>{startTouchPress(event);nativeTapStart(event);}} onTouchMoveCapture={event=>{moveTouchPress(event);nativeTapMove(event);}} onTouchEndCapture={event=>{clearTouchPress();nativeTapEnd(event);}} onTouchCancelCapture={()=>{clearTouchPress();suppressedClick.current={until:performance.now()+700};nativeTap.current=null;lastTap.current=null;}} onPointerDown={nativeScrolling?undefined:down} onPointerMove={nativeScrolling?undefined:move} onPointerUp={nativeScrolling?undefined:up} onPointerCancel={cancelGesture} onLostPointerCapture={event=>{if(event.target===event.currentTarget&&pointers.current.has(event.pointerId))cancelGesture();}}>
   <div ref={plane} className="mv-wall-plane" data-native-scroll={nativeScrolling||undefined} data-camera={JSON.stringify(camera)} style={{'--wall-camera-scale':camera.scale,...(nativeScrolling?{width:NATIVE_SCROLL_EXTENT,height:NATIVE_SCROLL_EXTENT}:{} )}}>{posters}
-  {rect&&item&&<ArtworkModeScope as="section" ref={focusedNode} className={`mv-wall-focused ${expanded?'is-expanded':''} ${item.id===playingId?'is-current':'is-preview'}`} onClick={event=>{if(nativeScrolling&&!event.target.closest('button,[role=slider]'))activate(displayFocus,event);}} aria-label="音乐墙播放卡片" data-wall-id={item.id} data-wall-cell={displayFocus.id} style={{left:0,top:0,transform:`translate3d(${rect.x}px,${rect.y}px,0)`,width:rect.width,height:rect.height,opacity:1,'--wall-surface-opacity':focus?progress:1-progress,'--wall-cover':item.artwork?`url("${item.artwork}")`:'none'}}><div className="mv-wall-press-surface"><FocusArtwork key={item.id} analyze={onAnalyzeArtwork?context=>onAnalyzeArtwork(item.id,context):undefined} smoothUpgrade={nativeScrolling} expanded={expanded} target={artworkViewport({width:viewport.width,height:viewport.height})} preview={item.artworkWall||item.artwork} src={item.artworkDetail||item.artworkCard||item.artwork} shouldDefer={()=>nativeMoving.current||pointers.current.size>0||(progressValue.current<1||expansionValue.current>0&&expansionValue.current<1)||motion.current!==0}/><span className={item.id===playingId?"mv-wall-current-outline":"mv-wall-focus-outline"} aria-hidden="true"/><div className="mv-wall-focus-content" style={{width:finalSize.width,height:finalSize.height,opacity:focus?Math.min(1,progress*2):1-progress}}>{focusContent(item,{width:finalSize.width,height:finalSize.height,compact:false,keepControls:true})}</div></div></ArtworkModeScope>}
+  {rect&&item&&<ArtworkModeScope as="section" ref={focusedNode} className={`mv-wall-focused ${expanded?'is-expanded':''} ${item.id===playingId?'is-current':'is-preview'}`} onClick={event=>{if(nativeScrolling&&!event.target.closest('button,[role=slider]'))activate(displayFocus,event);}} aria-label="音乐墙播放卡片" data-wall-id={item.id} data-wall-cell={displayFocus.id} style={{left:0,top:0,transform:`translate3d(${rect.x}px,${rect.y}px,0)`,width:rect.width,height:rect.height,opacity:1,'--wall-surface-opacity':focus?progress:1-progress,'--wall-cover':item.artwork?`url("${item.artwork}")`:'none'}}><div className="mv-wall-press-surface"><FocusArtwork framing={artworkFraming} framingKey={artworkFramingKey(item)} blocked={blocked||expansion<1} onAnchorCommit={onArtworkAnchorCommit} key={item.id} analyze={onAnalyzeArtwork?context=>onAnalyzeArtwork(item.id,context):undefined} smoothUpgrade={nativeScrolling} expanded={expanded} target={artworkViewport({width:viewport.width,height:viewport.height})} preview={item.artworkWall||item.artwork} src={item.artworkDetail||item.artworkCard||item.artwork} shouldDefer={()=>nativeMoving.current||pointers.current.size>0||(progressValue.current<1||expansionValue.current>0&&expansionValue.current<1)||motion.current!==0}/><span className={item.id===playingId?"mv-wall-current-outline":"mv-wall-focus-outline"} aria-hidden="true"/><div className="mv-wall-focus-content" style={{width:finalSize.width,height:finalSize.height,opacity:focus?Math.min(1,progress*2):1-progress}}>{focusContent(item,{width:finalSize.width,height:finalSize.height,compact:false,keepControls:true})}</div></div></ArtworkModeScope>}
   </div>
   {!items.length&&<div className="mv-wall-empty" role="status">{loading?<><span className="wp-loading"/>正在扫描音乐库…</>:'暂无歌曲，请在设置中添加音乐文件夹'}</div>}
  </div>;

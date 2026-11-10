@@ -32,6 +32,7 @@ public final class PlaybackService extends Service {
     static final String CHANNEL="playback", ACTION_TOGGLE="toggle", ACTION_NEXT="next", ACTION_PREVIOUS="previous";
     final Binder binder=new LocalBinder();
     final List<Song> queue=new ArrayList<>();
+    long queueRevision;
     final List<Listener> listeners=new ArrayList<>();
     MediaPlayer player; MediaSession session; AudioFocusRequest focusRequest;
     private final ExecutorService artworkLoader=Executors.newSingleThreadExecutor();
@@ -67,11 +68,11 @@ public final class PlaybackService extends Service {
     void setMode(int value){mode=PlaybackModes.valid(value);getSharedPreferences("library",MODE_PRIVATE).edit().putInt("playback_mode",mode).apply();publish();}
     void setQueue(List<Song> songs,int selected){
         if(fileEditing)return;
-        queue.clear(); queue.addAll(songs); index=selected; playCurrent();
+        queue.clear(); queue.addAll(songs); queueRevision++; index=selected; playCurrent();
     }
     void retainLibrary(List<Song> songs){
         Song previous=current();java.util.Set<String> keep=new java.util.HashSet<>();for(Song song:songs)keep.add(song.uri.toString());
-        queue.removeIf(song->!keep.contains(song.uri.toString()));index=-1;
+        if(queue.removeIf(song->!keep.contains(song.uri.toString())))queueRevision++;index=-1;
         if(previous!=null)for(int i=0;i<queue.size();i++)if(queue.get(i).uri.equals(previous.uri)){index=i;break;}
         if(index<0){if(player!=null){player.release();player=null;}active=false;artwork=null;artworkSongId=Long.MIN_VALUE;artworkGeneration++;session.setMetadata(null);session.setPlaybackState(new PlaybackState.Builder().setState(PlaybackState.STATE_STOPPED,0,0).build());stopForeground(STOP_FOREGROUND_REMOVE);((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).cancel(1);notifyListeners();}
         else refreshLibrary(songs);

@@ -678,3 +678,61 @@ Wall 的展开跨歌曲交接只等待目标清晰封面与主体分析，两者
 ### 2026-11-07 品牌开屏
 
 系统启动图标与宿主加载占位负责首屏交接，无业务按钮。Android 使用 288dp 透明系统画布中的 88dp 图标，加载页图标自身居中；iOS 使用 LaunchScreen.storyboard 与同源圆角图片。系统阶段跟随系统主题，宿主阶段跟随应用主题。页面 data-ready（含已有错误展示）后双 RAF 退出，无最短等待；iOS 减弱动态无淡出，导航失败移除占位。用户确认 Android 本设备方形过渡已解决；其他主题/OEM 与 iOS 实机交接仍待验收。
+
+### 2026-11-07 iOS 高负荷音乐墙与歌词绘制
+
+- Wall（`data-mv-component="wall"`）仍由页面持有曲库、聚焦、展开与相机提交；当前 iOS/Android 正式页面明确使用 projected-single-surface，不切换渲染器。封面预热是 Wall 实例的临时工作集，不写用户音乐文件或页面状态。最多 3 个活动加载/解码，同 URL 共享进行中的工作；解码完成的保留集按像素估算为 RGBA 字节的 24MiB/48 项 LRU。该预算不包括浏览器自身图片缓存、可见 DOM 图层及最多 3 个活动解码；超预算原图完成后不加入保留集。请求版本由现有 artworkHandoff 持有，连续切歌跳过过时的排队邻图；加载失败/8 秒超时不缓存失败，继续既有缺图呈现。退出墙面清队列、缓存与活动 Image 请求，StrictMode effect 重建可重新建立工作集。
+- 平移期间只写变化的比例/字体/边距 CSS 变量，保留逐帧真实卡片几何。没有关闭玻璃、轮廓、按压、三种样式或深浅主题。启用原生滚动的独立 probe 仍可使用原路径；其图像质量交接完成后释放更旧的高清图层，预览与当前解码图继续保留。图片请求与分析的迟到回调仍受身份/连接检查约束；焦点、展开、动画中拖动和最终布局由原 Wall 规则负责。
+- ScrollingLyrics（`data-mv-component="scrolling-lyrics"`）受控歌词/时间/播放状态不变。每份歌词预建时间索引，帧回调以二分查找选择活动行，仅换行更新 React 状态；重复、负数、空时间及无序时间保留既有最后有效行语义。PortablePlayer 在墙样式不再并行运行只供音乐库/简易歌词使用的第二个逐帧查行循环。逐字扫色继续按实际播放时钟绘制整行背景，移除没有视觉消费者的逐词 CSS 写入；背景尺寸未变时不重复写入。暂停/切歌/卸载清理循环，缩放/换行仍按真实文本布局刷新片段，减弱动态保留既有整行高亮和直接最终布局。
+- 验证：新增有界并发、同图合并、过期排队、字节/数量淘汰、失败重试/超大原图不保留、卸载清理单测；时间索引验证跳转/重复/未定时边界及大歌词文件有界查找。`Scripts/tests/test-ios-wall-performance.cjs` 使用合成曲库、当前 projected iOS fixture，检查平移无重复变量写入、无逐词无效写入、歌词前后跳转及减弱动态展开的最终边界；报告 `.build/reports/ios/wall-performance/`。这是 Chromium DOM 与操作证据，不是 iOS WKWebView/GPU/ProMotion 或真机帧率验收。
+
+### 2026-11-09 iOS 侧栏外围连续绘制
+
+iOS音乐墙不再挂载WallDrawerBackdrop封面副本；根workspace负责最终视口裁切，scene/body/cover-wall允许同一实时墙的overscan继续绘制到缩放外圈，保留各卡片自己的mask、contain和裁切。原相机、.96退后、inert与DrawerLayer开合规则不变；关闭回程也使用同一绘制表面，不增加等待定时器。workspace底色与画布#0e1915一致，不修改主题业务token。侧栏DrawerMaterial仍独立持有已解码采样、blur24和材质遮罩。Android补边与桌面组合维持原路径。
+
+验证：`test-wall-drawer-edges.sh`使用合成纯色封面隔离标题/聚焦渐变，对横屏边界内外采样，覆盖深浅、两侧安全区、快速反向/关闭中帧、减弱动态、空库及局部卡片mask；旧路径RGB最大通道差75，新路径对应样本差0–1。该数值是测试色块的边界色差，不代表全局观感或真机GPU。空库回归同时修正目录刷新后残留focus cell访问不存在song导致整页卸载；只过滤无有效歌曲的几何cell。原有全量页面/真机验证另记验收台账。
+
+### 2026-11-08 Android缓存与音乐墙高负荷路径
+
+- Wall（`data-mv-component="wall"`）沿用projected单层画布、持续聚焦容器及海报身份。wallArtworkPlan根据最新相机方向预测最多420px，在挂载范围之外解码下一窗口，优先预测视口内来源、去重并限制48项；方向变化由artworkWindow使旧排队工作失效。预热失败不阻塞触控、音频或相机。页面后台释放预热实例，恢复按当前窗口重建；卸载清理队列/请求/保留集。每实例3路活动预解码，24MiB/48项decoded保留集，预算不含浏览器图片与纹理。焦点交接通过priority提升排队优先级，持续复用同URL任务。iOS与Android共享这一资源调度语义，Android左下dock与自身宿主策略保留。
+- Wall惯性和聚焦动画在执行中检查减弱动态；惯性停止在当前相机并保存，聚焦直接到真实终点。取消/重入仍按现有手势、焦点和请求身份规则。三样式、玻璃材质与高清展开保留。无新增按钮或图标；画布触控尺寸几何例外不变。
+- KineticLyrics（`data-mv-component="kinetic-lyrics"`）受控歌词/播放时钟不变。布局缓存字宽，每帧统一计算时间游标与包络，再逐字绘制；换行采用共享二分时间轴。Android高密度像素与showSeam反光保留；系统/应用减弱动态继续显示静态歌词。纯模型验证512字线性读取、帧内无measureText及原有布局/光效；真实GPU仍待验收。
+- stableSnapshot在页面入口保持收藏/最近/歌单/队列与歌曲集合身份；实际编辑必须失效，页面memo不再把全部集合字符串化。Android/iOS宿主均发送snapshotRevision，兼容完整快照。此为业务适配逻辑，不把宿主读写移入基础组件。
+- PortablePlayer/SongList定位请求由页面记录已消费token，列表重挂载不能重放旧定位；显式新token在目标列表消费并提高scrollRevision，迟到的page.restore不能覆盖。返回与重启仍由页面稳定身份/像素offset恢复。Android portable发现的回到顶部问题按此修复；双宿主DOM用例覆盖返回413px与新定位到当前歌曲，目标列表首次挂载的新请求继续可执行。
+
+### 2026-11-09 按钮释放与等待展开的打断
+
+- ActionButton保持原按下/释放/触感/点击语义、380ms释放时长和样式峰值变量。buttonFeedback按分段缓动运行：中点到达释放峰值，随后回摆并回到真实scale=1；不再把整段非线性时间轴用于所有关键帧，避免峰值压缩到释放后的最初几帧。开始释放只结束同节点scale CSS transition，不影响布局/定位/尺寸动画。新按下/取消/禁用/忙碌/卸载取消旧释放；运行中系统或应用减弱动态立即取消动画与监听。仅活动释放临时订阅偏好变化，不为海报创建长期观察器。组件DOM回归定位实际动画190ms时的1.16峰值及运行时取消；Android实采结果以台账为准。
+- Wall/PortablePlayer的异步高清展开属于可取消意图。父页面持有意图代次/目标页面/歌曲/焦点上下文；Wall持有准备代次及当前聚焦节点。返回、切歌、换焦点/样式、拖动、失活/卸载使旧等待无效，旧请求不得重新写入展开状态或显示过时错误。等待期间保持当前已解码封面；正常高清就绪仍允许展开，不通过强制等待阻止新手势。
+- Artwork（`data-mv-component="artwork"`）继续由调用方控制src/alt，局部只记录当前源的确定失败。新增onError语义转发，fallback保留className/style以维持几何；同源失败不循环重试，换源清旧失败，返回已修复旧源可再次加载。FocusArtwork公开loading/ready/missing三态：ready仅最终目标已decode并交接；missing仅缺源或目标确定失败，预览失败不能使未解码的目标就绪。确定missing可用现有占位展开，不再15秒阻塞歌词；有效图仍严格等待decode。Android/iOS fixture各11场景覆盖上述边界与展开取消。
+
+### 2026-11-09 音乐墙设置锚点变体
+
+- Modal继续拥有临时焦点/关闭/手柄拖动/SurfaceMotion；页面受控开合。可选`variant="wall-settings"`与`anchorRef`只用于移动墙设置，不改变队列或通用弹窗。`wallSettingsPlacement`纯模型按短边确定宽度、原85%高度预算与实际按钮右下边界定位；小视口/键盘安全钳制。
+- useWallSettingsPlacement只读DOM几何、不访问业务或存储。打开、尺寸/安全区/visualViewport变化及按钮底部过渡时测量，过渡最多跟踪500ms，卸载取消RAF/观察器/监听。面板保持真实最终布局，开合动画以右下角为原点；减弱动态由原共享规则处理。深浅三样式其他弹窗沿用既有材质与交互。
+- 验证：纯模型与iOS/Android真实Chromium夹具横竖/安全区/旋转/返回/重开；设备验收单独记录于台账。
+
+### 2026-11-09 全屏插图构图与手势
+
+- ArtworkFramingOptions（`data-mv-component="artwork-framing-options"`）只拥有说明展示，`value/onValueChange`由页面控制；三枚ActionButton提供居中/智能/手动的选中语义与键盘激活。移动44px、桌面32px目标，深浅主题复用文字/边线/选中变量；模式不改变既有清晰/模糊开关。不访问宿主或持久化，无独立动画。
+- artworkFraming纯模型定义默认smart、anchor规范化、cover溢出/单轴位移、稳定歌曲+插图版本身份与256项持久上限。存储由PortablePlayer workspace与Mac App业务层负责；createWorkspaceController支持在串行队列执行时计算action，保证多个插图提交读取同一最新状态。
+- useArtworkPan只管理全屏manual临时手势，通过getAnchor/getGeometry与onPreview/onCommit回调工作，不导入宿主/页面/存储。触控恰好两指、桌面左键静止长按250ms后认领；实际播放/输入/滑块控件不抢，歌词区域允许手势。每次结束至多提交一次，取消/第三指/失焦/resize/换身份/禁用/卸载恢复，不溢出则不提交。主动拖动抑制兼容点击/双击与菜单，Esc优先取消当前手势，释放捕获/计时器/监听器/ResizeObserver。无惯性/弹跳或等待动画，始终按实际源图cover几何映射。
+- FocusArtwork保留就绪交接与原图/预览空间隔离；仅全屏原图应用center/manual，缩回卡片按原smart。Mac Poster保持既有FLIP图片反向形变，并将同一focal/transform复制给模糊层。全屏smart允许识图代次更新，普通卡片仍锁定当前构图；手动/居中不消费迟到识图。
+- iOS普通卡片图片使用absolute使原有1px四边bleed真正生效，正常预览白框/当前mint框保留；Chromium物理像素负例/中帧回归通过，真实WK合成白线仍独立待验收。新功能实际DOM/真实触控事件/保存重开测试与平台接入证据见验收台账。
+
+### 2026-11-09 配置弹窗上下锚点与运动稳定
+
+- 本节替代前一锚点条目的85%高度与500ms跟踪规则。Modal的wall-settings变体新增topAnchorRef；SearchControl可选surfaceRef只暴露现有材质容器，不拥有弹窗或宿主业务。页面将搜索与配置容器注入，纯wallSettingsPlacement按配置bottom与搜索top确定固定高度，短边宽度规则保留；遮挡安全区或键盘时钳制。
+- useWallSettingsPlacement不再逐帧追踪按钮press/release缩放，事件驱动并只写改变的几何属性，仍清理RAF、ResizeObserver、MutationObserver与viewport/安全区监听。SurfaceMotion可选anchorLocked由Modal变体注入，仅该变体开合无Y位移，固定右下缩放原点；退出按真实布局尺寸冻结，取消/重开不会把中间帧缩放再算入尺寸。其他弹窗默认运动不变。
+- useSheetDrag只对expandable时由手柄接管的height/maxHeight执行清理，不可展开弹窗保留调用方固定几何；小拖动/取消仍按原共享规则归位，大拖动关闭，队列展开规则不变。真实触控中帧与几何验证见台账，实机材质流畅度独立验收。
+
+### 2026-11-10 插图样式选项文案
+
+- 根据用户要求，ArtworkFramingOptions移除居中/智能/手动下方的说明小字及对应样式；三项受控选择、动作、触控目标和各设备家族保留。
+
+### 2026-11-10 Android侧栏采样与样式截图
+
+- DrawerMaterial（`drawer-material`）/WallDrawerBackdrop（`wall-drawer-backdrop`）的候选图片在DrawerSample（`drawer-sample`）隐藏层先加载并decode；已显示图持续存在，新层提交复用同一节点。旧层退休时隐藏，避免两份半透明采样叠亮，两帧后释放。候选代次阻止迟到回写；最多当前/候选/退休三层，关闭保留有界窗口，卸载清监听/帧。sameDrawerScene逐字段比较，不逐帧序列化长URL。图片错误先提交Artwork自己的确定占位，不把pending当ready。行为测试包括延迟decode、快速重开、样式变化、退休和卸载。
+- DrawerLayer仍是同一持续节点、320ms和原曲线；首次closed不启多余动画，反向采样当前矩阵，运行时reduce直接终点并清观察器/媒体监听。业务open由页面拥有，退出期间inert不变。
+- styleTransition支持Android宿主单份本地截图lease：只接受src/token，裁片后释放；正常/超时/中断/晚回都会释放，Java宿主另有匹配token的5秒TTL。保留原截图预算和原碎片计划/关键帧/时长，dataURL和host-fragments兼容。应用内容/业务操作不由截图决定成功。
+- Android普通海报的等待底色复用已有占位渐变；opaque封面加载后覆盖它，原字幕遮罩/轮廓/按压与聚焦几何不变。真实Android host名字接入测试fixture，避免该皮肤分支在测试中漏跑。定向像素用例验证新卡片阻塞响应与最终图片交接。

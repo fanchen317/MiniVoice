@@ -1611,9 +1611,135 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
 
 音乐墙 WKWebView 对底部 Home 指示条安全区放弃命中，避免退出手势同时启动墙面滚动；其他样式及安全区以上维持原行为。此前 iOS 模拟器构建与页面回归通过；UIKit 系统退出/取消/返回、横屏和多指仍待真机验收。按用户要求单独提交，不包含启动/缓存性能改动。
 
+### 2026-11-07 iOS 缓存、音乐墙与动画性能优化
+
+- 已实现：统一 8MiB 编码图内存 LRU/同图在途合并，原图不驻留该缓存；Artwork 磁盘 512MiB/30天淘汰，按需重建。扫描只存640px缩图，原图惰性提取，保留wall320/card960/display2048和原始编码；缓存淘汰不再触发整库元数据重读。清理有内存/磁盘代次、写入串行和授权/符号链接边界，宿主清理后更新封面URL身份；缓存落盘失败仍保留可恢复封面身份。不清理音乐、索引或用户歌词。
+- 已实现：曲库索引后台编码/串行原子写入/合并最新快照，保存失败明确反馈；检查点后台读取。快照新增snapshotRevision，队列/歌单/收藏/歌词仅变化后传输，保留集合身份并丢弃逆序旧回复。暂停/后台关闭UI时钟，锁屏元数据按事件更新；中断恢复保留明确播放意图，远程Play在异步加载时不反转暂停；锁屏封面去重、后台640px解码和过期身份保护。
+- 已实现：当前投影音乐墙的预热最多3个活动解码，24MiB/48项解码保留集，同URL合并、过时排队取消、失败重试/超时、卸载清理；该预算不包含活动解码、DOM图片与系统GPU缓存。相同CSS变量不再逐帧重复写，交接后释放多余高清层。歌词预建时间索引二分查找、仅行变化更新，移除无消费者逐词写入与墙面未使用的父时钟。原生样式碎片在失活/卸载/开启减弱动态时取消，旧token不能清理新动画。
+- 通过：UI标准门禁；`Scripts/tests/test-ios.sh`（新增缓存同图合并/LRU/失败重试/内存释放/清理竞态/磁盘重启/过期/符号链接，索引最新快照/失败恢复，1037首元数据100次小进度回复/失效/重启）；共享117项；桌面67项通过、4项原有跳过；自有组件实际Electron交互。模拟器Debug和无签名device Release完整构建成功，未安装/导出IPA。证据为`.build/reports/ios/cache-performance-{native-tests,shared-tests,desktop-tests,components,simulator-build,device-build}.log`。
+- 通过：固定源码后的完整`test-wall-version.sh`，包含手机/桌面音乐墙、三样式设置/主题、聚焦/展开、延迟解码跨歌曲隔离；定向`test-ios-wall-performance.cjs`在当前projected iOS fixture验证平移重复变量写入0、逐词无效写入0、正向/反向歌词seek及减弱动态展开最终边界。证据`.build/reports/ui/ios-cache-wall-regression-retry.log`、`.build/reports/ios/wall-performance/work.json`与`expanded.png`。这些0是该用例统计，不是FPS/全局性能指标。
+- 失败记录：首轮完整页面回归在Mac设置操作遇到undefined.click；测试期间23:25:47修改Wall触发Vite HMR，23:25:48面板被重置后测试中断。固定源码重跑全部通过；保留首轮日志`ios-cache-wall-regression.log`，没有删除/放宽断言。Electron仍有tile memory limits exceeded警告，不能由自动断言通过宣称纹理预算或真机GPU已达标。
+- 待验收：本机无可用iOS simulator runtime，本轮没有运行真实WKWebView、XCUITest、iPhone/iPad、电话/Siri/耳机路由或系统锁屏控制。三样式深浅/横竖屏、快速切歌/打断、重启和缓存系统回收、实体材质/形变偶发白线、Instruments内存/卡顿与热状态仍需专用环境验证，不宣称FPS或真机全部修复。AVFoundation同步元数据弃用警告尚存。
+- 未接入当前路径的历史测试：旧iOS宿主/墙探针仍硬编码native-scroll/compositedPan，当前PortablePlayer明确`nativeScrolling={false}`使用projected-single-surface；保留原断言并记录测试债务，没有据历史native结果声称本轮WK通过。完整梳理与后续验收顺序见`Docs/iOS-Cache-Performance-Audit-2026-11-07.md`，组件说明已更新。
+
 ### 2026-11-08 iOS 切到后台停止播放
 
 - 原因：主应用Info.plist的UIBackgroundModes只有processing，缺少audio。现有AVAudioSession已配置playback并激活，但仍缺系统允许后台音频的应用声明；场景失活本身没有调用暂停。Apple依据：https://developer.apple.com/documentation/avfaudio/avaudiosession/category-swift.struct/playback 。
 - 已修正：增加audio并保留processing；不修改播放/暂停、音频中断、扫描或缓存逻辑。构建入口新增源plist和实际.app/Info.plist的后台音频检查，缺audio立即失败，避免源码配置未进入产物。
 - 通过：新增检查在修复前确实拒绝缺audio配置，修复后源文件、模拟器Debug及无签名device Release产物均通过；两种完整构建、UI标准门禁、plist与shell语法、diff检查通过。报告：`.build/reports/ios/background-audio-{capability-regression,simulator-build,device-build}.log`。
 - 待验收：本机没有可用模拟器runtime，本轮未安装或实际切后台/锁屏听音。仍需用专用设备合成歌曲验证播放→Home/切无音频App停留15–20秒→返回进度继续，以及锁屏/解锁；不能将构建或手动scene标记当作系统后台播放实测。
+
+### 2026-11-08 Android缓存、音乐墙与平台功能优化
+
+- 已实现：Android授权歌曲ID索引；wall320/card960/detail2048与original分档；8MiB编码LRU、同key请求合并、原生两路提取/编码且墙图最多一路；独立显示派生缓存256MiB/30天、原子写入、重启复用、清理代次及URL epoch；内存压力与被取消等待者不会令旧缓存回填或破坏同图工作。256MiB仅为web-artwork上限，既有covers主缓存仍按授权库清理，无固定字节上限，不能声称总缓存有此上限。
+- 已实现：Android snapshotRevision对收藏/最近/歌单/队列/歌词增量传送；共享页面保留冷集合身份。音乐墙按滑动方向预测最多420px、最多48项/24MiB decoded保留集，后台/卸载释放；不等待预热才响应拖动，焦点请求可提升排队优先级。原投影画布、持续聚焦容器与图片就绪交接保留。惯性中开启减弱动态停止当前运动，聚焦进入最终布局。大字歌词统一每帧时间游标、缓存字宽与二分选行，Android高密度及反光光效保留。
+- 已实现：iOS定向修复内存警告后新读者加入旧flight可能回填内存的竞态，补隔离测试。保留此前已有的iOS缓存/索引/时钟优化，不将其整体重做。
+- 平台原则：保留Android左下播放条、SAF授权、系统返回、后台扫描通知与MediaSession；共享业务能力对齐不等于移植iOS居中dock/宿主截图/Home手势。收藏/歌单/队列/五模式/歌词查看/缓存统计清理/曲库检查/歌手归并宿主均已有接入；手机编辑入口仍按产品标准不新增。
+- 通过：UI标准门禁；共享125项；桌面67通过/4跳过；test-desktop-components.sh；完整test-wall-version.sh（手机/桌面音乐墙、三样式深浅、触控目标与图标中心、聚焦/展开/打断/返回/布局与状态恢复）；新增test-wall-cache-performance.sh在Android/iOS Chromium夹具、1037首合成库验证离屏预取、受限挂载、原投影平面、平移不中断、运行时减弱动态与深浅主题；test-android.sh包含新增编码/磁盘LRU、同图合并、清理/内存压力/取消竞态和冷快照回归；test-ios.sh包含缓存竞态、索引、快照、歌词/墙模型、FLAC与授权隔离。页面截图已查看，属于Chromium而非手机实机证据。
+- 验证修正：音乐墙原decode probe只保存最后一项，加入预取后改为收集并释放全部被拦截解码，保留原有“解码前不可遮挡底图/节点连续/最终图可见”断言。新增定向脚本早期主题夹具控制和Electron空窗口退出问题已修，不放宽产品断言。
+- Android集成验证过程记录：release与instrumentation已构建；专用MiniVoice_Startup_Test模拟器初次因空间不足启动失败，空间恢复后重试启动成功。portable首轮因1秒合成WAV自动下一首触发测试断言失败；已定位测试时间依赖，保留播放/歌曲身份断言并暂停固定合成歌曲后重跑。最终结果续记于下。
+- 待验收：Android实体手机/平板三样式×深浅×横竖GPU/玻璃/触控与热状态，慢SAF及扫描并发、快速反向滑动/缩放/随机切歌立即收回；iOS真实WKWebView与设备。尚未测量FPS、帧耗时或峰值内存，不宣称“一滑动加载”所有场景或偶发白线已全部解决。首读/不可用音源仍需正常加载/错误呈现。完整梳理见Docs/Android-Cache-Performance-Audit-2026-11-08.md。
+- 证据：.build/reports/ui/android-cache-shared-tests.log、android-cache-desktop-tests.log、android-cache-components.log、android-cache-wall-regression.log、wall-cache-performance/work.json；.build/reports/android/cache-performance-{tests,build,portable,emulator}.log；.build/reports/ios/android-cache-ios-tests.log。
+
+### 2026-11-08 iOS 控制台警告与目录授权链路
+
+- 日志事实：用户文本1244行，包含2次视图更新期间Publishing警告，1214条完整sandbox consume EINVAL重复行（含拼接片段共1216次字符串出现）；最先sandbox issue失败指向MiniVoice.app自身。缺少调用栈/完整时间戳，不能把所有WebKit/沙盒/InputUI信息认定为图库故障或无害。统计见`.build/reports/ios/console-log-summary.json`。
+- 已修正：makeCoordinator创建宿主时，Published曲库立即回调并通过retainLibrary发布播放器状态，存在SwiftUI视图更新重入。曲库交付改到主队列后续调度，永久卸载取消订阅/排队值；WebContent进程重载保留订阅，只取消资源任务。没有通过隐藏系统日志处理。
+- 已修正：封面派生缓存先读App本地缓存，不再为命中图解析外部书签/申请权限；缺图读取只持一份目录lease。新增FolderAccessRegistry保存原resolved URL，同目录并发共享，最后读者释放，播放器持有到音频结束/取消。移除目录/更换bookmark拒绝旧请求；外部start失败不继续IO，过期书签明确提示重选；失败按bookmark记忆，重扫/重选可重试。App容器例外经过逐级祖先及符号链接边界验证。暂时授权/枚举失败保留已配置目录旧metadata，显式移除不恢复。嵌套start/stop本身是合法系统行为，本轮消除不必要的重复和失败路径，不据此臆断全部EINVAL来源。
+- 通过：UI标准门禁、plist与diff检查；`Scripts/tests/test-ios.sh`，新增cache-hit零resolve/start、并发单grant、100次失败只尝试一次且无后续IO、异常释放、过期/解析错误、重扫重试、撤销/换bookmark、pending重扫及canonical路径/symlink边界；当前工作树共享125项；完整simulator Debug与无签名device Release构建，产物audio+processing保留。证据`.build/reports/ios/console-warnings-{native-tests,shared-tests,simulator-build,device-build}.log`。
+- 待验收：没有可用iOS模拟器runtime；配对真机仅只读连接/系统信息，未安装或启动应用、未操作真实音乐库。本轮未验证SwiftUI警告在设备消失、全部sandbox日志消失、真实Files/iCloud授权撤销/重启/重选、实际播放与锁屏/后台。旧AVFoundation同步元数据弃用警告仍存在。完整路径、官方依据与剩余系统信息见`Docs/iOS-Console-Warnings-2026-11-08.md`。
+
+### 2026-11-09 iOS 横屏侧栏边缘色差
+
+- 已定位/修改：外围WallDrawerBackdrop只有封面与固定#00000057，遗漏中央卡片标题渐变、聚焦渐变/高清取景，形成缩小场景边界的明暗断层。iOS改用同一实时墙overscan绘制外围，workspace最终裁切及统一画布底色；原相机、退后变换、遮罩、侧栏玻璃和输入隔离保持。Android/桌面不采用本次iOS路径。
+- 通过：`test-wall-drawer-edges.sh`在当前projected iOS合成横屏验证边界色块、当前聚焦、深浅/左右安全区、快速反向/回程中帧、减弱动态、空库、卡片局部mask和Android/桌面隔离；旧路径样本RGB差75，修复路径对应样本差0–1，不是FPS/真实封面审美结论。空库过程发现并修复失效focus cell访问空song造成React整页卸载。UI标准门禁、当前共享125项和diff检查通过。
+- 证据：`.build/reports/ui/drawer-landscape/{baseline.log,baseline-pixels.json,targeted.log,work.json,shared-tests.log}`及定向截图。
+- 待验收：iOS WKWebView/真机横屏同场景色差、旋转与动画录屏，尚未安装新包。点击卡片/开侧栏缩放的细白边是后续独立检查项，本条不将其记为修复。
+
+- Android定向接入通过：专用MiniVoice_Startup_Test / Android 17 / WebView 145.0.7632.218执行mode=cachePerformance，返回UI_CACHE_PERFORMANCE_PASS。验证真实页面点击到PlaybackService、同图字节复用、墙图最长边预算/2048×1536合成高清图、内存释放后磁盘回读不重读音频、冷快照/收藏失效，以及通过设置执行清理后URL epoch变化、可见图重新解码、原图和162首合成索引仍保留。证据`.build/reports/android/cache-performance-native.log`。原始1秒WAV夹具现先验证真实播放，再暂停固定歌曲，避免缓存检查期间自动下一首；未改产品播放策略。
+- Android测试迁移：现有截图180ms预算超时允许产品既有轻量WAAPI过渡，分别检查可见中间帧与最终清理；成功截图仍检查实际碎片变化与多色采样，本轮完整portable已记录成功路径。旧wall直接backdrop/相机depth断言迁移到持续侧栏的冻结多图取样、24px模糊、scene缩放；退出验证持续节点的身份/不可交互/中间transform/最终关闭，保留退出画面要求。完整portable最终结果见下条。
+- 已修复真实状态问题：portable在从歌手返回音乐库时报告412.95px→0；根因为SongList每次挂载重放之前的非零location。PortablePlayer现记录已消费token，普通返回不重放，新定位仍执行；显式定位提高scrollRevision阻止迟到restore抢回。新增Chromium双宿主413px返回/新定位用例和真实portable返回/重启断言验证结果续记。
+- 通过（修复后复跑）：共享125项、完整test-wall-version.sh（`.build/reports/ui/android-cache-wall-regression-final.log`）及test-wall-cache-performance.sh。后者在Android/iOS夹具验证当前第903首、新挂载显式定位>1000px、普通返回恢复413px、再次定位第0首到顶部，防止消费记录丢掉新挂载意图。Android专用模拟器此前完整流程也已跨过分组三次往返、音乐库返回与重启锚点断言。
+- 未通过、保留证据：Android完整portable的历史搜索形变中间帧断言间歇失败（`.build/reports/android/cache-performance-portable-pre-final.log`）；独立mode=wall在译文按钮弹跳峰值采样处未通过（记录最大1.085，原要求>1.1不放宽，`.build/reports/android/cache-performance-wall.log`）。模拟器为软件渲染，不能据静态1.16关键帧或Chromium通过宣称Android实际峰值/流畅度已验收。最终运行结果见下条，专项失败不能被其他路径通过覆盖。
+
+- 最终构建通过：正式3.0.0 release APK与instrumentation已按最终源码重建并通过既有签名校验，包标识/签名/正式数据路径/三端版本来源不变。APK：`.build/dist/MiniVoice-3.0.0-android.apk`。本轮只安装专用模拟器并使用合成文件，未覆盖真实音乐库。
+- 最终Android完整portable未通过：最后一轮已通过真实缓存、返回/重启锚点、滑块/滚动条、焦点/弹层/菜单、歌单/批量/信息歌词/设置、三样式深浅及实际墙面触拖；到译文按钮弹跳采样仍失败，最高记录1.08622，低于原>1.1要求，保留`UI_REGRESSION_FAIL`（`.build/reports/android/cache-performance-portable.log`）。未放宽阈值、修改弹跳外观或屏蔽此项，不据其他轮次曾通过宣称此项稳定。独立wall同处未通过；最终完整流程未执行到的后续关闭卡片/快速切卡/系统主题等本轮仍待验收。
+- 截图证据：`.build/reports/android/cache-performance-screenshots/ui-regression/`。正式page截图等待侧栏实际退出完成后采集；测试失败终止后取得的Launcher图不作为“ghost player”或产品退出根因证据。此前旋转回竖屏固定400ms关闭断言未通过，现保留等待实际状态和详情的检查，但最终测试在更前的弹跳断言停止，因此该问题没有凭推断关闭。
+- 交付结论：缓存/高负荷路径优化及定位恢复修复已落实；定向测试通过与完整Android动画回归未通过分别记录。本轮APK为定向验证构建，不标“全部完成/稳定版”。实体手机/平板与iOS设备、慢SAF、真实大曲库冷启动、纹理/峰值内存/热状态仍按前述矩阵待验收。
+
+### 2026-11-09 Android高负荷路径续修（结果分项续记）
+
+- 继承11月8日已通过的缓存、预取、增量快照与定位恢复，按用户要求继续处理未关闭项；平台原则仍为Android触控/返回/SAF/媒体服务与左下播放条。
+- 已修正按钮时间轴：释放中点峰值不再被全局缓动提前压缩，380ms、1.16墙面峰值及回摆值保留；结束冲突scale过渡，运行时减弱动态取消临时动画/监听，禁用/新手势/卸载继续可打断。通过UI门禁与test-desktop-components.sh新增实际动画190ms峰值/运行时取消回归（`.build/reports/ui/button-release-continue.log`）。Android实际触摸与完整回归结果待下条，不凭此声明真机流畅。
+- 已确认并修复高清等待展开竞态：延迟decode→展开→Back→释放decode，修复前focus=false/expanded=true/immersive=true，修复后关闭状态保持。父页面意图与Wall准备/节点共同校验，旧结果不能复活卡片。扩展确定性用例与原生回归结果续记。
+- 主covers全量扫描/强引用与磁盘总预算改进进行中；最终源码/容量/失效验证据后续结果登记，不把旧web-artwork256MiB解释为总缓存上限。续修分析见Docs/Android-Performance-Continuation-2026-11-09.md。
+- Android实际独立音乐墙通过：修复后的原弹跳>1.1检查、62%连续缩放、译文、展开/返回、横竖屏、关闭/预览、快速选择及画布覆盖均完成，返回UI_WALL_PASS（`.build/reports/android/cache-continue-wall-second.log`）。上一轮旋转关闭检查新增的WebView.getProgress在Instrumentation线程调用会抛异常，现已改为主线程helper；没有为测试修改产品返回路径或放宽标准。
+- 通过：125项共享、桌面67通过/4跳过、test-desktop-components.sh释放中点/运行时减弱动态/新按下与取消打断；完整test-wall-version.sh；组合test-wall-cache-performance.sh的1037首双宿主预取/定位与Android+iOS各11个展开竞态/缺图/换源重试场景。证据`.build/reports/ui/cache-continue-{shared,desktop,wall-full,performance-races}.log`与`button-release-continue.log`。
+- 原生缓存续修已落实：扫描仅登记稳定key，Song不再强持有逐歌预览；covers主图按需生成，jpg/stamp/none/faces分组256MiB/30天LRU（含元数据），web-artwork另256MiB/30天，合计512MiB派生图预算，不是应用全部磁盘或内存上限。墙320直源小采样并回收，不先生成1600主图；内存trim独立锁与代次，不等源读取。低内存/磁盘失败仍返回当次可用主图。分析入口显式640/1024 RGB565采样、维持原裁切及归一化坐标。
+- 原生主图版本正确性已修：派生组key包括音频URI/插图URI/插图版本，避免新旧Song并存时旧提取覆盖新像素。旧URI-key组仅stamp精确匹配时复用/复制（不改写旧组），不匹配拒绝。扫描prune、预算与清理仍限派生目录，不触碰正式音乐/歌词/曲库索引。
+- 最终原生缓存专项通过：统一构建APK安装专用模拟器，mode=cachePerformance返回UI_CACHE_PERFORMANCE_PASS。验证扫描零源读取/无逐歌Bitmap、cold wall不生成大master、1600×1200按需主图/磁盘复用/淘汰重建、trim不等待源监视器且保留字节清零、640/1024分析格式/尺寸及借用图不被回收、奇数宽裁切、旧版本迟到重建不污染新像素、同URI版本隔离、源不可用legacy精确匹配复用/不匹配拒绝、清理epoch与可见图重建/原图和162首合成索引保留。证据`.build/reports/android/cache-continue-specialist.log`；纯Java组LRU最终测试`.build/reports/android/cache-continue-cover-tests-final.log`通过（含12+9>20同组预算反例），其余原生回归见`cache-continue-native-tests.log`。
+- 最终完整portable已通过（结果见下条）。最终构建日志`.build/reports/android/cache-continue-build-final.log`，正式包标识/签名/Shared版本及用户数据目录未改，仍仅专用模拟器合成文件测试。
+
+- 最终完整Android回归通过：统一最终APK运行mode=portable返回UI_PORTABLE_PASS（`.build/reports/android/cache-continue-portable-final.log`），涵盖真实WAV播放/触感调用、冷快照与缓存、音乐库与分组三次返回/重启锚点、滑块抗轮询/取消/键盘、滚动条、焦点/弹层/菜单、歌单/批量/歌词信息与设置、三样式深浅、截图碎片与超时轻量过渡、墙面真手指拖动、原>1.1弹跳阈值、62%缩放、展开/返回/旋转/关闭/预览/快速切卡、队列触拖与系统深浅跟随。未放宽峰值、隐藏功能或跳过末段断言；这条结果替代11月8日“最终portable未通过”的当前状态，历史失败日志保留。
+- 最终产物：`.build/dist/MiniVoice-3.0.0-android.apk`已构建、签名校验、安装专用模拟器，另检查包内包含版本化原生缓存/分析采样和最终共享图片就绪/定位逻辑。截图已保存并查看：`.build/reports/android/cache-continue-screenshots/`，含聚焦/展开/横屏、三样式深浅等。仅合成文件和专用模拟器，未操作真实音乐库/手机；正式包标识、签名、版本来源与数据路径不变。
+- 本轮交付结论：已完成上述代码修复与可执行自动化验收；共享/组件/页面/Android缓存专项、独立墙和完整portable均有通过证据。仍待真实Android手机/平板GPU/材质/热状态、慢SAF与实体大库、iOS真实WKWebView/设备以及完整实体矩阵验收；本轮没有实测FPS、峰值内存或对比度，不声明这些项目通过。
+
+### 2026-11-09 音乐墙配置弹窗横屏几何
+
+- 已实现：移动端音乐墙设置独立锚点变体，宽度按屏幕短边与原有间距确定，横竖相同；右下角跟随配置按钮实际边界。保留原内容区域85%最大高度，空间不足时在安全区内滚动。其他弹窗、返回/焦点/拖动关闭沿用共享规则。
+- 通过：2项纯几何测试；`Scripts/tests/test-wall-settings-placement.sh` 的真实iOS/Android Chromium页面覆盖竖屏、横屏两侧59px安全区、打开中旋转、Esc关闭、快速重开、其他弹窗隔离，宽度/实际按钮边界/原高度预算断言通过。截图与测量见`.build/reports/ui/wall-settings/`。
+- 待验收：真实WKWebView与Android设备材质/旋转过程，未由Chromium结果宣称实机全部通过。
+
+### 2026-11-09 iOS 缩放卡片四边与白线排查
+
+- 已修正：普通海报图片原为static，原有`inset:-1px`不生效，宽高各+2px实际只向右/下扩展。iOS普通卡片改为absolute后，四边均有1 CSS px对称覆盖；保留正常按下/预览白色轮廓、当前歌曲绿色轮廓与卡片局部遮罩。未更改Android图片定位或用透明边隐藏功能。
+- 通过：`Scripts/tests/test-ios-wall-edge-pixels.sh`在当前projected iOS夹具以1×/2×/3×原始物理像素检查横竖屏、白/黄封面、聚焦/换卡/按下取消、侧栏打开/关闭中帧/快速反向、减弱动态与最终布局。A/B验证旧左右上下覆盖不对称，人工2px未遮罩亮边负例确实失败，修正后的样本通过；合法轮廓与退场侧栏属于真实遮挡单独排除，不删除轮廓或放宽亮度阈值。证据`.build/reports/ui/ios-wall-edges/{final-matrix.log,dpr-1,dpr-2,dpr-3}`。
+- 待验收：Chromium旧实现未稳定重现用户偶发的WKWebView GPU白线，故以上结果证明覆盖纠正与指定像素回归，不能把偶发真机白线写成全部关闭。真实iPhone/iPad需要聚焦/侧栏反复打断录屏与GPU材质验收。
+
+### 2026-11-09 三端全屏插图样式与手动构图
+
+- 已实现：当前维护的iOS/Android/Mac音乐墙配置增加“全屏插图样式”居中/智能/手动。默认智能沿用共享构图算法；居中归位；手动移动端双指、Mac左键长按250ms后拖动，竖屏只左右、横屏只上下，依据实际cover溢出量换算并钳制，不改变墙相机或做双指缩放。收起后恢复原卡片智能构图；清晰/模糊显示维度独立。
+- 已实现：拖动只预览，正常结束一次提交，取消/失焦/旋转/换对象/关闭还原。手机状态经原workspace串行写入，Mac经业务页面localStorage；以稳定歌曲ID+插图revision保存最多256项，缓存epoch清理不抹除定位，更换插图不借用旧定位。移动多次排队保存读取最新状态，避免快速跨歌覆盖。
+- 已实现：全屏智能可消费晚到/更高质量的识图结果，普通卡片仍保持原稳定构图；center/manual不受迟到识图覆盖。不可用原生回复不再缓存为“成功识别到0个主体”。保持预览/原图坐标空间、decode交接、Mac图片反向形变与模糊同步。
+- 能力边界：三端使用同一共享图像显著性/构图求解器，宿主分析能力不同；iOS/Mac现有Vision提供脸/文字/人形/显著性，Android现有人脸检测配合共享纹理显著性。未引入新云端识图、OCR依赖或新增Windows实现，不宣称宿主语义能力完全相同。
+- 通过：共享132项，Mac逻辑67通过/4项既有跳过；自有组件真实DOM回归；完整test-wall-version.sh通过三样式/深浅/音乐墙聚焦展开/打断与图片交接；定向`test-artwork-framing.sh`以真实CDP触控事件验证双指双方向/单指隔离/取消/手机重开、Mac长按/取消/清晰模糊同步/模式切换/重开/窄窗口键鼠家族/Esc只取消手势。iOS/Android popup与iOS drawer定向回归重跑通过。证据`.build/reports/ui/{artwork-framing,wall-framing-shared.log,wall-framing-desktop.log,wall-framing-components.log,wall-framing-pages.log}`。
+- 验证过程：完整页面首轮在桌面切换library样式失败，保留`wall-framing-pages-first.log`；执行期间曾修改共享state触发HMR。固定源码后重跑全部断言通过，没有放宽原样式断言。Electron存在tile memory limits exceeded警告，未据此宣称GPU纹理预算达标。
+- 通过：UI标准门禁；iOS/Android原生测试；最终iOS模拟器Debug/无签名device Release构建，Android正式APK及instrumentation构建，Mac前端构建。报告`.build/reports/ios/wall-framing-{native-tests,simulator-build,device-build}.log`、`.build/reports/android/wall-framing-{native-tests,build,instrumentation-build}.log`、`.build/reports/ui/wall-framing-desktop-build.log`。
+- 待验收：本机无iOS模拟器runtime，未安装到用户iPhone或操作真实音乐库。真实WKWebView双指/材质/GPU、Android实体手机/平板与Mac正式签名包的实机体验仍待验收，不以构建/截图代替流畅度或FPS测量。
+- Android设备侧补充：创建隔离的`MiniVoice_Wall_Framing_Test`专用AVD（临时目录，不使用现有AVD数据或真实手机），最终`-e mode portable`真实WebView/162首合成库回归通过，覆盖播放、三样式深浅、墙面比例/聚焦/展开/横屏/队列/返回/重启锚点；证据`.build/reports/android/wall-framing-portable.log`及`wall-framing-screenshots/`。新增手动双指模式的专门事件断言目前来自Chromium CDP测试，未据此称Android真机已验收。
+- Android失败记录：首轮同一AVD在原有碎片动画断言失败（5次采样仅2种变化），保留`wall-framing-portable-first.log`；未改产品或放宽断言，重跑完整通过且走既有截图预算超时fallback路径。该模拟器上的碎片性能仍待验收，不能将fallback通过当成碎片流畅度通过。测试完关闭本轮AVD。
+
+### 2026-11-09 配置弹窗覆盖搜索按钮与开合抖动续修
+
+- 用户最新要求替代前文“保留85%高度”的约束：音乐墙设置保持横竖同宽，右下角沿配置按钮，顶部延伸到搜索按钮边缘，使右上角覆盖搜索按钮；内容在固定高度内滚动，安全区/键盘空间不足时钳制。
+- 原因已复现：旧锚点在打开后500ms逐帧读取getBoundingClientRect，把配置按钮380ms释放缩放写入弹窗right/bottom。真实触控基线记录right范围9.52045–17.36px、bottom范围33–38.36px，74次style修改；顶部仍比搜索按钮低34.25px。证据`.build/reports/ui/wall-settings-motion/baseline.json`。
+- 已实现：锚点排除按钮缩放，保留按钮原有反馈；只响应真实布局/安全区/viewport变化并差量写入，移除500ms轮询。配置变体从右下角只缩放开合，移除Y位移；退场冻结真实布局尺寸，避免中断时重复缩放。不可展开弹窗的手柄取消不再清空调用方height/maxHeight，队列展开逻辑保留。
+- 补充修正：搜索已展开时的独立translate/scale也不能定义弹窗锚点，现按静态布局链读取；修正前该补例height出现370–372.316px变化、86次style写入，修正后固定370px。Modal实例直接复用成普通变体时，在新layout effect清理本变体拥有的几何，不提前清理退场采样。
+- 通过：`test-wall-settings-motion.sh` 30条记录覆盖iOS/Android夹具、深浅、左右安全区、真实双端触控释放、搜索展开后打开设置、减弱动态、50/290ms关闭重开、手柄小拖释放/取消、横竖旋转与弹窗复用隔离。标准按钮回弹仍正常；当前样本width416/right14/bottom35/height370每帧固定，仅初次5项style赋值，300ms后0次布局重写；关闭ghost尺寸误差<0.0002px，没有再次缩放。这些是用例测量，不是FPS或实机流畅度声明。证据`.build/reports/ui/wall-settings-motion/{baseline.json,final.log,work.json}`与对应截图。
+- 通过：共享132项、自有组件回归、更新的popup位置回归、固定源码后的完整test-wall-version.sh。首轮完整页面回归在Mac设置导航失败，期间useSheetDrag修改触发HMR；保留`wall-settings/pages-search-anchor-first.log`，固定源重跑全部通过，未放宽断言。报告`.build/reports/ui/wall-settings/{shared-search-anchor,components-search-anchor,search-anchor,pages-search-anchor}.log`。
+- 待验收：当前仍无可用iOS simulator runtime，真实iPhone/iPad WKWebView的材质合成与旋转动画尚未实机验收；没有由上述Chromium中间帧宣称真机全部通过。
+- 通过：本次最终iOS simulator Debug、无签名device Release构建，Mac前端构建；源与产物均保留后台audio能力。日志`.build/reports/ios/settings-search-anchor-{simulator,device}-build.log`、`.build/reports/ui/wall-settings/desktop-search-anchor-build.log`。未安装到真实iPhone。
+- 通过：Android正式APK/instrumentation构建与隔离`MiniVoice_Settings_Anchor_Test`专用AVD的首次portable回归，结果`UI_PORTABLE_PASS`，无需重跑；覆盖真实WebView/WAV、三样式深浅、弹窗手柄取消、设置比例/横屏/展开返回、队列与重启锚点。报告`.build/reports/android/settings-search-anchor-{emulator,build,portable}.log`及`settings-search-anchor-screenshots/`。原有样式切换允许的capture-budget fallback继续如实记录，不据此声称GPU碎片动画流畅度达标；测试AVD已关闭并清除临时合成数据，真实设备和已有AVD数据未动。
+
+### 2026-11-10 插图样式文案与 iOS 点击日志调查
+
+- 已实现：移除三端共用的“全屏插图样式”选项下方说明小字，保留三项选择和手势。
+- 已调查：用户补充这些日志在Xcode点击时也出现。宿主使用自定义资源scheme，未直接将应用包作为音乐目录申请授权；WebKit公开实现有bundle只读扩展创建/消费和URL隐私数据缺失回退路径。`<private>`、PointerUI及XPC记录缺上下文，尚不能定位具体文件、调用栈或确认所有消息无害。完整分类与来源见`Docs/iOS-Console-Warnings-2026-11-08.md`续记。
+- 已实现：宿主增加单调时间、代次隔离的启动阶段和脱敏、限量的真实资源/导航错误记录；取消/明确无封面不制造错误；保留真实ENOENT/EACCES。可用现有诊断导出定位应用侧故障，该改动不声称修复系统sandbox消息或读取WebKit隐去的路径。
+- 通过：UI标准门禁；共享136项；插图模式实际页面触控/鼠标回归；固定源码后完整`test-wall-version.sh`；iOS原生测试包含新诊断代次、隐私、取消、失败限量；iOS模拟器Debug和无签名device Release构建及后台audio声明；Mac前端构建。日志`.build/reports/ui/{framing-no-description-shared.log,framing-no-description-pages.log,artwork-framing/no-description.log,framing-no-description-desktop-build.log}`、`.build/reports/ios/web-host-log-audit-{native-tests,simulator-build,device-build}.log`。
+- 首轮完整墙回归出现`Style switch has no animation`，保留`framing-no-description-pages-first.log`；源码固定后重跑完整通过，未放宽断言。真实WKWebView/iOS真机再次点击、日志与诊断关联仍待验收；本机没有iOS模拟器runtime，没有安装到用户设备，也无法声明系统日志已消失。
+- 补充通过：移除小字后的iOS/Android夹具横竖弹窗位置及旋转回归，已人工查看横屏截图，记录`.build/reports/ui/wall-settings/no-description.log`。
+
+### 2026-11-10 Android侧栏闪屏、样式切换与短暂黑卡片
+
+- 用户限定：滑动/缩放后短暂大片黑；侧栏偶发闪屏；样式切换卡顿；不改变动画样式。已处理可复现的等待黑底、未解码采样提前替换和截图跨桥大字符串成本，原320ms侧栏曲线/scene深度/玻璃材质、碎片plan/17关键帧/480ms+delay/690ms窗口与180ms捕获预算保持。
+- 黑块复现与修复通过：新挂载海报+阻塞图片响应修复前RGB=0/0/0；Android占位底修复后41/49/57，加载白图后仍168/168/168（与原遮罩一致）。这些只为该合成像素用例，不代表FPS/对比达标或所有GPU黑屏原因已关闭。证据`.build/reports/ui/wall-pending-before.log`、`drawer-style-pending.log`与`wall-pending-artwork/`。
+- 侧栏定向通过：旧解码采样保留至候选就绪，同一已解码节点交接，退休层隐藏后两帧回收，过时结果不得覆盖；关闭/重开/换style、blur24与不透明base、运行时reduce和卸载清理。样式定向通过：逐片一次栅格、原几何/所有关键帧/延迟/480ms等价，正常/迟到释放、超时与减弱动态清理。证据`.build/reports/ui/drawer-style-{sampling,snapshot-motion}.log`、`style-snapshot-motion/work.json`。
+- 通过：UI标准门禁；共享136项；桌面67通过/4跳过；组件DOM；完整test-wall-version.sh。证据`.build/reports/ui/drawer-style-{shared-tests,desktop-tests,components,wall-full}.log`。完整页面有tile memory limits exceeded日志，断言通过不能证明实体GPU流畅，不隐藏此限制。
+- Android最终构建通过：正式3.0.0 APK与instrumentation构建及既有签名检查通过，专用MiniVoice_Startup_Test模拟器已安装，未接触真实音乐库/手机。新截图代理限same-origin GET数字token/no-store，单份内存JPEG、旧代次失效、裁片后释放与五秒TTL。原生完整portable最终结果见下条，前两次失败保留。
+- 原生失败保留：首次portable一次样式碎片仅采到7帧/2种矩阵而未达到原>2要求（内容多色正确），见`drawer-style-black-portable-first.log`；另一次侧栏滑动帧断言失败，见`drawer-style-black-portable.log`。没有放宽阈值；加入实际drawer帧/宽度/终点上下文，单独复核见`drawer-style-black-portable-context.log`。不据软件模拟器结果臆断真实设备原因。
+- 仍待验收：原设备偶发合成闪屏、快速冷热切换/慢存储、实体手机平板GPU/热状态及完整矩阵。未测FPS或宣称全设备完全消除闪屏。详细链路见Docs/Android-Drawer-Style-Rendering-2026-11-10.md。
+
+- 最终Android完整portable通过：在不降低中间帧/材质/图片/状态断言的条件下，独立完整运行返回UI_PORTABLE_PASS，证据`.build/reports/android/drawer-style-black-portable-context.log`。包括实际多色截图碎片、中间运动及最终清理、完成后native snapshot=null（异步释放至多等500ms）、三样式深浅、侧栏开合/反向/scene回场、缓存与返回/重启、音乐墙滑动/缩放/展开/旋转/关闭/快速切卡、队列触拖和系统主题。前两次帧采样失败不能用这次通过抹去，也不能据此宣称稳定FPS。
+- 最终APK：`.build/dist/MiniVoice-3.0.0-android.apk`，已构建、既有签名校验并安装专用模拟器；另检查包内包含解码采样暂存、Android占位底和native style-snapshot端点。截图已保存并查看`.build/reports/android/drawer-style-black-screenshots/`及`wall-pending-artwork/`。未修改正式包标识/签名/Shared版本和数据目录，未操作真实音乐库。
+- 交付范围：已修复确定的冷图纯黑底与侧栏未解码交接，移除大截图字符串跨桥、保留原样式及运动参数；前述自动化通过。原设备偶发GPU合成、热状态、极端慢存储及完整真机矩阵仍待验收，不能把本轮结果泛化为所有设备绝不闪屏或每次无卡顿。

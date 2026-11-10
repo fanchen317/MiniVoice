@@ -1,4 +1,5 @@
 import {useActivationFeedback,emitActivationFeedback} from './FeedbackContext.jsx';
+import {animateButtonRelease} from './buttonFeedback.js';
 import React,{useEffect,useRef} from 'react';
 /** Shared semantics; each product family supplies its own visual skin. */
 export default function ActionButton({label,children,selected,disabled=false,busy=false,type='button',className='',feedback='standard',haptic=true,onClick,onPointerDown,onPointerUp,onPointerCancel,onTouchStart,onTouchMove,onTouchEnd,onTouchCancel,...props}){
@@ -8,7 +9,7 @@ export default function ActionButton({label,children,selected,disabled=false,bus
  function spring(node){
   if(feedback!=='standard'||disabled||busy||node.closest('[data-mv-dragging=true]')||!node.closest('[data-presentation=mobile]')||document.documentElement.classList.contains('reduce-motion')||matchMedia('(prefers-reduced-motion:reduce)').matches)return;
   const style=getComputedStyle(node),peak=Number.parseFloat(style.getPropertyValue('--mv-feedback-release'))||1.045,press=Number.parseFloat(style.getPropertyValue('--mv-feedback-press'))||.96,from=Math.min(press,parseFloat(style.scale)||1);motion.current?.cancel();
-  motion.current=node.animate([{scale:String(from)},{scale:String(peak),offset:.5},{scale:'.992',offset:.78},{scale:'1'}],{duration:380,easing:'cubic-bezier(.22,.9,.25,1)'});
+  motion.current=animateButtonRelease(node,{from,peak});
  }
 
  function activateButton(event){if(disabled||busy)return;if(haptic&&(onClick||type==='submit')&&event.isTrusted&&!event.defaultPrevented)emitActivationFeedback(activate);onClick?.(event);}

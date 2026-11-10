@@ -1,0 +1,8 @@
+.mv-artwork-framing{margin:16px 0;color:inherit}
+.mv-artwork-framing>h3{margin:0 0 10px;font-size:14px;color:var(--muted)}
+.mv-artwork-framing>div{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.mv-artwork-framing>div>button{min-height:44px;padding:8px 10px;border:1px solid var(--border,var(--line));border-radius:12px;background:transparent;color:inherit;font:inherit;cursor:pointer}
+.mv-artwork-framing>div>button[aria-pressed=true]{color:var(--accent,var(--mint));background:var(--selected);border-color:currentColor}
+.mv-artwork-framing[data-input-family=desktop]>div>button{min-height:32px}
+
+[data-artwork-panning=true]{cursor:grabbing;user-select:none;-webkit-user-select:none}

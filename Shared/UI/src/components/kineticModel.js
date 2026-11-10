@@ -11,28 +11,30 @@ export function kineticCharacters(line,nextStart){
 }
 export function kineticLayout(characters,size,measure,{reference=false}={}){
   const width=Math.max(1,size.width-32),height=Math.max(1,size.height-32);
-  let fontSize=Math.min(58,Math.max(20,size.width*.095)),glyphs=[],totalHeight=0;
+  let fontSize=Math.min(58,Math.max(20,size.width*.095)),glyphs=[],textWidths=[],totalHeight=0;
+  const widthsAt=font=>{const measured=new Map();return characters.map(char=>{if(!measured.has(char.text))measured.set(char.text,measure(char.text,font));return measured.get(char.text);});};
   if(reference){
     // Prefer one coherent phrase; wrap only when fitting would make it unreadable.
-    const total=characters.reduce((sum,char)=>sum+Math.max(fontSize*.3,measure(char.text,fontSize))+fontSize*.12,0);
+    const total=widthsAt(fontSize).reduce((sum,width)=>sum+Math.max(fontSize*.3,width)+fontSize*.12,0);
     fontSize=Math.min(fontSize,Math.max(24,fontSize*width/Math.max(1,total)));
   }
   for(let attempt=0;attempt<24;attempt++){
     const rowHeight=fontSize*1.65;
-    const advances=characters.map(word=>Math.max(fontSize*.3,measure(word.text,fontSize))+fontSize*.12);
+    textWidths=widthsAt(fontSize);
+    const advances=textWidths.map(width=>Math.max(fontSize*.3,width)+fontSize*.12);
     const total=advances.reduce((a,b)=>a+b,0),rowCount=Math.max(1,Math.ceil(total/width));
     const rowWidth=reference?width:Math.min(width,total/rowCount+Math.max(...advances,0)*.45);
     let x=0,row=0;
-    glyphs=characters.map(word=>{
-      const advance=Math.max(fontSize*.3,measure(word.text,fontSize))+fontSize*.12;
+    glyphs=characters.map((word,index)=>{
+      const advance=advances[index];
       if(x>0&&x+advance>rowWidth){row++;x=0;}
       const point={x:16+x+advance/2,y:row*rowHeight+rowHeight/2};x+=advance;return point;
     });
     totalHeight=(row+1)*rowHeight;if(totalHeight<=height||attempt===23)break;fontSize*=.82;
   }
   const rows=new Map();glyphs.forEach((point,i)=>{const key=point.y;if(!rows.has(key))rows.set(key,[]);rows.get(key).push(i);});
-  for(const indices of rows.values()){const last=indices.at(-1),edge=glyphs[last].x+Math.max(fontSize*.3,measure(characters[last].text,fontSize))/2;const shift=(size.width-16-edge)/2;indices.forEach(i=>glyphs[i].x+=Math.max(0,shift));}
-  return {fontSize,glyphs:glyphs.map(point=>({...point,y:point.y+(size.height-totalHeight)/2}))};
+  for(const indices of rows.values()){const last=indices.at(-1),edge=glyphs[last].x+Math.max(fontSize*.3,textWidths[last])/2;const shift=(size.width-16-edge)/2;indices.forEach(i=>glyphs[i].x+=Math.max(0,shift));}
+  return {fontSize,textWidths,glyphs:glyphs.map(point=>({...point,y:point.y+(size.height-totalHeight)/2}))};
 }
 const progress=(time,start,end)=>Math.min(1,Math.max(0,(time-start)/Math.max(.001,end-start)));
 // One phrase envelope keeps the baseline coherent; timing controls cadence, never
@@ -60,8 +62,7 @@ export function wallCardSizing(width,height){
 }
 
 // A continuous singing cursor drives a wide spatial wave, rather than per-letter springs.
-export function kineticWave(characters,time,index,fontSize){
- if(!characters.length)return {y:0,scale:1,rotation:0,glow:0};
+function kineticWaveFrame(characters,time){
  const smooth=value=>{const x=Math.max(0,Math.min(1,value));return x*x*(3-2*x);};
  let cursor=-.5;
  for(let i=0;i<characters.length;i++){
@@ -73,6 +74,9 @@ export function kineticWave(characters,time,index,fontSize){
  }
  const first=characters[0],last=characters.at(-1),end=last.end??last.start+.5;
  const envelope=smooth((time-first.start+.18)/.38)*(1-smooth((time-end)/.65));
+ return {cursor,envelope};
+}
+function kineticWaveAt({cursor,envelope},index,fontSize){
  const distance=index-cursor;
  // Wide support couples neighbors. The trailing trough makes a rolling ribbon.
  const crest=Math.exp(-distance*distance/3.8);
@@ -81,13 +85,19 @@ export function kineticWave(characters,time,index,fontSize){
  return {y:-fontSize*.17*wave,scale:1+.15*crest*envelope,
   rotation:Math.max(-1,Math.min(1,distance))*.018*crest*envelope,glow:crest*envelope};
 }
+export function kineticWave(characters,time,index,fontSize){
+ if(!characters.length)return {y:0,scale:1,rotation:0,glow:0};
+ return kineticWaveAt(kineticWaveFrame(characters,time),index,fontSize);
+}
 export function paintKineticPhrase(ctx,characters,layout,time,width,height,{showSeam=false}={}){
  if(!characters.length)return;
+ // Resolve the singing cursor once, then share it across every glyph this frame.
+ const waveFrame=kineticWaveFrame(characters,time);
  ctx.save();
  ctx.font=`700 ${layout.fontSize}px system-ui,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
  characters.forEach((char,i)=>{
-  const point=layout.glyphs[i],advance=ctx.measureText(char.text).width;
-  const wave=kineticWave(characters,time,i,layout.fontSize);
+  const point=layout.glyphs[i],advance=layout.textWidths?.[i]??ctx.measureText(char.text).width;
+  const wave=kineticWaveAt(waveFrame,i,layout.fontSize);
   ctx.save();ctx.translate(point.x,point.y+wave.y);ctx.rotate(wave.rotation);ctx.scale(wave.scale,wave.scale);
   ctx.globalAlpha=.62;ctx.fillStyle='#dce7f4';
   ctx.fillText(char.text,0,0);

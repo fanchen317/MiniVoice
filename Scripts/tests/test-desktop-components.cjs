@@ -62,6 +62,18 @@ app.whenReady().then(async()=>{
   await js("document.documentElement.classList.add('reduce-motion')");await sleep(30);
   check(await js("getComputedStyle(document.querySelector('#feedback')).scale==='1'&&getComputedStyle(document.querySelector('#feedback')).transitionDuration==='0s'"),'Reduced-motion feedback still animates');
   await js("document.documentElement.classList.remove('reduce-motion')");
+  // Seek the real mobile animation to its intended peak. This catches global
+  // timeline easing compressing the overshoot into the first few frames.
+  await js("document.querySelector('main').dataset.presentation='mobile';document.querySelector('#feedback').style.setProperty('--mv-feedback-release','1.16');document.querySelector('#feedback').style.setProperty('--mv-feedback-press','.88');document.querySelector('#feedback').dispatchEvent(new PointerEvent('pointerup',{bubbles:true}));window.releaseAnimation=document.querySelector('#feedback').getAnimations().find(a=>a.effect?.getTiming().duration===380);releaseAnimation.pause();releaseAnimation.currentTime=190;true");
+  check(await js("Math.abs(Number(getComputedStyle(document.querySelector('#feedback')).scale)-1.16)<.005"),'Mobile release lost its halfway spring peak');
+  await js("document.documentElement.classList.add('reduce-motion')");await sleep(30);
+  check(await js("releaseAnimation.playState==='idle'&&getComputedStyle(document.querySelector('#feedback')).scale==='1'"),'Runtime reduced motion did not cancel release animation');
+  await js("document.documentElement.classList.remove('reduce-motion');document.querySelector('#feedback').dispatchEvent(new PointerEvent('pointerup',{bubbles:true}));document.querySelector('#feedback').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));true");
+  check(await js("!document.querySelector('#feedback').getAnimations().some(a=>a.effect?.getTiming().duration===380&&a.playState!=='idle')"),'A new press did not interrupt old release motion');
+  await js("document.querySelector('#feedback').dispatchEvent(new PointerEvent('pointerup',{bubbles:true}));document.querySelector('#feedback').dispatchEvent(new PointerEvent('pointercancel',{bubbles:true}));true");
+  check(await js("!document.querySelector('#feedback').getAnimations().some(a=>a.effect?.getTiming().duration===380&&a.playState!=='idle')"),'A cancelled pointer retained release motion');
+  await js("document.querySelector('main').dataset.presentation='desktop'");
+  process.stdout.write('PASS mobile release peak timing and runtime reduced-motion cancellation\n');
   process.stdout.write('PASS own ActionButton hover/press, busy suppression and reduced motion\n');
   process.stdout.write('PASS Disclosure Enter/Space, retained draft and disabled state\n');
   const image=await win.webContents.capturePage();const output=path.resolve(__dirname,'../../.build/reports/ui/desktop-components.png');fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,image.toPNG());

@@ -2,12 +2,13 @@ import './kineticLyrics.css';
 import {samplePlaybackClock,playbackTime} from './playbackClock.js';
 import React,{useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {normalizeLyrics,displayLine} from './lyricPresentation.js';
+import {createLyricTimeline,lyricTimelineIndex} from './lyricTimeline.js';
 import {kineticCharacters,kineticLayout,paintKineticPhrase,kineticRasterScale} from './kineticModel.js';
 /** Controlled lyrics/time; only canvas size and motion preferences are local. */
 export default function KineticLyrics({lines:source,time=0,duration=0,playing=false,showTranslation=true,showSeam=false}){
  const root=useRef(null),canvas=useRef(null),clock=useRef({time,playing,sampledAt:performance.now()}),[size,setSize]=useState({width:1,height:1}),[reduced,setReduced]=useState(false);
- const lines=useMemo(()=>normalizeLyrics(source),[source]);let active=-1;for(let i=0;i<lines.length;i++)if(lines[i].time!==null&&lines[i].time<=time)active=i;
- const index=Math.max(0,active),line=lines[index]||{text:'',words:[]},next=lines.slice(index+1).find(row=>row.time>line.time)?.time,waiting=active<0&&lines.some(row=>row.time!==null);
+ const lines=useMemo(()=>normalizeLyrics(source),[source]),timeline=useMemo(()=>createLyricTimeline(lines),[lines]),active=lyricTimelineIndex(timeline,time);
+ const index=Math.max(0,active),line=lines[index]||{text:'',words:[]},next=useMemo(()=>lines.slice(index+1).find(row=>row.time>line.time)?.time,[lines,index,line.time]),waiting=active<0&&timeline.length>0;
  const characters=useMemo(()=>kineticCharacters(displayLine(line,next,duration),next),[line,next,duration]);
  clock.current=samplePlaybackClock(clock.current,time,playing,performance.now());
  useLayoutEffect(()=>{const node=root.current,measure=()=>setSize(previous=>previous.width===node.clientWidth&&previous.height===node.clientHeight?previous:{width:node.clientWidth,height:node.clientHeight});measure();const observer=new ResizeObserver(measure);observer.observe(node);return()=>observer.disconnect();},[]);

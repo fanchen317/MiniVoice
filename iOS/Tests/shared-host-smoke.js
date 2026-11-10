@@ -18,6 +18,8 @@ try {
  await wait(()=>document.querySelector('.mv-workspace'),'共享页面挂载');
  const initialState=await send({kind:'readState'});
  const initialSnapshot=await send({kind:'snapshot'});
+ const clockDelta=await send({kind:'snapshot',catalogRevision:initialSnapshot.catalogRevision,snapshotRevision:initialSnapshot.snapshotRevision});
+ check(typeof clockDelta.snapshotRevision==='string'&&clockDelta.snapshotRevision===initialSnapshot.snapshotRevision&&clockDelta.songs===null&&!('queue' in clockDelta)&&!('rawLyrics' in clockDelta),'真实宿主热进度回复省略未变化的曲库、队列和歌词');
  const initialStyle=initialState.pages?.appearance?.style||initialSnapshot.style||'library';
  await wait(()=>document.querySelector('.mv-workspace')?.dataset.style===initialStyle,'恢复已保存样式');
  if(initialStyle!=='wall'){
@@ -353,8 +355,10 @@ try {
  const stress=await send({kind:'uiTestScanStress'});
  check(stress.count===1037&&stress.incrementalCount===1037&&stress.errors===0&&stress.thumbnailsBounded,'1037 首混合格式/4096px 封面完整扫描与增量重扫 '+JSON.stringify(stress));
  check(stress.displayBounded&&stress.originalRetained,'4096px 原封面生成 2048px 展示资源且原图字节保留');
+ check(stress.originalsLazy&&stress.incrementalMetadataOnly&&stress.evictionRecovery,'扫描不预存整库原图；缓存淘汰后增量复用元数据并按需重建');
  check(stress.baselineBytes>0&&stress.growthBytes<300*1024*1024,'大库扫描采样内存增长低于 300 MiB');
  const audioProbe=await send({kind:'uiTestAudioFormats'});
+ check(audioProbe.clockLifecyclePassed,'真实音频播放的前台/后台/暂停时钟生命周期');
  check(audioProbe.rows.length===2&&audioProbe.rows.every(row=>row.state==='playing'&&row.position>0.2&&row.duration>0.5&&!row.error),'真实 MP3/FLAC 解码并推进播放时钟 '+JSON.stringify(audioProbe.rows));
  check(audioProbe.rapidSelectionSettled,'连续切歌期间暂停/定位保留且旧加载结果不覆盖');
  check(audioProbe.flacArtwork,'真实 FLAC PICTURE 块经扫描生成封面');

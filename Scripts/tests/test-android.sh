@@ -98,3 +98,12 @@ javac -cp "$output" -d "$output" "$source_root/IncrementalScan.java" "$source_ro
 java -cp "$output" com.xcosmos.minivoice.LibraryCapabilityTests
 javac -cp "$android_jar:$output" -d "$output" "$repo_root/Android/tests/com/xcosmos/minivoice/BilingualLyricsTests.java"
 java -cp "$output:$android_jar" com.xcosmos.minivoice.BilingualLyricsTests
+
+
+javac -cp "$output" -d "$output" "$source_root/ByteRequestCache.java" "$source_root/ArtworkDiskCache.java" "$source_root/SnapshotMetadataCache.java" "$repo_root/Android/tests/com/xcosmos/minivoice/ArtworkRequestCacheTests.java" "$repo_root/Android/tests/com/xcosmos/minivoice/SnapshotMetadataCacheTests.java"
+java -cp "$output" com.xcosmos.minivoice.ArtworkRequestCacheTests
+java -cp "$output" com.xcosmos.minivoice.SnapshotMetadataCacheTests
+
+
+javac -cp "$output" -d "$output" "$source_root/CoverDiskCache.java" "$repo_root/Android/tests/com/xcosmos/minivoice/CoverDiskCacheTests.java"
+java -cp "$output" com.xcosmos.minivoice.CoverDiskCacheTests

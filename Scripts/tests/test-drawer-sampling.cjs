@@ -1,0 +1,45 @@
+// Deterministic delayed resources: image handoff evidence, not a GPU FPS claim.
+const {app,BrowserWindow,protocol}=require('electron');
+const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+app.setPath('userData',fs.mkdtempSync(path.join(os.tmpdir(),'minivoice-drawer-sampling-')));
+protocol.registerSchemesAsPrivileged([{scheme:'drawer-cover',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}}]);
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const timeout=setTimeout(()=>{console.error('drawer sampling timed out');app.exit(1);},45000);
+app.whenReady().then(async()=>{let win;try{
+ const blocked=new Map(),resolvers=new Map();
+ const block=key=>blocked.set(key,new Promise(resolve=>resolvers.set(key,resolve)));
+ const release=key=>{resolvers.get(key)?.();blocked.delete(key);};
+ protocol.handle('drawer-cover',async request=>{const key=new URL(request.url).pathname.slice(1);await blocked.get(key);return new Response(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><path fill="${key==='a'?'#a23345':key==='b'?'#287eb5':'#42a274'}" d="M0 0h320v320H0z"/></svg>`,{headers:{'Content-Type':'image/svg+xml','Cache-Control':'no-store'}});});
+ win=new BrowserWindow({show:false,width:390,height:844,webPreferences:{backgroundThrottling:false}});
+ const errors=[];win.webContents.on('console-message',(_event,level,message)=>{if(level>=3)errors.push(message);});
+ const js=source=>win.webContents.executeJavaScript(source,true);
+ const until=async(source,message)=>{for(let i=0;i<100;i++){if(await js(source))return;await wait(40);}throw Error(message);};
+ const update=async source=>{await js(`drawerSamplingFixture.set(${source});true`);await wait(30);};
+ const shown='.mv-drawer-sample:not([data-sample-pending]):not([data-sample-retired])';
+ await win.loadURL((process.env.MINIVOICE_WALL_TEST_URL||'http://127.0.0.1:5306')+'/tests/drawer-sampling.html');
+ await until(`document.querySelector('${shown} img')?.naturalWidth>0&&document.querySelector('.mv-wall-drawer-extension:not([data-sample-pending]):not([data-sample-retired]) img')?.naturalWidth>0`,'Closed drawer did not prepare decoded samples');
+ await update('{open:true}');await wait(400);
+ await js(`window.oldGlass=document.querySelector('${shown} img');window.oldEdges=document.querySelector('.mv-wall-drawer-extension:not([data-sample-pending]):not([data-sample-retired]) img');true`);
+ block('b');await update("{sourceKey:'b',cells:drawerSamplingFixture.cells('b')}");
+ await until("!!document.querySelector('.mv-drawer-sample[data-sample-pending] img')",'Replacement material was not staged');await wait(150);
+ assert.ok(await js(`oldGlass.isConnected&&oldEdges.isConnected&&document.querySelector('${shown} img')===oldGlass&&oldGlass.naturalWidth>0&&getComputedStyle(document.querySelector('.mv-drawer-sample[data-sample-pending]')).visibility==='hidden'`),'Undecoded replacement removed or obscured the retained material');
+ await js("window.pendingGlass=document.querySelector('.mv-drawer-sample[data-sample-pending] img');true");release('b');
+ await until(`document.querySelector('${shown} img')?.src.endsWith('/b')&&!document.querySelector('.mv-drawer-sample[data-sample-pending]')`,'Decoded replacement did not take over');
+ assert.ok(await js(`document.querySelector('${shown} img')===pendingGlass&&pendingGlass.naturalWidth>0`),'Handoff discarded the decoded replacement node');await wait(80);
+ assert.ok(await js("!oldGlass.isConnected&&!oldEdges.isConnected"),'Retired decoded layers were not released');
+ block('c');await update("{sourceKey:'c',cells:drawerSamplingFixture.cells('c')}");await update("{sourceKey:'d',cells:drawerSamplingFixture.cells('d')}");
+ await until(`document.querySelector('${shown} img')?.src.endsWith('/d')&&!document.querySelector('.mv-drawer-sample[data-sample-pending]')`,'Latest request did not win');release('c');await wait(100);
+ assert.ok(await js(`document.querySelector('${shown} img').src.endsWith('/d')`),'Obsolete source took over after a newer sample');
+ block('e');await update("{sourceKey:'e',cells:drawerSamplingFixture.cells('e')}");await update('{open:false}');await wait(400);await update('{open:true}');
+ assert.ok(await js(`document.querySelector('${shown} img').src.endsWith('/d')&&document.querySelector('${shown} img').naturalWidth>0`),'Reopening replaced the last decoded sample while its successor was loading');release('e');await wait(180);
+ // A style changes the requested sample kind; old wall pixels stay until the cover decodes.
+ block('f');await js(`window.styleGlass=document.querySelector('${shown} img');true`);await update("{mode:'library',artwork:drawerSamplingFixture.source('f')}");await wait(100);
+ assert.ok(await js('styleGlass.isConnected&&styleGlass.naturalWidth>0'),'Style change removed glass before its cover decoded');release('f');
+ await until(`document.querySelector('${shown}>img')?.src.endsWith('/f')`,'Single cover did not take over after decoding');
+ assert.ok(await js(`getComputedStyle(document.querySelector('${shown}')).filter.includes('blur(24px)')&&getComputedStyle(document.querySelector('.mv-drawer-material')).backgroundColor!=='rgba(0, 0, 0, 0)'`),'Sampling handoff changed the actual blur or opaque backing');
+ await update('{open:false}');await wait(60);await js("document.documentElement.classList.add('reduce-motion')");await wait(35);
+ assert.ok(await js("document.querySelector('.mv-drawer').getAnimations().every(animation=>animation.playState!=='running')"),'Runtime reduced motion left the drawer animation running');
+ block('g');await update("{mode:'wall',sourceKey:'g',cells:drawerSamplingFixture.cells('g'),open:true}");await update('{mounted:false}');release('g');await wait(100);
+ assert.equal(errors.length,0,errors.join('\n'));
+ console.log('PASS decoded drawer sampling retains glass/edges through delayed loads, preserves committed nodes, rejects stale capture, survives reopen/style changes, preserves blur and cancels reduced motion');clearTimeout(timeout);win.destroy();app.exit(0);
+}catch(error){console.error(error);win?.destroy();clearTimeout(timeout);app.exit(1);}});

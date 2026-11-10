@@ -19,3 +19,11 @@ test('bridge correlates concurrent replies, rejects errors and recovers from tim
 });
 
 test('clock snapshots reuse catalog references and carry the last revision',async()=>{const revisions=[],songs=[{id:'9223372036854775806'}];let first=true;const read=createSnapshotReader(async revision=>{revisions.push(revision);const value={songs:first?songs:null,catalogRevision:'a',position:first?0:900};first=false;return value;});const a=await read(),b=await read();assert.equal(a.songs,b.songs);assert.deepEqual(revisions,['','a']);assert.equal(b.position,900);});
+test('clock updates retain collection identities while actual membership and playlist edits invalidate',async()=>{
+ const {stableSnapshot}=await import('../src/state.js');
+ const before={songs:[{id:'1'}],favorites:['1'],recent:['1'],queue:['1'],playlists:[{id:'p',name:'list',ids:['1']}]};
+ const tick=stableSnapshot(before,{...structuredClone(before),position:450});
+ for(const key of ['songs','favorites','recent','queue','playlists'])assert.equal(tick[key],before[key]);
+ const edited=stableSnapshot(tick,{...structuredClone(tick),favorites:[],playlists:[{id:'p',name:'renamed',ids:['1']}]});
+ assert.notEqual(edited.favorites,tick.favorites);assert.notEqual(edited.playlists,tick.playlists);assert.equal(edited.queue,tick.queue);
+});

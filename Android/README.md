@@ -181,3 +181,13 @@ bash Scripts/tests/test-android-ui.sh emulator-5554
 测试通过真实 Android Activity、控件布局和注入的点击/滑动运行：三种样式 × 深浅主题、歌手与专辑进入/返回（每种网格重复三次，另测第一行的部分像素滚动）、滚动像素偏移、父页搜索恢复、侧边栏开关和开着侧边栏切样式、Activity 重建、强制停止后的进程重启、播放器/歌词展开与双语文本、真实未捕获异常写盘及 ZIP 导出。独立测试 ContentProvider 按 DocumentsContract 协议提供可修改/删除的合成 WAV，校验未变化扫描不打开音频、修改只重读一个文件、删除产生失效提示。测试截图与结果在 `.build/reports/android/ui-tests/`；截图用于目视检查，自动断言不代表所有 GPU/厂商材质效果都已验证。脚本拒绝物理设备 serial，避免将合成库写入日常使用的手机。
 
 NDK 查找支持 SDK 与 NDK 分别安装：优先使用 `ANDROID_NDK_HOME`，然后当前 SDK 的 `ndk/27.2.12479018`、常用 Android SDK 与 Homebrew 安装目录。始终要求精确版本 `27.2.12479018` 及完整 LLVM 工具，构建日志打印最终路径；显式配置无效时会停止，不静默换用其他目录。未安装时使用 `sdkmanager --sdk_root="你的 SDK 路径" "ndk;27.2.12479018"` 安装。回归：`python3 Scripts/tests/test-android-ndk.py`。
+
+### 2026-11-08 缓存与高负荷音乐墙
+
+正式共享WebView入口使用wall320/card960/detail2048及显式original封面档位，8MiB编码LRU/同图请求合并、两路原生提取/编码上限（墙图最多一路），web-artwork显示派生文件独立256MiB/30天回收。清理更新URL代次；系统内存压力释放临时保留，不触碰音乐/歌词/索引。256MiB不是Android总缓存上限，既有covers主缓存仍按曲库保留。播放桥snapshotRevision仅在收藏/队列/歌单/歌词等变化时传冷字段。
+
+墙面提前解码下一滑动窗口，大字歌词缓存字宽与每帧共享时间计算；Android左下dock、触控/返回/SAF/后台服务保留。详细分析和验收限制见[缓存与音乐墙梳理](../Docs/Android-Cache-Performance-Audit-2026-11-08.md)及[验收台账](../Docs/ACCEPTANCE_STATUS.md)。新增定向页面回归：`bash Scripts/tests/test-wall-cache-performance.sh`；原生缓存/快照回归已纳入`bash Scripts/tests/test-android.sh`。
+
+### 2026-11-09 按需主封面缓存续修
+
+covers主图改为按需生成，扫描仅登记身份，不再逐歌持有Bitmap。主图jpg/stamp/none/faces按组计费回收，独立256MiB/30天；显示派生web-artwork另256MiB，两者合计512MiB派生图预算，不是整个应用存储上限。墙图直接小尺寸采样，不先生成1600主图；人脸分析显式限制640/1024采样。旧曲库索引、歌词、原图与正式目录保持原生命周期；版本隔离、清理、低内存与再生按专项测试验证。详见[续修分析](../Docs/Android-Performance-Continuation-2026-11-09.md)与最新验收台账。

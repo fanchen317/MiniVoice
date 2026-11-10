@@ -5,7 +5,7 @@
 ## 当前默认架构
 
 - `SharedPlayerView.swift` 用一个不透明 WKWebView 加载 Shared/UI，iOS 与 Android 触控版共用同一个音乐墙 Wall/WallPlayer/WallDock 和视觉规则；封面、遮罩、轮廓、按钮与实时歌词属于同一渲染表面，没有原生画布或卡片截图交接。
-- iOS 的普通拖动和惯性改由 WKWebView 内部的系统 overflow 滚动层承担；固定滚动文档只挂载可见封面，不提升为整张 GPU 纹理。聚焦/回流/展开/侧栏动画继续使用共享状态机，宽 iPad 仍是触控家族。Mac 独立桌面组合保留。
+- 当前入口显式使用 `nativeScrolling={false}` 的共享投影音乐墙（`projected-single-surface`），保留可见封面挂载与共享聚焦/回流/展开/侧栏状态机。旧文档和部分 iOS 冒烟脚本的 native overflow 描述不是当前默认路径，尚需适配集成验证。宽 iPad 仍是触控家族，Mac 保留独立桌面组合。
 - Swift 负责系统文件目录授权、扫描、标签与封面读取、AVPlayer、后台音频、锁屏媒体控制和持久化；C++ Shared Core 继续负责歌词与共享状态 reducer。
 - `HomeView.swift` 是此前的原生实现参考，默认入口不调用它，也不会用它作内容回退。
 
@@ -51,6 +51,8 @@ bash Scripts/tests/test-ios-layout.sh <专用模拟器UUID>
 已接入诊断 ZIP 系统导出、共享缓存维护/文件巡检/歌手归并、原图封面、扫描日期及进度、LRC/YRC 发现、五模式策略和系统音频/导航信号。完整逐项结果见 `Docs/iOS-AndroidExperience-Parity-Implementation-2026-10-29.md`。已继续接入 MetricKit 延迟崩溃报告和本地诊断历史，并修复真实软键盘遮挡、补队列触摸测试，见 `Docs/iOS-AndroidExperience-Followup-2026-10-29.md`。OGG 解码、大库性能及后台长期扫描仍未完整对齐；系统目录选择器、iCloud、电话/蓝牙/锁屏、VoiceOver 与实体 GPU 仍需真机验收。AVFoundation 同步标签读取的弃用警告尚在。
 
 iOS 图标由 `bash Scripts/tools/generate-ios-icon.sh` 从共享矢量导出，不透明背景铺满，主屏圆角由系统裁切。完整验收状态见 `Docs/ACCEPTANCE_STATUS.md`，后续开发遵守 `Docs/PRODUCT_STANDARD.md`、`Docs/COMPONENT_STANDARD.md` 与 `Shared/UI/COMPONENTS.md`。
+
+缓存与性能机制及验证边界见 `Docs/iOS-Cache-Performance-Audit-2026-11-07.md`：可重建封面内存/磁盘预算、原图惰性读取、增量播放快照、暂停/后台时钟和音乐墙逐帧开销优化。工程预算不等于实测性能。
 
 用户最新竖屏定位要求：展开播放长条在左右安全区内居中，收起圆形保持原左下角位置。通过共享组件的 `portraitDock` 配置实现，横屏和 Android 的现有规则保持不变。
 

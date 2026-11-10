@@ -38,6 +38,8 @@ final class MusicLibrary: ObservableObject {
     private let defaults = UserDefaults.standard
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
+    private lazy var indexWriter = LibraryIndexWriter(destination: Self.indexURL)
+    private let folderAccess = FolderAccessRegistry()
 
     init() {
         folders = Self.decode([MusicFolder].self, key: "folders") ?? []
@@ -53,6 +55,7 @@ final class MusicLibrary: ObservableObject {
             do { try prepareSimulatorFixture() } catch { errorMessage = "测试音乐生成失败：\(error.localizedDescription)" }
         }
         #endif
+        folderAccess.update(bookmarks: folders.map { .init(id: $0.id, data: $0.bookmark) })
     }
 
     private static func decode<T: Decodable>(_ type: T.Type, key: String) -> T? {
@@ -79,11 +82,8 @@ final class MusicLibrary: ObservableObject {
             .appendingPathComponent("MiniVoice/imported-lyrics.json")
     }
 
-    private func saveIndex(_ songs: [Song]) {
-        let destination = Self.indexURL
-        guard let data = try? JSONEncoder().encode(songs) else { return }
-        try? FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: destination, options: .atomic)
+    private func saveIndex(_ songs: [Song]) async throws {
+        try await indexWriter.save { try JSONEncoder().encode(songs) }
     }
 
     func restoreAndScan() {
@@ -96,15 +96,18 @@ final class MusicLibrary: ObservableObject {
     }
 
     func addFolder(_ url: URL) {
-        let accessing = url.startAccessingSecurityScopedResource()
+        let local = folderAccess.isInsideLocalContainer(url)
+        let accessing = !local && url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         do {
+            guard local || accessing else { throw FolderAccessRegistry.Failure.denied }
             let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
             let id = url.standardizedFileURL.path
             let folder = MusicFolder(id: id, name: url.lastPathComponent, bookmark: bookmark)
             if let index = folders.firstIndex(where: { $0.id == id }) { folders[index] = folder }
             else { folders.append(folder) }
             save(folders, key: "folders")
+            folderAccess.update(bookmarks: folders.map { .init(id: $0.id, data: $0.bookmark) }, retryFailures: true)
             rescan()
         } catch {
             errorMessage = "无法保存文件夹访问权限：\(error.localizedDescription)"
@@ -114,23 +117,21 @@ final class MusicLibrary: ObservableObject {
     func removeFolder(_ folder: MusicFolder) {
         folders.removeAll { $0.id == folder.id }
         save(folders, key: "folders")
+        folderAccess.update(bookmarks: folders.map { .init(id: $0.id, data: $0.bookmark) })
         rescan()
     }
 
-    func url(for song: Song) -> URL? {
-        guard let root = folderURL(for: song) else { return nil }
-        return root.appendingPathComponent(song.relativePath)
-    }
-
-    func folderURL(for song: Song) -> URL? {
+    func folderAccessRequest(for song: Song) -> FolderAccessRegistry.Request? {
         guard let folder = folders.first(where: { $0.id == song.folderID }) else { return nil }
-        return LibraryScanner.resolve(folder)
+        return folderAccess.request(id: folder.id, bookmark: folder.bookmark)
     }
 
     func rescan() { rescan(userInitiated: true) }
 
     func rescan(userInitiated: Bool) {
         guard !maintenanceBusy else { errorMessage = "正在维护缓存，请稍后重扫"; return }
+        if userInitiated { folderAccess.retryFailures() }
+        let access = folderAccess
         let precedingScan = scanTask
         precedingScan?.cancel()
         inspectionGeneration = UUID()
@@ -138,8 +139,7 @@ final class MusicLibrary: ObservableObject {
         let generation = UUID()
         scanGeneration = generation
         let selectedFolders = folders
-        let checkpoint = (try? Data(contentsOf: Self.checkpointURL)).flatMap { try? JSONDecoder().decode([Song].self, from: $0) } ?? []
-        let previous = checkpoint + songs
+        let previous = songs
         let recursive = includesSubfolders
         IOSDiagnostics.shared.record(.event, "scan started folders=\(selectedFolders.count) recursive=\(recursive)")
         isScanning = true; scanCount = 0; scanTotal = 0; scanDetail = "正在查找音乐文件…"
@@ -155,7 +155,8 @@ final class MusicLibrary: ObservableObject {
             await precedingScan?.value
             guard !Task.isCancelled, scanGeneration == generation else { return }
             let worker = Task.detached(priority: .utility) { [weak self] in
-                LibraryScanner.scan(folders: selectedFolders, recursive: recursive, previous: previous, checkpoint: { rows in
+                let checkpoint = (try? Data(contentsOf: Self.checkpointURL)).flatMap { try? JSONDecoder().decode([Song].self, from: $0) } ?? []
+                return LibraryScanner.scan(folders: selectedFolders, recursive: recursive, previous: checkpoint + previous, access: access, checkpoint: { rows in
                     if let data = try? JSONEncoder().encode(rows) {
                         try? FileManager.default.createDirectory(at: Self.checkpointURL.deletingLastPathComponent(), withIntermediateDirectories: true)
                         try? data.write(to: Self.checkpointURL, options: .atomic)
@@ -174,9 +175,20 @@ final class MusicLibrary: ObservableObject {
             catch { errorMessage = "歌手归并失败：\(error.localizedDescription)"; songs = result.songs }
             scanCount = songs.count; isScanning = false; scanDetail = "扫描完成 · \(songs.count) 首歌曲"
             IOSDiagnostics.shared.record(.event, "scan completed songs=\(songs.count) errors=\(result.errors.count)")
-            defaults.set(false, forKey: "ios.scan.pending")
-            saveIndex(songs)
-            try? FileManager.default.removeItem(at: Self.checkpointURL)
+            do {
+                try await saveIndex(songs)
+                guard scanGeneration == generation else { return }
+                defaults.set(false, forKey: "ios.scan.pending")
+                // Keep this tiny unlink adjacent to the generation check; a new scan must not publish
+                // a checkpoint between the check and deletion. Encoding and large writes run off-main.
+                try? FileManager.default.removeItem(at: Self.checkpointURL)
+            } catch {
+                guard scanGeneration == generation else { return }
+                errorMessage = "音乐索引保存失败：\(error.localizedDescription)"
+                scanSession.finish(success: false, notify: true)
+                return
+            }
+            guard scanGeneration == generation else { return }
             scanSession.update(completed: songs.count, total: max(scanTotal, songs.count), detail: scanDetail, force: true)
             scanSession.finish(success: result.errors.isEmpty, notify: true)
             errorMessage = result.errors.isEmpty ? nil : result.errors.joined(separator: "\n")
@@ -191,10 +203,10 @@ final class MusicLibrary: ObservableObject {
     }
 
     func clearArtworkCache() {
-        let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Artwork", isDirectory: true)
-        try? FileManager.default.removeItem(at: directory)
-        rescan()
+        Task {
+            do { _ = try await sharedMaintenanceAction("clearCache", payload: [:]) }
+            catch { errorMessage = "无法清理缓存：\(error.localizedDescription)" }
+        }
     }
 
     func lyrics(for song: Song?) -> String? {
@@ -203,8 +215,10 @@ final class MusicLibrary: ObservableObject {
     }
 
     func importLyrics(from url: URL, for song: Song) {
-        let accessing = url.startAccessingSecurityScopedResource()
+        let local = folderAccess.isInsideLocalContainer(url)
+        let accessing = !local && url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        guard local || accessing else { errorMessage = "歌词文件授权不可用，请重新选择文件。"; return }
         guard let data = try? Data(contentsOf: url), data.count <= 1_048_576 else {
             errorMessage = "无法读取歌词文件，或文件超过 1 MB。"
             return
@@ -257,74 +271,117 @@ final class MusicLibrary: ObservableObject {
 private enum LibraryScanner {
     static let audioExtensions: Set<String> = ["mp3", "m4a", "aac", "flac", "wav", "aiff", "aif", "caf", "ogg", "opus"]
 
-    static func artworkData(song: Song, folder: MusicFolder, original: Bool) throws -> Data {
-        guard let root = resolve(folder) else { throw CocoaError(.fileReadNoPermission) }
-        let accessing = root.startAccessingSecurityScopedResource()
-        defer { if accessing { root.stopAccessingSecurityScopedResource() } }
-        let file = root.appendingPathComponent(song.relativePath).standardizedFileURL
-        guard file.resolvingSymlinksInPath().path.hasPrefix(root.resolvingSymlinksInPath().path + "/") else { throw CocoaError(.fileReadNoPermission) }
-        var artwork = original ? (song.originalArtworkFile ?? song.artworkFile) : song.artworkFile
-        if artwork == nil || !FileManager.default.fileExists(atPath: artwork!) {
-            let name = song.artworkFile.map { URL(fileURLWithPath: $0).lastPathComponent } ?? SHA256.hash(data: Data(song.id.utf8)).map { String(format: "%02x", $0) }.joined() + ".jpg"
-            let path = autoreleasepool {
-                let isFLAC = file.pathExtension.lowercased() == "flac"
-                return prepareArtwork(asset: isFLAC ? nil : AVURLAsset(url: file), url: file, imageName: name, flac: isFLAC ? try? FLACMetadata.read(file) : nil)
-            }
-            artwork = original ? path.map { $0 + ".original" } : path
+    private static func withAuthorizedSong<T>(_ song: Song, lease: FolderAccessRegistry.Lease, body: (URL, URL) throws -> T) throws -> T {
+        let file = try lease.file(relativePath: song.relativePath)
+        var outcome: Result<T, Error>?, coordinationError: NSError?
+        NSFileCoordinator(filePresenter: nil).coordinate(readingItemAt: file, options: [], error: &coordinationError) { readable in
+            outcome = Result { try lease.checkValidity(); return try body(readable, lease.rootURL) }
         }
-        guard let artwork else { throw CocoaError(.fileNoSuchFile) }
-        return try Data(contentsOf: URL(fileURLWithPath: artwork))
+        if let coordinationError { throw coordinationError }
+        try lease.checkValidity()
+        guard let outcome else { throw CocoaError(.fileReadUnknown) }
+        return try outcome.get()
     }
 
-    static func wallArtworkData(song: Song, folder: MusicFolder, card: Bool) throws -> Data {
+    static func artworkData(song: Song, folder: MusicFolder, original: Bool, access: FolderAccessRegistry, generation: UInt64? = nil) throws -> Data {
+        let path = original ? (song.originalArtworkFile ?? song.artworkFile.map { $0 + ".original" }) : song.artworkFile
+        let revision = generation ?? ArtworkDiskCache.shared.generation
+        // Generated bytes are already inside the app's cache. A wall hit must not resolve or consume
+        // the external directory's bookmark; MusicLibrary still checks current folder membership.
+        return try access.request(id: folder.id, bookmark: folder.bookmark).read(cached: {
+            path.flatMap { ArtworkDiskCache.shared.read(URL(fileURLWithPath: $0).standardizedFileURL) }
+        }, load: { lease in
+            try withAuthorizedSong(song, lease: lease) { file, root in
+                try sourceArtworkData(song: song, file: file, root: root, original: original, generation: revision)
+            }
+        })
+    }
+
+    private static func sourceArtworkData(song: Song, file: URL, root: URL, original: Bool, generation: UInt64) throws -> Data {
+        let thumbnail = song.artworkFile
+        let path = original ? (song.originalArtworkFile ?? thumbnail.map { $0 + ".original" }) : thumbnail
+        if let path {
+            let url = URL(fileURLWithPath: path).standardizedFileURL
+            if let cached = ArtworkDiskCache.shared.read(url) { return cached }
+            // Dedicated fixture source covers are read only within their registry-authorized root.
+            if url.resolvingSymlinksInPath().path.hasPrefix(root.resolvingSymlinksInPath().path + "/"),
+               let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 32 * 1024 * 1024 {
+                return try Data(contentsOf: url, options: .mappedIfSafe)
+            }
+        }
+        let name = thumbnail.map { URL(fileURLWithPath: $0).lastPathComponent } ?? SHA256.hash(data: Data((song.id + (song.cacheVersion ?? "")).utf8)).map { String(format: "%02x", $0) }.joined() + ".jpg"
+        var extracted: Data?
+        let recovered = autoreleasepool {
+            let isFLAC = file.pathExtension.lowercased() == "flac"
+            return prepareArtwork(asset: isFLAC ? nil : AVURLAsset(url: file), url: file, root: root, imageName: name, flac: isFLAC ? try? FLACMetadata.read(file) : nil, retainOriginal: original, generation: generation) { thumbnail, source in extracted = original ? source : thumbnail }
+        }
+        if let extracted { return extracted }
+        guard let recovered,
+              let bytes = ArtworkDiskCache.shared.read(URL(fileURLWithPath: recovered + (original ? ".original" : ""))) else { throw CocoaError(.fileNoSuchFile) }
+        return bytes
+    }
+
+    static func wallArtworkData(song: Song, folder: MusicFolder, card: Bool, access: FolderAccessRegistry, generation: UInt64? = nil) throws -> Data {
+        let revision = generation ?? ArtworkDiskCache.shared.generation
         let pixels = card ? 960 : 320
         let key = SHA256.hash(data: Data((song.id + (song.cacheVersion ?? "") + "wall-v1-\(pixels)").utf8)).map { String(format: "%02x", $0) }.joined()
         let destination = cacheDirectory().appendingPathComponent("wall-" + key + ".jpg")
-        if let cached = try? Data(contentsOf: destination) { return cached }
-        return try autoreleasepool {
-            let data = try artworkData(song: song, folder: folder, original: card)
-            guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
-                  let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: pixels, kCGImageSourceShouldCacheImmediately: true] as CFDictionary),
-                  let result = UIImage(cgImage: image).jpegData(compressionQuality: 0.82) else { throw CocoaError(.fileReadCorruptFile) }
-            try result.write(to: destination, options: .atomic)
-            return result
-        }
+        return try access.request(id: folder.id, bookmark: folder.bookmark).read(cached: {
+            ArtworkDiskCache.shared.read(destination)
+        }, load: { lease in
+            try withAuthorizedSong(song, lease: lease) { file, root in
+                try autoreleasepool {
+                    let data = try sourceArtworkData(song: song, file: file, root: root, original: card, generation: revision)
+                    guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+                          let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: pixels, kCGImageSourceShouldCacheImmediately: true] as CFDictionary),
+                          let result = UIImage(cgImage: image).jpegData(compressionQuality: 0.82) else { throw CocoaError(.fileReadCorruptFile) }
+                    _ = try? ArtworkDiskCache.shared.write(result, to: destination, generation: revision)
+                    return result
+                }
+            }
+        })
     }
 
-    static func displayArtworkData(song: Song, folder: MusicFolder) throws -> Data {
+    static func displayArtworkData(song: Song, folder: MusicFolder, access: FolderAccessRegistry, generation: UInt64? = nil) throws -> Data {
+        let revision = generation ?? ArtworkDiskCache.shared.generation
         let key = SHA256.hash(data: Data((song.id + (song.cacheVersion ?? "") + "display-2048-v1").utf8)).map { String(format: "%02x", $0) }.joined()
         let destination = cacheDirectory().appendingPathComponent("display-" + key + ".jpg")
-        if let cached = try? Data(contentsOf: destination) { return cached }
-        return try autoreleasepool {
-            let data = try artworkData(song: song, folder: folder, original: true)
-            guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
-                  let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 2048, kCGImageSourceShouldCacheImmediately: true] as CFDictionary),
-                  let result = UIImage(cgImage: image).jpegData(compressionQuality: 0.9) else { throw CocoaError(.fileReadCorruptFile) }
-            try result.write(to: destination, options: .atomic)
-            return result
-        }
+        return try access.request(id: folder.id, bookmark: folder.bookmark).read(cached: {
+            ArtworkDiskCache.shared.read(destination)
+        }, load: { lease in
+            try withAuthorizedSong(song, lease: lease) { file, root in
+                try autoreleasepool {
+                    let data = try sourceArtworkData(song: song, file: file, root: root, original: true, generation: revision)
+                    guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+                          let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 2048, kCGImageSourceShouldCacheImmediately: true] as CFDictionary),
+                          let result = UIImage(cgImage: image).jpegData(compressionQuality: 0.9) else { throw CocoaError(.fileReadCorruptFile) }
+                    _ = try? ArtworkDiskCache.shared.write(result, to: destination, generation: revision)
+                    return result
+                }
+            }
+        })
     }
 
-    static func resolve(_ folder: MusicFolder) -> URL? {
-        var stale = false
-        return try? URL(resolvingBookmarkData: folder.bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
-    }
-
-    static func scan(folders: [MusicFolder], recursive: Bool, previous: [Song], checkpoint: ([Song]) -> Void = { _ in }, progress: (Int, Int, String) -> Void) -> (songs: [Song], errors: [String]) {
+    static func scan(folders: [MusicFolder], recursive: Bool, previous: [Song], access: FolderAccessRegistry, checkpoint: ([Song]) -> Void = { _ in }, progress: (Int, Int, String) -> Void) -> (songs: [Song], errors: [String]) {
         let old = Dictionary(previous.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var songs: [Song] = [], errors: [String] = []
-        var seenPaths = Set<String>(), scoped: [URL] = []
+        var seenPaths = Set<String>(), failedFolders = Set<String>()
+        var scoped: [String: FolderAccessRegistry.Lease] = [:]
         var candidates: [(url: URL, root: URL, folderID: String)] = []
         let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey, .contentModificationDateKey, .creationDateKey, .fileSizeKey]
-        defer { for root in scoped { root.stopAccessingSecurityScopedResource() } }
+        defer { for lease in scoped.values { lease.close() } }
         for folder in folders {
             if Task<Never, Never>.isCancelled { break }
-            guard let root = resolve(folder) else { errors.append("无法打开 \(folder.name)，请重新选择文件夹。"); continue }
-            if root.startAccessingSecurityScopedResource() { scoped.append(root) }
+            let lease: FolderAccessRegistry.Lease
+            do { lease = try access.request(id: folder.id, bookmark: folder.bookmark).acquire() }
+            catch { failedFolders.insert(folder.id); errors.append("无法打开 \(folder.name)：\(error.localizedDescription)"); continue }
+            scoped[folder.id] = lease
+            let root = lease.rootURL
             var enumerationError = false
-            guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles], errorHandler: { _, _ in enumerationError = true; return true }) else { errors.append("无法读取 \(folder.name)。"); continue }
+            guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles], errorHandler: { _, _ in enumerationError = true; return true }) else { failedFolders.insert(folder.id); errors.append("无法读取 \(folder.name)。"); continue }
             for case let url as URL in enumerator {
                 if Task<Never, Never>.isCancelled { break }
+                guard (try? lease.checkValidity()) != nil else { failedFolders.insert(folder.id); enumerationError = true; break }
                 autoreleasepool {
                     let values = try? url.resourceValues(forKeys: Set(keys))
                     if values?.isDirectory == true { if !recursive { enumerator.skipDescendants() }; return }
@@ -334,12 +391,17 @@ private enum LibraryScanner {
                     if candidates.count == 1 || candidates.count % 100 == 0 { progress(candidates.count, 0, "正在查找音乐 · 已发现 \(candidates.count) 首") }
                 }
             }
-            if enumerationError { errors.append("部分目录无法读取，请检查 \(folder.name) 的授权或下载状态。") }
+            if enumerationError { failedFolders.insert(folder.id); errors.append("部分目录无法读取，请检查 \(folder.name) 的授权或下载状态。") }
         }
         progress(0, candidates.count, "正在读取歌曲、歌词与封面")
         var lastProgress = Date.distantPast
         for (index, item) in candidates.enumerated() {
             if Task<Never, Never>.isCancelled { break }
+            guard let lease = scoped[item.folderID], (try? lease.checkValidity()) != nil else {
+                if failedFolders.insert(item.folderID).inserted { errors.append("音乐文件夹授权已变化，请重扫或重新选择文件夹。") }
+                continue
+            }
+            guard item.url.resolvingSymlinksInPath().path.hasPrefix(item.root.resolvingSymlinksInPath().path + "/") else { continue }
             #if targetEnvironment(simulator)
             if ProcessInfo.processInfo.arguments.contains("--mv-scan-timing-test") { Thread.sleep(forTimeInterval: 1) }
             #endif
@@ -350,7 +412,7 @@ private enum LibraryScanner {
                 let identity = item.folderID + "/" + relative
                 let modified = values?.contentModificationDate
                 let version = cacheVersion(url: url, root: root, modified: modified, size: values?.fileSize ?? 0)
-                if var cached = old[identity], cached.cacheVersion == version, cached.artworkFile.map({ FileManager.default.fileExists(atPath: $0) }) ?? true {
+                if var cached = old[identity], cached.cacheVersion == version {
                     cached.artist = cached.originalArtist ?? cached.artist; return cached
                 }
                 var song = readSong(url: url, root: root, folderID: item.folderID, relativePath: relative, version: version)
@@ -363,6 +425,10 @@ private enum LibraryScanner {
             if songs.count % 100 == 0 { checkpoint(songs) }
             if Date().timeIntervalSince(lastProgress) >= 0.1 || index + 1 == candidates.count { lastProgress = Date(); progress(songs.count, candidates.count, "读取音乐 · " + item.url.lastPathComponent) }
         }
+        // A temporarily denied/stale directory is still configured by the user. Keep its prior
+        // metadata visible with the scan error; an explicitly removed directory is never restored.
+        let discovered = Set(songs.map(\.id))
+        songs += old.values.filter { failedFolders.contains($0.folderID) && !discovered.contains($0.id) }
         if Task<Never, Never>.isCancelled { checkpoint(songs) }
         return (songs, errors)
     }
@@ -387,28 +453,25 @@ private enum LibraryScanner {
         let fingerprint = folderID + "/" + relativePath
         let imageName = SHA256.hash(data: Data((fingerprint + version).utf8))
             .map { String(format: "%02x", $0) }.joined() + ".jpg"
-        let artworkFile = prepareArtwork(asset: asset, url: url, imageName: imageName, flac: flac)
+        let artworkFile = prepareArtwork(asset: asset, url: url, root: root, imageName: imageName, flac: flac)
         var song = Song(id: fingerprint, folderID: folderID, relativePath: relativePath,
                     title: title, artist: artist, album: album,
                     duration: duration.isFinite && duration > 0 ? duration : 0,
                     artworkFile: artworkFile, lyrics: readLyrics(asset: asset, url: url, root: root, flac: flac))
         if let artworkFile {
             let original = artworkFile + ".original"
-            if FileManager.default.fileExists(atPath: original) { song.originalArtworkFile = original }
+            song.originalArtworkFile = original // Recover lazily when a focused/display image is requested.
         }
         song.originalArtist = artist
         return song
     }
 
-    private static func cacheDirectory() -> URL {
-        let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Artwork", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
-    }
+    private static func cacheDirectory() -> URL { ArtworkDiskCache.shared.root }
 
-    private static func prepareArtwork(asset: AVURLAsset?, url: URL, imageName: String, flac: FLACMetadata?) -> String? {
+    private static func prepareArtwork(asset: AVURLAsset?, url: URL, root: URL, imageName: String, flac: FLACMetadata?, retainOriginal: Bool = false, generation: UInt64? = nil, extracted: ((Data, Data) -> Void)? = nil) -> String? {
+        let revision = generation ?? ArtworkDiskCache.shared.generation
         let destination = cacheDirectory().appendingPathComponent(imageName)
-        if FileManager.default.fileExists(atPath: destination.path), FileManager.default.fileExists(atPath: destination.path + ".original") { return destination.path }
+        if ArtworkDiskCache.shared.read(destination) != nil, !retainOriginal || ArtworkDiskCache.shared.read(URL(fileURLWithPath: destination.path + ".original")) != nil { return destination.path }
         var original: Data?
         var thumbnail: CGImage?
         func accept(_ data: Data) -> Bool {
@@ -436,7 +499,8 @@ private enum LibraryScanner {
             for name in [stem, "cover", "folder", "front", "album"] {
                 for ext in ["jpg", "jpeg", "png", "webp"] {
                     let candidate = parent.appendingPathComponent(name).appendingPathExtension(ext)
-                    guard let size = try? candidate.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 32 * 1024 * 1024 else { continue }
+                    guard candidate.resolvingSymlinksInPath().path.hasPrefix(root.resolvingSymlinksInPath().path + "/"),
+                          let size = try? candidate.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 32 * 1024 * 1024 else { continue }
                     if let bytes = try? Data(contentsOf: candidate), accept(bytes) { break }
                 }
                 if thumbnail != nil { break }
@@ -444,11 +508,13 @@ private enum LibraryScanner {
         }
         guard let thumbnail, let original,
               let data = UIImage(cgImage: thumbnail).jpegData(compressionQuality: 0.82) else { return nil }
+        extracted?(data, original)
         do {
-            try original.write(to: URL(fileURLWithPath: destination.path + ".original"), options: .atomic)
-            try data.write(to: destination, options: .atomic)
-            return destination.path
-        } catch { return nil }
+            // Scanning stores only the small browsing image. Original encodings are fetched on demand.
+            if retainOriginal { _ = try ArtworkDiskCache.shared.write(original, to: URL(fileURLWithPath: destination.path + ".original"), generation: revision) }
+            _ = try ArtworkDiskCache.shared.write(data, to: destination, generation: revision)
+        } catch { /* Cache persistence is optional; keep the known, recoverable cover identity. */ }
+        return destination.path
     }
 
     private static func validLyrics(_ text: String) -> Bool {
@@ -495,7 +561,10 @@ private enum LibraryScanner {
 #if targetEnvironment(simulator)
 extension MusicLibrary {
     func simulatorAudioFixtures() async throws -> (songs: [Song], flacArtwork: Bool) {
-        guard let folder = folders.first, let root = LibraryScanner.resolve(folder), let resources = Bundle.main.resourceURL else { throw CocoaError(.fileNoSuchFile) }
+        guard let folder = folders.first, let resources = Bundle.main.resourceURL else { throw CocoaError(.fileNoSuchFile) }
+        let lease = try folderAccess.request(id: folder.id, bookmark: folder.bookmark).acquire()
+        defer { lease.close() }
+        let root = lease.rootURL
         let probe = root.appendingPathComponent(".audio-probe", isDirectory: true)
         try FileManager.default.createDirectory(at: probe, withIntermediateDirectories: true)
         for ext in ["mp3", "flac"] {
@@ -521,7 +590,8 @@ extension MusicLibrary {
         }
         let bookmark = try probe.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         let input = MusicFolder(id: folder.id, name: "Codec probe", bookmark: bookmark)
-        let found = await Task.detached { LibraryScanner.scan(folders: [input], recursive: false, previous: [], progress: { _, _, _ in }).songs }.value
+        let access = FolderAccessRegistry(bookmarks: [.init(id: input.id, data: input.bookmark)])
+        let found = await Task.detached { LibraryScanner.scan(folders: [input], recursive: false, previous: [], access: access, progress: { _, _, _ in }).songs }.value
         let songs = found.map { song in
             Song(id: folder.id + "/.audio-probe/" + song.relativePath, folderID: folder.id, relativePath: ".audio-probe/" + song.relativePath, title: song.title, artist: song.artist, album: song.album, duration: song.duration, artworkFile: song.artworkFile, lyrics: song.lyrics)
         }
@@ -530,7 +600,10 @@ extension MusicLibrary {
 
     /// Real scanner stress, isolated to the explicitly enabled disposable simulator fixture.
     func simulatorScanStress() async throws -> [String: Any] {
-        guard let folder = folders.first, let root = LibraryScanner.resolve(folder), let resources = Bundle.main.resourceURL else { throw CocoaError(.fileNoSuchFile) }
+        guard let folder = folders.first, let resources = Bundle.main.resourceURL else { throw CocoaError(.fileNoSuchFile) }
+        let lease = try folderAccess.request(id: folder.id, bookmark: folder.bookmark).acquire()
+        defer { lease.close() }
+        let root = lease.rootURL
         let directory = root.appendingPathComponent(".scan-stress")
         try? FileManager.default.removeItem(at: directory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -563,6 +636,7 @@ extension MusicLibrary {
         for i in 0..<73 { try FileManager.default.copyItem(at: resources.appendingPathComponent("AudioTestFixtures/tags.mp3"), to: directory.appendingPathComponent("track-\(i).mp3")) }
         let bookmark = try directory.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         let input = MusicFolder(id: directory.path, name: "Scan stress", bookmark: bookmark)
+        let access = FolderAccessRegistry(bookmarks: [.init(id: input.id, data: input.bookmark)])
         return await Task.detached {
             func memory() -> UInt64 {
                 var info = mach_task_basic_info(), count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<integer_t>.size)
@@ -572,8 +646,11 @@ extension MusicLibrary {
                 return status == KERN_SUCCESS ? UInt64(info.resident_size) : 0
             }
             let before = memory(); var peak = before
-            let result = LibraryScanner.scan(folders: [input], recursive: false, previous: [], progress: { _, _, _ in peak = max(peak, memory()) })
+            let result = LibraryScanner.scan(folders: [input], recursive: false, previous: [], access: access, progress: { _, _, _ in peak = max(peak, memory()) })
             peak = max(peak, memory())
+            let originalsLazy = result.songs.allSatisfy { song in
+                song.originalArtworkFile.map { !FileManager.default.fileExists(atPath: $0) } ?? false
+            }
             let bounded = result.songs.allSatisfy { song in
                 guard let path = song.artworkFile, let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
                       let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
@@ -583,16 +660,23 @@ extension MusicLibrary {
             }
             var displayBounded = false, originalRetained = false
             if let song = result.songs.first(where: { $0.relativePath.hasSuffix(".flac") }),
-               let before = try? LibraryScanner.artworkData(song: song, folder: input, original: true),
-               let display = try? LibraryScanner.displayArtworkData(song: song, folder: input),
+               let before = try? LibraryScanner.artworkData(song: song, folder: input, original: true, access: access),
+               let display = try? LibraryScanner.displayArtworkData(song: song, folder: input, access: access),
                let source = CGImageSourceCreateWithData(display as CFData, nil),
                let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
                let width = properties[kCGImagePropertyPixelWidth as String] as? Int {
                 displayBounded = width == 2048
-                originalRetained = before == (try? LibraryScanner.artworkData(song: song, folder: input, original: true))
+                originalRetained = before == (try? LibraryScanner.artworkData(song: song, folder: input, original: true, access: access))
             }
-            let incremental = LibraryScanner.scan(folders: [input], recursive: false, previous: result.songs, progress: { _, _, _ in })
-            return ["count": result.songs.count, "errors": result.errors.count, "displayBounded": displayBounded, "originalRetained": originalRetained, "thumbnailsBounded": bounded, "incrementalCount": incremental.songs.count, "baselineBytes": before, "peakSampleBytes": peak, "growthBytes": peak - min(peak, before)] as [String: Any]
+            // Evict a generated thumbnail only, then verify that metadata reuse and image recovery are independent.
+            let evicted = result.songs.first(where: { $0.relativePath.hasSuffix(".flac") })
+            if let path = evicted?.artworkFile {
+                try? ArtworkDiskCache.shared.maintenance { _ in try FileManager.default.removeItem(atPath: path) }
+            }
+            let incremental = LibraryScanner.scan(folders: [input], recursive: false, previous: result.songs, access: access, progress: { _, _, _ in })
+            let incrementalMetadataOnly = evicted?.artworkFile.map { !FileManager.default.fileExists(atPath: $0) } ?? false
+            let evictionRecovery = evicted.map { (try? LibraryScanner.artworkData(song: $0, folder: input, original: false, access: access)) != nil } ?? false
+            return ["count": result.songs.count, "errors": result.errors.count, "displayBounded": displayBounded, "originalRetained": originalRetained, "originalsLazy": originalsLazy, "incrementalMetadataOnly": incrementalMetadataOnly, "evictionRecovery": evictionRecovery, "thumbnailsBounded": bounded, "incrementalCount": incremental.songs.count, "baselineBytes": before, "peakSampleBytes": peak, "growthBytes": peak - min(peak, before)] as [String: Any]
         }.value
     }
 
@@ -726,9 +810,19 @@ extension MusicLibrary {
         }
     }
 
+    func invalidateArtworkMemory() async { await ArtworkRequestCache.shared.invalidateMemory() }
+
     func artworkData(for song: Song, original: Bool, display: Bool = false, wall: Bool = false, card: Bool = false) async throws -> Data {
-        guard let folder = folders.first(where: { $0.id == song.folderID }) else { throw CocoaError(.fileReadNoPermission) }
-        return try await Task.detached(priority: .userInitiated) { try wall || card ? LibraryScanner.wallArtworkData(song: song, folder: folder, card: card) : display ? LibraryScanner.displayArtworkData(song: song, folder: folder) : LibraryScanner.artworkData(song: song, folder: folder, original: original) }.value
+        guard !maintenanceBusy, let folder = folders.first(where: { $0.id == song.folderID }) else { throw CocoaError(.fileReadNoPermission) }
+        let quality = card ? "card" : wall ? "wall" : display ? "display" : original ? "original" : "thumbnail"
+        let key = String(decoding: try JSONEncoder().encode([song.id, song.cacheVersion ?? "", quality, song.artworkFile ?? "", song.originalArtworkFile ?? ""]), as: UTF8.self)
+        let generation = ArtworkDiskCache.shared.generation
+        let access = folderAccess
+        let data = try await ArtworkRequestCache.shared.data(key: key, cacheInMemory: quality != "original") {
+            try wall || card ? LibraryScanner.wallArtworkData(song: song, folder: folder, card: card, access: access, generation: generation) : display ? LibraryScanner.displayArtworkData(song: song, folder: folder, access: access, generation: generation) : LibraryScanner.artworkData(song: song, folder: folder, original: original, access: access, generation: generation)
+        }
+        guard !maintenanceBusy, folders.contains(where: { $0.id == folder.id && $0.bookmark == folder.bookmark }) else { throw CocoaError(.fileReadNoPermission) }
+        return data
     }
 
     var sharedSettings: [String: Any] {
@@ -742,29 +836,26 @@ extension MusicLibrary {
         func failure(_ text: String) -> NSError { NSError(domain: "MiniVoice.Maintenance", code: 1, userInfo: [NSLocalizedDescriptionKey: text]) }
         switch name {
         case "cacheInfo":
-            let root = Self.artworkDirectory
-            let files = try await Task.detached(priority: .utility) { try ScopedCacheFiles.list(root: root) }.value
+            let files = try await Task.detached(priority: .utility) {
+                try ArtworkDiskCache.shared.inspect { try ScopedCacheFiles.list(root: $0) }
+            }.value
             return ["bytes": files.reduce(0) { $0 + $1.bytes }, "count": files.count, "entries": files.prefix(2000).map(\.dto), "truncated": files.count > 2000]
         case "clearCache":
             guard !isScanning, !maintenanceBusy else { throw failure("扫描或维护期间不能清理缓存") }
             maintenanceBusy = true
             defer { maintenanceBusy = false }
-            let root = Self.artworkDirectory
             let ids = payload["ids"] as? [String]
-            let removed = try await Task.detached(priority: .utility) { try ScopedCacheFiles.clear(root: root, ids: ids) }.value
-            // Invalidate index references, preserving original music, user lyrics and collection data.
-            songs = songs.map { song in
-                var value = song
-                if let path = value.artworkFile, !FileManager.default.fileExists(atPath: path) { value.cacheVersion = nil }
-                return value
-            }
-            saveIndex(songs)
+            await ArtworkRequestCache.shared.invalidateAll()
+            let removed = try await Task.detached(priority: .utility) {
+                try ArtworkDiskCache.shared.maintenance { try ScopedCacheFiles.clear(root: $0, ids: ids) }
+            }.value
             return ["removed": removed]
         case "inspectLibrary":
             if payload["start"] as? Bool == true, inspection["running"] as? Bool != true {
                 let token = UUID(); inspectionGeneration = token
                 let input = songs
                 let selectedFolders = folders
+                let access = folderAccess
                 inspection = ["running": true, "checked": 0, "total": input.count, "unavailable": [[String: String]]()]
                 Task { [weak self] in
                     let result = await Task.detached(priority: .utility) {
@@ -772,16 +863,18 @@ extension MusicLibrary {
                         let groups = Dictionary(grouping: input, by: \.folderID)
                         var checked = 0
                         for (folderID, songs) in groups {
-                            let root = selectedFolders.first(where: { $0.id == folderID }).flatMap(LibraryScanner.resolve)
-                            let accessing = root?.startAccessingSecurityScopedResource() ?? false
-                            defer { if accessing { root?.stopAccessingSecurityScopedResource() } }
+                            let grant: Result<FolderAccessRegistry.Lease, Error> = Result {
+                                guard let folder = selectedFolders.first(where: { $0.id == folderID }) else { throw FolderAccessRegistry.Failure.revoked }
+                                return try access.request(id: folder.id, bookmark: folder.bookmark).acquire()
+                            }
+                            defer { if case .success(let lease) = grant { lease.close() } }
                             for song in songs {
                                 do {
-                                    guard let root else { throw CocoaError(.fileReadNoPermission) }
-                                    let file = root.appendingPathComponent(song.relativePath).standardizedFileURL
-                                    guard file.resolvingSymlinksInPath().path.hasPrefix(root.resolvingSymlinksInPath().path + "/") else { throw CocoaError(.fileReadNoPermission) }
+                                    let lease = try grant.get()
+                                    let file = try lease.file(relativePath: song.relativePath)
                                     let handle = try FileHandle(forReadingFrom: file); try handle.close()
-                                } catch { unavailable.append(["id": song.id, "title": song.title, "path": song.relativePath, "reason": "文件不存在、无读取权限或提供方暂不可用"]) }
+                                    try lease.checkValidity()
+                                } catch { unavailable.append(["id": song.id, "title": song.title, "path": song.relativePath, "reason": "文件不存在、无读取权限或提供方暂不可用：" + error.localizedDescription]) }
                                 checked += 1
                                 if checked % 25 == 0 {
                                     let status: [String: Any] = ["running": true, "checked": checked, "total": input.count, "unavailable": unavailable]
@@ -818,7 +911,7 @@ extension MusicLibrary {
                 let destination = Self.aliasURL
                 try await Task.detached(priority: .utility) { try data.write(to: destination, options: .atomic) }.value
             } catch { aliases = old; throw error }
-            songs = updated; saveIndex(songs)
+            songs = updated; try await saveIndex(songs)
             return true
         default: throw failure("尚未支持此维护操作")
         }

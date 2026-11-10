@@ -284,7 +284,18 @@ html,body,#root{background:var(--mv-canvas-bg,#182720)}
 
 /* Match the ordinary wall poster's black shade at the extended edges. */
 .mv-wall-backdrop-poster::after{content:'';position:absolute;inset:0;background:#00000057;pointer-events:none}
+/* iOS extends the actual wall through the recessed viewport edges. A cover-only
+   copy loses caption/focus gradients and high-resolution framing at that seam.
+   Keep this throughout the return transition; the workspace remains the final
+   viewport clip, while each card keeps its own mask and content clipping. */
+[data-presentation=mobile][data-host=iOS].style-wall{background:#0e1915}
+[data-presentation=mobile][data-host=iOS].style-wall>.mv-scene,
+[data-presentation=mobile][data-host=iOS].style-wall>.mv-scene>.mv-body,
+[data-presentation=mobile][data-host=iOS].style-wall .mv-cover-wall{overflow:visible}
 /* The wall sidebar already has its own frozen wall sample and tint. A second
    live backdrop pass underneath it changes the original material and doubles
    the blur, especially while the foreground scene is receding. */
 [data-presentation=mobile].style-wall .mv-drawer{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+
+/* The wall settings sheet shares portrait width; its corner follows the actual tool. */
+[data-presentation=mobile] .mv-modal-shade[data-modal-variant=wall-settings]>.mv-modal{position:absolute;max-width:none;transform-origin:bottom right}
