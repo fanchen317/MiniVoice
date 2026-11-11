@@ -1,0 +1,6 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {duoChromeGeometry} from '../src/components/duoChromeGeometry.js';
+test('Duo upper cutout keeps search and settings on the same trailing axis',()=>{const g=duoChromeGeometry(951,669,[{x:867,y:0,width:84,height:124}]);assert.equal(g.menu.x,14);assert.equal(g.settings.x,797);assert.equal(g.settings.y,599);assert.equal(g.search.x,797);assert.equal(g.dock.y,599);});
+test('Duo lower cutout affects lower control only and rotates to either side',()=>{for(const x of [0,867]){const g=duoChromeGeometry(951,669,[{x,y:545,width:84,height:124}]);const hit=x===0?g.dock:g.settings;assert.ok(hit.x>=98&&hit.x+56<=853);assert.equal(g.search.x,x===0?881:797);assert.equal(g.search.x,g.settings.x);assert.equal(g.menu.x,14);}});
+test('lower fold pane ignores upper cutouts and respects fold control margin',()=>{const g=duoChromeGeometry(800,550,[{x:716,y:-550,width:84,height:124}],15);assert.equal(g.search.x,730);assert.equal(g.search.y,29);assert.equal(g.dock.y,480);});
+
+test('portrait top row stays aligned below the short wide status occlusion',()=>{const g=duoChromeGeometry(669,951,[{x:525,y:0,width:144,height:82}]);assert.equal(g.menu.y,96);assert.equal(g.search.y,96);assert.equal(g.settings.y,881);assert.equal(g.dock.y,881);});

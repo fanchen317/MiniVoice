@@ -1743,3 +1743,80 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
 - 最终Android完整portable通过：在不降低中间帧/材质/图片/状态断言的条件下，独立完整运行返回UI_PORTABLE_PASS，证据`.build/reports/android/drawer-style-black-portable-context.log`。包括实际多色截图碎片、中间运动及最终清理、完成后native snapshot=null（异步释放至多等500ms）、三样式深浅、侧栏开合/反向/scene回场、缓存与返回/重启、音乐墙滑动/缩放/展开/旋转/关闭/快速切卡、队列触拖和系统主题。前两次帧采样失败不能用这次通过抹去，也不能据此宣称稳定FPS。
 - 最终APK：`.build/dist/MiniVoice-3.0.0-android.apk`，已构建、既有签名校验并安装专用模拟器；另检查包内包含解码采样暂存、Android占位底和native style-snapshot端点。截图已保存并查看`.build/reports/android/drawer-style-black-screenshots/`及`wall-pending-artwork/`。未修改正式包标识/签名/Shared版本和数据目录，未操作真实音乐库。
 - 交付范围：已修复确定的冷图纯黑底与侧栏未解码交接，移除大截图字符串跨桥、保留原样式及运动参数；前述自动化通过。原设备偶发GPU合成、热状态、极端慢存储及完整真机矩阵仍待验收，不能把本轮结果泛化为所有设备绝不闪屏或每次无卡顿。
+
+### 2026-11-10 iPhone Duo 侧边状态区域布局
+
+- 已修改：扫描浮层按扣除左右系统安全区后的主内容中心定位，横屏顶部与工具栏对齐。iOS 竖屏音乐墙播放条/配置按钮以侧边安全区抵扣底部遗留留白，左右安全区为零的普通 iPhone 仍保留 Home 指示条空间；横屏保持原底部避让。配置按钮碰撞检测改用播放条实际计算 bottom，避免与新布局使用不同预算。
+- 通过：UI 标准门禁；共享136项；自有组件DOM回归；`Scripts/tests/test-ios-duo-layout.cjs` 在合成库覆盖600×900、900×600、440×956、左右80px侧区/无侧区、深浅、旋转后真实按钮边界、扫描点击打开设置。已查看定向截图。证据 `.build/reports/ui/ios-duo/{geometry.json,duo.png}`、`duo-shared.log`、`duo-components.log`。
+- 通过：最终 iOS simulator Debug 构建及后台音频声明，`.build/reports/ios/duo-simulator-build.log`。
+- 失败：完整音乐墙回归连续两次停在 `Focus surface must fade above the retained loaded poster`，日志 `.build/reports/ui/duo-wall-regression{,-retry}.log`；未屏蔽断言或将完整回归记为通过。
+- 失败：新建专用 MiniVoice Shared iOS Duo Layout 模拟器（iOS27.1），使用合成文件运行真实WKWebView shared-host-smoke，停在“iOS 与 Android 共用真实封面、轮廓、遮罩和控制组件”断言，未进入后续布局矩阵。日志 `.build/reports/ios/duo-native-ui.log`。没有使用用户设备或真实音乐库。
+- 待验收：Duo 实际系统侧栏状态/折叠旋转、真实扫描时浮层与底部按钮、三样式实体材质与触控；当前为定向代码修复，不声明完整页面或真机验收通过。
+
+### 2026-11-10 Duo 半折上下播放布局
+
+- 已实现：iOS27.1 公开活动横向 division 区域驱动分区，上方为实际正在播放歌曲的展开 WallPlayer，下方保留音乐墙与工具栏、预览、搜索、设置；折痕系统边距不承载交互。摊平、关闭或纵向折痕回到原布局，不以窗口比例猜测半折；不写入持久页面状态。上方复用歌词、播放/切曲、收藏、进度、译文和清晰/模糊组件，半折物理分区不提供收起按钮。侧栏/弹窗使上方 inert，返回恢复。
+- 用户确认：系统状态栏移到侧边时底部按钮去掉多余安全区空白，只保留普通边距；沿用上一条定向修复。
+- 通过：UI标准门禁、共享136项、自有组件DOM回归和完整音乐墙回归；日志 `.build/reports/ui/{table-shared.log,table-components.log,table-wall-regression.log}`。此前聚焦淡入断言失败的记录保留，不据本轮通过推断先前失败根因。
+- 通过：`Scripts/tests/test-ios-table-mode.cjs` 以合成宿主折痕覆盖上下边界、上方实际歌曲/播放/切曲、深浅、插图清晰/模糊、侧栏inert/Escape、摊平恢复和连续快速姿态切换；已查看截图 `.build/reports/ui/ios-table/{dark,light}.png`，复查并修正了上方播放器与下方墙的绘制层级。
+- 通过：最终 iOS simulator Debug 构建（公开 UIHingeInteraction/ReservedRegion API 经编译验证）及后台音频声明，`.build/reports/ios/duo-table-build.log`。
+- 待验收：本轮无法通过已连接的电脑控制接口访问 Simulator，未完成真实系统半折事件、折痕坐标/旋转及WKWebView触控验证。页面测试注入合成折痕，不等于设备传感器验证；真实 Duo 材质、GPU、封面切换与三样式完整设备矩阵仍待验收，不声明实机完成或FPS。
+
+### 2026-11-10 Duo 截图反馈：按钮、弹层、卡片与折痕留白
+
+- 已修正：iOS 横屏不再把焦点卡片挤到右侧。摊平横屏卡片/展开播放栏在安全内容区居中；横向半折时使用系统纵向division的左边界，在左半区居中。上下半折按下半区自身尺寸/安全区计算卡片，预留顶部工具行与底部播放栏行，修复卡片与展开播放栏重叠。Android 保留既有布局。
+- 已修正：iOS搜索/侧栏/设置/收起播放条统一56px控件尺寸、14px普通边距；修复横屏搜索48px与侧栏56px导致的顶部错位。侧栏底边与底部控件使用同一留白预算。Duo能力由公开inactive division查询识别，仅Duo侧边状态区抵扣底部额外留白，普通iPhone保留Home指示条安全区。
+- 已修正：上下半折时侧栏、普通弹窗/歌曲操作及设置浮层和遮罩只覆盖下半区；现有弹层在姿态切换时也重新求交。上方封面连续覆盖折痕边距，交互止于折痕上沿，移除纯色大白条；上方标题去掉整行多余顶部留白，右侧译文控件单独避让系统顶部区域。
+- 已修正：姿态事件先于React提交时卡片读到旧分区的问题；以工作区区域属性变化补充重测，并在卸载清理监听。
+- 通过：共享137项（含新增iOS区域几何用例）、UI标准门禁；组件真实DOM与完整音乐墙回归，日志 `.build/reports/ui/{duo-regions-shared.log,duo-regions-components-verified.log,duo-regions-pages-verified.log}`。定向上下/左右/摊平、快速姿态、播放切曲、展开播放栏、下半区设置/侧栏/Escape、深浅、左右状态区与普通手机Home避让用例见 `duo-regions-targeted-final.log`、`duo-regions-controls.log`；已查看 `.build/reports/ui/ios-table/{book,flat,lower-settings}.png`。
+- 通过：iOS/Android设置浮层横竖切换、左右安全区及实际按钮锚点回归 `duo-regions-settings-final.log`；首轮因弹窗仍用旧bottom安全区预算而失败，保留 `duo-regions-settings.log`，已同步设置层预算后通过，未放宽断言。
+- 通过：iOS simulator Debug 最终构建与后台audio声明，`.build/reports/ios/duo-regions-build-final.log`。未改正式标识、签名、真实曲库或用户既有Xcode scheme修改。
+- 待验收：页面测试使用合成姿态/安全区；系统实际fold frame、不同Duo系统状态条/旋转和真实WKWebView触控/材质/GPU仍待用户设备验收，不能由编译与Chromium截图推断实体体验全部达标。
+
+### 2026-11-11 Duo 六姿态 × 三样式逐页梳理（未完成全部原生验收）
+
+- 已建立逐页台账 `Docs/iOS-Duo-Page-Audit.md`，明确区分系统模拟器、注入姿态页面检查和未验证页面，不将矩阵格数量当验收百分比。
+- 已修正：半折上下分区从音乐墙扩展至简易/音乐库；下半区采用自身宽高选择触控播放组合；左右半折的非墙播放页按fold frame分列，音乐库目录左列表/右播放，保留当前样式、主题、状态与既有控件规则。新增布局监听在卸载时清理，不保存临时物理姿态。另修复最近播放等空列表提示误导用户添加文件夹。
+- 通过：专用Duo当前关闭外屏竖向真实WKWebView的三样式深浅页面矩阵68条，含主页面、侧栏、设置、搜索展开、播放/歌词/聚焦、队列、最近/收藏/歌手/专辑和创建歌单弹窗。实际data-style逐项断言；输出 `.build/reports/ios/duo-matrix/outer-portrait-reviewed/`，已查看原生页面截图。这里“搜索”仅代表展开边界，不能代表实际系统输入通过。
+- 测试脚本问题保留：早期40条记录因同名导航选择器不能证明全部样式；扩展轮报 missing 收藏。已限定样式选择器且核对实际样式后重跑68条通过，没有降低几何标准或屏蔽应用失败。
+- 通过：注入姿态36格页面几何（六姿态×三样式×深浅），含场景、侧栏与弹窗边界；共享137项、组件DOM、完整音乐墙回归和iOS原生逻辑测试。日志 `.build/reports/ui/{duo-matrix-projected-final.log,duo-matrix-shared.log,duo-matrix-components.log,duo-matrix-pages-reviewed.log}`、`.build/reports/ios/duo-matrix-native-tests.log`；iOS simulator Debug及后台audio声明见 `duo-matrix-build-final.log`。这些不代替真实六姿态测试。
+- 失败/待修：现有XCTest `testContentLongPressAndSearchEditing` 在真实模拟器输入“山海”后仍读到占位文字，见 `.build/reports/ios/duo-matrix-keyboard.log` 与 `.xcresult`。未删除/放宽断言；尚不能区分焦点、系统输入注入与主机锁屏影响。测试失败后的诊断收集长时间未退出，已终止本次xcodebuild进程，不能将此测试记通过。
+- 阻塞：本轮已在Device Hub选中专用模拟器，随后主机Mac锁屏；电脑控制工具明确要求手动解锁，两次检查均仍锁屏，已向用户请求解锁。未绕过锁屏，不能切换并验证另外五种实际系统姿态；原生实际方向、触控、键盘、状态恢复、子页面详查和实体GPU/材质仍待验收。本轮没有安装到真实设备或访问真实曲库，也未覆盖用户已有Xcode scheme改动。
+- 补充未通过：追加“音乐库目录左右列避开折痕”断言的页面矩阵重跑，在主机锁屏期间启动后超过4分钟未返回、也未生成新截图；已终止该次专用Electron进程，见 `duo-matrix-projected-reviewed.log`（未返回，不作通过证据）。前述36格通过来自 `duo-matrix-projected-final.log`；增强断言及最终目录画面需解锁后重跑。
+
+### 2026-11-11 用户新增截图：分界偏下、按钮偏高、横屏右侧空列
+
+- 已复现原生数据：专用Duo展开横向951×669，系统safeRight84/safeBottom34，但活动occlusion实际仅右上84×124；竖向669×951，遮挡仅右上144×82。此前将局部遮挡作为整列安全区，且仅靠division识别设备，解释了用户截图里底部仍偏高及右侧整列未利用的问题。
+- 已修正：通过公开hinge更新补充内屏识别，按活动occlusion局部避让；上方按钮保持共同安全行，底部未相交按钮只留14px。展开播放条/墙使用完整物理内容宽度居中；同步修正宿主旧bottom命中拒绝规则，普通外屏Home避让保持。纯模型不调用宿主或读持久状态。
+- 已修正：上下分界使用折痕中线，控件边距单独避让。真实半折竖向fold455.5–495.5，中线475.5等于951/2；已查看原生截图确认没有把下沿当中线，原生数据与截图见 `.build/reports/ios/duo-localized/table-portrait-midline/`。
+- 通过：共享141项，含局部遮挡与旋转方向/竖屏行对齐反例；UI标准门禁；组件DOM和完整音乐墙回归。日志 `.build/reports/ui/{duo-localized-shared.log,duo-localized-components.log,duo-localized-pages.log,duo-midline-layout.log}`；最终iOS simulator Debug构建及后台audio声明见 `.build/reports/ios/duo-localized-build-final.log`。
+- 通过：真实展开横屏三样式深浅逐页68条，`.build/reports/ios/duo-matrix/open-landscape-localized/report.json`；真实竖屏按钮测量见 `.build/reports/ios/duo-localized/open-portrait-aligned/`。这是专用模拟器/合成库，不代表用户真机全部验收。
+- 补充通过：用户再次解锁后已实操Device Hub完成展开横向、展开竖向与上下半折。上下半折三样式深浅逐页68条边界记录通过，`.build/reports/ios/duo-matrix/table-portrait-midline/report.json`；原生截图确认分界正好位于物理中线。展开竖向两上方按钮y96对齐、设置y881（高951，底距14）。新增竖向行对齐用例后共享141项通过，构建 `duo-localized-build-final.log` 通过。
+- 再次阻塞：后续切换左右半折前Device Hub又报告Mac锁屏；本次UI会话已停止，没有伪造其余姿态结果。完整逐页矩阵、真实键盘/触控/重启等缺口仍以 `Docs/iOS-Duo-Page-Audit.md` 为准。
+
+### 2026-11-11 用户截图：右下设置应与搜索对齐
+
+- 已修正：Duo内屏音乐墙的搜索/设置共用右侧工具列水平锚点。搜索因右上系统遮挡内缩时，设置同步内缩；保留底部14px普通间距与播放栏实际碰撞上移规则。卡片、展开播放栏与画布可用宽度不随这条工具列改变。
+- 通过：共享141项（更新局部遮挡用例以验证共同列，此为用户明确视觉契约变化，不放宽安全边界）；定向DOM覆盖真实951×669右上/右下84×124遮挡及669×951竖向144×82遮挡，实际左右边界误差<1px、无系统遮挡交集、展开播放栏保持居中，右上遮挡时底部距14px。已查看截图 `.build/reports/ui/duo-trailing-column/upper-right.png`；测量 `geometry.json`，日志 `duo-trailing-layout.log`、`duo-trailing-shared.log`。
+- 通过：UI标准门禁；iOS simulator Debug及后台audio声明 `.build/reports/ios/duo-trailing-build.log`。完整页面回归见 `.build/reports/ui/duo-trailing-pages.log`，真实Duo该新增轴线的WKWebView/触控仍待专项验收，前述其他姿态与搜索输入缺口未据此关闭。
+
+### 2026-11-11 固定待播放页、内容区域与双向半折动画
+
+- 已实现：按用户更正，半折竖屏无当前歌曲时上方为固定时钟/日期/寄语页面，无自定义入口、无新外观存储。选歌自动交接至正在播放，空库也不再只剩黑底。浅色为浅薄荷/深文字，深色为深蓝绿/浅文字；设置显式切换及跟随系统均有页面验证。
+- 已修正：展开播放栏限于左工具到右搜索/设置列的主内容区域，在此区域居中，不越入右侧状态栏；音乐墙设置弹层及其遮罩也限制在该区域，面板右下角跟随设置按钮实际边界，覆盖按钮所在区域。墙面仍铺满，不为工具列挖空整列。右下遮挡时底部两按钮共用安全行；收起圆形播放条不触发展开栏碰撞上移。
+- 已优化：折痕中线附近使用40px无实色分隔的透明采样过渡，重点柔化下方墙上缘，不改变按钮命中与中线位置。
+- 已实现：竖屏音乐墙展开↔上下半折的420ms双向分界动画；分界从顶部到折痕中线/反向返回，上半区、音乐墙和按钮同步真实几何变化。可中断反向，退出保留上半节点，动画后清理；减弱动态立即切到最终布局，初次加载不从零飞入。动画期间已打开弹层的边界也持续随分界移动。
+- 通过：UI门禁；共享141项；固定待播放页DOM（空库、无配置入口、选歌切换、摊平、主题及跟随系统）`table-idle-theme-layout.log`；主内容播放栏和弹层边界 `table-idle-content-region.log`；分界中间帧/按钮轴线/退出节点/弹窗边界/反向/减弱动态 `fold-motion-layout.log`，帧数据 `.build/reports/ui/fold-motion/frames.json`。组件DOM `fold-motion-components.log`、完整页面 `fold-motion-pages-final.log`通过，iOS simulator Debug/后台audio声明 `.build/reports/ios/fold-motion-build-final.log`通过。
+- 通过：专用Duo真实WKWebView，Device Hub实际竖屏展开→半折与半折→展开各采到15个中间位置样本，上半下缘与下半上缘一致；最终分界分别475.5/0。报告与截图 `.build/reports/ios/fold-motion/{enter-portrait,exit-portrait}/`。这是样本数量，不是FPS。首次采样误在横屏操作，没有收到竖向折痕事件而超时，保留 `fold-motion/enter/report.json`；切到正确竖屏后通过，未放宽断言。
+- 方向问题未关闭：补齐手机倒置竖屏声明，并在应用方向策略返回all。原生探针确认控制器mask30；左右横屏/正常竖屏能响应，但外屏设备orientation2时scene/interface仍为1（浏览器angle0），见 `duo-localized/closed-upside-down-final/report.json`；不能声称倒置竖屏已修好，未用CSS旋转内容伪装系统旋转。系统仍会考虑设备可支持方向，参考Apple UIViewController supportedInterfaceOrientations文档。该缺口与此前搜索真实输入失败、六姿态未覆盖项继续保留。
+- 未操作真实设备/曲库；仅专用模拟器合成文件。实机GPU/材质、所有姿态触控/重启和原生反向打断仍待验收，不以截图或编译代替。
+
+
+### 2026-11-11 Duo 聚焦内容区域与横向半折连续移动
+
+- 已实现：iOS Duo 音乐墙聚焦使用与按钮、展开播放栏一致的内容左右边界，排除侧边系统状态区域；横向半折仍取左屏边界与内容边界的交集。普通 iPhone/iPad 没有 Duo 区域数据时沿用原有安全区算法。
+- 已实现：横屏 Duo 内容区域改变时，复用音乐墙 520ms 聚焦平移与重排动画；从展开到左侧半折区域及反向均连续移动，尺寸同步变化，减弱动态时直接到最终布局。竖屏分界动画期间保持原有处理。
+- 通过：`duo-focus-layout.log` 的 Chromium 合成页面验证竖屏侧边状态栏排除后的聚焦中心，以及横屏展开/半折双向移动的中间帧和最终中心；证据位于 `.build/reports/ui/duo-focus/`。
+- 通过：142 项共享单元测试、UI 标准检查、按钮/弹窗边界回归、竖屏分界动画及反向/减弱动态回归。日志为 `.build/reports/ui/duo-focus-{unit,standards,controls,fold}.log`。
+- 通过：iOS Debug 模拟器构建及后台音频能力检查，日志 `.build/reports/ios/duo-focus-build.log`；新包已安装专用 Duo 模拟器。
+- 待验收：本次横屏平移动画在 Device Hub 实际折叠操作下的视觉验收；上述中间帧证据来自 Chromium 合成姿态，不冒充原生实际姿态验收。此前外屏倒置竖屏问题仍未解决。

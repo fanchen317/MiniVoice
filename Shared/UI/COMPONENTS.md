@@ -736,3 +736,39 @@ iOS音乐墙不再挂载WallDrawerBackdrop封面副本；根workspace负责最�
 - DrawerLayer仍是同一持续节点、320ms和原曲线；首次closed不启多余动画，反向采样当前矩阵，运行时reduce直接终点并清观察器/媒体监听。业务open由页面拥有，退出期间inert不变。
 - styleTransition支持Android宿主单份本地截图lease：只接受src/token，裁片后释放；正常/超时/中断/晚回都会释放，Java宿主另有匹配token的5秒TTL。保留原截图预算和原碎片计划/关键帧/时长，dataURL和host-fragments兼容。应用内容/业务操作不由截图决定成功。
 - Android普通海报的等待底色复用已有占位渐变；opaque封面加载后覆盖它，原字幕遮罩/轮廓/按压与聚焦几何不变。真实Android host名字接入测试fixture，避免该皮肤分支在测试中漏跑。定向像素用例验证新卡片阻塞响应与最终图片交接。
+
+### iOS Duo 侧边状态区域（2026-11-10）
+扫描提示仍由 ScanStatus/ActionButton 管理状态和点击；浮层中心使用左右安全区扣除后的内容中心，横屏顶部与工具栏一致。iOS 竖屏音乐墙的播放条/配置按钮共用 --mv-wall-control-bottom，侧边安全区抵扣底部遗留留白；普通手机左右为零时保留底部 Home 避让，横屏沿用原安全区。无新增动画和持久状态；旋转由 CSS 重新布局。真实 Duo/WKWebView 材质与触控待验收。
+
+### iOS 半折桌面姿态（2026-11-10）
+宿主在 iOS27.1 通过公开 UIView.reservedRegions(kind: .division) 查询活动横向折痕，frame 包含系统交互边距；UIHingeInteraction 触发重新布局，折痕变化随 minivoice-insets 发布。非活动/纵向折痕不进入上下布局，不能用窗口宽度猜折叠状态。
+PortablePlayer 的 table-player 是临时布局，复用 WallPlayer 与 ArtworkModeScope：上方绑定实际 current，显示展开歌词、播放/前后曲、收藏、进度、译文与插图清晰/模糊；物理分屏不提供收起按钮。下方保留既有墙、预览和侧栏；弹窗/侧栏令上方 inert。退出恢复既有页面状态，不将姿态写入工作区。监听卸载清理；布局直接跟随系统折痕，快速反向以最新区域为准，无新增强制动画。保留移动触控目标与深浅皮肤；无当前曲时显示选择提示。
+验证使用 test-ios-table-mode.cjs 的合成状态覆盖上下边界、播放切曲、侧栏与返回、摊平、快速变化；原生模拟器构建和实机姿态验证分别登记验收台账。
+
+### Duo 区域坐标统一（2026-11-10 续）
+宿主同时发布活动横向/纵向 division frame，以及包含 inactive 查询得到的 Duo 能力标记。上下半折上方封面覆盖折痕边距（交互仍止于 foldTop），不创建纯色空白条；下方墙从 foldBottom 开始。横向半折时焦点卡片与展开播放栏共用 foldLeft 之前的左区中心；摊平则共用整个安全内容区中心。卡片上方预留80px工具行、下方114px播放栏行，避免按整屏 landscape 将下半屏误判成右侧卡片布局。
+Wall 从自身祖先继承安全区，观察工作区区域属性变化以在 React 提交姿态后重算，避免折叠事件先到时读到旧布局。iOS 四角控件统一56px与14px外距，收起播放条和侧栏按钮同轴；Duo 侧边状态区域抵扣底部留白，普通 iPhone 仍保留 Home 避让。侧栏底边与底部按钮底边使用同一预算。下半区的 DrawerLayer、Modal及其遮罩只占下半区，useDialogViewport 对视觉/键盘可用区域与下半区求交，设置浮层继续跟随该区的搜索/配置实际锚点；监听均卸载清理，快速姿态变化取最后状态。
+新增 iosWallRegions.test.mjs 验证物理区域中心和卡片/播放栏分离；定向DOM覆盖上下/左右/摊平、展开播放栏、侧栏、设置、返回、深浅、快速变化及左右安全区。实体系统事件、材质与GPU仍需设备验收。
+
+### Duo 三样式分区（2026-11-11）
+PortablePlayer的table-mode对三种样式生效；上方复用正在播放，下方保留该样式内容，所有弹层继续由共同的下半区边界约束。region-landscape由工作区减去foldBottom后的实际宽高计算，ResizeObserver卸载清理；窄窗口不改变mobile输入家族。简易/音乐库在下半区使用现有横向播放组合；book-mode则按真实foldLeft/foldRight分隔列，音乐库目录与播放详情分别占左右区。主题、状态、ActionButton、歌词/进度和返回规则沿用原组件，没有新增宿主私有控件或永久姿态状态。原生逐页证据与缺口见Docs/iOS-Duo-Page-Audit.md，注入姿态36格不等同实体或原生六姿态完整验收。
+
+SongList新增可选emptyText，由PortablePlayer按查询/最近播放/收藏/歌单/曲库状态提供空态含义；组件不自行读宿主或改变曲库。列表加载和扫描状态仍由页面已有分支负责，空列表不代表未授权或扫描失败。
+
+### Duo 中线与局部遮挡修正（2026-11-11 续）
+上下分界改用(foldTop+foldBottom)/2；封面覆盖到中线，下半画布从中线开始，控件通过半个fold margin避开折痕。上方交互仍止于foldTop，下方工具行开始于foldBottom+14，不能把foldBottom当屏幕中线。DialogBoundary以中线限制下半区，保留自身内边距。
+宿主同时发布公开活动occlusion矩形，并以UIHingeInteraction是否提供hinge补充识别内屏（摊平时不能仅凭inactive division推断没有折叠设备）。duoChromeGeometry纯模型只移动与遮挡相交的56px控件，上方两按钮取共同安全行；底部未相交的按钮保留14px边距。内屏音乐墙不再把局部遮挡解释为全高安全列；非墙与普通iPhone保留原安全区。宿主内屏命中测试同步停止拒绝整条旧bottom inset，避免可见按钮下半部不可点；外屏保留Home区域规则。occlusion序列化按key排序，避免相同矩形反复发布。
+原生内屏横向测量951×669、右上遮挡84×124，搜索x797/y14、设置x881/y599、展开播放条x255.5/width440；竖向669×951、右上遮挡144×82，上方按钮y96、设置y881。均为CSS/点坐标，不是FPS或真机测量。纯模型新增局部遮挡方向/上下分区与竖向行对齐测试。
+
+### Duo 右侧工具列对齐（2026-11-11 续）
+按用户最新截图要求，duoChromeGeometry在局部遮挡求解后为搜索和设置选择共同水平锚点；共同列须同时避开两按钮位置上的系统遮挡。右上遮挡使搜索向左时，右下设置同步向左；右下遮挡时搜索同步对齐。只调整这两个控件的水平位置，不保留画布空列、不移动居中的焦点卡片/展开播放栏，底部间距与实际碰撞上移规则沿用。多遮挡确无共同安全列时保留独立安全位置，不遮住系统区域。定向DOM检查真实绘制边界左右同时对齐、遮挡不重叠、底部间距与播放栏中心。
+
+### TableIdle / FoldPresentation（2026-11-11）
+- TableIdle：`data-mv-component=table-idle`，仅在实际上下半折且没有当前歌曲时，由PortablePlayer放入上半区。固定渐变、时钟、日期与寄语；按用户更正不提供自定义入口、不增加外观存储字段。当前歌曲和物理姿态由页面控制，不复制播放器状态；时钟每秒检查但仅分钟/日期变化时更新，恢复可见时校准，卸载清理定时器和visibility监听。无业务事件、焦点和按钮；音乐库为空同样显示。浅色深色使用各自背景与文字变量，跟随resolved theme，不以封面亮度猜主题。
+- fold-blend：中线两侧40px的真实背景采样层，透明边缘和轻模糊柔化音乐墙上缘，无实色隔条；`pointer-events:none`，不能遮挡工具按钮或改变折痕几何。主题随页面切换，无独立动画计时器。
+- useFoldPresentation / foldMotion.css：仅竖屏iOS音乐墙在上下半折与摊平之间启用420ms分界过渡。注册专属长度变量，分界、上半区裁切、下半区真实布局、控件/播放栏锚点和安全边距由同一CSS插值驱动；React只管理上半区退出时的节点寿命，不逐帧重写样式。首次装载不做从零飞入；退出保留上半区直到线到顶部；反向从浏览器当前值继续。transitionend收尾，470ms兜底仅用于卸载寿命，不阻塞操作，反向/卸载清理旧监听与计时器。减弱动态效果和运行时切换直接到最终状态。横屏、左右折叠和其他样式立即落到对应最终布局，不改变输入家族。
+- 弹窗的可用区域改由CSS对视觉视口/键盘与移动中线求交，避免动画中保留过时pixel top。右侧边界取搜索/设置共同列，展开播放栏在该主内容区居中；左右半折仍保持原左半区播放栏规则。局部底部遮挡令两个底部按钮使用共同安全行，圆形播放条不触发展开播放栏碰撞抬升。
+- 验证：table-idle-theme-layout覆盖设置切换深浅/跟随系统、空库、选歌交接、摊平恢复与上半边界；fold-motion-layout检查中间帧、实际按钮几何、弹窗跟随、反向与减弱动态。真实WKWebView由Device Hub切换实际hinge采样，native fold-motion enter-portrait / exit-portrait均通过，不注入原生折痕或伪造帧率。
+
+
+Duo Wall 聚焦区域补充（2026-11-11）：`Wall` 读取 localized 内容左右边界，使用其与安全区、book 左屏边界的交集计算 `mobileWallViewport`，避免按钮避让后聚焦仍取全屏中心。`animateViewportFocus` 由 PortablePlayer 的 iOS localized 横屏状态开启；区域改变复用现有 focusCell 动画和打断清理，按新 viewport 重排与平移，减弱动态直接完成；不增加独立持久状态。验证：`test-ios-duo-focus.cjs` 检查 portrait 内容中心和横屏 book 进出中间帧，原有 `test-ios-fold-motion.cjs` 继续验证竖屏动画。

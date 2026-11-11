@@ -8,7 +8,7 @@ import Slider from './components/Slider.jsx';
 import {lyricWindow,wallCardMetrics} from './wallLayout.js';
 const time=value=>`${Math.floor(Math.max(0,value||0)/60000)}:${String(Math.floor(Math.max(0,value||0)/1000)%60).padStart(2,'0')}`;
 export function WallLyrics({lines,time,duration,playing,onSeek,expanded=false,showTranslation=true}){return <ScrollingLyrics presentation={expanded?'wall-expanded':'standard'} showTranslation={showTranslation} className="wp-lyrics" lineClass="wp-line" label="音乐墙歌词" lines={lines} time={time/1000} duration={duration/1000} playing={playing} onSeek={seconds=>onSeek(seconds*1000)}/>;}
-export default function WallPlayer({song,card,current,playing,favorite,lines,frame,position,expanded,mode,onPlay,onToggle,onSkip,onFavorite,onExpand,onClose,onSeek,onMode,hasTranslation,showTranslation,onTranslation,kinetic=false,onKinetic,showSeam=false}){
+export default function WallPlayer({song,card,current,playing,favorite,lines,frame,position,expanded,mode,onPlay,onToggle,onSkip,onFavorite,onExpand,onClose,onSeek,onMode,hasTranslation,showTranslation,onTranslation,kinetic=false,onKinetic,showSeam=false,allowCollapse=true}){
  const surface=useRef(null),[visible,setVisible]=useState(true);
  useEffect(()=>{const observer=new IntersectionObserver(entries=>setVisible(entries[0]?.isIntersecting??false));if(surface.current)observer.observe(surface.current);return()=>observer.disconnect();},[]);
  const compact=!expanded&&!card.keepControls&&(card.compact||card.height<270),metrics=wallCardMetrics(card.width,card.height,expanded,compact);
@@ -21,7 +21,7 @@ export default function WallPlayer({song,card,current,playing,favorite,lines,fra
    {!compact&&<><Button label="下一首" icon="next" disabled={!current} onClick={()=>onSkip(1)}/><Button label={favorite?'取消收藏':'收藏歌曲'} icon="heart" selected={favorite} onClick={onFavorite}/></>}
    {expanded&&!current&&<ArtworkModeButton/>}{expanded&&current?<ActionButton className="mv-button wp-kinetic-toggle" aria-label={kinetic?'切换到滚动歌词':'切换到大字歌词'} aria-pressed={kinetic} onClick={onKinetic}><Icon name="lyricStyle"/></ActionButton>:<Button className="mv-button wp-expand-toggle" label={expanded?'收起播放器':'展开播放器'} icon={expanded?'collapse':'expand'} onClick={onExpand}/>}
 
-   {expanded&&current&&<ArtworkModeButton/>}{expanded&&current&&<Button className="mv-button wp-collapse-toggle" label="收起播放器" icon="collapse" onClick={onExpand}/>}
+   {expanded&&current&&<ArtworkModeButton/>}{expanded&&current&&allowCollapse&&<Button className="mv-button wp-collapse-toggle" label="收起播放器" icon="collapse" onClick={onExpand}/>}
   </div>{!compact&&<div className="wp-seek"><span>{time(position)}</span><Slider label="播放进度" min={0} max={Math.max(1,song.duration||1)} step={100} value={position} resetKey={song.id} disabled={!current||!song.duration} valueText={value=>`${time(value)} / ${time(song.duration)}`} onCommit={onSeek}/><span>{time(song.duration)}</span></div>}</footer>
  </div>;
 }

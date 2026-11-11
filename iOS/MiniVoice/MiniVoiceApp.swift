@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct MiniVoiceApp: App {
+    @UIApplicationDelegateAdaptor(MiniVoiceApplicationDelegate.self) private var applicationDelegate
     @StateObject private var library = MusicLibrary()
     @StateObject private var player = MusicPlayer()
 
@@ -30,7 +31,7 @@ struct MiniVoiceApp: App {
                     library.restoreAndScan()
                     #if targetEnvironment(simulator)
                     if ProcessInfo.processInfo.arguments.contains("--mv-scan-timing-test") { Task { try? await Task.sleep(for: .seconds(1)); library.rescan() } }
-                    if ProcessInfo.processInfo.arguments.contains("--mv-ui-fixture"), let song = library.songs.first {
+                    if ProcessInfo.processInfo.arguments.contains("--mv-ui-fixture"), !ProcessInfo.processInfo.arguments.contains("--mv-ui-idle-fixture"), let song = library.songs.first {
                         player.play(song, queue: library.songs, library: library)
                         player.pause()
                     }
@@ -38,4 +39,10 @@ struct MiniVoiceApp: App {
                 }
         }
     }
+}
+
+// Match the four declared phone orientations at the application policy layer.
+// UIKit still owns sensor, scene and system rotation-lock decisions.
+final class MiniVoiceApplicationDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask { .all }
 }

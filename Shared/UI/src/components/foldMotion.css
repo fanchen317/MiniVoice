@@ -1,0 +1,27 @@
+/* Typed lengths interpolate layout, artwork clipping and hit targets together. */
+@property --mv-fold-mid{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-fold-top{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-fold-bottom{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-fold-gap{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-chrome-menu-left{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-chrome-menu-top{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-chrome-search-right{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-chrome-search-top{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-chrome-dock-left{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-chrome-dock-bottom{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-chrome-settings-right{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-chrome-settings-bottom{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-chrome-safe-top{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-chrome-safe-bottom{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-content-left{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-content-right{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-dock-content-center{syntax:"<length>";inherits:true;initial-value:0px}
+@property --mv-dock-content-width{syntax:"<length>";inherits:true;initial-value:0px}
+[data-presentation=mobile][data-host=iOS][data-ready=true][data-fold-animate=true]{transition:--mv-fold-mid 420ms cubic-bezier(.22,.8,.2,1),--mv-fold-top 420ms cubic-bezier(.22,.8,.2,1),--mv-fold-bottom 420ms cubic-bezier(.22,.8,.2,1),--mv-fold-gap 420ms cubic-bezier(.22,.8,.2,1),--mv-chrome-menu-left 420ms cubic-bezier(.22,.8,.2,1),--mv-chrome-menu-top 420ms cubic-bezier(.22,.8,.2,1),--mv-chrome-search-right 420ms cubic-bezier(.22,.8,.2,1),--mv-chrome-search-top 420ms cubic-bezier(.22,.8,.2,1),--mv-chrome-dock-left 420ms cubic-bezier(.22,.8,.2,1),--mv-chrome-dock-bottom 420ms cubic-bezier(.22,.8,.2,1),--mv-chrome-settings-right 420ms cubic-bezier(.22,.8,.2,1),--mv-chrome-settings-bottom 420ms cubic-bezier(.22,.8,.2,1),--mv-chrome-safe-top 420ms cubic-bezier(.22,.8,.2,1),--mv-chrome-safe-bottom 420ms cubic-bezier(.22,.8,.2,1),--mv-content-left 420ms cubic-bezier(.22,.8,.2,1),--mv-content-right 420ms cubic-bezier(.22,.8,.2,1),--mv-dock-content-center 420ms cubic-bezier(.22,.8,.2,1),--mv-dock-content-width 420ms cubic-bezier(.22,.8,.2,1)}
+[data-wall-localized=true][data-table-mode=true].style-wall>.mv-scene{--mv-safe-top:inherit}
+@media(prefers-reduced-motion:reduce){[data-presentation=mobile][data-host=iOS][data-fold-animate=true]{transition:none!important}}
+.reduce-motion [data-presentation=mobile][data-host=iOS][data-fold-animate=true]{transition:none!important}
+
+/* Keep an already-open sheet inside the moving lower region, including
+   visual viewport/keyboard clipping, without a stale JavaScript pixel top. */
+[data-presentation=mobile][data-host=iOS][data-table-mode=true]>.mv-modal-shade{top:max(var(--mv-dialog-top,0px),var(--mv-fold-mid));height:max(0px,calc(var(--mv-dialog-top,0px) + var(--mv-dialog-height,100%) - max(var(--mv-dialog-top,0px),var(--mv-fold-mid))))}

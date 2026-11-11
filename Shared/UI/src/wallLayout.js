@@ -1,16 +1,16 @@
 export const DEFAULT_WALL_SCALE=1;
 export const initialWallCamera=value=>({x:Number.isFinite(value?.x)?value.x:12,y:Number.isFinite(value?.y)?value.y:80,scale:Number.isFinite(value?.scale)&&value.scale>0?clampZoom(value.scale):DEFAULT_WALL_SCALE});
 export const clampZoom=value=>Math.max(.6,Math.min(1.2,Number.isFinite(value)?value:1));
-export function mobileWallViewport(width,height,insets={}){
+export function mobileWallViewport(width,height,insets={},layout={}){
  const safe={top:insets.top||0,bottom:insets.bottom||0,left:insets.left||0,right:insets.right||0};
  const w=Math.max(1,width-safe.left-safe.right),h=Math.max(1,height-safe.top-safe.bottom),landscape=width>height;
  const dockWidth=Math.min(440,landscape?Math.min(height-28,w*.48):w-28);
- // Landscape reserves the left dock and the right toolbar column. Centre in
- // that free region, using the same safe-area and dock geometry as the skin.
- const left=landscape?safe.left+16+dockWidth+16:safe.left;
- const right=landscape?width-safe.right-14-56-16:width-safe.right;
+ // iOS centers within the active physical region and reserves separate rows
+ // for toolbar and expanded playback; Android retains its leading dock layout.
+ const left=layout.centered?Math.max(safe.left,layout.regionLeft||0):landscape?safe.left+16+dockWidth+16:safe.left;
+ const right=layout.centered?Math.min(width-safe.right,layout.regionRight||width):landscape?width-safe.right-14-56-16:width-safe.right;
  const available=Math.max(120,right-left);
- const top=safe.top+(landscape?12:80),bottom=height-safe.bottom-(landscape?12:114);
+ const top=safe.top+(layout.centered?80:landscape?12:80),bottom=height-safe.bottom-(layout.centered?114:landscape?12:114);
  // 120% is the largest square in the usable region; grid gaps belong
  // between posters, not between the focused square and the viewport edges.
  const side=Math.max(120,Math.min(available,bottom-top));

@@ -245,6 +245,14 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
             guard let request = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
                   request["version"] as? Int == 1 else { throw failure("无效的宿主协议") }
             #if targetEnvironment(simulator)
+            if request["kind"] as? String == "uiTestOrientation", ProcessInfo.processInfo.arguments.contains("--mv-ui-smoke") {
+                let controller = web?.window?.rootViewController
+                reply(id, value: ["device": UIDevice.current.orientation.rawValue,
+                                  "interface": web?.window?.windowScene?.interfaceOrientation.rawValue ?? 0,
+                                  "supportedMask": controller?.supportedInterfaceOrientations.rawValue ?? 0,
+                                  "controller": controller.map { String(describing: type(of: $0)) } ?? "none"])
+                return
+            }
             if request["kind"] as? String == "uiTestScanStress", ProcessInfo.processInfo.arguments.contains("--mv-ui-smoke") {
                 Task { [weak self] in
                     guard let self else { return }
@@ -648,7 +656,7 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
         (webView as? SharedContentWebView)?.publishInsets(force: true)
         #if targetEnvironment(simulator)
         guard ProcessInfo.processInfo.arguments.contains("--mv-ui-smoke"),
-              let sourceURL = Bundle.main.resourceURL?.appendingPathComponent("SharedPlayer/" + (ProcessInfo.processInfo.arguments.contains("--mv-duo-layout-smoke") ? "duo-layout-smoke.js" : ProcessInfo.processInfo.arguments.contains("--mv-wall-stress-fixture") ? "wall-stress-smoke.js" : "shared-host-smoke.js")),
+              let sourceURL = Bundle.main.resourceURL?.appendingPathComponent("SharedPlayer/" + (ProcessInfo.processInfo.arguments.contains("--mv-duo-motion-smoke") ? "duo-motion-smoke.js" : ProcessInfo.processInfo.arguments.contains("--mv-duo-probe") ? "duo-probe.js" : ProcessInfo.processInfo.arguments.contains("--mv-duo-matrix-smoke") ? "duo-matrix-smoke.js" : ProcessInfo.processInfo.arguments.contains("--mv-duo-layout-smoke") ? "duo-layout-smoke.js" : ProcessInfo.processInfo.arguments.contains("--mv-wall-stress-fixture") ? "wall-stress-smoke.js" : "shared-host-smoke.js")),
               let source = try? String(contentsOf: sourceURL, encoding: .utf8) else { return }
         let output = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let testSource = (ProcessInfo.processInfo.arguments.contains("--mv-wall-only-smoke") ? "globalThis.MINIVOICE_WALL_ONLY=true;\n" : "") + source
@@ -706,7 +714,7 @@ private final class SharedContentWebView: WKWebView {
     // A touch beginning in the home-indicator strip belongs to iOS. Keep
     // WebKit's inner overflow scroller from starting a competing wall pan.
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        if contentStyle == "wall", safeAreaInsets.bottom > 0,
+        if contentStyle == "wall", !hingeAvailable, safeAreaInsets.bottom > 0,
            point.y >= bounds.maxY - safeAreaInsets.bottom { return nil }
         return super.hitTest(point, with: event)
     }
@@ -731,7 +739,18 @@ private final class SharedContentWebView: WKWebView {
         window?.backgroundColor = color
         window?.rootViewController?.view.backgroundColor = color
     }
-    override func didMoveToWindow() { super.didMoveToWindow(); updateCanvasBackground() }
+    private var observingHinge = false
+    private var hingeAvailable = false
+    override func didMoveToWindow() {
+        super.didMoveToWindow(); updateCanvasBackground()
+        if #available(iOS 27.1, *), !observingHinge {
+            observingHinge = true
+            addInteraction(UIHingeInteraction { [weak self] _, update in
+                self?.hingeAvailable = update.hinge != nil
+                self?.setNeedsLayout()
+            })
+        }
+    }
     private var lastInsets = ""
     override func safeAreaInsetsDidChange() { super.safeAreaInsetsDidChange(); publishInsets() }
     override func layoutSubviews() { super.layoutSubviews(); publishInsets() }
@@ -740,10 +759,25 @@ private final class SharedContentWebView: WKWebView {
         scrollView.pinchGestureRecognizer?.isEnabled = false
         scrollView.bouncesZoom = false
         let safe = safeAreaInsets
-        let key = "\(safe)-\(bounds.size)-\(contentStyle)"
+        var hasDivision = hingeAvailable
+        var occlusions: [[String: CGFloat]] = []
+        var foldTop: CGFloat = 0, foldBottom: CGFloat = 0, foldLeft: CGFloat = 0, foldRight: CGFloat = 0
+        if #available(iOS 27.1, *) {
+            occlusions = reservedRegions(kind: .occlusion).filter { $0.isActive }.map { ["x": $0.frame.minX, "y": $0.frame.minY, "width": $0.frame.width, "height": $0.frame.height] }
+            hasDivision = hingeAvailable || !reservedRegions(kind: .division, options: .includeInactive).isEmpty
+            if let fold = reservedRegions(kind: .division).first(where: { $0.isActive }) {
+                if fold.frame.width > fold.frame.height, fold.frame.minY > 0, fold.frame.maxY < bounds.height {
+                    foldTop = fold.frame.minY; foldBottom = fold.frame.maxY
+                } else if fold.frame.height > fold.frame.width, fold.frame.minX > 0, fold.frame.maxX < bounds.width {
+                    foldLeft = fold.frame.minX; foldRight = fold.frame.maxX
+                }
+            }
+        }
+        let occlusionJSON = String(data: (try? JSONSerialization.data(withJSONObject: occlusions, options: [.sortedKeys])) ?? Data("[]".utf8), encoding: .utf8) ?? "[]"
+        let key = "\(occlusionJSON)-\(safe)-\(bounds.size)-\(contentStyle)-\(foldTop)-\(foldBottom)-\(foldLeft)-\(foldRight)-\(hasDivision)"
         guard (force || key != lastInsets), url != nil else { return }
         lastInsets = key
-        let script = "(()=>{const s=document.documentElement.style;s.setProperty('--mv-safe-top','\(safe.top)px');s.setProperty('--mv-safe-bottom','\(safe.bottom)px');s.setProperty('--mv-safe-left','\(safe.left)px');s.setProperty('--mv-safe-right','\(safe.right)px');dispatchEvent(new Event('minivoice-insets'));})()"
+        let script = "(()=>{window.miniVoiceOcclusions=\(occlusionJSON);window.miniVoiceFold={duo:\(hasDivision),top:\(foldTop),bottom:\(foldBottom),left:\(foldLeft),right:\(foldRight)};const s=document.documentElement.style;s.setProperty('--mv-safe-top','\(safe.top)px');s.setProperty('--mv-safe-bottom','\(safe.bottom)px');s.setProperty('--mv-safe-left','\(safe.left)px');s.setProperty('--mv-safe-right','\(safe.right)px');dispatchEvent(new Event('minivoice-insets'));})()"
         evaluateJavaScript(script, completionHandler: nil)
     }
 }

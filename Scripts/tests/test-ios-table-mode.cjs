@@ -1,0 +1,50 @@
+const {app,BrowserWindow}=require('electron'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const pause=ms=>new Promise(r=>setTimeout(r,ms)),out=path.resolve('.build/reports/ui/ios-table');fs.mkdirSync(out,{recursive:true});
+app.setPath('userData',fs.mkdtempSync(path.resolve('.build/work/table-profile-')));
+app.whenReady().then(async()=>{let win;try{
+ win=new BrowserWindow({show:false,width:800,height:1100,useContentSize:true,webPreferences:{backgroundThrottling:false}});
+ const js=s=>win.webContents.executeJavaScript(s,true);
+ await win.loadURL('http://127.0.0.1:5310/tests/wall-mobile.html?host=ios');
+ for(let i=0;i<80;i++){if(await js("document.querySelector('main')?.dataset.ready==='true'"))break;await pause(100);}
+ const fold=async(top,bottom)=>{await js(`window.miniVoiceFold={duo:true,top:${top},bottom:${bottom}};dispatchEvent(new Event('minivoice-insets'))`);await pause(700);};
+ for(const theme of ['dark','light']){
+  await js(`wallFixture.workspace().pages.appearance.theme='${theme}';document.querySelector('main').classList.remove('theme-dark','theme-light');document.querySelector('main').classList.add('theme-${theme}')`);
+  await fold(535,565);
+  assert.equal(await js("document.querySelector('main').dataset.tableMode"),'true');
+  const geometry=await js(`(()=>{const r=s=>{const a=document.querySelector(s).getBoundingClientRect();return {top:a.top,bottom:a.bottom}};return {top:r('.mv-table-player'),wall:r('.mv-cover-wall'),controls:r('.mv-table-player .wp-controls')}})()`);
+  assert.ok(Math.abs(geometry.top.bottom-550)<1&&Math.abs(geometry.wall.top-550)<1&&geometry.controls.bottom<535);
+  await js("document.querySelector('.mv-table-player [data-wall-transport=play]').click()");await pause(1200);
+  assert.equal(await js('wallFixture.state.playing'),theme==='dark');
+  await js("document.querySelector('.mv-table-player [aria-label=下一首]').click()");await pause(1200);
+  assert.ok(await js("document.querySelector('.mv-table-player h1').textContent.includes(String(Number(wallFixture.state.current)+1))"));
+  await js("document.querySelector('.mv-table-player [aria-label=切换高斯模糊插图]').click()");await pause(400);assert.equal(await js("document.querySelector('.mv-table-player').dataset.artworkMode"),'blurred');
+  await js("document.querySelector('.mv-table-player [aria-label=切换清晰插图]').click()");
+  await js("document.querySelector('[aria-label=打开侧边栏]').click()");await pause(400);
+  assert.ok(await js("document.querySelector('.mv-table-player').inert"));
+  assert.ok(await js("document.querySelector('.mv-drawer').getBoundingClientRect().top>=565"),'drawer stays below fold');
+  await js("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");await pause(400);
+  assert.equal(await js("document.querySelector('.mv-table-player').inert"),false);
+  await js("document.querySelector('.wp-dock-meter').click();document.querySelector('.wp-dock-content .mv-now').click()");await pause(1000);
+  const separation=await js("(()=>{const c=document.querySelector('.mv-wall-focused').getBoundingClientRect(),d=document.querySelector('.mv-wall-dock').getBoundingClientRect();return {bottom:c.bottom,dockTop:d.top,center:c.left+c.width/2}})()");assert.ok(separation.bottom<separation.dockTop-8&&Math.abs(separation.center-400)<2,'lower card centered above expanded dock');
+  fs.writeFileSync(path.join(out,theme+'.png'),(await win.webContents.capturePage()).toPNG());
+  await fold(0,0);assert.equal(await js("!!document.querySelector('.mv-table-player')"),false);
+ }
+ await fold(535,565);await js("document.querySelector('[aria-label=音乐墙设置]').click()");await pause(600);
+ assert.ok(await js("document.querySelector('.mv-modal').getBoundingClientRect().top>=550"),'settings stays below fold');fs.writeFileSync(path.join(out,'lower-settings.png'),(await win.webContents.capturePage()).toPNG());
+ await js("document.querySelector('[aria-label=关闭弹窗]').click()");await fold(0,0);
+ win.setContentSize(1100,800);await js("window.miniVoiceFold={duo:true,top:0,bottom:0,left:535,right:565};dispatchEvent(new Event('minivoice-insets'))");await pause(700);
+ await js("document.querySelector('.mv-wall-card').click()");await pause(800);
+ fs.writeFileSync(path.join(out,'book.png'),(await win.webContents.capturePage()).toPNG());
+ const book=await js("(()=>{const r=document.querySelector('.mv-wall-focused').getBoundingClientRect();return {x:r.left+r.width/2,right:r.right,bottom:r.bottom}})()");
+ assert.ok(Math.abs(book.x-267.5)<2&&book.right<=535&&book.bottom<686,JSON.stringify(book));
+ await js("document.querySelector('.wp-dock-meter').click();document.querySelector('.wp-dock-content .mv-now').focus()");await pause(700);
+ const dockCenter=await js("(()=>{const r=document.querySelector('.mv-wall-dock').getBoundingClientRect();return {compact:document.querySelector('.mv-wall-dock').classList.contains('is-compact'),x:r.left+r.width/2}})()");
+ assert.equal(dockCenter.compact,false);assert.ok(Math.abs(dockCenter.x-267.5)<2,'book dock centers in left region');
+ await fold(0,0);await pause(700);
+ fs.writeFileSync(path.join(out,'flat.png'),(await win.webContents.capturePage()).toPNG());
+ const flat=await js("(()=>{const r=document.querySelector('.mv-wall-focused').getBoundingClientRect();return r.left+r.width/2})()");assert.ok(Math.abs(flat-550)<2,'flat card centers in full region');
+ for(let i=0;i<8;i++)await js(`window.miniVoiceFold={duo:true,top:${i%2?535:0},bottom:${i%2?565:0}};dispatchEvent(new Event('minivoice-insets'))`);
+ await pause(600);assert.equal(await js("document.querySelectorAll('.mv-table-player').length"),1);
+ await fold(0,0);assert.equal(await js("document.querySelector('.mv-scene').getBoundingClientRect().top"),0);
+ console.log('PASS horizontal fold split, top current track, playback/skip, drawer/Escape, dark/light, flat restoration and interrupted posture changes');win.destroy();app.exit(0);
+ }catch(e){console.error(e);if(win)fs.writeFileSync(path.join(out,'failed.png'),(await win.webContents.capturePage()).toPNG());win?.destroy();app.exit(1);}});
