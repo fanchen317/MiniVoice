@@ -68,17 +68,41 @@ export function compositionContent(regions){
 }
 
 /** Cover geometry has one travelling axis; all scoring uses full 2D subject boxes. */
-export function compositionCrop(regions,imageAspect,viewportAspect,{energy,width,height,viewport}={}){
+export function compositionCrop(regions,imageAspect,viewportAspect,{energy,width,height,viewport,visualSubject}={}){
  const target=compositionViewport(viewport,viewportAspect);viewportAspect=target.aspect;
  if(!finitePositive(imageAspect)||!finitePositive(viewportAspect))return null;
  const horizontal=viewportAspect<imageAspect,cw=Math.min(1,viewportAspect/imageAspect),ch=Math.min(1,imageAspect/viewportAspect),extent=horizontal?cw:ch,travel=1-extent;
  const content=compositionContent(regions),boxes=content.boxes,visual=energyProfile(energy,width,height,horizontal),mask=exclusionMask(target.occlusions);
+ // Visual evidence is secondary to real detections. A lone isolated shape
+ // can be protected on its own, or together with a detected title when both
+ // fit; never alter face/person decisions or sacrifice the existing title.
+ let visualCue=null;
+ const hasOnlyText=boxes.length>0&&boxes.every(box=>box.text);
+ if(travel>=.001&&(!boxes.length||hasOnlyText)&&visualSubject&&[visualSubject.x,visualSubject.y,visualSubject.width,visualSubject.height].every(Number.isFinite)){
+  const core={x:clamp(visualSubject.x),y:clamp(visualSubject.y),right:clamp(visualSubject.x+visualSubject.width),bottom:clamp(visualSubject.y+visualSubject.height)};
+  const axisLow=rect=>horizontal?rect.x:rect.y,axisHigh=rect=>horizontal?rect.right:rect.bottom;
+  const titleRects=hasOnlyText?content.primary.map(box=>box.padded):[];
+  const groupStart=Math.min(axisLow(core),...titleRects.map(axisLow)),groupEnd=Math.max(axisHigh(core),...titleRects.map(axisHigh));
+  if(area(core)>0&&groupEnd-groupStart<=extent+1e-9){
+   visualCue={core,padded:core,face:false,text:false,person:false,confidence:1,weight:1};boxes.push(visualCue);
+   if(!hasOnlyText){content.primary=[visualCue];content.kind='visual-subject';}
+  }
+ }
  if(!boxes.length&&!visual)return null;
  if(travel<.001)return boxes.length?{x:.5,y:.5}:{x:clamp(visual.cx,.3,.7),y:clamp(visual.cy,.3,.65)};
  const low=box=>horizontal?box.x:box.y,high=box=>horizontal?box.right:box.bottom;
  const primary=content.primary;
- const groupStart=Math.min(...primary.map(box=>low(box.padded))),groupEnd=Math.max(...primary.map(box=>high(box.padded)));
- const protectGroup=primary.length>0&&groupEnd-groupStart<=extent;
+ // A face and its enclosing person count as one subject, but excluding the
+ // body from the protection constraint can cut off an otherwise fitting
+ // figure just to put the face exactly in the centre. Keep the complete
+ // detected figure when the body and padded face fit together; if they do not,
+ // retain the existing face-first constraint rather than sacrificing the face.
+ const enclosingBodies=boxes.filter(body=>body.person&&body.confidence>=.35&&primary.some(face=>face.face&&area(overlap(body.core,face.core))/area(face.core)>.6));
+ const completePeople=[...primary,...enclosingBodies,...(visualCue&&content.kind==='typography'?[visualCue]:[])];
+ const completeStart=Math.min(...completePeople.map(box=>low(enclosingBodies.includes(box)?box.core:box.padded))),completeEnd=Math.max(...completePeople.map(box=>high(enclosingBodies.includes(box)?box.core:box.padded)));
+ const completeFits=completePeople.length>0&&completeEnd-completeStart<=extent+1e-9;
+ const groupStart=completeFits?completeStart:Math.min(...primary.map(box=>low(box.padded))),groupEnd=completeFits?completeEnd:Math.max(...primary.map(box=>high(box.padded)));
+ const protectGroup=primary.length>0&&groupEnd-groupStart<=extent+1e-9;
  // Wallpaper framing centres the subject, not the original canvas. Face
  // centres outrank body centres; padded boxes only enforce headroom.
  const coreStart=Math.min(...primary.map(box=>low(box.core))),coreEnd=Math.max(...primary.map(box=>high(box.core)));

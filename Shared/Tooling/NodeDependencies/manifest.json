@@ -1,8 +1,8 @@
 {
   "platform": "darwin-arm64",
-  "archiveSHA256": "61727e248ddf3e7ab5348e61df8a4497dd95db8ea780c873ff191a0558f9cf0e",
+  "archiveSHA256": "6d735fbe2502b306b4b497f367c6b339ef55b36cfcc00defc1cbbccccdc734a9",
   "packageLocks": {
-    "MacOS/Desktop": "e588c663b3411e6a91458d1e3fe1fa18e38affbfadcef4a1868b4e911fcd5b2d",
-    "Shared/UI": "cea9687a050313c462282c4923972a4970a949d7d72a03cf81a3a96139914ae0"
+    "MacOS/Desktop": "a3a06cfdc02c51d7eabdb982488ce52e2323646ff03a4e45b0cdea7e87e004c8",
+    "Shared/UI": "a6c0f65748267fe184f316f5479caa16e48a14efeebef3586053f113aa9b1757"
   }
 }

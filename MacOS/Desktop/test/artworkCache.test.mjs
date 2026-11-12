@@ -36,3 +36,13 @@ test('detail prefers original source pixels while lists keep their small cached 
  assert.equal(cachedArtworkFile(root,artwork({artworkKey:key})),path.join(root,'Artwork','Browse',key));
  assert.match(artwork({artworkKey:key},true),/source=original-v1/);
 });
+
+test('analysis requires the original while normal detail can fall back',t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'minivoice-original-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const preview=path.join(root,'Artwork','Detail',key);fs.mkdirSync(path.dirname(preview),{recursive:true});fs.writeFileSync(preview,'trimmed');
+ const detail=artwork({artworkKey:key},true),strict=detail+'&analysis=1';
+ assert.equal(cachedArtworkFile(root,detail),preview);assert.equal(cachedArtworkFile(root,strict),null);
+ assert.equal(cachedArtworkFile(root,artwork({artworkKey:key})+'&analysis=1'),null);
+ const original=path.join(root,'Artwork','Original',key);fs.mkdirSync(path.dirname(original),{recursive:true});fs.writeFileSync(original,'original');
+ assert.equal(cachedArtworkFile(root,strict),original);
+});

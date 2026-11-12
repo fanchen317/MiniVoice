@@ -88,3 +88,19 @@ test('invalid masks and detector boxes cannot produce nonfinite focal positions'
   const result=compositionCrop(malformed,1,1.7,{viewport});assert.ok(Number.isFinite(result.x)&&Number.isFinite(result.y));assert.ok(result.x>=0&&result.x<=1&&result.y>=0&&result.y<=1);
  }
 });
+
+
+test('fixed resolution analysis is shared across viewport changes and retries only when needed',async()=>{
+ const key='test://fixed-detector-viewport?v=1',result=[{x:.72,y:.1,width:.1,height:.2,face:1}],contexts=[];let finish;
+ const read=context=>{contexts.push(context);return new Promise(resolve=>{finish=resolve;});};
+ const small={width:320,height:320},wide={width:3840,height:1080,pixelRatio:2};
+ const first=warmArtworkSubjects(key,read,small,{fixedQuality:true});await Promise.resolve();
+ const during=warmArtworkSubjects(key,read,wide,{fixedQuality:true});
+ assert.equal(first,during);finish(result);assert.deepEqual(await during,result);
+ assert.deepEqual(await warmArtworkSubjects(key,()=>{throw Error('must not re-analyze');},wide,{fixedQuality:true}),result);
+ assert.equal(contexts.length,1);
+ let retries=0;const failed='test://fixed-detector-failure';
+ await warmArtworkSubjects(failed,async()=>{retries++;throw Error('temporary');},small,{fixedQuality:true});
+ assert.deepEqual(await warmArtworkSubjects(failed,async()=>{retries++;return result;},wide,{fixedQuality:true}),result);assert.equal(retries,2);
+ let changed=0;await warmArtworkSubjects('test://fixed-detector-viewport?v=2',async()=>{changed++;return result;},wide,{fixedQuality:true});assert.equal(changed,1);
+});

@@ -89,8 +89,8 @@ public final class PortablePlayerActivity extends Activity {
                     }catch(Exception ignored){return denied();}
                 }
                 if(!"https".equals(uri.getScheme())||!"minivoice.local".equals(uri.getHost())||path==null||!"GET".equals(request.getMethod())||path.contains("..")||!(path.equals("/index.html")||path.startsWith("/assets/")))return denied();
-                try{String mime=path.endsWith(".js")?"application/javascript":path.endsWith(".css")?"text/css":path.endsWith(".png")?"image/png":"text/html";
-                    return new WebResourceResponse(mime,"UTF-8",200,"OK",Collections.singletonMap("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-src 'none'"),getAssets().open(path.substring(1)));
+                try{String mime=(path.endsWith(".js")||path.endsWith(".mjs"))?"application/javascript":path.endsWith(".onnx")?"application/octet-stream":path.endsWith(".wasm")?"application/wasm":path.endsWith(".css")?"text/css":path.endsWith(".png")?"image/png":"text/html";
+                    return new WebResourceResponse(mime,(mime.equals("application/wasm")||mime.equals("application/octet-stream"))?null:"UTF-8",200,"OK",Collections.singletonMap("Content-Security-Policy","default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-src 'none'"),getAssets().open(path.substring(1)));
                 }catch(IOException ignored){return denied();}
             }
         });

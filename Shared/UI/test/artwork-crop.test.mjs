@@ -44,3 +44,11 @@ test('first presentation can join in-flight detection before locking its crop',a
  const focus=stableArtworkFocus(image,{key,coordinateSpace:'original',viewport:{width:400,height:1000}},new Map());
  const left=focus.x*.6;assert.ok(Math.abs((.76-left)/.4-.5)<1e-6);
 });
+test('clearing subject results prevents an old pending analysis from repopulating memory',async()=>{
+ const {clearArtworkSubjects}=await import('../src/components/artworkFocus.js');
+ const key='test://subject-clear-race';let finish,calls=0;
+ const old=warmArtworkSubjects(key,()=>{calls++;return new Promise(resolve=>{finish=resolve;});});
+ await Promise.resolve();clearArtworkSubjects();finish([{x:.1,y:.2,width:.1,height:.2,face:1}]);await old;
+ const current=await warmArtworkSubjects(key,async()=>{calls++;return [{x:.6,y:.2,width:.1,height:.2,face:1}];});
+ assert.equal(calls,2);assert.equal(current[0].x,.6);
+});

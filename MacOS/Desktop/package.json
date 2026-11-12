@@ -12,6 +12,7 @@
     "package": "electron-packager . \"${MINIVOICE_APP_NAME:-MiniVoice}\" --platform=darwin --arch=arm64 --out=../../.build/work/staging --asar --overwrite --app-bundle-id=\"${MINIVOICE_APP_IDENTIFIER:-com.xcosmos.MiniVoice.electron}\" --icon=../AppBundle/MiniVoice.icns --electron-zip-dir=../../.build/cache/electron --ignore='^/src|^/test|^/node_modules|^/vite.config'"
   },
   "dependencies": {
+    "onnxruntime-web": "1.22.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },

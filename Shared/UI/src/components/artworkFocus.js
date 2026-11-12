@@ -2,7 +2,7 @@ import {compositionCrop,compositionViewport} from './artworkComposition.js';
 // Bounded samples are keyed by both artwork identity and pixel coordinate space.
 // A trimmed list thumbnail is not the same image as an uncropped original.
 const cache=new Map(),subjects=new Map(),pendingSubjects=new Map(),subjectQualities=new Map(),subjectListeners=new Map();
-let analysisRevision=0;const subjectRevisions=new Map();
+let analysisRevision=0,subjectGeneration=0;const subjectRevisions=new Map();
 function energyMap(pixels,width,height){
  const values=new Float32Array(width*height),stride=width+1,sums=Array.from({length:3},()=>new Float64Array((width+1)*(height+1)));
  for(let y=0;y<height;y++)for(let x=0;x<width;x++)for(let channel=0;channel<3;channel++){const index=(y+1)*stride+x+1;sums[channel][index]=pixels[(y*width+x)*4+channel]+sums[channel][index-1]+sums[channel][index-stride]-sums[channel][index-stride-1];}
@@ -18,7 +18,35 @@ function energyMap(pixels,width,height){
  }
  return values;
 }
+// A conservative visual cue, not a person detector: only one large connected
+// shape on an almost uniform image border is accepted. Complex scenes and
+// multiple independent marks continue through the existing energy fallback.
+export function visualArtworkSubject(pixels,width,height){
+ if(!Number.isInteger(width)||!Number.isInteger(height)||width<8||height<8||width*height>65536||pixels?.length<width*height*4)return null;
+ const edge=[];for(let x=0;x<width;x++){edge.push(x,(height-1)*width+x);}for(let y=1;y<height-1;y++){edge.push(y*width,y*width+width-1);}
+ const median=channel=>{const values=edge.map(i=>pixels[i*4+channel]).sort((a,b)=>a-b);return values[Math.floor(values.length/2)];};
+ const bg=[median(0),median(1),median(2),median(3)];
+ const distance=i=>{let sum=0;for(let c=0;c<4;c++){const v=pixels[i*4+c]-bg[c];sum+=v*v;}return sum;};
+ if(edge.filter(i=>distance(i)<=20*20).length/edge.length<.92)return null;
+ const mask=new Uint8Array(width*height),queue=new Int32Array(width*height);let total=0;
+ for(let i=0;i<mask.length;i++)if(distance(i)>35*35){mask[i]=1;total++;}
+ if(total<width*height*.02||total>width*height*.65)return null;
+ let best=null;
+ for(let start=0;start<mask.length;start++){
+  if(mask[start]!==1)continue;let head=0,tail=0,minX=width,minY=height,maxX=0,maxY=0;
+  mask[start]=2;queue[tail++]=start;
+  while(head<tail){const i=queue[head++],x=i%width,y=Math.floor(i/width);minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+   for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){if(!dx&&!dy)continue;const xx=x+dx,yy=y+dy;if(xx<0||xx>=width||yy<0||yy>=height)continue;const next=yy*width+xx;if(mask[next]===1){mask[next]=2;queue[tail++]=next;}}
+  }
+  if(!best||tail>best.count)best={minX,minY,maxX,maxY,count:tail};
+ }
+ if(!best||best.count/total<.8)return null;
+ const w=best.maxX-best.minX+1,h=best.maxY-best.minY+1;
+ if(w<width*.12||h<height*.12||best.count/(w*h)<.25||w>width*.9||h>height*.9)return null;
+ return {x:best.minX/width,y:best.minY/height,width:w/width,height:h/height};
+}
 export function subjectCrop(regions,imageAspect,viewportAspect,options){return compositionCrop(regions,imageAspect,viewportAspect,options);}
+export function clearArtworkSubjects(){subjectGeneration++;cache.clear();subjects.clear();pendingSubjects.clear();subjectQualities.clear();subjectRevisions.clear();}
 export function subscribeArtworkSubjects(key,notify){key=identity(key);if(!subjectListeners.has(key))subjectListeners.set(key,new Set());const listeners=subjectListeners.get(key);listeners.add(notify);return ()=>{listeners.delete(notify);if(!listeners.size)subjectListeners.delete(key);};}
 function subjectQuality(context){
  if(!context)return 0;
@@ -27,13 +55,16 @@ function subjectQuality(context){
  const ratio=Math.max(width/height,height/width),pixels=Math.max(width,height)*(Number.isFinite(viewport.pixelRatio)?Math.max(1,viewport.pixelRatio):1);
  return Math.max(ratio>=2.25?3:ratio>=1.4?2:1,pixels>2560?3:pixels>1440?2:1);
 }
-export function warmArtworkSubjects(key,read,context){
- key=identity(key);const quality=subjectQuality(context);
+// Fixed-resolution detectors do not benefit from viewport-based quality upgrades.
+// Other callers retain the original viewport-sensitive policy by default.
+export function warmArtworkSubjects(key,read,context,{fixedQuality=false}={}){
+ key=identity(key);const quality=fixedQuality?1:subjectQuality(context);
  if(subjects.has(key)&&(subjectQualities.get(key)||0)>=quality)return Promise.resolve(subjects.get(key));
  const pending=pendingSubjects.get(key);
- if(pending){if(pending.quality>=quality)return pending.promise;return pending.promise.then(()=>warmArtworkSubjects(key,read,context));}
+ if(pending){if(pending.quality>=quality)return pending.promise;return pending.promise.then(()=>warmArtworkSubjects(key,read,context,{fixedQuality}));}
+ const generation=subjectGeneration;
  const task=Promise.resolve().then(()=>read(context)).then(value=>{
-  if(!Array.isArray(value))return [];
+  if(!Array.isArray(value)||generation!==subjectGeneration)return [];
   const boxes=value;
   if(subjects.size>=64&&!subjects.has(key)){const oldest=subjects.keys().next().value;subjects.delete(oldest);subjectQualities.delete(oldest);subjectRevisions.delete(oldest);}
   subjects.set(key,boxes);subjectQualities.set(key,quality);subjectRevisions.set(key,++analysisRevision);
@@ -50,8 +81,8 @@ export async function waitArtworkSubjects(key){
 }
 export function artworkFocus(pixels,width,height,{imageAspect=1,viewportAspect=1,viewport,regions=[]}={}){
  const valid=Number.isInteger(width)&&Number.isInteger(height)&&width>=2&&height>=2&&width*height<=262144&&pixels?.length>=width*height*4;
- const energy=valid?energyMap(pixels,width,height):null;
- return compositionCrop(regions,imageAspect,viewportAspect,{energy,width,height,viewport})||{x:.5,y:.5};
+ const energy=valid?energyMap(pixels,width,height):null,visualSubject=valid?visualArtworkSubject(pixels,width,height):null;
+ return compositionCrop(regions,imageAspect,viewportAspect,{energy,width,height,viewport,visualSubject})||{x:.5,y:.5};
 }
 function identity(src){try{const url=new URL(src,globalThis.location?.href);for(const key of ['quality','source'])url.searchParams.delete(key);if(url.protocol==='minivoice-art:')url.hostname='artwork';return url.href;}catch{return src;}}
 function viewportKey(target){const rounded=value=>Math.round(value*10000)/10000;return `${Math.round(target.width)}x${Math.round(target.height)}:${rounded(target.aspect)}:${target.occlusions.map(box=>[box.x,box.y,box.right,box.bottom,box.weight].map(rounded).join(',')).join(';')}`;}
@@ -61,14 +92,14 @@ export function applyArtworkFocus(image,{key=image.currentSrc||image.src,viewpor
  const space=['original','preview'].includes(coordinateSpace)?coordinateSpace:'auto',signature=`${space}:${image.naturalWidth}x${image.naturalHeight}`;
  let sample=entry.samples.get(signature);
  if(!sample){
-  try{const canvas=document.createElement('canvas');canvas.width=canvas.height=96;const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(image,0,0,96,96);const data=context.getImageData(0,0,96,96);sample={pixels:data.data,width:data.width||Math.sqrt(data.data.length/4),height:data.height||Math.sqrt(data.data.length/4),imageAspect:image.naturalWidth/image.naturalHeight,choices:new Map()};sample.energy=energyMap(sample.pixels,sample.width,sample.height);}
+  try{const canvas=document.createElement('canvas');canvas.width=canvas.height=96;const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(image,0,0,96,96);const data=context.getImageData(0,0,96,96);sample={pixels:data.data,width:data.width||Math.sqrt(data.data.length/4),height:data.height||Math.sqrt(data.data.length/4),imageAspect:image.naturalWidth/image.naturalHeight,choices:new Map()};sample.energy=energyMap(sample.pixels,sample.width,sample.height);sample.visualSubject=visualArtworkSubject(sample.pixels,sample.width,sample.height);}
   catch{sample={imageAspect:image.naturalWidth/image.naturalHeight,choices:new Map()};}
   if(entry.samples.size>=3)entry.samples.delete(entry.samples.keys().next().value);entry.samples.set(signature,sample);
  }
  const target=compositionViewport(viewport,viewportAspect);if(!(Number.isFinite(target.aspect)&&target.aspect>0))target.aspect=1;
  const activeSubjects=useSubjects&&space!=='preview',bucket=`${activeSubjects?'subject':'visual'}:${viewportKey(target)}`;
  let focus=sample.choices.get(bucket);
- if(!focus){const options={imageAspect:sample.imageAspect,viewportAspect:target.aspect,viewport,regions:activeSubjects?(subjects.get(key)||[]):[]};focus=compositionCrop(options.regions,options.imageAspect,target.aspect,{viewport,energy:sample.energy,width:sample.width,height:sample.height})||{x:.5,y:.5};if(sample.choices.size>=8)sample.choices.delete(sample.choices.keys().next().value);sample.choices.set(bucket,focus);}
+ if(!focus){const options={imageAspect:sample.imageAspect,viewportAspect:target.aspect,viewport,regions:activeSubjects?(subjects.get(key)||[]):[]};focus=compositionCrop(options.regions,options.imageAspect,target.aspect,{viewport,energy:sample.energy,width:sample.width,height:sample.height,visualSubject:sample.visualSubject})||{x:.5,y:.5};if(sample.choices.size>=8)sample.choices.delete(sample.choices.keys().next().value);sample.choices.set(bucket,focus);}
  return setArtworkAnchor(image,focus);
 }
 

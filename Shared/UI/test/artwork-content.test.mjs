@@ -52,3 +52,35 @@ test('source edge clamps centring without exposing blank wallpaper',()=>{
  const p=compositionCrop([{...face(.02),width:.1}],1,.4);
  assert.equal(p.x,0);
 });
+
+test('face and the enclosing figure are both retained when they fit the crop',()=>{
+ const face={x:.41,y:.17,width:.09,height:.12,face:true,confidence:.9};
+ const body={x:.36,y:.13,width:.43,height:.72,person:true,confidence:.9};
+ const p=compositionCrop([face,body],1,.55),left=p.x*.45;
+ assert.ok(left<=body.x+1e-8,'body left edge remains visible');
+ assert.ok(left+.55>=body.x+body.width-1e-8,'body right edge remains visible');
+ assert.ok(left<=face.x-face.width*.18+1e-8,'face retains left padding');
+});
+
+test('when the detected figure cannot fit, framing still protects the face',()=>{
+ const face={x:.24,y:.15,width:.1,height:.12,face:true,confidence:.9};
+ const body={x:.18,y:.1,width:.65,height:.8,person:true,confidence:.9};
+ const p=compositionCrop([face,body],1,.4),left=p.x*.6;
+ assert.ok(left<=face.x-face.width*.18+1e-8);
+ assert.ok(left+.4>=face.x+face.width*1.18-1e-8);
+});
+
+test('a fully fitting group of faces and bodies is retained together',()=>{
+ const people=[{x:.1,y:.1,width:.3,height:.8,person:true,confidence:.9},{x:.6,y:.1,width:.3,height:.8,person:true,confidence:.9}];
+ const faces=[{x:.16,y:.2,width:.08,height:.1,face:true,confidence:.9},{x:.67,y:.2,width:.08,height:.1,face:true,confidence:.9}];
+ const p=compositionCrop([...people,...faces],1,.9),left=p.x*.1;
+ for(const body of people){assert.ok(left<=body.x+1e-8);assert.ok(left+.9>=body.x+body.width-1e-8);}
+});
+
+test('a body that exactly fits is retained even when extra body padding cannot fit',()=>{
+ const face={x:.22,y:.14,width:.08,height:.1,face:true,confidence:.9};
+ const body={x:.18,y:.1,width:.4,height:.75,person:true,confidence:.9};
+ const p=compositionCrop([face,body],1,.4),left=p.x*.6;
+ assert.ok(Math.abs(left-body.x)<1e-7,'do not sacrifice visible body for extra margin');
+ assert.ok(left+.4>=body.x+body.width-1e-7);
+});

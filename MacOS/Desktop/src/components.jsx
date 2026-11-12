@@ -21,15 +21,16 @@ import { wallDockMetrics,browseGridMetrics,springEasing } from './motion';
 import { displayLine, wallCardSizing } from './kinetic';
 import { artwork, command, seconds, useClock, usePlayback, useCatalog } from './store';
 
-export const Cover = memo(function Cover({track,detail=false,presentation=detail?'artwork':'list'}){
-  const requested=artwork(track,detail,presentation),identity=`${track?.artworkKey||''}:${track?.artworkRevision??0}`;
-  const [decoded,setDecoded]=useState(()=>({identity,url:requested}));
-  useEffect(()=>{let active=true;if(!requested||decoded.url===requested)return;const image=new Image();image.src=requested;image.decode().then(()=>{if(active)setDecoded({identity,url:requested});}).catch(()=>{});return()=>{active=false;};},[requested,identity]);
-  const [failed,setFailed]=useState(false),url=decoded.identity===identity?decoded.url:requested;
+export const Cover = memo(function Cover({track,detail=false,presentation=detail?'artwork':'list',source,fallbackSource}){
+  const requested=source??artwork(track,detail,presentation),initial=fallbackSource||requested,identity=`${track?.artworkKey||''}:${track?.artworkRevision??0}`;
+  const [decoded,setDecoded]=useState(()=>({identity,url:initial}));
+  useEffect(()=>{let active=true;if(!requested||decoded.identity===identity&&decoded.url===requested)return;const image=new Image();image.src=requested;image.decode().then(()=>{if(active)setDecoded({identity,url:requested});}).catch(()=>{});return()=>{active=false;};},[requested,identity]);
+  const [failed,setFailed]=useState(false),url=decoded.identity===identity?decoded.url:initial;
   useEffect(()=>setFailed(false),[url]);
+  const onImageError=()=>{if(fallbackSource&&url!==fallbackSource){setDecoded({identity,url:fallbackSource});setFailed(false);}else setFailed(true);};
   if(!url||failed)return <div className={`cover cover-empty cover-${presentation}`}><Icon name={presentation==='artwork'?'artwork-music':'music'}/></div>;
-  if(presentation==='artwork')return <div className="cover artwork-fit"><img className="artwork-blur" src={url} alt="" decoding="async" draggable="false"/><img className="artwork-foreground" src={url} alt="" decoding="async" draggable="false" onError={()=>setFailed(true)}/></div>;
-  return <img className={`cover cover-${presentation}`} src={url} alt="" decoding="async" draggable="false" onError={()=>setFailed(true)}/>;
+  if(presentation==='artwork')return <div className="cover artwork-fit"><img className="artwork-blur" src={url} alt="" decoding="async" draggable="false"/><img className="artwork-foreground" src={url} alt="" decoding="async" draggable="false" onError={onImageError}/></div>;
+  return <img className={`cover cover-${presentation}`} src={url} alt="" decoding="async" draggable="false" onError={onImageError}/>;
 });
 export function Icon({name}){return <span className="glyph app-drawn" data-symbol={name} aria-hidden="true"><AppIcon name={desktopIconName(name)} filled={name==='favoriteFill'}/></span>;}
 

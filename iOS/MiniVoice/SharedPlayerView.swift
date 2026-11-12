@@ -591,7 +591,7 @@ private final class SharedPlayerHost: NSObject, WKScriptMessageHandler, WKURLSch
                 let mime: String
                 if artwork, let source = CGImageSourceCreateWithData(data as CFData, nil), let type = CGImageSourceGetType(source) {
                     mime = UTType(type as String)?.preferredMIMEType ?? "image/jpeg"
-                } else { mime = ["html": "text/html", "js": "application/javascript", "css": "text/css", "png": "image/png", "svg": "image/svg+xml", "json": "application/json"][file.pathExtension] ?? "application/octet-stream" }
+                } else { mime = ["html": "text/html", "js": "application/javascript", "mjs": "application/javascript", "wasm": "application/wasm", "css": "text/css", "png": "image/png", "svg": "image/svg+xml", "json": "application/json"][file.pathExtension] ?? "application/octet-stream" }
                 let response = HTTPURLResponse(url: urlSchemeTask.request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": mime, "Access-Control-Allow-Origin": "*", "Cache-Control": artwork && url.query?.contains("v=") == true ? "private, max-age=3600" : "no-cache"])!
                 urlSchemeTask.didReceive(response); urlSchemeTask.didReceive(data); urlSchemeTask.didFinish()
             } catch {

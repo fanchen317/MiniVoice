@@ -17,7 +17,8 @@ app.on('second-instance', () => showMainWindow());
 
 // The privileged shell brokers a narrow command protocol. The renderer has no
 // filesystem/Node access, even while displaying local artwork and audio metadata.
-protocol.registerSchemesAsPrivileged([{ scheme: 'minivoice-art', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
+let artworkProtocol;try{artworkProtocol=require('./shared-services/artwork-protocol.cjs');}catch(error){if(error.code!=='MODULE_NOT_FOUND')throw error;artworkProtocol=require('../../../Shared/DesktopServices/artwork-protocol.cjs');}
+protocol.registerSchemesAsPrivileged([artworkProtocol.artworkScheme]);
 let window, engine, artworkRoot, lyricsWindow, lyricsUnlockWindow, quitting = false;
 const {lyricsWindowState,lyricsUnlockBounds,lyricsUnlockWindowOptions}=require('./lyrics-window-state.cjs');
 const lyricsFile=path.join(app.getPath('userData'),'own-desktop-lyrics.json');
@@ -172,8 +173,10 @@ app.whenReady().then(() => {
       if(!originalRequests.has(key))originalRequests.set(key,request('prepareOriginalArtwork',{key}).then(value=>{if(value===true)verifiedOriginals.add(key);return value;}).catch(()=>null).finally(()=>originalRequests.delete(key)));
       await originalRequests.get(key);
     }
-    const file = cachedArtworkFile(artworkRoot, resource.url);
-    return file ? net.fetch(pathToFileURL(file).href) : new Response('', { status: 404 });
+    // The normal detail route may fall back to a trimmed preview. Never save
+    // subject coordinates from that preview under the original image identity.
+    const file=cachedArtworkFile(artworkRoot, resource.url);
+    return file ? artworkProtocol.artworkResponse(await net.fetch(pathToFileURL(file).href)) : new Response('', { status: 404 });
   });
   ipcMain.handle('engine:command', async (event, { action, payload = {} } = {}) => {
     if ((!panelWindows.owns(event.sender)&&![window,lyricsWindow,lyricsUnlockWindow].some(target=>target&&!target.isDestroyed()&&event.sender===target.webContents))||event.senderFrame!==event.sender.mainFrame) throw new Error('无效的界面来源');

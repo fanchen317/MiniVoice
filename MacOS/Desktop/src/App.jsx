@@ -1,3 +1,5 @@
+import {useArtworkIndexing} from '../../../Shared/UI/src/useArtworkIndexing.js';
+import {desktopArtworkCandidate} from '../../../Shared/UI/src/artworkIndexing.js';
 import {normalizeArtworkFraming} from '../../../Shared/UI/src/components/artworkFraming.js';
 import {platformLabels} from './platformLabels.js';
 import {wallDockPlacement} from './motion';
@@ -29,6 +31,8 @@ const names={all:'音乐库',recent:'最近播放',favorites:'收藏',artists:'�
 const collator=new Intl.Collator('zh-CN',{numeric:true,sensitivity:'base'});
 export default function App(){
   const tracks=useCatalog(),state=usePlayback();
+  const artworkCandidates=useMemo(()=>tracks.map(track=>desktopArtworkCandidate(track,artwork(track,true))).filter(Boolean),[tracks]);
+  useArtworkIndexing(artworkCandidates);
   const [multiple,setMultiple]=useState(false),[selection,setSelection]=useState(new Set());
   function selectRow(track){if(multiple)setSelection(previous=>{const next=new Set(previous);next.has(track.id)?next.delete(track.id):next.add(track.id);return next;});else command('select',{id:track.id});}
   const [style,setStyle]=useState(localStorage.getItem('style')||'simple');
