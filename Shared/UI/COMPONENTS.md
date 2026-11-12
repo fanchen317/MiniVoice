@@ -772,3 +772,12 @@ SongList新增可选emptyText，由PortablePlayer按查询/最近播放/收藏/�
 
 
 Duo Wall 聚焦区域补充（2026-11-11）：`Wall` 读取 localized 内容左右边界，使用其与安全区、book 左屏边界的交集计算 `mobileWallViewport`，避免按钮避让后聚焦仍取全屏中心。`animateViewportFocus` 由 PortablePlayer 的 iOS localized 横屏状态开启；区域改变复用现有 focusCell 动画和打断清理，按新 viewport 重排与平移，减弱动态直接完成；不增加独立持久状态。验证：`test-ios-duo-focus.cjs` 检查 portrait 内容中心和横屏 book 进出中间帧，原有 `test-ios-fold-motion.cjs` 继续验证竖屏动画。
+
+
+半折竖屏边界与展开补充（2026-11-11）：iOS table 音乐墙的下半场景独立使用 `overflow:hidden` 与 `clip-path:inset(0)`，隔离已有 flat 场景的外溢规则，卡片平移/惯性不得绘制或命中上半播放区域。进入与退出分界动画期间裁切随场景边界移动，flat 后恢复原规则。展开按钮保留，复用 `wallExpanded` 和现有展开准备/取消流程；table 中展开目标为上方的所选歌曲，底部不进入 expanded。上方收起恢复当前播放歌曲，预览不自动切换播放；无新增持久字段。`test-ios-table-clip.cjs` 验证跨中线实际 pan、命中隔离、预览展开/收起和 flat 恢复。
+
+
+半折上方动画补充（2026-11-11）：上方 `mv-table-canvas` 保存最近半折布局的完整高度和播放器内容高度，固定在上方裁切窗口底边。分界变化仅改变窗口高度与整张画布的屏幕位置，封面、标题、歌词和控制不随窗口压缩。table 生命周期仍由 useFoldPresentation 管理，反向沿当前 CSS 分界值继续，结束卸载，减弱动态直接到最终状态。下方卡片的 `expansionActive` 与上方 wallExpanded 同源，但不改变下方 compact 布局；展开后上下两个入口均为收起图标与“收起播放器”名称。
+
+
+半折退出跳动补充（2026-11-12，取代上文共用 wallExpanded 的约定）：上方预览改由 PortablePlayer 临时 tablePreviewId 管理，关闭/离开 table 后销毁，不写入 workspace；进入 table 清理普通全屏 wallExpanded，离开后回到音乐墙聚焦，不串联第二次全屏扩展。下方扩展图标只对上方正在预览的同一歌曲显示收起，其他卡片仍可展开到上方。Wall 在 iOS 分界运动期间通过有界 RAF 读取实际插值后的 viewport，flushSync 提交后在 layout effect 内同步定位、绘制；循环只存在于 data-fold-animate=true，结束/卸载取消，不改变普通设备与 Android 的测量调度。localized table safe-top 规则显式高于旧 fold-gap 规则，避免退出 table 后安全区瞬时替换导致中心跳动。验证同时检查画布固定尺寸、聚焦中心/尺寸单向变化、预览离开后不自动扩展。

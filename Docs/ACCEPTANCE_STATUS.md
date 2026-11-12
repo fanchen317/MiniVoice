@@ -1820,3 +1820,34 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
 - 通过：142 项共享单元测试、UI 标准检查、按钮/弹窗边界回归、竖屏分界动画及反向/减弱动态回归。日志为 `.build/reports/ui/duo-focus-{unit,standards,controls,fold}.log`。
 - 通过：iOS Debug 模拟器构建及后台音频能力检查，日志 `.build/reports/ios/duo-focus-build.log`；新包已安装专用 Duo 模拟器。
 - 待验收：本次横屏平移动画在 Device Hub 实际折叠操作下的视觉验收；上述中间帧证据来自 Chromium 合成姿态，不冒充原生实际姿态验收。此前外屏倒置竖屏问题仍未解决。
+
+
+### 2026-11-11 半折竖屏音乐墙越界与上方展开
+
+- 已实现：下半音乐墙场景独立裁切，平移/惯性卡片不得穿过中线覆盖上方播放页；仅限制 iOS table 音乐墙，flat 外溢规则保持原实现。
+- 已按用户最新纠正保留展开按钮：点击下方预览卡片的展开按钮，上方展示该歌曲的展开预览，收起恢复当前播放歌曲；下方始终为音乐墙，预览不会自动开始播放。复用既有展开状态与取消流程。
+- 通过：Chromium 页面 `Scripts/tests/test-ios-table-clip.cjs` 实际派发 pan 跨越中线，验证上下分区命中隔离、裁切规则、展开按钮保留、上方所选歌曲预览/收起、下方不展开、flat 恢复。证据 `.build/reports/ui/table-clip/{layout.log,geometry.json,pan.png}`。
+- 通过：142 项共享测试、UI 标准检查、竖屏双向分界动画及减弱动态/反向回归、横屏双向聚焦平移回归；日志 `.build/reports/ui/table-clip/{unit,standards,fold,focus}.log`。
+- 通过：iOS Debug 模拟器构建与后台音频能力检查，`.build/reports/ios/table-clip-build.log`；新包已安装专用 Duo 模拟器。
+- 待验收：Device Hub 原生半折竖屏跨中线拖动与展开的最终视觉验收。专用模拟器已切到半折竖屏，因 Mac 锁屏暂时无法完成拖动，未把 Chromium 结果计作原生视觉通过。原有外屏倒置竖屏问题仍未解决。
+
+
+### 2026-11-11 半折上方收回动画与展开图标同步
+
+- 已实现：展开状态与图标共用 wallExpanded；上方展开后，下方卡片同步显示收起图标，点击下方按钮同样收起上方预览，恢复展开图标。
+- 已实现：半折→展开时上半画布保持固定完整高度，沿分界整体滑到屏幕上方；反向整体滑入。不再随分界窗口高度把插图、歌词、按钮挤压成条。分界、下方音乐墙与按钮继续使用既有双向运动和减弱动态规则。
+- 通过：更新的 Chromium 离屏动画测试逐帧断言上方画布 475.5 点、播放器内容 455.5 点始终保持，画布底边与移动分界一致，继续检查中断反向、减弱动态与弹窗跟随。`.build/reports/ui/table-clip/fold.log`、`.build/reports/ui/fold-motion/frames.json`。离屏渲染用于避免锁屏挂起 Chromium 的 requestAnimationFrame，不作为原生模拟器姿态证据。
+- 通过：UI 标准检查、142 项共享测试、iOS Debug 模拟器构建及后台音频能力检查，新包已安装专用模拟器。
+- 待验收：原生拖拽越界、上下展开图标同步与新版上方整页滑出视觉效果。电脑控制再次报告 Mac 锁屏，已请求用户解锁；不把构建/Chromium 结果当作此项原生通过。
+
+
+### 2026-11-12 半折→展开跳动修复与原生复验
+
+- 修复：上方预览展开与普通墙卡片全屏展开解耦，tablePreviewId 仅为临时状态；结束半折不会再把下方卡片自动全屏展开。上下同一歌曲的展开/收起图标保持同步。
+- 修复：localized table 安全区规则被旧规则覆盖，退出 table 时中心突然下移 41 点；修正选择器冲突使安全区与分界同步变化。
+- 修复：CSS 分界已移动、Wall 的 ResizeObserver/React 提交尚未完成时，摄像机仍按前一帧 viewport 定位。仅在 iOS 分界运动期间有界逐帧同步测量与 layout 绘制，动画结束和卸载取消 RAF；普通设备/Android 不启用此同步循环。
+- 通过：更新 Chromium 分界测试检查上方画布/播放器尺寸恒定、聚焦中心与宽度在进入/退出中单向变化，无回弹；保留中途反向、减弱动态、弹窗/按钮边界检查。`.build/reports/ui/table-clip/fold.log` 与 `.build/reports/ui/fold-motion/frames.json`。修复前的增强断言确实发现了回弹和最终 41 点跳位，未放宽断言来通过。
+- 通过：专用原生 Duo 模拟器实际 Device Hub 竖屏半折→展开、展开→半折操作，各采得 7 个中间样本；focusStable=true、aligned=true、最终分界正确。证据 `.build/reports/ios/fold-motion/{exit-stable-focus-final,enter-stable-focus-final}/report.json`。样本数不是 FPS。
+- 通过：原生操作确认上方歌曲预览展开与下方收起图标同步；预览状态下退出半折最终仍为音乐墙聚焦，未自动全屏。此项为 CUA 观察；跨中线拖动的 CUA 手势未观察到墙移动，不计原生拖动验收通过，Chromium 跨界裁切测试已通过。
+- 通过：142 项共享单元测试、UI 标准检查、table 预览/收起/越界/离开后不触发第二次全屏回归、横屏 book 双向中心回归与 iOS Debug 构建。日志 `.build/reports/ui/table-clip/{unit,standards,layout,focus}.log`、`.build/reports/ios/table-clip-build.log`。
+- 前述因锁屏待验收的“双向实际分界动画”已由本次原生报告覆盖；快速反向/减弱动态仍是 Chromium 证据。外屏倒置竖屏、普通 iPhone/iPad 全量验收等其他未通过项目不因此变为通过。

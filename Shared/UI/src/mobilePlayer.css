@@ -148,13 +148,13 @@
 /* The host supplies an active horizontal division, including fold margins. */
 [data-presentation=mobile][data-table-mode=true].style-wall>.mv-scene{top:var(--mv-fold-mid);bottom:0;height:auto;--mv-safe-top:var(--mv-fold-gap)}
 [data-presentation=mobile][data-table-mode=true]>.mv-table-player{position:absolute;inset:0 0 auto;height:var(--mv-fold-mid);overflow:hidden;background:#10241a;color:#fff}
-.mv-table-player>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.mv-table-player::after{content:'';position:absolute;inset:0;background:linear-gradient(#0009,#0005 40%,#000b);pointer-events:none}
-.mv-table-player>.wp-player{position:relative;z-index:1;height:var(--mv-fold-top);width:100%;--mv-safe-bottom:0px}
+.mv-table-canvas>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.mv-table-canvas::after{content:'';position:absolute;inset:0;background:linear-gradient(#0009,#0005 40%,#000b);pointer-events:none}
+.mv-table-canvas>.wp-player{position:relative;z-index:1;height:var(--mv-table-content-height);width:100%;--mv-safe-bottom:0px}
 [data-presentation=mobile][data-table-mode=true]>.mv-scan-status{top:calc(var(--mv-fold-bottom) + 12px)}
 
 [data-presentation=mobile][data-table-mode=true]>.mv-table-player{z-index:5;isolation:isolate}
-.mv-table-player>.mv-artwork-blur{filter:blur(24px);scale:1.08}
+.mv-table-canvas>.mv-artwork-blur{filter:blur(24px);scale:1.08}
 
 
 /* All iOS wall chrome shares one content boundary in every orientation. */
@@ -173,7 +173,7 @@
 [data-presentation=mobile][data-host=iOS][data-table-mode=true].style-wall>.mv-scan-status{top:calc(var(--mv-fold-bottom) + 14px)}
 /* The top title occupies the free leading corner; a trailing status strip
    does not reserve a second full-width header row above it. */
-[data-presentation=mobile][data-host=iOS] .mv-table-player>.wp-player{padding-top:20px!important}
+[data-presentation=mobile][data-host=iOS] .mv-table-canvas>.wp-player{padding-top:20px!important}
 [data-presentation=mobile][data-host=iOS] .mv-table-player .wp-header-actions{margin-top:var(--mv-safe-top,0px)}
 
 [data-presentation=mobile][data-host=iOS].style-wall .mv-toolbar .mv-search-control{--search-side:56px}
@@ -242,3 +242,12 @@
    The lower falloff stops before the toolbar and never receives input. */
 .mv-workspace[data-table-mode=true]>.mv-fold-blend{position:absolute;z-index:6;left:0;right:0;top:calc(var(--mv-fold-mid) - 12px);height:40px;pointer-events:none;backdrop-filter:blur(8px) saturate(.95);-webkit-backdrop-filter:blur(8px) saturate(.95);background:linear-gradient(to bottom,transparent,#081d1814 55%,transparent);mask-image:linear-gradient(to bottom,transparent,#000 35%,#000b 60%,transparent);-webkit-mask-image:linear-gradient(to bottom,transparent,#000 35%,#000b 60%,transparent)}
 .theme-light[data-table-mode=true]>.mv-fold-blend{background:linear-gradient(to bottom,transparent,#e6edf418 55%,transparent)}
+
+/* The lower table scene owns a compositor clip even while its wall pans.
+   Flat iOS walls keep their existing bleed; only the physical division clips. */
+[data-presentation=mobile][data-host=iOS][data-table-mode=true].style-wall>.mv-scene{overflow:hidden;clip-path:inset(0);isolation:isolate}
+
+/* Slide a stable upper canvas with the divider. Its text and artwork never
+   squeeze into the shrinking clipping window during flat/table transitions. */
+.mv-table-player>.mv-table-canvas{position:absolute;left:0;right:0;bottom:0;height:var(--mv-table-canvas-height);isolation:isolate}
+.mv-table-canvas>.mv-table-idle{height:100%}

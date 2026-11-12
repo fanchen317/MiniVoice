@@ -6,7 +6,9 @@ xcrun simctl list devices -j | python3 -c 'import json,sys; d=[v for rows in jso
 container="$(xcrun simctl get_app_container "$device" com.xcosmos.MiniVoice.ios data)";output=".build/reports/ios/fold-motion/$tag";mkdir -p "$output"
 rm -f "$container/Documents/shared-host-smoke.json"
 xcrun simctl terminate "$device" com.xcosmos.MiniVoice.ios 2>/dev/null || true
-xcrun simctl launch "$device" com.xcosmos.MiniVoice.ios --mv-ui-fixture --mv-ui-idle-fixture --mv-ui-smoke --mv-duo-motion-smoke
+fixture_args=(--mv-ui-fixture --mv-ui-smoke --mv-duo-motion-smoke)
+if [[ "${3:-}" != playing ]]; then fixture_args+=(--mv-ui-idle-fixture); fi
+xcrun simctl launch "$device" com.xcosmos.MiniVoice.ios "${fixture_args[@]}"
 for attempt in {1..55}; do [[ -f "$container/Documents/shared-host-smoke.json" ]] && break; sleep 1; done
 cp "$container/Documents/shared-host-smoke.json" "$output/report.json"
 xcrun simctl io "$device" screenshot "$output/screen.png" >/dev/null
