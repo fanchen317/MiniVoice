@@ -16,7 +16,9 @@ export function createArtworkWorkerClient(createWorker,{timeoutMs=45000}={}){
    const message=event.data||{},request=requests.get(message.id);if(!request)return;
    if(message.error){fail(new Error(message.error));return;}
    if(!Array.isArray(message.regions)){fail(new Error('Invalid artwork worker response'));return;}
-   requests.delete(message.id);clearTimeout(request.timer);request.resolve(message.regions);
+   requests.delete(message.id);clearTimeout(request.timer);
+   if(message.cacheable===false)Object.defineProperty(message.regions,'cacheable',{value:false});
+   request.resolve(message.regions);
   };
   instance.onerror=()=>{if(worker===instance)fail(new Error('Artwork worker failed'));};
   instance.onmessageerror=()=>{if(worker===instance)fail(new Error('Invalid artwork worker message'));};

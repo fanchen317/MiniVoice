@@ -67,7 +67,7 @@ export function compositionContent(regions){
  // title next to a thin vertical credit). Avoid ending up with no title at all.
  if(!titles.length&&text.length)titles.push(text.reduce((largest,box)=>area(box.core)>area(largest.core)?box:largest));
  const primaryPeople=[...faces,...bodies];
- return {kind:count>2?'group':count===2?'pair':count===1?'portrait':text.length?'typography':'scenery-or-abstract',count,primary:primaryPeople.length?primaryPeople:titles,boxes};
+ return {kind:count>2?'group':count===2?'pair':count===1?'portrait':text.length?'typography':'scenery-or-abstract',count,primary:primaryPeople.length?primaryPeople:titles,titles,boxes};
 }
 
 /** Cover geometry has one travelling axis; all scoring uses full 2D subject boxes. */
@@ -77,8 +77,8 @@ export function compositionCrop(regions,imageAspect,viewportAspect,{energy,width
  const horizontal=viewportAspect<imageAspect,cw=Math.min(1,viewportAspect/imageAspect),ch=Math.min(1,imageAspect/viewportAspect),extent=horizontal?cw:ch,travel=1-extent;
  const content=compositionContent(regions),boxes=content.boxes,visual=energyProfile(energy,width,height,horizontal),mask=exclusionMask(target.occlusions);
  // Visual evidence is secondary to real detections. A lone isolated shape
- // can be protected on its own, or together with a detected title when both
- // fit; never alter face/person decisions or sacrifice the existing title.
+ // can be protected on its own. With titles, keep their existing hard
+ // protection while allowing any remaining space to show more of the artwork.
  let visualCue=null;
  const hasOnlyText=boxes.length>0&&boxes.every(box=>box.text);
  if(travel>=.001&&(!boxes.length||hasOnlyText)&&visualSubject&&[visualSubject.x,visualSubject.y,visualSubject.width,visualSubject.height].every(Number.isFinite)){
@@ -86,7 +86,8 @@ export function compositionCrop(regions,imageAspect,viewportAspect,{energy,width
   const axisLow=rect=>horizontal?rect.x:rect.y,axisHigh=rect=>horizontal?rect.right:rect.bottom;
   const titleRects=hasOnlyText?content.primary.map(box=>box.padded):[];
   const groupStart=Math.min(axisLow(core),...titleRects.map(axisLow)),groupEnd=Math.max(axisHigh(core),...titleRects.map(axisHigh));
-  if(area(core)>0&&groupEnd-groupStart<=extent+1e-9){
+  const titlesFit=hasOnlyText&&titleRects.length>0&&Math.max(...titleRects.map(axisHigh))-Math.min(...titleRects.map(axisLow))<=extent+1e-9;
+  if(area(core)>0&&(groupEnd-groupStart<=extent+1e-9||titlesFit)){
    visualCue={core,padded:core,face:false,text:false,person:false,confidence:1,weight:1};boxes.push(visualCue);
    if(!hasOnlyText){content.primary=[visualCue];content.kind='visual-subject';}
   }
@@ -122,7 +123,7 @@ export function compositionCrop(regions,imageAspect,viewportAspect,{energy,width
   }
  }
  // Small credits remain a secondary cue; their count must not outweigh a title.
- const weights=new Map(boxes.map(box=>[box,box.weight*(content.kind==='typography'&&!primary.includes(box)?.15:1)]));
+ const weights=new Map(boxes.map(box=>[box,box.weight*(content.kind==='typography'&&!primary.includes(box)?(box===visualCue ? .6 : .15):1)]));
  const totalWeight=boxes.reduce((sum,box)=>sum+weights.get(box),0);
  let best=-Infinity,start=travel/2;
  for(const at of candidates){
@@ -161,6 +162,36 @@ export function compositionCrop(regions,imageAspect,viewportAspect,{energy,width
   // abstract art near its original composition rather than chasing busy edges.
   score-=(boxes.length?.06:.18)*Math.abs(at-travel/2)/travel;
   if(score>best+1e-9){best=score;start=at;}
+ }
+ // Keep a prominent title alongside everyone only when it fits and requires
+ // a small adjustment. A large shift can destroy the surrounding composition
+ // even when the boxes themselves technically fit.
+ const prominentTitles=content.titles.filter(box=>box.confidence>=.8&&area(box.core)>=.012);
+ if(content.count&&completeFits&&prominentTitles.length){
+  const titleStart=Math.min(...prominentTitles.map(box=>low(box.padded))),titleEnd=Math.max(...prominentTitles.map(box=>high(box.padded)));
+  const min=Math.max(0,completeEnd-extent,titleEnd-extent),max=Math.min(travel,completeStart,titleStart);
+  if(min<=max){const candidate=clamp(start,min,max);if(Math.abs(candidate-start)<=extent*.1+1e-9)start=candidate;}
+ }
+ // When only tiny peripheral labels are detected and opposite corners cannot
+ // fit together, do not let them completely determine a pictorial cover. The
+ // alternative is accepted only when it retains substantially more coherent
+ // image content. Large/central titles and all person/face results keep their
+ // existing precedence. A narrow viewport may necessarily omit a small label.
+ if(visual&&hasOnlyText&&!visualCue){
+  const labels=boxes.filter(box=>box.text&&box.confidence>=.8);
+  const corner=box=>{
+   const r=box.core,w=r.right-r.x,h=r.bottom-r.y,cx=(r.x+r.right)/2,cy=(r.y+r.bottom)/2;
+   if(w>.23||h>.04||area(r)>.008)return null;
+   const x=cx<.25?-1:cx>.75?1:0,y=cy<.1?-1:cy>.9?1:0;
+   return x&&y?{x,y}:null;
+  };
+  const corners=labels.map(corner);
+  if(labels.length>=2&&corners.every(Boolean)&&corners.some(a=>corners.some(b=>a.x===-b.x&&a.y===-b.y))&&Math.max(...labels.map(box=>high(box.core)))-Math.min(...labels.map(box=>low(box.core)))>extent+1e-9){
+   const alternative=compositionCrop([],imageAspect,viewportAspect,{energy,width,height,viewport});
+   const candidate=(horizontal?alternative?.x:alternative?.y)*travel;
+   const retained=at=>(visual.integral(at+extent)-visual.integral(at))/visual.total;
+   if(Number.isFinite(candidate)&&retained(candidate)>=retained(start)+.08)start=candidate;
+  }
  }
  return horizontal?{x:clamp(start/travel),y:.5}:{x:.5,y:clamp(start/travel)};
 }

@@ -1,7 +1,9 @@
+import {artworkRetinaCandidates} from './components/artworkRetinaFace.js';
 // Local-only subject boxes. Keys are a SHA-256 digest of the caller's stable,
 // versioned artwork identity and detector version; raw artwork URLs are not stored.
-const MODEL_VERSION='minivoice-subjects-yunet-yolox-ppocr-v2';
-const MAX_REGIONS=48,MAX_RECORD_BYTES=4096,DAY=86400000;
+const MODEL_VERSION='minivoice-subjects-yunet-yolox-ppocr-retina-v3';
+const PREVIOUS_MODEL_VERSION='minivoice-subjects-yunet-yolox-ppocr-v2';
+const MAX_REGIONS=48,MAX_RECORD_BYTES=6144,DAY=86400000;
 let defaultIndexedDB;try{defaultIndexedDB=globalThis.indexedDB;}catch{defaultIndexedDB=undefined;}
 const K=new Uint32Array([0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
 const ror=(x,n)=>(x>>>n)|(x<<(32-n));
@@ -27,6 +29,11 @@ function cleanRegions(regions){
  // IndexedDB's own record/index overhead is platform-dependent.
  return JSON.stringify(result).length<=MAX_RECORD_BYTES?result:null;
 }
+// Only a previously unmatched person benefits from the new fallback. Reuse
+// other validated records without decoding or inference.
+export function needsArtworkFaceUpgrade(regions){
+ return artworkRetinaCandidates(regions.filter(box=>box.face),regions.filter(box=>box.person)).length>0;
+}
 // No throw on unavailable storage, quota exhaustion, private mode, or schema
 // races: cache misses simply fall back to the regular detector.
 export function createArtworkAnalysisCache({indexedDB=defaultIndexedDB,dbName='minivoice-artwork-analysis',maxEntries=20000,maxAgeMs=90*DAY,now=Date.now,openTimeoutMs=1000}={}){
@@ -46,8 +53,16 @@ export function createArtworkAnalysisCache({indexedDB=defaultIndexedDB,dbName='m
   generation(){return generation;},
   async available(){return transact('readonly',(store,set)=>{const req=store.count();req.onsuccess=()=>set(true);},false);},
   async count(){return transact('readonly',(store,set)=>{const req=store.count();req.onsuccess=()=>set(req.result);},null);},
-  async get(identity){const key=artworkAnalysisCacheKey(identity),epoch=generation;if(!key)return null;
-   return transact('readwrite',(store,set)=>{const req=store.get(key);req.onsuccess=()=>{const record=req.result;if(!record)return;const data=cleanRegions(record.regions),age=Number(now())-record.created;if(!data||!Number.isFinite(record.created)||age<0||age>maxAgeMs||epoch!==generation){if(epoch===generation)store.delete(key);return;}record.used=stamp();store.put(record);set(data);};},null).then(value=>epoch===generation?value:null);
+  async get(identity){const key=artworkAnalysisCacheKey(identity),legacyKey=artworkAnalysisCacheKey(identity,PREVIOUS_MODEL_VERSION),epoch=generation;if(!key)return null;
+   return transact('readwrite',(store,set)=>{
+    const read=(recordKey,legacy)=>{const req=store.get(recordKey);req.onsuccess=()=>{
+     const record=req.result;if(!record){if(!legacy)read(legacyKey,true);return;}
+     const data=cleanRegions(record.regions),age=Number(now())-record.created;
+     if(!data||!Number.isFinite(record.created)||age<0||age>maxAgeMs||epoch!==generation){if(epoch===generation)store.delete(recordKey);return;}
+     if(legacy&&needsArtworkFaceUpgrade(data))return;
+     store.put({...record,key,regions:data,used:stamp()});if(legacy)store.delete(recordKey);set(data);
+    };};read(key,false);
+   },null).then(value=>epoch===generation?value:null);
   },
   async put(identity,regions,{generation:epoch=generation}={}){const key=artworkAnalysisCacheKey(identity),data=cleanRegions(regions);if(!key||!data||epoch!==generation)return false;
    return transact('readwrite',(store,set)=>{if(epoch!==generation)return;const created=Number(now());if(!Number.isFinite(created))return;store.put({key,created,used:stamp(),regions:data});const count=store.count();count.onsuccess=()=>{let excess=count.result-maxEntries;if(excess<=0){set(true);return;}const cursor=store.index('used').openCursor();cursor.onsuccess=()=>{const item=cursor.result;if(!item||excess<=0){set(true);return;}item.delete();excess--;item.continue();};};},false).then(value=>epoch===generation&&value);

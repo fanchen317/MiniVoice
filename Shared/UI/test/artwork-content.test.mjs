@@ -95,3 +95,62 @@ test('a wide title remains visible when thin vertical credits are tallest',()=>{
  assert.ok(left<=title.x+1e-8,'title left edge stays visible');
  assert.ok(left+.3>=title.x+title.width-1e-8,'title right edge stays visible');
 });
+
+test('remaining space shows more of an illustration without clipping a fitting title',()=>{
+ const title={x:.05,y:.07,width:.2,height:.07,text:true,confidence:.95};
+ const illustration={x:.4,y:.15,width:.4,height:.7};
+ const original=compositionCrop([title],1,.5),updated=compositionCrop([title],1,.5,{visualSubject:illustration});
+ const oldLeft=original.x*.5,left=updated.x*.5;
+ assert.ok(left>oldLeft,'remaining space moves towards the visual subject');
+ assert.ok(left<=title.x&&left+.5>=title.x+title.width,'title remains complete');
+ assert.ok(left+.5>oldLeft+.5,'a larger part of the visual subject is retained');
+});
+
+test('an illustration cue never pulls a fitting detected person or face aside',()=>{
+ const subjects=[{x:.12,y:.1,width:.18,height:.7,person:true,confidence:.9}];
+ const visualSubject={x:.65,y:.1,width:.25,height:.7};
+ assert.deepEqual(compositionCrop(subjects,1,.5,{visualSubject}),compositionCrop(subjects,1,.5));
+});
+
+test('an illustration cue does not override titles that cannot fit together',()=>{
+ const titles=[{x:.02,y:.1,width:.18,height:.08,text:true,confidence:.9},{x:.8,y:.7,width:.18,height:.08,text:true,confidence:.9}];
+ const visualSubject={x:.4,y:.15,width:.4,height:.7};
+ assert.deepEqual(compositionCrop(titles,1,.5,{visualSubject}),compositionCrop(titles,1,.5));
+});
+
+test('a fitting title is retained together with the complete person',()=>{
+ const face={x:.13,y:.24,width:.10,height:.13,face:true,confidence:.95};
+ const body={x:.08,y:.18,width:.23,height:.63,person:true,confidence:.9};
+ const title={x:.34,y:.12,width:.16,height:.10,text:true,confidence:.95};
+ const focus=compositionCrop([face,body,title],1,.48),left=focus.x*.52;
+ assert.ok(left<=body.x&&left+.48>=body.x+body.width,'whole body retained');
+ assert.ok(left<=title.x&&left+.48>=title.x+title.width,'whole title retained');
+});
+
+test('text cannot displace a person when their complete bounds cannot fit',()=>{
+ const face={x:.10,y:.22,width:.12,height:.15,face:true,confidence:.95};
+ const body={x:.02,y:.12,width:.27,height:.75,person:true,confidence:.9};
+ const title={x:.70,y:.12,width:.22,height:.12,text:true,confidence:.95};
+ assert.deepEqual(compositionCrop([face,body,title],1,.45),compositionCrop([face,body,title],1,.45,{visualSubject:{x:.7,y:.2,width:.2,height:.5}}));
+ const focus=compositionCrop([face,body,title],1,.45),left=focus.x*.55;
+ assert.ok(left<=body.x&&left+.45>=body.x+body.width,'body remains protected');
+});
+
+test('opposite tiny peripheral labels do not dominate a much stronger illustration',()=>{
+ const labels=[{x:.02,y:.02,width:.21,height:.034,text:true,confidence:.99},{x:.88,y:.95,width:.1,height:.037,text:true,confidence:.99}];
+ const energy=new Float32Array(96*96).fill(1);for(let y=0;y<96;y++)for(let x=40;x<68;x++)energy[y*96+x]=20;
+ const focus=compositionCrop(labels,1,.46,{energy,width:96,height:96}),left=focus.x*.54;
+ assert.ok(left>.20&&left+.46>.68,'keep the stronger central illustration when both labels cannot fit');
+});
+
+test('large or lone title, low-confidence corner noise and people retain their priority',()=>{
+ const energy=new Float32Array(96*96).fill(1);for(let y=0;y<96;y++)for(let x=40;x<68;x++)energy[y*96+x]=20;
+ const title={x:.02,y:.02,width:.21,height:.034,text:true,confidence:.99},noise={x:.88,y:.95,width:.1,height:.037,text:true,confidence:.1};
+ for(const regions of [[title],[title,noise],[{...title,height:.1}, {...noise,confidence:.99}]]){
+  const focus=compositionCrop(regions,1,.46,{energy,width:96,height:96}),left=focus.x*.54;
+  assert.ok(left<=title.x+1e-8&&left+.46>=title.x+title.width-1e-8,'readable title stays complete');
+ }
+ const face={x:.12,y:.3,width:.08,height:.1,face:true,confidence:.95};
+ const focus=compositionCrop([face,title,{...noise,confidence:.99}],1,.46,{energy,width:96,height:96}),left=focus.x*.54;
+ assert.ok(left<=face.x&&left+.46>=face.x+face.width,'face remains protected');
+});

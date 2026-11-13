@@ -58,7 +58,7 @@ export function mapArtworkCropFace(face,crop,width,height){
  return {...face,x,y,width:right-x,height:bottom-y};
 }
 export function dedupeArtworkFaces(faces){
- const result=[];for(const face of [...faces].sort((a,b)=>b.confidence-a.confidence))if(face.width>0&&face.height>0&&!result.some(other=>duplicate(face,other)))result.push(face);return result.slice(0,8);
+ const result=[];for(const face of [...faces].sort((a,b)=>b.confidence-a.confidence))if(face.width>0&&face.height>0&&!result.some(other=>duplicate(face,other)))result.push(face);return result.slice(0,16);
 }
 export async function rescueArtworkFaces({faces,people,pixels,width,height,detect}){
  // A person already containing a detected face needs no second pass. Expanding

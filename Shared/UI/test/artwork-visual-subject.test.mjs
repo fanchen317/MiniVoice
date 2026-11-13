@@ -16,6 +16,18 @@ test('visual detection rejects complex borders, tiny marks and separated shapes'
  const pair=picture();block(pair,8,15,24,75);block(pair,66,15,82,75);assert.equal(visualArtworkSubject(pair,size,size),null);
  assert.equal(visualArtworkSubject(picture(),size,size),null);
 });
+test('a single silhouette on a smooth gradient remains whole',()=>{
+ const data=picture();
+ for(let y=0;y<size;y++)for(let x=0;x<size;x++){const i=(y*size+x)*4;data[i]=160+x*.7;data[i+1]=170+y*.6;data[i+2]=160+(x+y)*.3;}
+ block(data,7,18,30,80,[25,35,70]);
+ const box=visualArtworkSubject(data,size,size);assert.deepEqual(box,{x:7/size,y:18/size,width:23/size,height:62/size});
+ const p=artworkFocus(data,size,size,{imageAspect:1,viewportAspect:.3}),left=p.x*.7;
+ assert.ok(left<=box.x+1e-8&&left+.3>=box.x+box.width-1e-8);
+});
+test('a smooth gradient does not merge two separate silhouettes',()=>{
+ const data=picture();for(let y=0;y<size;y++)for(let x=0;x<size;x++){const i=(y*size+x)*4;data[i]=160+x*.7;data[i+1]=170+y*.6;data[i+2]=160+(x+y)*.3;}
+ block(data,8,15,24,75,[20,20,20]);block(data,66,15,82,75,[20,20,20]);assert.equal(visualArtworkSubject(data,size,size),null);
+});
 test('visual cue never displaces a detected person or text',()=>{
  const data=picture();block(data,7,18,30,80);
  for(const subject of [{x:.7,y:.3,width:.08,height:.2,face:true,confidence:.9},{x:.68,y:.3,width:.12,height:.2,text:true,confidence:.9}]){

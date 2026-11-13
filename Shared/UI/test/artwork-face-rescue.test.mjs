@@ -22,6 +22,11 @@ test('distinct faces are kept and overlapping results keep the strongest confide
  const found=dedupeArtworkFaces([face(.2,.2,.1,.1,.7),face(.201,.2,.1,.1,.9),face(.7,.2,.1,.1,.8)]);
  assert.equal(found.length,2);assert.equal(found[0].confidence,.9);assert.equal(found[1].confidence,.8);
 });
+test('group portraits retain more than eight distinct faces with a fixed upper bound',()=>{
+ const faces=Array.from({length:20},(_,i)=>face((i%5)*.18,Math.floor(i/5)*.2,.06,.08,.9));
+ assert.equal(dedupeArtworkFaces(faces.slice(0,12)).length,12);
+ assert.equal(dedupeArtworkFaces(faces).length,16);
+});
 test('only unmatched people get a second pass; already detected faces remain',async()=>{
  const img=pixels(100,100),known=face(.14,.12,.08,.08,.95),people=[person(.1,.12,.18,.5),person(.65,.15,.2,.5)],calls=[];
  const found=await rescueArtworkFaces({faces:[known],people,pixels:img,width:100,height:100,detect:async(data,w,h)=>{calls.push({w,h});return [face(.35,.15,.2,.2,.8)];}});

@@ -30,7 +30,7 @@ export function analyzeArtworkSubjects(source,{identity,priority='foreground'}={
    // Background indexing and a focused request can meet while queued.
    if(identity){const cached=await artworkAnalysisCache.get(identity);if(cached!==null)return cached;}
    const regions=await worker.analyze(await readPixels(source));
-   if(identity)await artworkAnalysisCache.put(identity,regions,{generation});
+   if(identity&&regions.cacheable!==false)await artworkAnalysisCache.put(identity,regions,{generation});
    return regions;
   },{priority});
   return queued;

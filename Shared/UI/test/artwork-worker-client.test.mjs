@@ -27,3 +27,9 @@ test('detector errors and malformed replies are not cached as successful results
  const {client,workers}=fixture(),first=client.analyze(pixels());workers[0].onmessage({data:{id:workers[0].message.id,error:'model unavailable'}});await assert.rejects(first,/model unavailable/);
  assert.equal(workers[0].stopped,true);const second=client.analyze(pixels());workers[1].onmessage({data:{id:workers[1].message.id}});await assert.rejects(second,/Invalid artwork worker response/);assert.equal(workers[1].stopped,true);client.dispose();
 });
+test('an optional model failure returns usable regions but marks them non-cacheable',async()=>{
+ const {client,workers}=fixture(),pending=client.analyze(pixels()),worker=workers[0];
+ worker.onmessage({data:{id:worker.message.id,regions:[{person:1}],cacheable:false}});
+ const result=await pending;assert.equal(result[0].person,1);assert.equal(result.cacheable,false);
+ assert.equal(JSON.stringify(result),'[{"person":1}]');client.dispose();
+});

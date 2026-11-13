@@ -4,7 +4,7 @@ import path from 'node:path';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const output=path.resolve(process.argv[2]||path.join(root,'.build/work/shared-ui'));
 const ui=path.resolve(process.argv[3]||path.join(root,'Shared/UI'));
-const sources=['Shared/Core/Sources/MiniVoiceCore/vendor/json.LICENSE','Shared/Core/Sources/MiniVoiceCore/vendor/utf8proc.LICENSE',path.join(ui,'node_modules/react/LICENSE'),path.join(ui,'node_modules/react-dom/LICENSE'),'Shared/UI/src/assets/artwork-models/ONNX-RUNTIME-LICENSE.txt','Shared/UI/src/assets/artwork-models/LICENSE-APACHE-2.0.txt','Shared/UI/src/assets/artwork-models/README.md','Shared/UI/src/assets/artwork-models/face-README.md','Shared/UI/src/assets/artwork-models/person-README.md'];
+const sources=['Shared/Core/Sources/MiniVoiceCore/vendor/json.LICENSE','Shared/Core/Sources/MiniVoiceCore/vendor/utf8proc.LICENSE',path.join(ui,'node_modules/react/LICENSE'),path.join(ui,'node_modules/react-dom/LICENSE'),'Shared/UI/src/assets/artwork-models/ONNX-RUNTIME-LICENSE.txt','Shared/UI/src/assets/artwork-models/LICENSE-APACHE-2.0.txt','Shared/UI/src/assets/artwork-models/README.md','Shared/UI/src/assets/artwork-models/face-README.md','Shared/UI/src/assets/artwork-models/retina-README.md','Shared/UI/src/assets/artwork-models/person-README.md'];
 const notices=await Promise.all(sources.map(async source=>`${path.relative(root,path.resolve(root,source))}\n\n${await readFile(path.resolve(root,source),'utf8')}`));
 await mkdir(path.join(output,'assets'),{recursive:true});await writeFile(path.join(output,'assets/THIRD_PARTY_NOTICES.txt'),notices.join('\n\n----------------\n\n'));
 

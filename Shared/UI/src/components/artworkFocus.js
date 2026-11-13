@@ -19,15 +19,22 @@ function energyMap(pixels,width,height){
  return values;
 }
 // A conservative visual cue, not a person detector: only one large connected
-// shape on an almost uniform image border is accepted. Complex scenes and
+// shape on an almost uniform or smooth-gradient image border is accepted. Complex scenes and
 // multiple independent marks continue through the existing energy fallback.
 export function visualArtworkSubject(pixels,width,height){
  if(!Number.isInteger(width)||!Number.isInteger(height)||width<8||height<8||width*height>65536||pixels?.length<width*height*4)return null;
  const edge=[];for(let x=0;x<width;x++){edge.push(x,(height-1)*width+x);}for(let y=1;y<height-1;y++){edge.push(y*width,y*width+width-1);}
  const median=channel=>{const values=edge.map(i=>pixels[i*4+channel]).sort((a,b)=>a-b);return values[Math.floor(values.length/2)];};
  const bg=[median(0),median(1),median(2),median(3)];
- const distance=i=>{let sum=0;for(let c=0;c<4;c++){const v=pixels[i*4+c]-bg[c];sum+=v*v;}return sum;};
- if(edge.filter(i=>distance(i)<=20*20).length/edge.length<.92)return null;
+ let distance=i=>{let sum=0;for(let c=0;c<4;c++){const v=pixels[i*4+c]-bg[c];sum+=v*v;}return sum;};
+ if(edge.filter(i=>distance(i)<=20*20).length/edge.length<.92){
+  // A smooth two-dimensional gradient is still background, not a second
+  // object. Fit it from the corners but reject it unless it explains almost
+  // the entire border. This deliberately does not extrapolate busy scenery.
+  const corners=[0,width-1,(height-1)*width,height*width-1].map(i=>Array.from(pixels.slice(i*4,i*4+4)));
+  distance=i=>{const x=(i%width)/(width-1),y=Math.floor(i/width)/(height-1);let sum=0;for(let c=0;c<4;c++){const predicted=corners[0][c]*(1-x)*(1-y)+corners[1][c]*x*(1-y)+corners[2][c]*(1-x)*y+corners[3][c]*x*y,v=pixels[i*4+c]-predicted;sum+=v*v;}return sum;};
+  if(edge.filter(i=>distance(i)<=20*20).length/edge.length<.92)return null;
+ }
  const mask=new Uint8Array(width*height),queue=new Int32Array(width*height);let total=0;
  for(let i=0;i<mask.length;i++)if(distance(i)>35*35){mask[i]=1;total++;}
  if(total<width*height*.02||total>width*height*.65)return null;
