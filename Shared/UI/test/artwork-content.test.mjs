@@ -84,3 +84,14 @@ test('a body that exactly fits is retained even when extra body padding cannot f
  assert.ok(Math.abs(left-body.x)<1e-7,'do not sacrifice visible body for extra margin');
  assert.ok(left+.4>=body.x+body.width-1e-7);
 });
+
+test('a wide title remains visible when thin vertical credits are tallest',()=>{
+ const title={x:.05,y:.1,width:.25,height:.06,text:true,confidence:.5};
+ const credit={x:.92,y:.5,width:.005,height:.4,text:true,confidence:1};
+ const energy=new Float32Array(96*96).fill(1);
+ for(let y=0;y<96;y++)for(let x=70;x<96;x++)energy[y*96+x]=1000;
+ const content=compositionContent([title,credit]);assert.equal(content.primary.length,1);assert.equal(content.primary[0].core.x,title.x);
+ const focus=compositionCrop([title,credit],1,.3,{energy,width:96,height:96}),left=focus.x*.7;
+ assert.ok(left<=title.x+1e-8,'title left edge stays visible');
+ assert.ok(left+.3>=title.x+title.width-1e-8,'title right edge stays visible');
+});

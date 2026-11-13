@@ -63,6 +63,9 @@ export function compositionContent(regions){
  // character height and area, without pretending to understand OCR wording.
  const largestText=Math.max(0,...text.map(b=>area(b.core))),tallestText=Math.max(0,...text.map(b=>b.core.bottom-b.core.y));
  const titles=text.filter(b=>area(b.core)>=largestText*.25&&(b.core.bottom-b.core.y)>=tallestText*.45);
+ // The largest and tallest text can be different boxes (e.g. a wide album
+ // title next to a thin vertical credit). Avoid ending up with no title at all.
+ if(!titles.length&&text.length)titles.push(text.reduce((largest,box)=>area(box.core)>area(largest.core)?box:largest));
  const primaryPeople=[...faces,...bodies];
  return {kind:count>2?'group':count===2?'pair':count===1?'portrait':text.length?'typography':'scenery-or-abstract',count,primary:primaryPeople.length?primaryPeople:titles,boxes};
 }
