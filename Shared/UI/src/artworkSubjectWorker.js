@@ -5,7 +5,7 @@ import {detectArtworkFaces} from './components/artworkFaceDetector.js';
 import {detectArtworkText} from './components/artworkTextDetector.js';
 import {detectArtworkPeople} from './components/artworkPersonDetector.js';
 import {dedupeArtworkFaces,rescueArtworkFaces} from './components/artworkFaceRescue.js';
-import {artworkRetinaCandidates,detectArtworkRetinaFaces,filterArtworkRetinaFaces} from './components/artworkRetinaFace.js';
+import {artworkRetinaCandidates,detectArtworkRetinaFaces} from './components/artworkRetinaFace.js';
 
 const wasmURL=new URL('../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm',import.meta.url).href;
 const wasmModuleURL=new URL('../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs',import.meta.url).href;
@@ -41,7 +41,7 @@ self.onmessage=async event=>{
   const candidates=artworkRetinaCandidates(faces,people);
   if(candidates.length){
    try{
-    const found=filterArtworkRetinaFaces(await detectArtworkRetinaFaces({ort,session:await retina(),pixels,width,height}),candidates);
+    const found=await detectArtworkRetinaFaces({ort,session:await retina(),pixels,width,height,people:candidates});
     for(const candidate of found){if(faces.length>=16)break;faces=dedupeArtworkFaces([...faces,candidate]);}
    }
    catch{cacheable=false;}

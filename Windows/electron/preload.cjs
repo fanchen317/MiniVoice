@@ -6,7 +6,7 @@ const report=()=>ipcRenderer.invoke('clock',{id:current,position:audio.currentTi
 for(const event of ['timeupdate','pause','play','loadedmetadata'])audio.addEventListener(event,report);
 audio.addEventListener('ended',()=>ipcRenderer.invoke('request',{version:1,kind:'skip',delta:1,ended:true}).then(apply).catch(console.error));
 audio.addEventListener('error',()=>ipcRenderer.invoke('audio-error','当前音频无法解码，请选择其他歌曲').catch(()=>{}));
-async function apply(result){if(result?.audio){const state=result.audio;if(!state.id){audio.pause();audio.removeAttribute('src');audio.load();current='';return result.value;}if(current!==state.id){current=state.id;restore=state.position/1000;audio.src=`mv-audio://song/${state.id}`;audio.load();}else if(Math.abs(audio.currentTime*1000-state.position)>1000)audio.currentTime=state.position/1000;if(state.playing)await audio.play();else audio.pause();}return result?.value??result;}
+async function apply(result){if(result?.audio){const state=result.audio;if(!state.id){audio.pause();audio.removeAttribute('src');audio.load();current='';restore=0;return result.value;}if(current!==state.id){current=state.id;restore=state.position/1000;audio.src=`mv-audio://song/${state.id}`;audio.load();}else if(state.seek||Math.abs(audio.currentTime*1000-state.position)>1000){if(audio.readyState<1)restore=state.position/1000;else{restore=0;audio.currentTime=state.position/1000;}}if(state.playing)await audio.play();else audio.pause();}return result?.value??result;}
 contextBridge.exposeInMainWorld('miniVoiceWindows',{request:request=>ipcRenderer.invoke('request',request).then(apply)});
 
 ipcRenderer.on('audio',(_,result)=>apply(result).catch(console.error));

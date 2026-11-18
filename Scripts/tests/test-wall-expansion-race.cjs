@@ -106,6 +106,18 @@ app.whenReady().then(async()=>{try{
  check(await js("document.querySelector('.mv-cover')===window.lifecycleCover&&!document.querySelector('.mv-error')"),'Lifecycle probe remounted the cover or surfaced an error');
  console.log('PASS '+host+' Artwork A failure, B success, repaired A retries in the same player');win.destroy();win=null;
 
+ await openFixture();await js('window.renderWallHandoffProbe()');
+ await until("document.querySelector('#wall-handoff-probe .mv-wall-focused')?.dataset.wallId==='a'",'Handoff probe did not focus its initial song');
+ await js("window.wallHandoffSelect('b');true");
+ await until("window.wallHandoffRequests.includes('b')",'Stalled B analysis did not start');
+ await js("window.wallHandoffSelect('c');true");
+ await until("window.wallHandoffRequests.includes('c')",'Stalled C analysis did not start');
+ await until("document.querySelector('#wall-handoff-probe .mv-wall-focused')?.dataset.wallId==='c'",'Stalled analysis blocked the latest track');
+ await until("document.querySelector('#wall-handoff-probe .mv-wall-focused [data-artwork-ready=true]')",'Decoded artwork remained hidden after stalled analysis');
+ await js("window.wallHandoffReleases.b();true");await wait(300);
+ check(await js("document.querySelector('#wall-handoff-probe .mv-wall-focused')?.dataset.wallId==='c'"),'A late analysis reopened the old track');
+ console.log('PASS '+host+' Stalled analysis yields to latest track and ignores late completion');win.destroy();win=null;
+
  // A successful request proves cancellation checks do not make expansion vacuous.
  await prepare();await click('.mv-wall-focused [aria-label=展开播放器]');await release();
  await until("document.querySelector('main').dataset.wallExpanded==='true'&&wallFixture.state.immersive===true",'Latest repeated expansion request never completed');

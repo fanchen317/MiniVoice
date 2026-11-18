@@ -1,9 +1,17 @@
 import {playbackTime} from '../../../Shared/UI/src/components/playbackClock.js';
 import ActionButton from '../../../Shared/UI/src/components/ActionButton.jsx';
-import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
+import React,{useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
+import {displayLine} from '../../../Shared/UI/src/components/lyricPresentation.js';
 import {command,usePlayback,useClock} from './store';
 import {Icon} from './components';
-import {paintLyricSweep} from './lyricSweep';
+import {paintLyricSweep,lyricSweepDelay} from './lyricSweep';
+const emptyLines=[];
+function useReducedLyricsMotion(){
+ const read=()=>document.documentElement.classList.contains('reduce-motion')||matchMedia('(prefers-reduced-motion:reduce)').matches;
+ const [reduced,setReduced]=useState(read);
+ useEffect(()=>{const media=matchMedia('(prefers-reduced-motion:reduce)'),update=()=>setReduced(read()),observer=new MutationObserver(update);media.addEventListener('change',update);observer.observe(document.documentElement,{attributes:true,attributeFilter:['class']});return()=>{observer.disconnect();media.removeEventListener('change',update);};},[]);
+ return reduced;
+}
 function useLyricsTheme(appearance){
  const [dark,setDark]=useState(()=>matchMedia('(prefers-color-scheme:dark)').matches);
  useEffect(()=>{const media=matchMedia('(prefers-color-scheme:dark)'),update=()=>setDark(media.matches);media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
@@ -18,8 +26,10 @@ export function DesktopLyricsUnlock(){
 export default function OwnDesktopLyrics(){
  const [error,setError]=useState(''),[fit,setFit]=useState(0);const act=(name,payload)=>command(name,payload).catch(e=>setError(e.message||String(e)));
  const state=usePlayback(),clock=useClock(),ink=useRef(null),content=useRef(null),clockRef=useRef(clock);clockRef.current=clock;
- const track=state.playing||state.selected,lines=track?.lines||[];let index=-1;for(let i=0;i<lines.length;i++)if(lines[i].time!==null&&lines[i].time<=clock.time)index=i;
- const line=lines[Math.max(0,index)],next=lines[Math.max(0,index)+1],reduced=matchMedia('(prefers-reduced-motion:reduce)').matches,theme=useLyricsTheme(state.appearance);
+ const track=state.playing||state.selected,sourceLines=track?.lines||emptyLines;
+ const lines=useMemo(()=>sourceLines.map((line,i)=>displayLine(line,sourceLines.slice(i+1).find(next=>next.time>line.time)?.time,track?.duration)),[sourceLines,track?.duration]);
+ let index=-1;for(let i=0;i<lines.length;i++)if(lines[i].time!==null&&lines[i].time<=clock.time)index=i;
+ const line=lines[Math.max(0,index)],next=lines[Math.max(0,index)+1],reduced=useReducedLyricsMotion(),theme=useLyricsTheme(state.appearance);
  useEffect(()=>{command('snapshot').catch(()=>{});},[]);
  useLayoutEffect(()=>{
   const node=content.current;
@@ -32,6 +42,6 @@ export default function OwnDesktopLyrics(){
    const value=Math.floor(low*4)/4;node.style.setProperty('--desktop-lyrics-fit',`${value}px`);for(const p of probes)p.remove();translation?.remove();setFit(previous=>previous===value?previous:value);
   };measure();const observer=new ResizeObserver(measure);observer.observe(node);return()=>observer.disconnect();
  },[track?.id,lines,state.desktopLyricsFont,state.showLyricsTranslation,state.desktopLyricsLocked,state.desktopLyricsVertical]);
- useEffect(()=>{let frame;const paint=()=>{const c=clockRef.current,time=playbackTime(c,performance.now());paintLyricSweep(ink.current,time,{reduced,wall:theme!=='light'});if(c.playing&&!reduced)frame=requestAnimationFrame(paint);};paint();return()=>cancelAnimationFrame(frame);},[line,clock.playing,clock.playing?null:clock.time,reduced,theme,fit]);
+ useEffect(()=>{let frame,timer;const paint=()=>{const c=clockRef.current,time=playbackTime(c,performance.now()),next=paintLyricSweep(ink.current,time,{reduced,wall:theme!=='light'});if(c.playing){if(reduced)timer=setTimeout(paint,lyricSweepDelay(next));else frame=requestAnimationFrame(paint);}};paint();return()=>{cancelAnimationFrame(frame);clearTimeout(timer);};},[line,clock.playing,clock.playing?null:clock.time,reduced,theme,fit]);
  return <main className="own-desktop-lyrics" data-own-surface="desktopLyrics" data-locked={Boolean(state.desktopLyricsLocked)} data-vertical={Boolean(state.desktopLyricsVertical)}><header><span>{track?`${track.title} · ${track.artist}`:'MiniVoice-debug'}</span><div><ActionButton aria-label={state.desktopLyricsVertical?'切换横向歌词':'切换竖向歌词'} onClick={()=>act('desktopLyricsConfig',{vertical:!state.desktopLyricsVertical})}><Icon name="styleSwitch"/></ActionButton><ActionButton aria-label="锁定桌面歌词" onClick={()=>act('desktopLyricsConfig',{locked:true})}><Icon name="lock"/></ActionButton><ActionButton aria-label="关闭桌面歌词" onClick={()=>act('desktopLyrics')}><Icon name="close"/></ActionButton></div></header>{error&&<p role="alert">{error}</p>}<div ref={content} className="own-desktop-lyrics-text"><div ref={ink} className="own-desktop-line">{line?.words?.length?line.words.map((word,i)=><span key={`${index}:${i}`} className="lyric-word" data-word-start={word.start} data-word-end={word.end??line.words[i+1]?.start??line.end??next?.time??word.start+1}>{word.text}</span>):line?.text||track?.title||'选择一首歌曲'}</div>{state.showLyricsTranslation!==false&&line?.translation&&<p>{line.translation}</p>}</div></main>;
 }

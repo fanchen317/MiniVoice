@@ -56,7 +56,7 @@ Windows 原生构建会运行 worker `--self-test`，包含 small 模型编码�
 - 在线歌词部分来源、Apple Music 封面来源已接；网易/QQ/酷狗等完整来源和繁简转换尚未追平 Mac。
 - 原 Mac AI worker、任务取消/重试、Small/Medium 模型管理和逐字缓存已接；Windows 实际推理、模型下载及取消仍待实机。
 - 媒体键/系统媒体面板、输出切换和全局快捷键已有适配；系统主音量联动及默认输出耳机断开仍有缺口。
-- Windows 无同等 Apple Vision 语义检测器，共用像素显著性和几何构图器。
+- Windows 与 Mac 的音乐墙共用本地 ONNX 人脸、人体、文字检测、离线识别缓存和构图规则；Windows 实机性能与真实封面效果仍待验收。
 
 ## 验证边界
 

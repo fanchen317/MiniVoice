@@ -7,6 +7,16 @@ app.whenReady().then(async()=>{let win;try{
  const base=process.env.MINIVOICE_WALL_TEST_URL||'http://127.0.0.1:5196';await win.loadURL(base+'/tests/desktop-lyrics.html');const js=source=>win.webContents.executeJavaScript(source,true);await wait(800);
  const nativeProbe=new BrowserWindow(lyricsUnlockWindowOptions({x:0,y:0,width:32,height:32}));check(!nativeProbe.hasShadow(),'Native unlock host still has a shadow');nativeProbe.destroy();
  for(const size of [[600,112],[360,88],[1050,200]]){win.setContentSize(...size);await wait(250);check(await js("(()=>{const c=document.querySelector('.own-desktop-lyrics-text').getBoundingClientRect();return [...document.querySelectorAll('.own-desktop-line,.own-desktop-lyrics-text>p')].every(n=>{const r=n.getBoundingClientRect();return r.top>=c.top-1&&r.bottom<=c.bottom+1&&r.left>=c.left-1&&r.right<=c.right+1&&n.scrollWidth<=n.clientWidth+1})})()"),'Long original/translation clipped at '+size);}
+ await js("window.lyricsFixture.lines([{time:0,text:'天地'},{time:4,text:'下一行'}]);window.lyricsFixture.time(1)");await wait(100);
+ check(await js("document.querySelectorAll('.own-desktop-line .lyric-word').length===2"),'Line-timed desktop lyrics did not generate word timing');
+ await js("window.lyricsFixture.lines([{time:0,text:'天地',words:[{text:'天',start:.4,end:.7},{text:'地',start:.9,end:1.4}]}]);window.lyricsFixture.time(1)");await wait(100);
+ check(await js("(()=>{const w=[...document.querySelectorAll('.own-desktop-line .lyric-word')];return w.length===2&&w[0].dataset.wordStart==='0.4'&&w[1].dataset.wordStart==='0.9'})()"),'Native word timing must remain unchanged');
+ await js("window.lyricsFixture.time(.5);document.documentElement.classList.add('reduce-motion')");await wait(100);
+ check(await js("(()=>{const s=document.querySelector('.own-desktop-line').style.backgroundSize.split(',');return parseFloat(s[0])>0&&parseFloat(s[1])===0})()"),'Reduced-motion toggle must keep future words unlit while paused');
+ await js("window.lyricsFixture.time(1.1)");await wait(100);check(await js("parseFloat(document.querySelector('.own-desktop-line').style.backgroundSize.split(',')[1])>0"),'Paused seek must update word highlighting');
+ await js("window.lyricsFixture.time(.2)");await wait(100);check(await js("parseFloat(document.querySelector('.own-desktop-line').style.backgroundSize.split(',')[0])===0"),'Backward seek must reset word highlighting');
+ await js("document.documentElement.classList.remove('reduce-motion')");
+ await js("window.lyricsFixture.text('단어를 고르는 일은 우리의 마음을 말해 주는 길고 완전한 문장 good timing','不断变化的微妙心理，希望这句长原文和完整译文都能够在小窗口中清楚显示。')");
  await js("window.lyricsFixture.theme('light')");await wait(100);const light=await js("getComputedStyle(document.querySelector('.own-desktop-lyrics')).backgroundColor");await js("window.lyricsFixture.theme('dark')");await wait(100);check((await js("getComputedStyle(document.querySelector('.own-desktop-lyrics')).backgroundColor"))!==light,'Dark lyrics background did not change');
  fs.writeFileSync(path.resolve(__dirname,'../../.build/reports/ui/desktop-lyrics-fit-dark.png'),(await win.webContents.capturePage()).toPNG());
  await js("window.lyricsFixture.vertical(true);window.lyricsFixture.text('冷的天色你是否多穿一件呢','')");win.setContentSize(110,600);await wait(400);

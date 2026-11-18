@@ -9,7 +9,7 @@ import ActionButton from '../../../Shared/UI/src/components/ActionButton.jsx';
 import {useListColumnMotion} from './listColumnMotion';
 import {createPortal} from 'react-dom';
 import {usePopoverPosition} from './usePopoverPosition';
-import {paintLyricSweep,clearLyricSweep} from './lyricSweep';
+import {paintLyricSweep,clearLyricSweep,lyricSweepDelay} from './lyricSweep';
 import {flyPlaybackArtwork} from './transitions';
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useScrollThumb } from './scrollbar';
@@ -21,10 +21,10 @@ import { wallDockMetrics,browseGridMetrics,springEasing } from './motion';
 import { displayLine, wallCardSizing } from './kinetic';
 import { artwork, command, seconds, useClock, usePlayback, useCatalog } from './store';
 
-export const Cover = memo(function Cover({track,detail=false,presentation=detail?'artwork':'list',source,fallbackSource}){
+export const Cover = memo(function Cover({track,detail=false,presentation=detail?'artwork':'list',source,fallbackSource,hold=false}){
   const requested=source??artwork(track,detail,presentation),initial=fallbackSource||requested,identity=`${track?.artworkKey||''}:${track?.artworkRevision??0}`;
   const [decoded,setDecoded]=useState(()=>({identity,url:initial}));
-  useEffect(()=>{let active=true;if(!requested||decoded.identity===identity&&decoded.url===requested)return;const image=new Image();image.src=requested;image.decode().then(()=>{if(active)setDecoded({identity,url:requested});}).catch(()=>{});return()=>{active=false;};},[requested,identity]);
+  useEffect(()=>{let active=true;if(hold||!requested||decoded.identity===identity&&decoded.url===requested)return;const image=new Image();image.src=requested;image.decode().then(()=>{if(active)setDecoded({identity,url:requested});}).catch(()=>{});return()=>{active=false;};},[requested,identity,hold]);
   const [failed,setFailed]=useState(false),url=decoded.identity===identity?decoded.url:initial;
   useEffect(()=>setFailed(false),[url]);
   const onImageError=()=>{if(fallbackSource&&url!==fallbackSource){setDecoded({identity,url:fallbackSource});setFailed(false);}else setFailed(true);};
@@ -74,7 +74,7 @@ export function Lyrics({ track, expanded=false, workspace=false, onEdit }) {
     return()=>{clearTimeout(resume);observer.disconnect();el.removeEventListener('wheel',manual);el.removeEventListener('pointerdown',manual);cancelAnimationFrame(scrollFrame.current);};
   },[track?.id,lines,expanded,showLyricsTranslation]);
   useEffect(()=>{
-    const el=root.current;if(!el)return;let frame=0;
+    const el=root.current;if(!el)return;let frame=0,timer=0;
     function update(){
       const time=playbackTime(clock,performance.now());let index=-1;
       for(let i=0;i<lines.length;i++)if(lines[i].time!==null&&lines[i].time<=time)index=i;
@@ -82,10 +82,10 @@ export function Lyrics({ track, expanded=false, workspace=false, onEdit }) {
         for(const line of el.querySelectorAll('[data-lyric]')){const n=Number(line.dataset.lyric);if(n!==index)clearLyricSweep(line.querySelector('.lyric-content'));line.classList.toggle('current',n===index);line.dataset.emphasis=index<0?'-1':String(Math.min(2,Math.abs(n-index)));}
         if(performance.now()>=manualUntil.current)align(index,previous!==-2);
       }
-      const reduced=document.documentElement.classList.contains('reduce-motion');paintLyricSweep(el.querySelector('.current .lyric-content'),time,{reduced});
-      if(clock.playing&&!reduced)frame=requestAnimationFrame(update);
+      const reduced=document.documentElement.classList.contains('reduce-motion'),next=paintLyricSweep(el.querySelector('.current .lyric-content'),time,{reduced});
+      if(clock.playing){if(reduced)timer=setTimeout(update,lyricSweepDelay(next));else frame=requestAnimationFrame(update);}
     }
-    update();return()=>cancelAnimationFrame(frame);
+    update();return()=>{cancelAnimationFrame(frame);clearTimeout(timer);};
   },[clock,lines]);
   const plain=lines.length>0&&lines.every(line=>line.time===null);
   return <div ref={root} className={`lyrics-scroll ${expanded?'expanded':''} ${plain?'plain-lyrics':''} ${workspace?'workspace-lyrics':''}`} aria-label="歌词">
@@ -121,7 +121,7 @@ export function Player({ onLocate,onEdit,previewTrack,onPlayPreview, compact=fal
   function commitSeek(time){if(!state.playing){setScrub(null);return;}pendingSeek.current=time;setScrub(time);command('seek',{time}).catch(()=>{pendingSeek.current=null;setScrub(null);});}
   const duration=track?.duration||0, time=scrub??(track?.id===state.playing?.id?clock.time:0);
   const modes=[['list','≡'],['shuffle','⤨'],['repeatOne','↻¹'],['repeatAll','↻'],['single','①']];
-  const seek=<div className="seek" style={{'--seek':`${Math.max(0,Math.min(100,time/Math.max(1,duration)*100))}%`}}><span aria-hidden={compact&&dock.detail<.5}>{compact?seconds(time).padStart(5,'0'):seconds(time)}</span><Slider label="播放进度" min={0} max={Math.max(1,duration)} step={Math.max(.01,duration/100)} disabled={!track||(compact&&track.id!==state.playing?.id)} resetKey={track?.id} value={Math.min(time,duration)} valueText={value=>`${seconds(value)} / ${seconds(duration)}`} onValueChange={setScrub} onCancel={()=>{pendingSeek.current=null;setScrub(null);}} onCommit={commitSeek}/><span aria-hidden={compact&&dock.detail<.5}>{compact?seconds(duration).padStart(5,'0'):seconds(duration)}</span></div>;
+  const seek=<div className="seek" style={{'--seek':`${Math.max(0,Math.min(100,time/Math.max(1,duration)*100))}%`}}><span aria-hidden={compact&&dock.detail<.5}>{compact?seconds(time).padStart(5,'0'):seconds(time)}</span><Slider label="播放进度" min={0} max={Math.max(1,duration)} step={Math.max(.01,duration/100)} disabled={!state.playing||!track||(compact&&track.id!==state.playing.id)} resetKey={track?.id} value={Math.min(time,duration)} valueText={value=>`${seconds(value)} / ${seconds(duration)}`} onValueChange={setScrub} onCancel={()=>{pendingSeek.current=null;setScrub(null);}} onCommit={commitSeek}/><span aria-hidden={compact&&dock.detail<.5}>{compact?seconds(duration).padStart(5,'0'):seconds(duration)}</span></div>;
   const displayingPlaying=state.isPlaying||(compact&&state.preparing);
   const play=<ActionButton feedback="none" className={`play-main ${displayingPlaying?'is-playing':''}`} title={compact&&idle.collapsed?'展开播放条':state.preparing?'正在准备播放':state.isPlaying?'暂停':'播放'} aria-label={compact&&idle.collapsed?'展开播放条':state.preparing?'正在准备播放':state.isPlaying?'暂停':'播放'} disabled={!track&&!idle.collapsed} onClick={()=>compact&&idle.collapsed?idle.expand():compact&&!state.playing?onPlayPreview?.():command('toggle')}><span className="play-symbol"><Icon name={compact?'play':'transport-play'}/></span><span className="pause-symbol">{compact&&idle.collapsed?<NowPlayingIndicator playing={state.isPlaying} inline/>:<Icon name="pauseFilled"/>}</span></ActionButton>;
   if(compact)return <footer {...idle.events} data-idle-collapsed={idle.collapsed} ref={dockRoot} style={{'--dock-detail':dock.detail,'--dock-middle-width':`${Math.max(20,compactWidth-2*dock.padding-dock.playSide-2*dock.spacing-32-(31+dock.spacing)*dock.detail)}px`,'--dock-gap':`${dock.spacing}px`,'--dock-padding':`${dock.padding}px`,'--dock-play-side':`${dock.playSide}px`,'--dock-play-font':`${dock.playFont}px`}} className="player compact" aria-label="播放器" inert={hiddenChrome} aria-hidden={hiddenChrome}>{play}<div className="dock-middle" inert={idle.collapsed} aria-hidden={idle.collapsed}><div className="dock-title"><IconButton label="上一首" disabled={compact?!state.playing:!track} onClick={()=>command('skip',{delta:-1})}><Icon name="chevronLeft"/></IconButton><ActionButton onClick={onLocate}>{track?.title||'选择一首音乐'}</ActionButton><IconButton label="下一首" disabled={compact?!state.playing:!track} onClick={()=>command('skip',{delta:1})}><Icon name="chevronRight"/></IconButton></div>{seek}</div><div className="dock-mode-slot" inert={idle.collapsed} aria-hidden={idle.collapsed}><PlaybackModeMenu/></div><span className="dock-queue-slot" data-fully-visible={dock.detail>=.999} inert={idle.collapsed||dock.detail<=.8} aria-hidden={idle.collapsed||dock.detail<.5}><IconButton label="播放队列" aria-expanded={queue} active={queue} onClick={()=>setQueue(v=>!v)}><Icon name="queue"/></IconButton></span>{queue&&<WallQueue onClose={()=>setQueue(false)}/>}</footer>;

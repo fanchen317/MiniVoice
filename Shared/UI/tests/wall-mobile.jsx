@@ -23,6 +23,16 @@ window.renderWallCardProbe=(current,expanded,compact)=>{
 };
 window.removeWallCardProbe=()=>{cardProbeRoot?.unmount();cardProbeHost?.remove();cardProbeRoot=null;cardProbeHost=null;};
 
+// Exercise real focus changes with a stalled subject detector, without host audio.
+window.renderWallHandoffProbe=async()=>{
+ const {default:Wall}=await import('../src/Wall.jsx');
+ const host=document.createElement('main');host.id='wall-handoff-probe';host.className='mv-workspace style-wall theme-dark';host.dataset.presentation='mobile';Object.assign(host.style,{position:'fixed',inset:'0',zIndex:9999});document.body.append(host);
+ const items=['a','b','c'].map((id,index)=>({id,title:id,artwork:art(9000+index)}));
+ const releases={};window.wallHandoffReleases=releases;window.wallHandoffRequests=[];
+ function Probe(){const [current,setCurrent]=React.useState('a');window.wallHandoffSelect=setCurrent;return <Wall items={items} current={current} playingId={current} focused expanded page={{}} onCamera={()=>{}} onAnalyzeArtwork={id=>{window.wallHandoffRequests.push(id);return id==='a'?Promise.resolve([]):new Promise(resolve=>{releases[id]=()=>resolve([]);});}} focusContent={song=><div>{song.title}</div>}/>;}
+ createRoot(host).render(<Probe/>);
+};
+
 // Isolated full-viewport probe: no user files or host audio service involved.
 let cropProbeRoot,cropProbeHost;
 window.renderWallCropProbe=async({expanded=false,nativeScrolling=false,width=390,height=844}={})=>{

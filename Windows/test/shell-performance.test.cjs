@@ -1,5 +1,12 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {settingsTask,removeMenu}=require('../electron/windows-shell.cjs');
+const {closeBehavior,trayStyle,backgroundWindowAction,monochromeBitmap,settingsTask,removeMenu}=require('../electron/windows-shell.cjs');
+test('close behavior defaults to background while respecting saved choices',()=>{assert.equal(closeBehavior({}),'background');assert.equal(closeBehavior({preferences:{closeBehavior:'pause'}}),'pause');assert.equal(closeBehavior({closeBehavior:'quit'}),'quit');assert.equal(closeBehavior({closeBehavior:'bad'}),'background');});
+test('hidden tray retains taskbar recovery and monochrome preserves alpha',()=>{
+ assert.equal(trayStyle({}),'hidden');assert.equal(backgroundWindowAction({}),'minimize');
+ assert.equal(backgroundWindowAction({preferences:{statusIconStyle:'colored'}}),'hide');
+ assert.equal(backgroundWindowAction({preferences:{statusIconStyle:'monochrome'}}),'hide');
+ const input=Buffer.from([30,100,200,128]),gray=monochromeBitmap(input);assert.deepEqual(input,Buffer.from([30,100,200,128]));assert.equal(gray[0],gray[1]);assert.equal(gray[1],gray[2]);assert.equal(gray[3],128);
+});
 const {coalescedWriter}=require('../electron/state-writer.cjs');
 test('all windows have no menu and keep the settings keyboard shortcut',()=>{const calls=[],handlers={};let opened=0,prevented=0;removeMenu({setMenu:value=>calls.push(value),setMenuBarVisibility:value=>calls.push(value),webContents:{on:(name,handler)=>handlers[name]=handler}},()=>opened++);assert.deepEqual(calls,[null,false]);handlers['before-input-event']({preventDefault:()=>prevented++},{type:'keyDown',control:true,key:','});assert.equal(opened,1);assert.equal(prevented,1);});
 test('taskbar settings launches the same packaged app, and includes app path during development',()=>{assert.equal(settingsTask({execPath:'C:\\App\\MiniVoice.exe',isPackaged:true}).arguments,'--open-settings');assert.equal(settingsTask({execPath:'electron.exe',appPath:'C:\\Development App',isPackaged:false}).arguments,'"C:\\Development App" --open-settings');});

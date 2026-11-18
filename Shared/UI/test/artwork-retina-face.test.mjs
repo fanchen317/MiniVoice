@@ -20,6 +20,16 @@ test('RetinaFace decodes anchors, clips padding and suppresses duplicates',()=>{
  assert.throws(()=>decodeArtworkRetinaFaces({loc:{data:loc},conf:{data:new Float32Array(1)}},640,640),/Invalid/);
 });
 
+test('an unmatched group member survives when eight higher-scoring faces are elsewhere',()=>{
+ const count=2*(80*80+40*40+20*20),loc=new Float32Array(count*4),conf=new Float32Array(count*2);
+ for(let j=0;j<9;j++){const i=(10*80+(4+j*8))*2;conf[2*i+1]=.99-j*.005;}
+ const outputs={loc:{data:loc},conf:{data:conf}},all=decodeArtworkRetinaFaces(outputs,640,640);
+ const person={x:.83,y:.08,width:.16,height:.25,person:1,confidence:.9};
+ assert.equal(all.length,8);assert.equal(filterArtworkRetinaFaces(all,[person]).length,0);
+ const selected=decodeArtworkRetinaFaces(outputs,640,640,{accept:box=>filterArtworkRetinaFaces([box],[person]).length>0});
+ assert.equal(selected.length,1);assert.ok(selected[0].x>.8);
+});
+
 test('the fallback keeps only unmatched people and faces supported by them',()=>{
  const person={x:.2,y:.25,width:.3,height:.6,person:1,confidence:.9};
  const weak={...person,confidence:.2},face={x:.3,y:.2,width:.1,height:.1,face:1,confidence:.95};

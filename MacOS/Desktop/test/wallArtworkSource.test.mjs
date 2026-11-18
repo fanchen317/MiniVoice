@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {wallOriginalArtwork,wallImageCoordinateSpace,loadWallWallpaper} from '../src/wallArtworkSource.js';
+import {wallOriginalArtwork,wallImageCoordinateSpace,loadWallWallpaper,waitWallWallpaper} from '../src/wallArtworkSource.js';
 import {artwork} from '../src/artworkUrl.js';
 
 test('wall treats only the strict analysis route as original coordinates',()=>{
@@ -17,4 +17,12 @@ test('wallpaper prefers the verified original and falls back to a decoded previe
  const original=await loadWallWallpaper('strict','preview',makeImage);assert.equal(original.src,'strict');assert.deepEqual(seen,['strict']);
  seen.length=0;const fallback=await loadWallWallpaper('strict-unavailable','preview',makeImage);assert.equal(fallback.src,'preview');assert.deepEqual(seen,['strict-unavailable','preview']);
  seen.length=0;assert.equal(await loadWallWallpaper('strict-unavailable','',makeImage),null);assert.equal(await loadWallWallpaper('','',makeImage),null);
+});
+
+test('expansion does not wait indefinitely for artwork analysis or decoding',async()=>{
+ const image={naturalWidth:640,naturalHeight:480},never=new Promise(()=>{});
+ assert.equal(await waitWallWallpaper(Promise.resolve(image),never,{timeoutMs:10}),image);
+ assert.equal(await waitWallWallpaper(never,Promise.resolve(),{timeoutMs:10}),null);
+ assert.equal(await waitWallWallpaper(Promise.reject(Error('failed')),Promise.resolve(),{timeoutMs:10}),null);
+ assert.equal(await waitWallWallpaper(Promise.resolve(image),Promise.reject(Error('failed')),{timeoutMs:10}),image);
 });

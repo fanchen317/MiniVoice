@@ -15,12 +15,16 @@ test('only legacy records that can benefit from the face fallback need inference
 test('legacy cache migrates unaffected artwork and selectively refreshes faceless people',async()=>{
  const legacy='minivoice-subjects-yunet-yolox-ppocr-v2',records=new Map(),face={x:.25,y:.25,width:.1,height:.1,face:1,confidence:.9},person={x:.2,y:.2,width:.3,height:.5,person:1,confidence:.9};
  for(const [id,regions] of [['ready',[face,person]],['upgrade',[person]],['text',[]]])records.set(artworkAnalysisCacheKey(id,legacy),{key:artworkAnalysisCacheKey(id,legacy),created:100,used:100,regions});
+ const v3='minivoice-subjects-yunet-yolox-ppocr-retina-v3';records.set(artworkAnalysisCacheKey('newer',v3),{key:artworkAnalysisCacheKey('newer',v3),created:100,used:100,regions:[face,person]});
+ const group=[face,person,{...person,x:.7}];records.set(artworkAnalysisCacheKey('group',v3),{key:artworkAnalysisCacheKey('group',v3),created:100,used:100,regions:group});
  const indexedDB={open(){const request={};queueMicrotask(()=>{request.result={transaction(){let pending=0;const tx={objectStore(){return store;}};
   const operation=fn=>{const req={};pending++;queueMicrotask(()=>{req.result=fn();req.onsuccess?.();pending--;if(!pending)queueMicrotask(()=>tx.oncomplete?.());});return req;};
   const store={get:key=>operation(()=>records.get(key)),put:value=>operation(()=>records.set(value.key,value)),delete:key=>operation(()=>records.delete(key))};return tx;}};request.onsuccess();});return request;}};
  const cache=createArtworkAnalysisCache({indexedDB,now:()=>1000});
  assert.deepEqual(await cache.get('ready'),[face,person]);assert.ok(records.has(artworkAnalysisCacheKey('ready')));assert.equal(records.has(artworkAnalysisCacheKey('ready',legacy)),false);
  assert.deepEqual(await cache.get('text'),[]);assert.ok(records.has(artworkAnalysisCacheKey('text')));
+ assert.deepEqual(await cache.get('newer'),[face,person]);assert.equal(records.has(artworkAnalysisCacheKey('newer',v3)),false);
+ assert.equal(await cache.get('group'),null);assert.ok(records.has(artworkAnalysisCacheKey('group',v3)));
  assert.equal(await cache.get('upgrade'),null);assert.equal(records.has(artworkAnalysisCacheKey('upgrade')),false);
 });
 

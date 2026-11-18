@@ -16,3 +16,16 @@ test('authentic timestamps stay untouched; output is deterministic',()=>{
  const line={time:0,text:'你好',words:[{text:'你好',start:0,end:2}]};assert.equal(displayLine(line,3,5),line);
  assert.deepEqual(estimate('Hello，你好',0,4),estimate('Hello，你好',0,4));
 });
+test('apostrophes inside English contractions do not create an extra syllable',()=>{
+ const contracted=estimate("don't stop",0,8),plain=estimate('dont stop',0,8);
+ const firstEnd=words=>words.find(w=>w.text==='t').end;
+ assert.ok(Math.abs(firstEnd(contracted)-firstEnd(plain))<1e-9);
+ assert.equal(contracted.map(w=>w.text).join(''),"don't stop");
+});
+test('Japanese small kana share their preceding syllable while small tsu retains a beat',()=>{
+ const combined=estimate('きゃく',0,5),separate=estimate('きかく',0,5),sokuon=estimate('きっく',0,5);
+ const duration=w=>w.end-w.start;
+ assert.ok(duration(combined[1])<duration(combined[0])*.5);
+ assert.ok(duration(sokuon[1])>duration(combined[1])*2);
+ assert.ok(combined.at(-1).end<separate.at(-1).end);
+});

@@ -8,6 +8,7 @@ import {clampMobileWallScale as clampZoom,initialMobileWallCamera,MOBILE_DEFAULT
 import {projectWallFrame} from './wallProjection.js';
 import {WALL_EXPANSION_MS} from './wallMotion.js';
 import {createArtworkPreloader} from './artworkPreloader.js';
+import {waitForArtworkPreparation} from './artworkHandoff.js';
 import {wallArtworkPlan,anticipatedWallCamera} from './wallArtworkPlan.js';
 import {useActivationFeedback,emitActivationFeedback} from './components/FeedbackContext.jsx';
 import ActionButton from './components/ActionButton.jsx';
@@ -59,7 +60,8 @@ function FocusArtwork({src,preview,shouldDefer,smoothUpgrade=false,target,expand
  const missing=!src||failedSource===src;
  return <div ref={artworkRoot} className="mv-wall-artwork-stack" data-artwork-ready={!missing&&shown===src?'true':'false'} data-artwork-state={missing?'missing':shown===src?'ready':'loading'} data-artwork-target={`${Math.round(target.width)}x${Math.round(target.height)}`}>{sources.map(source=><Artwork key={source} className="mv-wall-focused-art" src={source} draggable={false} style={smoothUpgrade?{visibility:'visible',opacity:(!expanded&&source===preview)||revealed.includes(source)||shown===source||!shown&&source===failedSource?1:0,zIndex:source===preview?0:1,transition:reduced()?'none':'opacity 180ms ease-out'}:{visibility:shown===source||!shown&&source===failedSource?'visible':'hidden',transition:'none'}} onError={()=>{if(source===requested.current)setFailedSource(source);}} onLoad={async event=>{
   const node=event.currentTarget;
-  try{await node.decode();if(source===src){if(analyze)await warmArtworkSubjects(preview||src,analyze,artworkViewport(target),{fixedQuality:analysisFixedQuality});else await waitArtworkSubjects(preview||src);}}catch{return;}
+  try{await node.decode();}catch{return;}
+  if(source===src){try{const work=analyze?warmArtworkSubjects(preview||src,analyze,artworkViewport(target),{fixedQuality:analysisFixedQuality}):waitArtworkSubjects(preview||src);await waitForArtworkPreparation([work]);}catch{}}
   if(!node.isConnected)return;
   latestTarget.current.plan(node,source);
   const reveal=()=>{if(!node.isConnected||requested.current!==source)return;if(source!==preview&&shouldDefer?.()){revealFrame.current=setTimeout(reveal,80);return;}latestTarget.current.plan(node,source);if(smoothUpgrade)setRevealed(previous=>[...previous.filter(value=>value!==source),source].slice(-3));setShown(source);};
@@ -186,9 +188,10 @@ export default forwardRef(function Wall({animateViewportFocus=false,nativeScroll
    const neighbors=state.expanded?[]:visibleReflowTiles(state.scene,targetCamera,state.viewport,cell,{width:state.viewport.side,height:state.viewport.side},WALL_OVERSCAN);
    const sources=[...new Set([...(state.expanded?[song.artworkDetail||song.artworkCard||song.artwork]:[]),...neighbors.map(tile=>state.items[tile.index]?.artworkWall||state.items[tile.index]?.artwork)].filter(Boolean))];
    const analysis=state.expanded&&state.onAnalyzeArtwork?warmArtworkSubjects(song.artworkWall||song.artwork,context=>state.onAnalyzeArtwork(song.id,context),target,{fixedQuality:artworkAnalysisFixedQuality}):Promise.resolve();
-   // Keep the existing decoded wall visible until the destination is decoded.
-   // Settled failures use the normal missing-cover presentation, never hang UI.
-   Promise.allSettled([analysis,getArtworkPreloader().prefetch(sources,()=>request===artworkHandoff.current&&Boolean(view.current)&&latest.current.current===id&&latest.current.focused,{priority:true})]).then(()=>{
+   // Prefer a decoded handoff, but do not leave the prior song selected
+   // indefinitely when the model or a source stalls. The normal image layer
+   // still waits for its own decode before reporting readiness.
+   waitForArtworkPreparation([analysis,getArtworkPreloader().prefetch(sources,()=>request===artworkHandoff.current&&Boolean(view.current)&&latest.current.current===id&&latest.current.focused,{priority:true})]).then(()=>{
     if(request!==artworkHandoff.current||!view.current||latest.current.current!==id||!latest.current.focused)return;
     revealCurrent(animate,allowRestore,true);
    });return true;

@@ -21,7 +21,7 @@ function subjectBoxes(regions){
  }).filter(box=>area(box.core)>0).sort((a,b)=>b.confidence-a.confidence||area(b.core)-area(a.core));
  // Deduplicate in two dimensions: two band members at different heights must
  // remain distinct even when they share the same x interval.
- return boxes.filter((box,index)=>!boxes.some((other,j)=>j<index&&other.face===box.face&&other.text===box.text&&other.person===box.person&&area(overlap(other.core,box.core))/(area(other.core)+area(box.core)-area(overlap(other.core,box.core)))>.82)).slice(0,32);
+ return boxes.filter((box,index)=>!boxes.some((other,j)=>j<index&&other.face===box.face&&other.text===box.text&&other.person===box.person&&area(overlap(other.core,box.core))/(area(other.core)+area(box.core)-area(overlap(other.core,box.core)))>.82));
 }
 
 function energyProfile(energy,width,height,horizontal){
@@ -167,7 +167,7 @@ export function compositionCrop(regions,imageAspect,viewportAspect,{energy,width
  // a small adjustment. A large shift can destroy the surrounding composition
  // even when the boxes themselves technically fit.
  const prominentTitles=content.titles.filter(box=>box.confidence>=.8&&area(box.core)>=.012);
- if(content.count&&completeFits&&prominentTitles.length){
+ if(!mask&&content.count&&completeFits&&prominentTitles.length){
   const titleStart=Math.min(...prominentTitles.map(box=>low(box.padded))),titleEnd=Math.max(...prominentTitles.map(box=>high(box.padded)));
   const min=Math.max(0,completeEnd-extent,titleEnd-extent),max=Math.min(travel,completeStart,titleStart);
   if(min<=max){const candidate=clamp(start,min,max);if(Math.abs(candidate-start)<=extent*.1+1e-9)start=candidate;}
@@ -177,8 +177,10 @@ export function compositionCrop(regions,imageAspect,viewportAspect,{energy,width
  // alternative is accepted only when it retains substantially more coherent
  // image content. Large/central titles and all person/face results keep their
  // existing precedence. A narrow viewport may necessarily omit a small label.
- if(visual&&hasOnlyText&&!visualCue){
-  const labels=boxes.filter(box=>box.text&&box.confidence>=.8);
+ if(!mask&&visual&&hasOnlyText&&!visualCue){
+  // A less confident but substantial title is still meaningful OCR evidence.
+  // Every qualifying box must be a tiny corner label before texture may win.
+  const labels=boxes.filter(box=>box.text&&box.confidence>=.35);
   const corner=box=>{
    const r=box.core,w=r.right-r.x,h=r.bottom-r.y,cx=(r.x+r.right)/2,cy=(r.y+r.bottom)/2;
    if(w>.23||h>.04||area(r)>.008)return null;
@@ -186,7 +188,8 @@ export function compositionCrop(regions,imageAspect,viewportAspect,{energy,width
    return x&&y?{x,y}:null;
   };
   const corners=labels.map(corner);
-  if(labels.length>=2&&corners.every(Boolean)&&corners.some(a=>corners.some(b=>a.x===-b.x&&a.y===-b.y))&&Math.max(...labels.map(box=>high(box.core)))-Math.min(...labels.map(box=>low(box.core)))>extent+1e-9){
+  const reliableCorners=labels.map((box,index)=>box.confidence>=.8?corners[index]:null).filter(Boolean);
+  if(labels.length>=2&&corners.every(Boolean)&&reliableCorners.some(a=>reliableCorners.some(b=>a.x===-b.x&&a.y===-b.y))&&Math.max(...labels.map(box=>high(box.core)))-Math.min(...labels.map(box=>low(box.core)))>extent+1e-9){
    const alternative=compositionCrop([],imageAspect,viewportAspect,{energy,width,height,viewport});
    const candidate=(horizontal?alternative?.x:alternative?.y)*travel;
    const retained=at=>(visual.integral(at+extent)-visual.integral(at))/visual.total;

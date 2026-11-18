@@ -33,14 +33,19 @@ export function paintLyricSweep(surface,time,{reduced=false,wall=false}={}){
     surface.style.backgroundPosition=[...fragments.map(rect=>`${rect.x}px ${rect.y}px`),'0 0'].join(',');
     cached={signature,first:words[0],ranges};layouts.set(surface,cached);
   }
-  const sizes=[];
+  const sizes=[];let nextStart=Infinity;
   for(const {word,fragments} of cached.ranges){
     const start=Number(word.dataset.wordStart),end=Number(word.dataset.wordEnd);
-    const progress=reduced?1:Math.max(0,Math.min(1,(time-start)/Math.max(.01,end-start)));
+    if(Number.isFinite(start)&&start>time)nextStart=Math.min(nextStart,start);
+    const progress=reduced?(time>=start?1:0):Math.max(0,Math.min(1,(time-start)/Math.max(.01,end-start)));
     // This renderer paints one background for the whole wrapped row. Per-word
     // custom properties have no visual consumer and invalidate every word's
     // style on high-refresh screens.
     filledFragments(fragments.map(fragment=>fragment.width),progress).forEach((width,i)=>sizes.push(`${width}px ${fragments[i].height}px`));
   }
   const backgroundSize=[...sizes,'100% 100%'].join(',');if(surface.style.backgroundSize!==backgroundSize)surface.style.backgroundSize=backgroundSize;
+  return nextStart-time;
 }
+// Reduced motion uses discrete word changes. Recheck at most every 250 ms so
+// host clock corrections and seeks are reflected without a continuous sweep.
+export function lyricSweepDelay(next){return Number.isFinite(next)?Math.max(16,Math.min(250,next*1000)):250;}

@@ -1,6 +1,6 @@
 const {app,BrowserWindow,ipcMain,dialog,protocol,net,shell,Menu,Tray,screen,globalShortcut,nativeTheme,nativeImage}=require('electron');
 const fs=require('node:fs/promises'),path=require('node:path'),{pathToFileURL}=require('node:url'),{spawn}=require('node:child_process'),{scan}=require('./library.cjs');
-const {settingsTask,removeMenu}=require('./windows-shell.cjs');
+const {closeBehavior,trayStyle,backgroundWindowAction,monochromeBitmap,settingsTask,removeMenu}=require('./windows-shell.cjs');
 const primary=app.requestSingleInstanceLock();if(!primary)app.quit();
 let openSettings,settingsPending=process.argv.includes('--open-settings');
 app.on('second-instance',(_,argv)=>{if(argv.includes('--open-settings')){if(openSettings)void openSettings();else settingsPending=true;}else if(window){if(window.isMinimized())window.restore();window.show();window.focus();}});
@@ -32,7 +32,7 @@ async function rescan(){
  finally{scanning=false;scanController=null;state.importing=false;state.scanCancellable=false;state.tasks.hasUnread=true;await save();}
 }
 
-function playback(){return {value:true,audio:{id:state.current,position:state.position,playing}};}
+function playback(seek=false){return {value:true,audio:{id:state.current,position:state.position,playing,...(seek?{seek:true}:{})}};}
 function select(id,ids){if(!state.songs.some(s=>s.id===id))throw Error('歌曲已不在授权音乐库内');if(ids){if(!Array.isArray(ids)||ids.some(id=>!state.songs.some(s=>s.id===id)))throw Error('无效队列');state.queue=[...new Set(ids)];}state.current=id;state.position=0;state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,200);}
 async function request(r){if(!r||r.version!==1||JSON.stringify(r).length>4*1024*1024)throw Error('无效协议');if(state.fileWriteID&&['play','toggle','pause','seek','skip'].includes(r.kind))throw Error('正在保存当前歌曲，请稍候');const p=r.payload||{};
  switch(r.kind){
@@ -40,11 +40,11 @@ async function request(r){if(!r||r.version!==1||JSON.stringify(r).length>4*1024*
  case 'readState':return state.workspace;
  case 'writeState':state.workspace=r.state;await save();return true;
  case 'snapshot':return {value:{...state,playing,scanning,rawLyrics:await lyrics(state.current),error:audioError},audio:{id:state.current,position:state.position,playing}};
- case 'play':select(r.id,r.ids);playing=true;await save();return playback();
+ case 'play':select(r.id,r.ids);playing=true;await save();return playback(true);
  case 'pause':playing=false;await save();return playback();
  case 'toggle':if(!state.current)throw Error('请先选择歌曲');playing=!playing;await save();return playback();
- case 'seek':if(!Number.isFinite(r.position))throw Error('无效进度');state.position=Math.max(0,r.position);await save();return playback();
- case 'skip':{let ids=state.queue.length?state.queue:state.songs.map(s=>s.id),index=ids.indexOf(state.current);if(!ids.length)return true;if(r.ended&&[0,1].includes(state.mode)&&(state.mode===0||index===ids.length-1)){playing=false;state.position=0;return playback();}if(r.delta<0&&!r.ended&&state.position>3000){state.position=0;await save();return playback();}if(!(r.ended&&state.mode===3)){index=state.mode===2?ids.indexOf(require('./shuffle.cjs').shuffleNext(state,ids,r.delta)):(index+(r.delta<0?-1:1)+ids.length)%ids.length;select(ids[index]);}else state.position=0;await save();return playback();}
+ case 'seek':if(!Number.isFinite(r.position))throw Error('无效进度');state.position=Math.max(0,r.position);await save();return playback(true);
+ case 'skip':{let ids=state.queue.length?state.queue:state.songs.map(s=>s.id),index=ids.indexOf(state.current);if(!ids.length)return true;if(r.ended&&[0,1].includes(state.mode)&&(state.mode===0||index===ids.length-1)){playing=false;state.position=0;return playback(true);}if(r.delta<0&&!r.ended&&state.position>3000){state.position=0;await save();return playback(true);}if(!(r.ended&&state.mode===3)){index=state.mode===2?ids.indexOf(require('./shuffle.cjs').shuffleNext(state,ids,r.delta)):(index+(r.delta<0?-1:1)+ids.length)%ids.length;select(ids[index]);}else state.position=0;await save();return playback(true);}
  case 'exit':app.quit();return true;
  case 'action':switch(r.name){
  case 'createPlaylist':case 'renamePlaylist':case 'deletePlaylist':case 'addManyToPlaylist':case 'removeManyFromPlaylist':case 'favoriteMany':{const result=collectionAction(state,r.name,p);await save();return result;}
@@ -56,7 +56,7 @@ async function request(r){if(!r||r.version!==1||JSON.stringify(r).length>4*1024*
  case 'tasks':switch(p.operation){case 'cancelScan':scanController?.abort();return true;case 'read':state.tasks={...state.tasks,hasUnread:false};break;case 'clearNotice':case 'clearFinished':case 'clearAll':state.tasks={...state.tasks,notice:null,hasUnread:false};if(!scanning)state.scanSummary='';break;default:throw Error('不支持的任务操作');}break;
  case 'clearRecent':state.recent=[];break;
  case 'mode':if(!Number.isInteger(p.value)||p.value<0||p.value>4)throw Error('无效模式');state.mode=p.value;break;
- case 'queueSelect':select(p.id);playing=true;await save();return playback();
+ case 'queueSelect':select(p.id);playing=true;await save();return playback(true);
  case 'readLyrics':return {raw:await lyrics(p.id)};
  case 'favorite':if(!state.songs.some(s=>s.id===p.id))throw Error('无效歌曲');state.favorites=state.favorites.includes(p.id)?state.favorites.filter(id=>id!==p.id):[...state.favorites,p.id];break;
  default:throw Error('Windows 尚未接入此能力：'+r.name);
@@ -78,9 +78,10 @@ app.whenReady().then(async()=>{
  protocol.handle('mv-audio',async req=>{const u=new URL(req.url),song=state.songs.find(s=>s.id===u.pathname.slice(1));if(u.hostname!=='song'||!song)return new Response('',{status:403});const real=await fs.realpath(song.path);if(!state.folders.some(root=>{const rel=path.relative(root,real);return rel!== '..'&&!rel.startsWith('..'+path.sep)&&!path.isAbsolute(rel);}))return new Response('',{status:403});return net.fetch(pathToFileURL(real).href,{headers:req.headers});});
  const windowHotkey=require('./window-shortcut.cjs').windowShortcut({globalShortcut,toggle:()=>{if(window.isVisible()&&window.isFocused())window.hide();else{window.show();window.focus();}}});app.once('will-quit',()=>windowHotkey.dispose());
  const controlAudio=require('./audio-control.cjs').audioControl({ipcMain,getWindow:()=>window});
- const desktop=require('./desktop.cjs').desktopHost({app,BrowserWindow,dialog,shell,audioControl:controlAudio,windowShortcut:windowHotkey,getState:()=>state,request,save,lyrics,coreRequest,getWindow:()=>window,getPlaying:()=>playing});
- const bounds=state.windowBounds;const visible=bounds&&screen.getAllDisplays().some(d=>bounds.x<d.workArea.x+d.workArea.width&&bounds.x+bounds.width>d.workArea.x&&bounds.y<d.workArea.y+d.workArea.height&&bounds.y+bounds.height>d.workArea.y);
- window=new BrowserWindow({...windowOptions({integrated:true,state,systemDark:nativeTheme.shouldUseDarkColors}),show:false,...(visible?bounds:{width:1200,height:800}),minWidth:560,minHeight:400,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:false}});
+ let refreshTray=()=>{};
+ const desktop=require('./desktop.cjs').desktopHost({app,BrowserWindow,dialog,shell,audioControl:controlAudio,windowShortcut:windowHotkey,updateTray:value=>refreshTray(value),getState:()=>state,request,save,lyrics,coreRequest,getWindow:()=>window,getPlaying:()=>playing});
+ const primaryDisplay=screen.getPrimaryDisplay(),areas=[primaryDisplay,...screen.getAllDisplays().filter(display=>display.id!==primaryDisplay.id)].map(display=>display.workArea),bounds=require('./window-placement.cjs').mainWindowBounds(state.windowBounds,areas);
+ window=new BrowserWindow({...windowOptions({integrated:true,state,systemDark:nativeTheme.shouldUseDarkColors}),show:false,...bounds,minWidth:560,minHeight:400,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:false}});
  openSettings=()=>desktop.command('openSettings').catch(console.error);removeMenu(window,openSettings);
  app.setUserTasks?.([settingsTask({execPath:process.execPath,appPath:path.join(__dirname,'..'),isPackaged:app.isPackaged})]);
  window.once('ready-to-show',()=>window.show());
@@ -88,8 +89,15 @@ app.whenReady().then(async()=>{
  refreshChrome=()=>{const source=['light','dark'].includes(state.appearance)?state.appearance:'system';if(nativeTheme.themeSource!==source)nativeTheme.themeSource=source;const value=overlay(state,nativeTheme.shouldUseDarkColors),encoded=JSON.stringify(value);if(!window.isDestroyed()&&encoded!==lastOverlay){window.setTitleBarOverlay(value);lastOverlay=encoded;}};
  nativeTheme.on('updated',refreshChrome);refreshChrome();
  window.webContents.on('page-title-updated',event=>{event.preventDefault();window.setTitle('MiniVoice');});
- window.on('resize',()=>{state.windowBounds=window.getBounds();scheduleSave();});window.on('move',()=>{state.windowBounds=window.getBounds();scheduleSave();});window.on('close',event=>{if(!quitting&&state.closeBehavior&&state.closeBehavior!=='quit'){event.preventDefault();if(state.closeBehavior==='pause'){playing=false;window.webContents.send('audio',playback());}window.hide();save().catch(console.error);}});
- tray=new Tray(path.join(__dirname,'..','ui','app-icon.png'));tray.setToolTip('MiniVoice');tray.on('double-click',()=>{window.show();window.focus();});tray.setContextMenu(Menu.buildFromTemplate([{label:'打开 MiniVoice',click:()=>{window.show();window.focus();}},{label:'打开设置',click:()=>openSettings()},{label:'播放 / 暂停',click:()=>desktop.command('toggle').catch(console.error)},{label:'退出',click:()=>app.quit()}]));
+ window.on('resize',()=>{state.windowBounds=window.getBounds();scheduleSave();});window.on('move',()=>{state.windowBounds=window.getBounds();scheduleSave();});window.on('close',event=>{const behavior=closeBehavior(state);if(!quitting&&behavior!=='quit'){event.preventDefault();if(behavior==='pause'){playing=false;window.webContents.send('audio',playback());}if(!tray||backgroundWindowAction(state)==='minimize')window.minimize();else window.hide();save().catch(console.error);}});
+ refreshTray=style=>{
+  if(style==='hidden'){if(tray){tray.destroy();tray=null;if(!window.isVisible())window.show();}return;}
+  let icon=nativeImage.createFromPath(path.join(__dirname,'..','ui','app-icon.png')).resize({width:32,height:32});
+  if(style==='monochrome'){const size=icon.getSize();icon=nativeImage.createFromBitmap(monochromeBitmap(icon.toBitmap()),size);}
+  if(tray){tray.setImage(icon);return;}
+  tray=new Tray(icon);tray.setToolTip('MiniVoice');tray.on('double-click',()=>{window.show();window.focus();});tray.setContextMenu(Menu.buildFromTemplate([{label:'打开 MiniVoice',click:()=>{window.show();window.focus();}},{label:'打开设置',click:()=>openSettings()},{label:'播放 / 暂停',click:()=>desktop.command('toggle').catch(console.error)},{label:'退出',click:()=>app.quit()}]));
+ };
+ try{refreshTray(trayStyle(state));}catch(error){audioError='系统托盘不可用：'+error.message;}
  if(state.windowShortcut)try{windowHotkey.register(state.windowShortcut);}catch(error){audioError=error.message;}
  const trusted=e=>{if(e.sender!==window.webContents||e.senderFrame!==window.webContents.mainFrame)throw Error('非法来源');};
  ipcMain.on('editor:dragArtwork',(event,src)=>{if(BrowserWindow.getAllWindows().some(w=>w.webContents===event.sender)&&event.senderFrame===event.sender.mainFrame)desktop.command('dragEditorArtwork',{src},event.sender).catch(error=>event.sender.send('engine:event',{event:'error',data:error.message}));});

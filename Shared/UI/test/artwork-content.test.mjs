@@ -154,3 +154,40 @@ test('large or lone title, low-confidence corner noise and people retain their p
  const focus=compositionCrop([face,title,{...noise,confidence:.99}],1,.46,{energy,width:96,height:96}),left=focus.x*.54;
  assert.ok(left<=face.x&&left+.46>=face.x+face.width,'face remains protected');
 });
+
+test('two strong corner labels cannot suppress a less certain substantial title',()=>{
+ const labels=[{x:.02,y:.02,width:.21,height:.034,text:true,confidence:.99},{x:.88,y:.95,width:.1,height:.037,text:true,confidence:.99}];
+ const title={x:.02,y:.3,width:.3,height:.15,text:true,confidence:.79};
+ const energy=new Float32Array(96*96).fill(1);for(let y=0;y<96;y++)for(let x=50;x<85;x++)energy[y*96+x]=100;
+ const p=compositionCrop([...labels,title],1,.46,{energy,width:96,height:96}),left=p.x*.54;
+ assert.ok(left<=title.x+1e-8&&left+.46>=title.x+title.width-1e-8,'the title retains its normal protection');
+});
+
+test('a title nudge cannot place a face behind a viewport exclusion',()=>{
+ const face={x:.599465877,y:.25,width:.08,height:.12,face:true,confidence:.95};
+ const body={x:.519465877,y:.1,width:.22,height:.75,person:true,confidence:.9};
+ const title={x:.680879007,y:.75,width:.16,height:.1,text:true,confidence:.95};
+ const exclusion={x:.323644371,y:0,width:.15,height:1,weight:1},viewport={width:460,height:1000,occlusions:[exclusion]};
+ const p=compositionCrop([face,body,title],1,.46,{viewport}),left=p.x*.54;
+ const x=(face.x-left)/.46,right=(face.x+face.width-left)/.46;
+ const hidden=Math.max(0,Math.min(right,exclusion.x+exclusion.width)-Math.max(x,exclusion.x))/(right-x);
+ assert.ok(hidden<.04,'the crop retains the face in the visible area');
+});
+
+test('corner-label visual fallback respects viewport exclusions',()=>{
+ const labels=[{x:.02,y:.02,width:.21,height:.034,text:true,confidence:.99},{x:.88,y:.95,width:.1,height:.037,text:true,confidence:.99}];
+ const energy=new Float32Array(96*96).fill(1);for(let y=0;y<96;y++)for(let x=40;x<68;x++)energy[y*96+x]=20;
+ const viewport={width:460,height:1000,occlusions:[{x:.3,y:0,width:.4,height:1,weight:1}]};
+ const p=compositionCrop(labels,1,.46,{energy,width:96,height:96,viewport}),left=p.x*.54;
+ assert.ok(left<=labels[1].x&&left+.46>=labels[1].x+labels[1].width,'retains a label clear of the exclusion');
+});
+
+test('a full model result retains sixteen faces even with higher-confidence text and people',()=>{
+ const faces=Array.from({length:16},(_,i)=>({x:.02+(i%4)*.23,y:.03+Math.floor(i/4)*.21,width:.07,height:.08,face:true,confidence:.9}));
+ const bodies=Array.from({length:8},(_,i)=>({x:.02+i*.12,y:.82,width:.07,height:.15,person:true,confidence:.99}));
+ const text=Array.from({length:10},(_,i)=>({x:.02+i*.09,y:.97,width:.04,height:.02,text:true,confidence:.99}));
+ const content=compositionContent([...faces,...bodies,...text]);
+ assert.equal(content.boxes.filter(box=>box.face).length,16);
+ const crop=compositionCrop([...faces,...bodies,...text],1,.46);
+ assert.ok(Number.isFinite(crop.x)&&crop.x>=0&&crop.x<=1);
+});

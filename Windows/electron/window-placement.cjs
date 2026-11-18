@@ -6,4 +6,10 @@ function visibleBounds(saved,areas,fallback){
  const width=Math.min(candidate.width,area.width),height=Math.min(candidate.height,area.height);
  return {x:Math.max(area.x,Math.min(candidate.x,area.x+area.width-width)),y:Math.max(area.y,Math.min(candidate.y,area.y+area.height-height)),width,height};
 }
-module.exports={visibleBounds};
+function mainWindowBounds(saved,areas){
+ if(!areas.length)return {width:1200,height:800};
+ const primary=areas[0],width=Math.min(1200,primary.width),height=Math.min(800,primary.height);
+ const fallback={x:Math.round(primary.x+(primary.width-width)/2),y:Math.round(primary.y+(primary.height-height)/2),width,height};
+ return visibleBounds(saved,areas,fallback);
+}
+module.exports={visibleBounds,mainWindowBounds};

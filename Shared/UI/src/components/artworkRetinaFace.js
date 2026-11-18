@@ -14,7 +14,7 @@ export function artworkRetinaInput(pixels,width,height){
  return input;
 }
 
-export function decodeArtworkRetinaFaces(outputs,scaledWidth,scaledHeight,{threshold=.9,nms=.35,limit=8}={}){
+export function decodeArtworkRetinaFaces(outputs,scaledWidth,scaledHeight,{threshold=.9,nms=.35,limit=8,accept}={}){
  const loc=outputs.loc?.data,confidence=outputs.conf?.data,expected=STEPS.reduce((sum,step)=>sum+(SIZE/step)**2*2,0);
  if(!loc||!confidence||loc.length<expected*4||confidence.length<expected*2||scaledWidth<=0||scaledHeight<=0)throw Error('Invalid RetinaFace output');
  const boxes=[];let i=0;
@@ -32,7 +32,7 @@ export function decodeArtworkRetinaFaces(outputs,scaledWidth,scaledHeight,{thres
   }
  }
  boxes.sort((a,b)=>b.confidence-a.confidence);const result=[];
- for(const box of boxes){if(!result.some(other=>iou(box,other)>nms))result.push(box);if(result.length>=limit)break;}
+ for(const box of boxes){if(accept&&!accept(box))continue;if(!result.some(other=>iou(box,other)>nms))result.push(box);if(result.length>=limit)break;}
  return result;
 }
 
@@ -53,8 +53,10 @@ export function filterArtworkRetinaFaces(faces,people){
   return intersection(face,padded)/(face.width*face.height)>.5;
  }));
 }
-export async function detectArtworkRetinaFaces({ort,session,pixels,width,height}){
+export async function detectArtworkRetinaFaces({ort,session,pixels,width,height,people}){
  const {data,scaledWidth,scaledHeight}=artworkRetinaInput(pixels,width,height);
  const output=await session.run({[session.inputNames[0]]:new ort.Tensor('float32',data,[1,3,SIZE,SIZE])});
- return decodeArtworkRetinaFaces(output,scaledWidth,scaledHeight);
+ // Filter against unmatched people before applying the result limit, so
+ // already-detected faces cannot crowd out a new member in a large group.
+ return decodeArtworkRetinaFaces(output,scaledWidth,scaledHeight,people?{accept:face=>filterArtworkRetinaFaces([face],people).length>0}:{});
 }
