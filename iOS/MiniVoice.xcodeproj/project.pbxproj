@@ -7,8 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-        AC0000000000000000000001 = {isa = PBXBuildFile; fileRef = AC0000000000000000000002; };
-		AB0000000000000000000001 = {isa = PBXBuildFile; fileRef = AB0000000000000000000002; };
 		A10000000000000000000001 /* MiniVoiceApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* MiniVoiceApp.swift */; };
 		A10000000000000000000002 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* Models.swift */; };
 		A10000000000000000000003 /* MusicLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* MusicLibrary.swift */; };
@@ -16,6 +14,8 @@
 		A10000000000000000000005 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* HomeView.swift */; };
 		A10000000000000000000006 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* Assets.xcassets */; };
 		A10000000000000000000009 /* WeightedWallScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* WeightedWallScene.swift */; };
+		AB0000000000000000000001 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000002 /* LaunchScreen.storyboard */; };
+		AC0000000000000000000001 /* LaunchLogo.png in Resources */ = {isa = PBXBuildFile; fileRef = AC0000000000000000000002 /* LaunchLogo.png */; };
 		B10000000000000000000003 /* MiniVoiceShared in Frameworks */ = {isa = PBXBuildFile; productRef = B10000000000000000000002 /* MiniVoiceShared */; };
 		C10000000000000000000001 /* SharedPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000001 /* SharedPlayerView.swift */; };
 		C10000000000000000000002 /* ParitySupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000002 /* ParitySupport.swift */; };
@@ -41,8 +41,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-        AC0000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = image.png; path = LaunchLogo.png; sourceTree = "<group>"; };
-		AB0000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A20000000000000000000001 /* MiniVoiceApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniVoiceApp.swift; sourceTree = "<group>"; };
 		A20000000000000000000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* MusicLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLibrary.swift; sourceTree = "<group>"; };
@@ -52,6 +50,8 @@
 		A20000000000000000000007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A20000000000000000000008 /* MiniVoice.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MiniVoice.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A20000000000000000000009 /* WeightedWallScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeightedWallScene.swift; sourceTree = "<group>"; };
+		AB0000000000000000000002 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		AC0000000000000000000002 /* LaunchLogo.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = LaunchLogo.png; sourceTree = "<group>"; };
 		C20000000000000000000001 /* SharedPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedPlayerView.swift; sourceTree = "<group>"; };
 		C20000000000000000000002 /* ParitySupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParitySupport.swift; sourceTree = "<group>"; };
 		D10000000000000000000001 /* UITests/LayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITests/LayoutTests.swift; sourceTree = "<group>"; };
@@ -114,8 +114,8 @@
 				A20000000000000000000005 /* HomeView.swift */,
 				A20000000000000000000009 /* WeightedWallScene.swift */,
 				A20000000000000000000006 /* Assets.xcassets */,
-                AB0000000000000000000002,
-                AC0000000000000000000002,
+				AB0000000000000000000002 /* LaunchScreen.storyboard */,
+				AC0000000000000000000002 /* LaunchLogo.png */,
 				A20000000000000000000007 /* Info.plist */,
 			);
 			path = MiniVoice;
@@ -214,8 +214,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000006 /* Assets.xcassets in Resources */,
-                AB0000000000000000000001,
-                AC0000000000000000000001,
+				AB0000000000000000000001 /* LaunchScreen.storyboard in Resources */,
+				AC0000000000000000000001 /* LaunchLogo.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
