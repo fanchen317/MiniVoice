@@ -86,6 +86,21 @@ class MeasuredWordTests(unittest.TestCase):
                                         {"lines": ["a", "b"], "anchors": [1, 4], "duration": 10, "language": "en"}, lambda _: None)
         self.assertEqual(result[1], {"text": "b", "start": 4, "end": None, "words": []})
 
+    def test_measured_end_is_not_stretched_or_shortened_to_manufacture_breath(self):
+        class Model:
+            def align_words(self, _audio, _windows, **_kwargs):
+                return Segment(segments=[Segment(text="a", words=[word("a", 1.1, 2.5)]),
+                                         Segment(text="b", words=[word("b", 4.1, 7)]),
+                                         Segment(text="c", words=[word("c", 7.1, 8.8)])])
+        result = worker.align_word_rows(Model(), [0] * 160000,
+                                        {"lines": ["a", "b", "c"], "anchors": [1, 4, 7], "duration": 10, "language": "en"}, lambda _: None)
+        # The first model word already leaves a 1.5s pause. The second ends
+        # at the next anchor, as can occur in legato singing. Keep both.
+        self.assertEqual(result[0]["words"][-1]["end"], 2.5)
+        self.assertEqual(result[0]["end"], 2.5)
+        self.assertEqual(result[1]["words"][-1]["end"], 7)
+        self.assertEqual(result[1]["end"], 7)
+
     def test_no_reliable_words_is_failure_not_fabricated_timeline(self):
         class Model:
             def align_words(self, _audio, _windows, **_kwargs):

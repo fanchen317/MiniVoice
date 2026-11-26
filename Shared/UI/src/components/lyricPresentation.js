@@ -4,7 +4,9 @@ export function displayLine(line,nextStart,duration){
   const start=line.time;
   const bounds=[line.end,nextStart,duration].filter(value=>Number.isFinite(value)&&value>start);
   const limit=bounds.length?Math.min(...bounds):start+10;
-  return {...line,timingSource:'estimated',words:estimateLyricTiming(line.text,start,limit)};
+  const knownDuration=Number.isFinite(duration)&&duration>start;
+  const next=Number.isFinite(nextStart)&&nextStart>start&&(!knownDuration||nextStart<=duration)?nextStart:null;
+  return {...line,timingSource:'estimated',words:estimateLyricTiming(line.text,start,limit,{nextStart:next})};
 }
 export function wallLyricsMetrics(width,height){
   const singleLine=height<20,fontSize=Math.min(34,Math.max(10,width*.058));

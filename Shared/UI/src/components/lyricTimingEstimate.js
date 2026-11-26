@@ -4,7 +4,7 @@ const latin=/^[a-zà-ž]+$/iu;
 const joiner=/^['’]$/u;
 // These small kana join the previous sound (unlike the moraic っ/ッ).
 const joinedKana=/^[ゃゅょゎャュョヮ]$/u;
-export function estimateLyricTiming(text,start,limit){
+export function estimateLyricTiming(text,start,limit,{nextStart=limit}={}){
  const glyphs=typeof Intl.Segmenter==='function'?[...new Intl.Segmenter('zh',{granularity:'grapheme'}).segment(text)].map(x=>x.segment):Array.from(text);
  if(!glyphs.length||!Number.isFinite(start)||!Number.isFinite(limit)||limit<=start)return [];
  const weights=glyphs.map(g=>punctuation.test(g)?0:1);
@@ -35,9 +35,14 @@ export function estimateLyricTiming(text,start,limit){
  }
  weights[voiced.at(-1)]*=1.55;
  const units=weights.reduce((a,b)=>a+b,0),available=limit-start;
+ // Reserve a short breath before the next line, without making a very short
+ // line mostly silence. A terminal sentence mark gets a little extra room.
+ // This is a display heuristic; no audio or vocal onset is measured here.
+ const terminal=glyphs.slice(voiced.at(-1)+1).join('');
+ const lineInterval=Number.isFinite(nextStart)&&nextStart>start?nextStart-start:0;
+ const breath=lineInterval?Math.min(lineInterval*.18,Math.max(.12,Math.min(.6,lineInterval*.12+(/[。.!！?？…]/u.test(terminal)?.08:0)))):0;
  // Long inter-line gaps must not turn a short phrase into a ten-second vowel.
- const span=Math.min(available,Math.max(1.2,units*.48));
- const tail=Math.min(.24,span*.06),budget=span-tail;
+ const budget=Math.min(available,Math.max(0,lineInterval?lineInterval-breath:available),Math.max(1.2,units*.48));
  const requested=[...pauses.values()].reduce((a,b)=>a+b,0);
  const pauseScale=requested?Math.min(1,budget*.18/requested):0;
  const singing=budget-requested*pauseScale;
