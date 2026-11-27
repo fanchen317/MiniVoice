@@ -1997,3 +1997,12 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
     - 非全屏展开态统一保持 `{x: 0.5, y: 0.5}`，消除点击聚焦与高清升级时的焦点跳动；
     - `.wall-poster` 保持稳定的 `will-change: transform`，移除动画结束时撤销 `willChange` 触发的合成层退层 1px 抖动与冗余 `presentArtwork()` 调用。
 - **自动化验证通过**：`check-ui-standards.mjs`（152 源文件）、`Shared/UI` 221/221 单元测试、`MacOS/Desktop` 71/75 单元测试（4 跳过）、`MacOS/Desktop` 构建、`build-shared-ui.sh` 与 `git diff --check` 全部通过；Mac / iOS / Android 实机连续点击录屏仍待回验。
+
+## 2026-11-27 Mac 端滚轮/触控板流畅度回退修复与非整数边缘 1px 亮线整数像素对齐
+
+- **流畅滚动回退根因与修复**：
+  - 上一笔 `4f9fc0d` 将 `will-change: transform` 永久写到 `.wall-poster` 上，导致约 60 张静止卡片同时常驻独立 GPU 合成层、每次滚动重挂新卡时批量建层拖慢滚动；现已移除常驻 `will-change: transform`，仅在卡片运行 FLIP 动画期间临时启用并在结束时释放（[mainParity.css](file:///Users/fanchen/Documents/Codex/MiniVoice/MacOS/Desktop/src/mainParity.css)、[Wall.jsx](file:///Users/fanchen/Documents/Codex/MiniVoice/MacOS/Desktop/src/Wall.jsx)）。
+  - `b6916d4` 中收紧了 `wheel()` 的 `source.precise` 判定（`< 40`），导致 Mac 触控板快速竖滑被错误送入 `wheelStep` 造成二次阻尼；现已恢复 `< 50 || dt < 24` 的触控板直通判定。
+- **Mac 端非聚焦卡片底部 1px 亮线修复**（如录屏红框中《寻》底边）：
+  - 放大红框确认该 1px 亮线随专辑封面原色变化，系 `.wall-poster` 坐标/宽高为浮点小数且常驻独立合成层导致图片与遮罩底边相差 1 个物理像素；现对非展开态卡片执行边缘一致的整数像素对齐（`px/py/pw/ph`），并将 `.poster-shade` 扩至 `inset: -4px`。
+- 已通过 `check-ui-standards.mjs`、`MacOS/Desktop` 71/75 单元测试、`MacOS/Desktop` 构建与 `git diff --check`；待部署后 Mac 实机回验。
