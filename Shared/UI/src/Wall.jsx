@@ -37,9 +37,10 @@ function FocusArtwork({src,preview,shouldDefer,smoothUpgrade=false,target,expand
  const mode=framing?.mode||'smart',savedAnchor=framing?.anchors?.[framingKey];
  useLayoutEffect(()=>{panAnchor.current=null;},[src,mode,savedAnchor]);
  const plan=(node,source)=>{
+  if(!expanded)return setArtworkAnchor(node,{x:.5,y:.5});
   const viewport=artworkViewport(target);
   const original=source===src;
-  const anchor=expanded&&original&&mode!=='smart'?setArtworkAnchor(node,mode==='manual'?(panAnchor.current||savedAnchor||{x:.5,y:.5}):{x:.5,y:.5}):stableArtworkFocus(node,{key:preview||src,viewport,refreshSubjects:false,useSubjects:original,coordinateSpace:original?'original':'preview'},cropDecisions.current);
+  const anchor=original&&mode!=='smart'?setArtworkAnchor(node,mode==='manual'?(panAnchor.current||savedAnchor||{x:.5,y:.5}):{x:.5,y:.5}):stableArtworkFocus(node,{key:preview||src,viewport,refreshSubjects:false,useSubjects:original,coordinateSpace:original?'original':'preview'},cropDecisions.current);
   if(original||!artworkAnchor.current)artworkAnchor.current=anchor;
   return anchor;
  };
@@ -56,9 +57,9 @@ function FocusArtwork({src,preview,shouldDefer,smoothUpgrade=false,target,expand
   for(const node of nodes){const source=node.getAttribute('src');if((source===src||source===preview)&&(source===shown||revealed.includes(source)))plan(node,source);}
   const blur=artworkRoot.current?.querySelector('.mv-artwork-blur');if(blur&&blur.naturalWidth&&blur.getAttribute('src')===shown&&(shown===src||shown===preview))plan(blur,blur.getAttribute('src'));
  },[target.width,target.height,preview,src,expanded,analysisRevision,shown,mode,savedAnchor]);
- const sources=[...new Set((smoothUpgrade?[preview,...revealed,shown,src]:[shown,preview,src]).filter(Boolean))];
+ const sources=[...new Set([preview,...(smoothUpgrade?revealed:[]),shown,src].filter(Boolean))];
  const missing=!src||failedSource===src;
- return <div ref={artworkRoot} className="mv-wall-artwork-stack" data-artwork-ready={!missing&&shown===src?'true':'false'} data-artwork-state={missing?'missing':shown===src?'ready':'loading'} data-artwork-target={`${Math.round(target.width)}x${Math.round(target.height)}`}>{sources.map(source=><Artwork key={source} className="mv-wall-focused-art" src={source} draggable={false} style={smoothUpgrade?{visibility:'visible',opacity:(!expanded&&source===preview)||revealed.includes(source)||shown===source||!shown&&source===failedSource?1:0,zIndex:source===preview?0:1,transition:reduced()?'none':'opacity 180ms ease-out'}:{visibility:shown===source||!shown&&source===failedSource?'visible':'hidden',transition:'none'}} onError={()=>{if(source===requested.current)setFailedSource(source);}} onLoad={async event=>{
+ return <div ref={artworkRoot} className="mv-wall-artwork-stack" data-artwork-ready={!missing&&shown===src?'true':'false'} data-artwork-state={missing?'missing':shown===src?'ready':'loading'} data-artwork-target={`${Math.round(target.width)}x${Math.round(target.height)}`}>{sources.map(source=><Artwork key={source} className="mv-wall-focused-art" src={source} decoding="sync" draggable={false} style={smoothUpgrade?{visibility:'visible',opacity:(!expanded&&source===preview)||revealed.includes(source)||shown===source||!shown&&source===failedSource?1:0,zIndex:source===preview?0:1,transition:reduced()?'none':'opacity 180ms ease-out'}:{visibility:source===preview||shown===source||(!shown&&source===failedSource)?'visible':'hidden',zIndex:source===preview?0:1,transition:'none'}} onError={()=>{if(source===requested.current)setFailedSource(source);}} onLoad={async event=>{
   const node=event.currentTarget;
   try{await node.decode();}catch{return;}
   if(source===src){try{const work=analyze?warmArtworkSubjects(preview||src,analyze,artworkViewport(target),{fixedQuality:analysisFixedQuality}):waitArtworkSubjects(preview||src);await waitForArtworkPreparation([work]);}catch{}}

@@ -24,6 +24,7 @@
 /* One overlay contour; the face itself never adds a duplicate stroke. */
 .wall-poster:not(.playing)>.poster-face::after{content:"";position:absolute;inset:0;z-index:10;pointer-events:none;display:none;box-sizing:border-box;border:calc(1.5px / var(--wall-camera-scale,1)) solid #fffffff2}
 .wall-poster:not(.playing):is(:hover,:active,.focused)>.poster-face::after{display:block}
+.wall-poster.is-reflowing:not(.playing)>.poster-face::after{opacity:0}
 .wall-poster:hover:not(.focused):not(.playing)>.poster-face{outline:0!important}
 /* A neutral mask disc protects the light SF Symbol from the refracted cover. */
 .style-wall .window-tools .glyph,.wall-search-button .glyph,.wall-settings>.glyph{flex-shrink:0;position:relative;z-index:1;opacity:1}

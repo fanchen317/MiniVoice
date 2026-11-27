@@ -288,12 +288,8 @@
 
 /* Match image/shade coverage during fractional card reflow on both mobile hosts. */
 .mv-wall-press-surface{background:#000}
-.mv-wall-card>.mv-wall-press-surface>img,.mv-wall-focused-art{inset:-1px!important;width:calc(100% + 2px)!important;height:calc(100% + 2px)!important;max-width:none;max-height:none}
-/* inset does not position a static image: the previous ordinary poster grew
-   only toward its right/bottom edges, unlike the absolute focused artwork.
-   Give iOS the same symmetric bleed inside the existing shared clip. */
-[data-host=iOS] .mv-wall-card>.mv-wall-press-surface>img{position:absolute}
-.mv-wall-card>.mv-wall-press-surface::before,.mv-wall-focused>.mv-wall-press-surface::after{inset:-1px}
+.mv-wall-card>.mv-wall-press-surface>img,.mv-wall-focused-art{position:absolute!important;margin:0!important;inset:-2px!important;width:calc(100% + 4px)!important;height:calc(100% + 4px)!important;max-width:none;max-height:none}
+.mv-wall-card>.mv-wall-press-surface::before,.mv-wall-focused>.mv-wall-press-surface::after{inset:-2px}
 .mv-wall-artwork-stack{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
 /* A complete white press contour is intentional; it is separate from any
    unshaded bottom-edge artefact. Same feedback on Android and iOS. */
@@ -302,7 +298,7 @@
 .mv-wall-card.is-focus-underlay>.mv-wall-press-surface>.mv-wall-press-outline,.mv-wall-card.is-focus-underlay.active>.mv-wall-press-surface::after{display:none}
 
 /* Keep the selected preview contour above artwork and shade, including after touch release. */
-.mv-wall-focus-outline{position:absolute;inset:0;border:1.5px solid #fffffff2;box-sizing:border-box;z-index:5;pointer-events:none}
+.mv-wall-focus-outline{position:absolute;inset:0;border:1.5px solid #fffffff2;box-sizing:border-box;z-index:5;pointer-events:none;opacity:var(--wall-surface-opacity,1)}
 .mv-wall-focused.is-expanded .mv-wall-focus-outline,.mv-cover-wall.is-expanding .mv-wall-focus-outline{display:none}
 
 /* Typography follows the card layout, never a frozen pinch raster or WebKit text inflation. */

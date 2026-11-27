@@ -1978,3 +1978,22 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
   - `.wp-controls > .mv-button` 改为正方形等比自适应（`height: auto; aspect-ratio: 1; min-height: 0; max-height: 44px`），小卡片下不再出现纵向拉长按钮；
   - 为非展开态 `.mv-wall-focus-content` 增加 `container-type: size`，在 `<= 220px` 与 `<= 165px`（最小显示 / 60% 缩放）两档自动收紧内边距、标题/歌手字号、进度条高度，并在极小尺寸（`<= 165px`）隐藏状态标签与进度条，确保标题、歌手和 5 颗控制按钮（含展开）在最小显示下也不重叠、不裁切。
 - 已通过 `check-ui-standards.mjs`（152 源文件）、`Shared/UI` 221/221 单元测试（含新增合上横屏 `852×393` 断言）、`build-shared-ui.sh` 构建与 `git diff --check`；实体机与各折叠形态仍待实机回验。
+
+## 2026-11-27 全平台（Mac / iOS / Android）点击聚焦细白线、正方形落位动一下与闪屏彻查修复
+
+- **细白线根因与修复**：
+  - **移动端（iOS / Android）**（`Shared/UI/src/wall.css`）：
+    - 原 `.mv-wall-card img` 保留了 `margin: -1px`，与后置 `inset: -1px` 叠加导致图像向左上偏移 `-2px`、右下边出血归零（且 Android 上图片未设 `position: absolute`）；现统一改为 `position: absolute!important; margin: 0!important; inset: -2px!important; width: calc(100% + 4px)!important; height: calc(100% + 4px)!important;`，四边对称保底 2px 出血；
+    - 暗色可读性遮罩 `.mv-wall-press-surface::before` / `::after` 扩展至 `inset: -2px`，消除浅色封面在非整数重排时边缘露出的 1px 未遮罩亮线；
+    - `.mv-wall-focus-outline` 绑定 `opacity: var(--wall-surface-opacity, 1)`，随聚焦过渡平滑显现，避免缩放初期边框闪烁。
+  - **桌面端（Mac）**（`MacOS/Desktop/src/mainParity.css`、`MacOS/Desktop/src/liquidGlass.css`、`MacOS/Desktop/src/Wall.jsx`）：
+    - `.poster-shade` 扩展为 `inset: -2px`，避免嵌套缩放下遮罩短 1px 露出浅色封面亮边；
+    - 卡片运行 FLIP 非等比缩放期间通过直接 DOM 类 `.is-reflowing` 隐藏未播放卡的 1.5px 白色轮廓伪元素，消除被压扁成的 1px 细白线，动画落位后恢复完整轮廓。
+- **展开正方形后插图动一下 / 闪屏根因与修复**：
+  - **移动端（iOS / Android）**（`Shared/UI/src/Wall.jsx`、`Shared/UI/src/Artwork.jsx`）：
+    - `FocusArtwork` 在非全屏展开态（`!expanded`）原先按全屏竖/横屏比例调用 `stableArtworkFocus`，导致点击变成正方形后 `preview` 与 `original` 两次改变 `object-position`（落位动一下）；现非全屏态统一保持 `{x: 0.5, y: 0.5}` 与墙面格子完全一致，仅在展开全屏时切换为主体智能构图；
+    - `FocusArtwork` 始终保留已绘制的 `preview` 在底层（`zIndex: 0`）、高清图以 `decoding="sync"` 叠在上层（`zIndex: 1`），消除 `preview` 与底层卡片同时 `visibility: hidden` 时露黑闪屏。
+  - **桌面端（Mac）**（`MacOS/Desktop/src/Wall.jsx`、`MacOS/Desktop/src/mainParity.css`）：
+    - 非全屏展开态统一保持 `{x: 0.5, y: 0.5}`，消除点击聚焦与高清升级时的焦点跳动；
+    - `.wall-poster` 保持稳定的 `will-change: transform`，移除动画结束时撤销 `willChange` 触发的合成层退层 1px 抖动与冗余 `presentArtwork()` 调用。
+- **自动化验证通过**：`check-ui-standards.mjs`（152 源文件）、`Shared/UI` 221/221 单元测试、`MacOS/Desktop` 71/75 单元测试（4 跳过）、`MacOS/Desktop` 构建、`build-shared-ui.sh` 与 `git diff --check` 全部通过；Mac / iOS / Android 实机连续点击录屏仍待回验。
