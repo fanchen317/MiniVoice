@@ -2025,3 +2025,11 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
 - 移除 `MacOS/Desktop/src/mainParity.css` 中 `.wall-surface.has-playing-track` 对非播放卡片瞬间施加的 `filter: brightness(.88)`（原实现无过渡且会同帧给全墙约 59 张卡片重建 GPU 滤镜层），改为对 `.poster-shade` 平滑加深底色（`background-color: #00000063`，`transition: background-color .28s ease`）。
 - 将 `MacOS/Desktop/src/liquidGlass.css` 中播放态绿色轮廓入场动画由二次回闪的 `mv-current-enter` 改为单次柔和淡入 `wall-playing-enter`（`0 → 1`，`240ms ease-out`）。
 - 已通过 `check-ui-standards.mjs`、`MacOS/Desktop` 71/75 单元测试、桌面构建与 `git diff --check`，并部署到 `/Applications/MiniVoice.app`；实机观感待回验。
+
+## 2026-11-27 Mac 端双击/点播瞬间黑洞、歌词堆叠爆开与旧进度闪现修复
+
+- 逐帧分析 `iShot_2026-11-27_16.17.30.mp4` 定位并修复三处点播闪烁根因：
+  1. **边缘黑洞闪现**（`MacOS/Desktop/src/Wall.jsx`）：`travel()` 420ms 结束时提前 `apply(true)` 回收了在 520ms 卡片重排尚未结束前仍处于可见区的旧聚焦邻居；现延迟至 `540ms` 后再回收预挂卡片。
+  2. **歌词行在 `y=0` 堆叠一帧再炸开**（`Shared/UI/src/components/ScrollingLyrics.jsx`、`Shared/UI/src/components/foundation.css`）：新建歌词行在首次 `place()` 前已带有 `transition: transform .48s`，导致刚加载完成时所有行从 `y=0` 重叠散开；现仅在首次落位后下一帧才标记 `data-placed="true"` 启用平滑位移动画，全平台消除首次堆叠闪烁。
+  3. **点播瞬间闪现旧歌时间与误报“暂无歌词”**（`MacOS/Desktop/src/components.jsx`、`MacOS/Desktop/src/WallLyrics.jsx`）：切歌 `state.preparing` 期间进度显示 `00:00` 而非上一首残留时间；`track.lyricsLoading || state.preparing` 期间隐藏“暂无歌词”占位避免与实际歌词交替闪烁。
+- 已通过 `check-ui-standards.mjs`、`Shared/UI` 221/221 单元测试、`MacOS/Desktop` 71/75 单元测试、双端构建与 `git diff --check`。

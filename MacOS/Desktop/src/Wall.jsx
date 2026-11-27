@@ -151,7 +151,8 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID,locate
     return out;
   }
   function setPanning(active){surface.current?.classList.toggle('is-panning',active);}
-  function stop() { cancelAnimationFrame(animation.current); animation.current = 0; pendingWheel.current = { x: 0, y: 0 }; gesture.current = null; setPanning(false); }
+  const settleTilesTimer = useRef(0);
+  function stop() { clearTimeout(settleTilesTimer.current); cancelAnimationFrame(animation.current); animation.current = 0; pendingWheel.current = { x: 0, y: 0 }; gesture.current = null; setPanning(false); }
   function apply(force = false, extraTiles = null) {
     const c = camera.current;
     if (plane.current) {
@@ -178,7 +179,13 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID,locate
       c.x=start.x+(target.x-start.x)*eased;c.y=start.y+(target.y-start.y)*eased;
       if(bridged&&plane.current){plane.current.style.transform=`translate3d(${c.x}px,${c.y}px,0) scale(${c.scale})`;}
       else apply(false,prewarmed);
-      if(p<1)animation.current=requestAnimationFrame(tick);else{animation.current=0;setPanning(false);apply(true);}
+      if(p<1)animation.current=requestAnimationFrame(tick);
+      else{
+        animation.current=0;setPanning(false);
+        const remainingReflow=Math.max(0,540-(performance.now()-began));
+        if(remainingReflow>0)settleTilesTimer.current=setTimeout(()=>apply(true),remainingReflow);
+        else apply(true);
+      }
     }
     animation.current=requestAnimationFrame(tick);
   }

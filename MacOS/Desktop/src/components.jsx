@@ -207,7 +207,7 @@ export function WallCardPlayer({track,playing,onExpand,expanded,onPlay,size}){
   const sizing=wallCardSizing(size.width,size.height),available=Math.max(1,size.width-2*sizing.padding),side=Math.min(32,Math.max(22,available*.085));
   useEffect(()=>{setScrub(null);pending.current=null;},[track.id,playing]);
   useEffect(()=>{if(pending.current!==null&&(Math.abs(clock.time-pending.current)<1||performance.now()-pending.currentAt>1500)){pending.current=null;setScrub(null);}},[clock.time]);
-  const time=scrub??clock.time,kinetic=state.wallLyricsStyle==='kinetic';
+  const time=scrub??(state.preparing?0:clock.time),kinetic=state.wallLyricsStyle==='kinetic';
   return <div className={`wall-card-content ${playing?'has-playback':''} ${expanded?'is-immersive':''}`} style={{padding:sizing.padding,paddingTop:sizing.padding+(expanded?30:0),'--card-gap':size.width<300?'8px':'16px','--card-title':`${sizing.title}px`,'--card-artist':`${sizing.artist}px`,'--card-status':`${sizing.status}px`,'--card-space':`${sizing.spacing}px`,'--wall-button':`${side}px`}} onClick={event=>event.stopPropagation()} onDoubleClick={event=>event.stopPropagation()}>
     <header>{playing&&<div className={`wall-playback-status ${playing&&state.isPlaying?'animating':''}`}><span className="wall-waveform" aria-hidden="true"><i/><i/><i/></span><span>{playing?(state.preparing?'正在加载':state.isPlaying?'正在播放':'已暂停'):'预览'}</span></div>}<h2>{live.title}</h2><p>{live.artist}</p></header>
     {playing&&<WallLyrics track={live} kinetic={expanded&&kinetic}/>}
