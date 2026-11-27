@@ -73,7 +73,7 @@
 .wp-player.is-compact .wp-controls>.mv-button:last-child{grid-column:4}
 .wp-player.is-expanded .wp-controls{display:grid;grid-template-columns:repeat(5,44px);justify-content:center}
 .wp-player.is-expanded .wp-controls>.mv-button:last-child{justify-self:center}
-.wp-seek{height:28px}.wp-player.is-preview .wp-seek{visibility:hidden}
+.wp-seek{height:28px}.wp-player.is-preview .wp-seek{display:none}
 .mv-wall-focused{will-change:auto;contain:layout paint}
 .style-wall .mv-drawer-shade{z-index:30}
 .mv-wall-focused.is-preview::before{inset:0;filter:none;background-image:linear-gradient(#06171055,#061710bb),var(--wall-cover)}
@@ -83,9 +83,11 @@
 .wp-player.is-compact .wp-controls>[data-wall-transport=play]{grid-column:2}.wp-player.is-compact .wp-controls>.mv-button:last-child{grid-column:5}
 .style-wall .mv-drawer-material::after{content:'';position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 1px 2px #ffffff80,inset 1px 0 1px #ffffff40;background:linear-gradient(125deg,#ffffff18,transparent 32%,transparent 75%,#ffffff0a);pointer-events:none}
 /* Primary playback stays in the first, lower-left slot in every card state. */
-.wp-controls{display:flex!important;align-items:center;justify-content:flex-start!important;gap:0!important}
-.wp-controls>[data-wall-transport=play]{order:-1;margin:0;flex:0 0 44px}
-.wp-controls>.mv-button{flex:0 0 44px}.wp-controls>.mv-button:last-child{margin-left:auto}
+.wp-controls{display:flex!important;align-items:center;justify-content:flex-start!important;gap:0!important;width:100%}
+.wp-controls>[data-wall-transport=play]{order:-1;margin:0;flex:0 1 44px}
+.wp-controls>.mv-button{flex:0 1 44px;width:min(44px,20%);height:auto;aspect-ratio:1;min-width:0;min-height:0;max-width:44px;max-height:44px;--mv-minimum-target:0px}.wp-controls>.mv-button:last-child{margin-left:auto}
+.wp-player:not(.is-expanded) .wp-controls .mv-icon{width:min(25px,68%);height:min(25px,68%)}
+.wp-player:not(.is-expanded) .wp-controls>.mv-button[data-playback-primary]>.mv-icon{width:min(26px,70%);height:min(26px,70%)}
 .wp-player.is-expanded .wp-controls>.mv-button:last-child{margin-left:auto}
 .mv-wall-focused{transform-origin:0 0;will-change:transform}
 .mv-wall-focus-content{right:auto;bottom:auto}
@@ -159,7 +161,7 @@
 
 /* Current-track badge matches the Mac wall: mint pill + three waveform bars.
    It is content, not an extra touch target; preview cards retain their label. */
-[data-presentation=mobile] .wp-player.is-current .wp-status{width:max-content;max-width:100%;padding:5px 10px;gap:7px;border:1px solid #00dac399;border-radius:100px;background:#00dac32e;color:#00dac3;font-size:11px;line-height:18px;font-weight:700;letter-spacing:1.5px}
+[data-presentation=mobile] .wp-player.is-current .wp-status{width:max-content;max-width:100%;white-space:nowrap;flex-shrink:0;padding:5px 10px;gap:7px;border:1px solid #00dac399;border-radius:100px;background:#00dac32e;color:#00dac3;font-size:11px;line-height:18px;font-weight:700;letter-spacing:1.5px}
 [data-presentation=mobile] .wp-player.is-current.is-compact .wp-status{display:inline-flex;padding:2px 7px;font-size:9px;line-height:15px;margin-bottom:3px;letter-spacing:1px}
 [data-presentation=mobile] .wp-status .wp-bars{width:17px;height:16px;gap:2.5px}
 [data-presentation=mobile] .wp-status .wp-bars i{width:2.5px;height:14px;border-radius:1.25px;transform:scaleY(.35);animation:none}
@@ -329,4 +331,23 @@
    caption shade, current contour and press/focus motion remain unchanged. */
 .mv-workspace[data-host=Android].style-wall .mv-wall-card>.mv-wall-press-surface{
  background:var(--wall-poster-pending-background,linear-gradient(135deg,#305d49,#4a415f));
+}
+.mv-wall-focused:not(.is-expanded) .mv-wall-focus-content{container-type:size}
+@container (max-width:220px),(max-height:220px){
+ [data-presentation=mobile] .wp-player:not(.is-expanded){gap:3px}
+ [data-presentation=mobile] .wp-player:not(.is-expanded) .wp-status{padding:2px 7px;gap:5px;font-size:9px;line-height:14px;letter-spacing:.8px}
+ [data-presentation=mobile] .wp-player:not(.is-expanded) .wp-status .wp-bars{width:13px;height:12px;gap:2px}
+ [data-presentation=mobile] .wp-player:not(.is-expanded) .wp-heading h1{font-size:clamp(13px,var(--wall-title-font,15px),17px);margin:2px 0 1px}
+ [data-presentation=mobile] .wp-player:not(.is-expanded) .wp-heading p{font-size:11px}
+ [data-presentation=mobile] .wp-player:not(.is-expanded) .wp-seek{height:18px;gap:5px;font-size:9px}
+ [data-presentation=mobile] .wp-player:not(.is-expanded) .wp-seek .mv-slider{min-height:18px}
+}
+@container (max-width:180px),(max-height:180px){
+ [data-presentation=mobile] .wp-player:not(.is-expanded){gap:2px}
+ [data-presentation=mobile] .wp-player:not(.is-expanded) .wp-status,
+ [data-presentation=mobile] .wp-player:not(.is-expanded) .wp-header-actions,
+ [data-presentation=mobile] .wp-player:not(.is-expanded) .wp-lyrics,
+ [data-presentation=mobile] .wp-player:not(.is-expanded) .wp-seek{display:none!important}
+ [data-presentation=mobile] .wp-player:not(.is-expanded) .wp-heading h1{font-size:13px;margin:0}
+ [data-presentation=mobile] .wp-player:not(.is-expanded) .wp-heading p{font-size:10px}
 }

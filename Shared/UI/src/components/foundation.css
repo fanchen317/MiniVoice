@@ -111,6 +111,19 @@
 /* Touch release mirrors the Mac wall's visible hover amplitude; one gesture
    still activates once. Independent scale never changes hit-test layout. */
 [data-presentation=mobile]{--mv-feedback-press:.88;--mv-feedback-release:1.16}
+/* Full-width rows, settings/sort/modal options and segmented pickers use an
+   iOS-style soft highlight veil without scaling or warping row geometry. */
+[data-presentation=mobile] :is(.mv-modal,.mv-mobile-settings,.wp-settings,.mv-drawer nav,.mv-choice-menu,.mv-style-picker,.mv-framing-options,.wp-scale-stops,.mv-confirm-actions,.mv-folder-row,.mv-selection-bar) [data-mv-feedback=standard],
+[data-presentation=mobile] :is(.mv-option,.mv-disclosure-trigger,.mv-choice)[data-mv-feedback=standard],
+[data-presentation=mobile] .mv-song{--mv-feedback-press:1;--mv-feedback-release:1;transition:box-shadow 220ms cubic-bezier(.22,1,.36,1),background-color 180ms ease,border-color 180ms ease,color 180ms ease}
+[data-presentation=mobile] :is(.mv-modal,.mv-mobile-settings,.wp-settings,.mv-drawer nav,.mv-choice-menu,.mv-style-picker,.mv-framing-options,.wp-scale-stops,.mv-confirm-actions,.mv-folder-row,.mv-selection-bar) [data-mv-feedback=standard]:enabled:active,
+[data-presentation=mobile] :is(.mv-option,.mv-disclosure-trigger,.mv-choice)[data-mv-feedback=standard]:enabled:active,
+[data-presentation=mobile] .mv-song:active{scale:1;transform:none;box-shadow:inset 0 0 0 999px color-mix(in srgb,var(--text,currentColor) 10%,transparent);transition-duration:45ms}
+.theme-dark[data-presentation=mobile] :is(.mv-modal,.mv-mobile-settings,.wp-settings,.mv-drawer nav,.mv-choice-menu,.mv-style-picker,.mv-framing-options,.wp-scale-stops,.mv-confirm-actions,.mv-folder-row,.mv-selection-bar) [data-mv-feedback=standard]:enabled:active,
+.theme-dark[data-presentation=mobile] :is(.mv-option,.mv-disclosure-trigger,.mv-choice)[data-mv-feedback=standard]:enabled:active,
+.theme-dark[data-presentation=mobile] .mv-song:active{box-shadow:inset 0 0 0 999px color-mix(in srgb,var(--text,currentColor) 13%,transparent)}
+.reduce-motion [data-presentation=mobile] .mv-song,.reduce-motion [data-presentation=mobile] .mv-song:active{transition:none!important;transform:none!important}
+@media(prefers-reduced-motion:reduce){[data-presentation=mobile] .mv-song,[data-presentation=mobile] .mv-song:active{transition:none!important;transform:none!important}}
 [data-presentation=mobile] [data-mv-feedback=standard]:enabled:active{scale:var(--mv-feedback-press)}
 .reduce-motion [data-presentation=mobile] [data-mv-feedback=standard],.reduce-motion [data-presentation=mobile].style-wall [data-mv-feedback=standard]{scale:1!important}
 @media(prefers-reduced-motion:reduce){[data-presentation=mobile] [data-mv-feedback=standard]{scale:1!important}}

@@ -8,7 +8,9 @@ export default function ActionButton({label,children,selected,disabled=false,bus
  useEffect(()=>{if(disabled||busy)motion.current?.cancel();},[disabled,busy]);
  function spring(node){
   if(feedback!=='standard'||disabled||busy||node.closest('[data-mv-dragging=true]')||!node.closest('[data-presentation=mobile]')||document.documentElement.classList.contains('reduce-motion')||matchMedia('(prefers-reduced-motion:reduce)').matches)return;
-  const style=getComputedStyle(node),peak=Number.parseFloat(style.getPropertyValue('--mv-feedback-release'))||1.045,press=Number.parseFloat(style.getPropertyValue('--mv-feedback-press'))||.96,from=Math.min(press,parseFloat(style.scale)||1);motion.current?.cancel();
+  const style=getComputedStyle(node),peak=Number.parseFloat(style.getPropertyValue('--mv-feedback-release'))||1.045,press=Number.parseFloat(style.getPropertyValue('--mv-feedback-press'))||.96;
+  if(peak<=1.001)return;
+  const from=Math.min(press,parseFloat(style.scale)||1);motion.current?.cancel();
   motion.current=animateButtonRelease(node,{from,peak});
  }
 

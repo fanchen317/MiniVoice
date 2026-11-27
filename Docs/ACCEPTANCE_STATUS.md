@@ -1934,3 +1934,47 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
 - 裁切算法：在 `artworkComposition.js` 增加三级主主体保护（完整人物 → 带留白主主体 → 核心主体），避免大特写人脸因留白框超限而退化失保；`artworkFocus.js` 改为按原图长宽比采样（不再将非方形封面压成 96×96）且不将 `cacheable: false` 的降级结果锁死在质量缓存；`artworkFraming.js` 修正手动拖动按实际溢出轴 `overflowX/overflowY` 判定。
 - 消除二次跳变：桌面端 `waitWallWallpaper` 默认等待上限提高至 900ms，移动端 `prepareExpansion` 补齐对在途识图的 900ms 有界等待；双端在展开态下预热下一曲识图，并在已展示展开封面后锁定当前构图（`refreshSubjects: false`、移除桌面展开后二次 `animateFocus` 位移），迟到识图仅入缓存供下次使用，不再造成画面割裂。
 - 通过：UI 标准检查（152 个源文件）、共享 UI 单元测试 218 项（含新增特写核心人脸、非方形手动拖动、降级结果可重试测试）、Mac 桌面测试 71 项（4 项跳过）、Mac 桌面 Vite 生产构建及 `git diff --check`。待验收：Mac/Android/iOS 真实曲库封面展开与展开切歌的实机连续视觉体验。
+
+## 2026-11-27 Mac 音乐墙滑动惯性、点按细白线与卡图跳位专项修复
+
+- **问题根因与修复**：
+  - **点按卡图 / 黑闪 / 封面跳位**（`MacOS/Desktop/src/Wall.jsx`、`MacOS/Desktop/src/components.jsx`）：
+    - 移除 `Poster` 中在 `useLayoutEffect` 内触发全墙约 40 个卡片二次同步渲染的 `animating` 状态，消除点击瞬间的批量重渲染卡顿；
+    - `Cover` 在 `presentation="wall"` 升级高清图时保留已解码 `Image` 实例并改为 `decoding="sync"`，且同一曲目取消聚焦后不再回退降级到缩略图，消除替换 `src` 时的瞬时黑帧（如录屏中《跃》卡片黑闪）；
+    - 非全屏聚焦卡片不再因后台 `warmArtworkSubjects` 完成（`analysisRevision` 更新）或高清图替换（`onLoadCapture`）而突然重算焦点导致封面跳位（如《月光》《偏爱》《普通朋友》《其实都没有》）；非展开态按卡片实际尺寸规划焦点，展开至全屏时仍平滑过渡到完整墙面主体焦点。
+  - **点按与缩放细白线**（`MacOS/Desktop/src/motion.js`、`MacOS/Desktop/src/mainParity.css`）：
+    - 修正 `posterArtworkMotion` 的四边外扩出血计算，原先当 `fx/fy` 为 `0` 或 `1` 时单侧出血为 `0px`，现改为四边对称各保证 `>= 2px` 视觉出血；
+    - `.wall-poster.focused>.poster-face` 在进入聚焦 FLIP 时不再叠加按压回弹过渡，避免与外层缩放竞争导致边缘轮廓闪烁。
+  - **Mac 滑动自然衰减手感**（`MacOS/Desktop/src/Wall.jsx`）：
+    - 拖拽速度估算由易受尾帧拖慢的单步混合改为最近 90ms 滑动采样窗口，松手惯性改为与离手速度 1:1 连续的指数衰减（`tau = 380ms`，上限 `4500 px/s`），滑行与尾段衰减更自然；
+    - 细化滚轮 `source.precise` 判定，避免离散鼠标滚轮被误判为触控板而跳过平滑衰减；将 `apply()` 卡片重挂阈值从 `180px` 放宽至 `260px`（仍在 `400px` overscan 内），降低惯性滑行中的重渲染频率。
+- **自动化验证通过**：
+  - `node Scripts/checks/check-ui-standards.mjs` 通过（152 个源文件）；
+  - `node --test Shared/UI/test/*.test.mjs` 221/221 通过；
+  - `npm --prefix MacOS/Desktop test` 71/75 通过（4 项跳过，0 失败，含新增 `posterArtworkMotion` 全角点四边出血校验）；
+  - `npm --prefix MacOS/Desktop run build` 与 `git diff --check` 通过。
+- **待验收**：Mac 实机连续点按、多缩放比例边缘与触控板/鼠标拖拽滚轮手感仍需用户实机回验；本轮尚未执行 `deploy.sh` 部署与提交。
+
+## 2026-11-27 移动端列表/设置/排序行点按反馈更换为柔和底色高亮过渡
+
+- 按用户选择调整 `Shared/UI/src/components/foundation.css` 与 `Shared/UI/src/components/ActionButton.jsx`：
+  - iOS / Android 的设置、列表排序、音乐墙编辑/设置、抽屉导航、歌曲行与弹窗选项完全取消按压缩放与回弹（`scale: 1`、`transform: none`、`--mv-feedback-release: 1`）；
+  - 改为类似 iOS 原生列表的柔和内阴影高亮层（浅色主题 `10%` 文本色、深色主题 `13%` 文本色），按下 `45ms` 快速显现、松手 `220ms` 平滑淡出，兼容已有选中底色、圆角与减弱动态模式。
+- 已通过 `check-ui-standards.mjs`、`Shared/UI` 单元测试与 `Scripts/build/build-shared-ui.sh` 构建；iOS / Android 实体机观感与触控手感待实机回验。
+
+## 2026-11-27 iOS iPhone Duo 合上横屏/半展开聚焦卡缩放与展开按钮修复
+
+- **聚焦卡缩放锁尺寸修复**（`Shared/UI/src/Wall.jsx`）：
+  - 原 `frameFor`/`focusSize` 使用 `Math.min(240, state.viewport.side) / live.current.scale` 作为下限，在 iPhone Duo 合上横屏及半展开区域（可用正方形边长约 190–230px `<= 240px`）下，导致聚焦卡在 60%–120% 缩放区间内被完全锁定在同一屏幕尺寸、而周围卡片正常缩放。现将下限收敛为 `Math.min(120, state.viewport.side) / live.current.scale`，使聚焦卡随缩放比例与周围卡片同步连续缩放。
+- **紧凑聚焦卡展开按钮完整显示**（`Shared/UI/src/wall.css`）：
+  - 原 `.wp-controls` 后置 flex 规则强制每颗按钮 `flex: 0 0 44px` 且继承 `min-width: 44px`（5 颗按钮至少占 220px + 内边距 = 240px），在 200px 左右聚焦卡上将第 5 颗展开按钮裁出右边界。现改为 `flex: 0 1 44px; width: min(44px, 20%); min-width: 0; --mv-minimum-target: 0px`，并让非展开态图标按比例自适应，确保宽卡保持 44px、窄卡 5 颗按钮（含展开）全部完整可见。
+- 已通过 `check-ui-standards.mjs`、`Shared/UI` 221/221 单元测试与 `build-shared-ui.sh` 构建；iPhone Duo 真机/模拟器实测待回验。
+
+## 2026-11-27 移动端聚焦卡最小显示与紧凑横屏（iPhone Duo 合上横屏）布局梳理优化
+
+- **紧凑横屏可用高度优化**（`Shared/UI/src/wallLayout.js`）：当 iOS 居中模式处于紧凑横屏（`landscape && h < 460`，如 iPhone Duo 合上横屏）时，顶部与底部保留净空由 `80px / 114px` 收敛为 `58px / 72px`（仍避开横屏 48px 顶部栏与收起播放球），可用聚焦正方形边长由约 `196px` 提升至约 `242~260px`；同时保持 `height >= 500` 的展开半屏/桌面区既有净空不变。
+- **预览卡底部空白与最小显示自适应**（`Shared/UI/src/wall.css`、`Shared/UI/src/Wall.jsx`）：
+  - `.wp-player.is-preview .wp-seek` 由 `visibility: hidden` 改为 `display: none`，消除预览卡底部 28px 无效留白；
+  - `.wp-controls > .mv-button` 改为正方形等比自适应（`height: auto; aspect-ratio: 1; min-height: 0; max-height: 44px`），小卡片下不再出现纵向拉长按钮；
+  - 为非展开态 `.mv-wall-focus-content` 增加 `container-type: size`，在 `<= 220px` 与 `<= 165px`（最小显示 / 60% 缩放）两档自动收紧内边距、标题/歌手字号、进度条高度，并在极小尺寸（`<= 165px`）隐藏状态标签与进度条，确保标题、歌手和 5 颗控制按钮（含展开）在最小显示下也不重叠、不裁切。
+- 已通过 `check-ui-standards.mjs`（152 源文件）、`Shared/UI` 221/221 单元测试（含新增合上横屏 `852×393` 断言）、`build-shared-ui.sh` 构建与 `git diff --check`；实体机与各折叠形态仍待实机回验。

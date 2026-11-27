@@ -10,7 +10,8 @@ export function mobileWallViewport(width,height,insets={},layout={}){
  const left=layout.centered?Math.max(safe.left,layout.regionLeft||0):landscape?safe.left+16+dockWidth+16:safe.left;
  const right=layout.centered?Math.min(width-safe.right,layout.regionRight||width):landscape?width-safe.right-14-56-16:width-safe.right;
  const available=Math.max(120,right-left);
- const top=safe.top+(layout.centered?80:landscape?12:80),bottom=height-safe.bottom-(layout.centered?114:landscape?12:114);
+ const compactCenteredLandscape=layout.centered&&landscape&&h<460;
+ const top=safe.top+(compactCenteredLandscape?58:layout.centered?80:landscape?12:80),bottom=height-safe.bottom-(compactCenteredLandscape?72:layout.centered?114:landscape?12:114);
  // 120% is the largest square in the usable region; grid gaps belong
  // between posters, not between the focused square and the viewport edges.
  const rawSide=Math.max(120,Math.min(available,bottom-top));

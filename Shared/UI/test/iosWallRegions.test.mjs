@@ -20,4 +20,6 @@ test('Duo localized focus excludes status column and preserves the book boundary
  }
  const duoPortrait=mobileWallViewport(669,951,{},{centered:true,maxSide:Math.min(480,Math.round(669*.72))});
  assert.equal(duoPortrait.side,480);
+ const foldedLandscape=mobileWallViewport(852,393,{left:59,right:59,bottom:21},{centered:true});
+ assert.ok(foldedLandscape.side>=240&&foldedLandscape.y-foldedLandscape.side/2>=58&&foldedLandscape.y+foldedLandscape.side/2<=393-21-72);
 });
