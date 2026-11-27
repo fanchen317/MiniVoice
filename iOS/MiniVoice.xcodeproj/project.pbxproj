@@ -11,7 +11,6 @@
 		A10000000000000000000002 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* Models.swift */; };
 		A10000000000000000000003 /* MusicLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* MusicLibrary.swift */; };
 		A10000000000000000000004 /* MusicPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* MusicPlayer.swift */; };
-		A10000000000000000000005 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* HomeView.swift */; };
 		A10000000000000000000006 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* Assets.xcassets */; };
 		A10000000000000000000009 /* WeightedWallScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* WeightedWallScene.swift */; };
 		AB0000000000000000000001 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000002 /* LaunchScreen.storyboard */; };
@@ -45,7 +44,6 @@
 		A20000000000000000000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* MusicLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLibrary.swift; sourceTree = "<group>"; };
 		A20000000000000000000004 /* MusicPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicPlayer.swift; sourceTree = "<group>"; };
-		A20000000000000000000005 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		A20000000000000000000006 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A20000000000000000000007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A20000000000000000000008 /* MiniVoice.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MiniVoice.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -111,7 +109,6 @@
 				F50000000000000000000005 /* WebHostDiagnostics.swift */,
 				A20000000000000000000003 /* MusicLibrary.swift */,
 				A20000000000000000000004 /* MusicPlayer.swift */,
-				A20000000000000000000005 /* HomeView.swift */,
 				A20000000000000000000009 /* WeightedWallScene.swift */,
 				A20000000000000000000006 /* Assets.xcassets */,
 				AB0000000000000000000002 /* LaunchScreen.storyboard */,
@@ -258,7 +255,6 @@
 				F40000000000000000000005 /* WebHostDiagnostics.swift in Sources */,
 				A10000000000000000000003 /* MusicLibrary.swift in Sources */,
 				A10000000000000000000004 /* MusicPlayer.swift in Sources */,
-				A10000000000000000000005 /* HomeView.swift in Sources */,
 				A10000000000000000000009 /* WeightedWallScene.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

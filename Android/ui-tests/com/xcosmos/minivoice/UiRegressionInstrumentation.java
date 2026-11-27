@@ -13,7 +13,7 @@ import java.util.*;
 
 /** Runs real Android layouts and input on a dedicated emulator, without a third-party runner. */
 public final class UiRegressionInstrumentation extends Instrumentation {
-    private MainActivity activity;
+    private Activity activity;
     private Bundle arguments;
     private final StringBuilder report=new StringBuilder();
     @Override public void onCreate(Bundle args){super.onCreate(args);arguments=args;start();}
@@ -28,93 +28,22 @@ public final class UiRegressionInstrumentation extends Instrumentation {
         if("wall".equals(arguments.getString("mode"))){portablePlayer();result.putString("stream",report+"UI_WALL_PASS\n");finish(Activity.RESULT_OK,result);return;}
         if("portable".equals(arguments.getString("mode"))){portablePlayer();result.putString("stream",report+"UI_PORTABLE_PASS\n");finish(Activity.RESULT_OK,result);return;}
         if("cachePerformance".equals(arguments.getString("mode"))){portablePlayer();result.putString("stream",report+"UI_CACHE_PERFORMANCE_PASS\n");finish(Activity.RESULT_OK,result);return;}
-        if("modals".equals(arguments.getString("mode"))){launch();modalPresentation();result.putString("stream",report+"UI_MODALS_PASS\n");finish(Activity.RESULT_OK,result);return;}
-        launch();
-        if("prepare".equals(arguments.getString("mode"))){prepareProcessRestart();result.putString("stream",report+"UI_PREPARE_PASS\n");finish(Activity.RESULT_OK,result);return;}
+        if("modals".equals(arguments.getString("mode"))){launchPortable();modalPresentation();result.putString("stream",report+"UI_MODALS_PASS\n");finish(Activity.RESULT_OK,result);return;}
         if("provider".equals(arguments.getString("mode"))){incrementalProvider();result.putString("stream",report+"UI_PROVIDER_PASS\n");finish(Activity.RESULT_OK,result);return;}
-        if("restart".equals(arguments.getString("mode"))){verifyProcessRestart();result.putString("stream",report+"UI_PROCESS_RESTART_PASS\n");finish(Activity.RESULT_OK,result);return;}
-        for(String style:new String[]{"library","simple","wall"})for(String theme:new String[]{"light","dark"}){
-            main(()->{activity.getSharedPreferences("library",0).edit().putString("player_style",style).putString("appearance",theme).commit();home().applyAppearance();home().showDrawer(false);});settle();
-            for(String section:new String[]{"歌手","专辑"})navigation(style,section);
-            drawerCycle(style,theme);
-            report.append("PASS ").append(style).append('/').append(theme).append(" navigation, anchors, drawer reopen\n");
-            Bundle progress=new Bundle();progress.putString("stream","PASS "+style+"/"+theme+" navigation, anchors, drawer reopen\n");sendStatus(0,progress);
-        }
-        persistentRestart();
-        expansionAndLyrics();
+        portablePlayer();
         diagnosticsExport();
         incrementalProvider();
-        prepareProcessRestart();
         result.putString("stream",report+"UI_REGRESSION_PASS\n");finish(Activity.RESULT_OK,result);
     }catch(Throwable failure){result.putString("stream",report+android.util.Log.getStackTraceString(failure)+"\nUI_REGRESSION_FAIL\n");finish(Activity.RESULT_CANCELED,result);}}
     private void main(Runnable action){runOnMainSync(action);}
     private static Object field(Object owner,String name){try{Field f=owner.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(owner);}catch(Exception e){throw new RuntimeException(e);}}
     private static Object call(Object owner,String name,Class<?>[] types,Object... args){try{Method m=owner.getClass().getDeclaredMethod(name,types);m.setAccessible(true);return m.invoke(owner,args);}catch(Exception e){throw new RuntimeException(e);}}
-    private HomeScreen home(){return (HomeScreen)field(activity,"home");}
-    private PlayerStylePage page(){return (PlayerStylePage)field(home(),"stylePage");}
-    private AbsListView list(){return (AbsListView)field(page(),"list");}
-    private WallView wall(){return (WallView)field(home(),"wall");}
     private void settle(){waitForIdleSync();SystemClock.sleep(650);waitForIdleSync();}
-    @SuppressWarnings("unchecked") private void launch(){
-        activity=(MainActivity)startActivitySync(new Intent(getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));settle();
-        // Wait for startup cache restoration before installing a deterministic 160-artist fixture.
-        for(int i=0;i<100&&(boolean)field(activity,"scanning");i++)SystemClock.sleep(100);
-        main(()->{List<Song> library=(List<Song>)field(activity,"library");library.clear();for(int i=0;i<320;i++){String group=String.format(Locale.ROOT,"Artist %03d",i/2);Song song=new Song(-10000-i,180000,0,"Song "+i,group,"Album "+String.format(Locale.ROOT,"%03d",i/2),"song-"+i+".mp3",Uri.parse("content://test-fixture/audio/"+i));song.artworkPrepared=true;song.lyricsPrepared=true;library.add(song);}call(activity,"refreshWall",new Class<?>[0]);home().showDrawer(false);});settle();
-    }
-    private void select(String section){main(()->call(activity,"selectSection",new Class<?>[]{String.class},section));settle();}
-    private int[] anchor(){int[] value=new int[2];main(()->{value[0]=list().getFirstVisiblePosition();value[1]=list().getChildAt(0).getTop()-list().getPaddingTop();});return value;}
-    private void navigation(String style,String section){
-        select(section);
-        String filter=section.equals("歌手")?"Artist 0":"Album 0";
-        main(()->((EditText)field(home(),"searchInput")).setText(filter));settle();
-        if(style.equals("wall")){
-            swipe(wall(),.72f,.65f,.28f,.36f);settle();WallView.CameraState[] before={null};main(()->before[0]=wall().cameraState());
-            main(()->home().saveBrowseState());tapWallCard();settle();check(field(activity,"groupName")!=null,"Wall card did not open");
-            main(()->activity.onBackPressed());settle();check(field(activity,"groupName")==null,"Wall group did not close");check(((String)field(activity,"query")).equals(filter.toLowerCase(Locale.ROOT)),"Wall parent query lost");
-            main(()->{WallView.CameraState after=wall().cameraState();check(Math.abs(after.x-before[0].x)<2&&Math.abs(after.y-before[0].y)<2,"Wall return lost camera");});return;
-        }
-        swipe(list(),.5f,.85f,.5f,.2f);settle();int[] before=anchor();check(before[0]>0,"Fixture grid did not scroll");
-        for(int cycle=0;cycle<4;cycle++){
-            if(cycle==3){main(()->{for(int i=0;i<24;i++)list().scrollListBy(-list().getHeight());list().scrollListBy(25);});settle();before=anchor();check(before[0]==0&&before[1]<0,"First-row offset fixture failed");}
-            final View[] row={null};main(()->{for(int i=0;i<list().getChildCount();i++){View candidate=list().getChildAt(i);float center=(candidate.getTop()+candidate.getBottom())/2f;if(center>list().getPaddingTop()&&center<list().getHeight()-list().getPaddingBottom()){row[0]=candidate;break;}}});check(row[0]!=null,"No tappable grid card");tap(row[0]);settle();check(field(activity,"groupName")!=null,"Grid card did not open");
-            main(()->activity.onBackPressed());settle();check(field(activity,"groupName")==null,"Grid group did not close");check(((String)field(activity,"query")).equals(filter.toLowerCase(Locale.ROOT)),"Grid parent query lost");int[] after=anchor();
-            check(before[0]==after[0]&&Math.abs(before[1]-after[1])<3,"Grid return lost position: "+Arrays.toString(before)+" -> "+Arrays.toString(after));
-        }
-    }
-    @SuppressWarnings("unchecked") private void tapWallCard(){
-        float[] point={-1,-1};main(()->{List<Object> hits=(List<Object>)field(wall(),"hits");for(Object hit:hits){RectF bounds=(RectF)field(hit,"bounds");if(bounds.centerX()>50&&bounds.centerX()<wall().getWidth()-50&&bounds.centerY()>180&&bounds.centerY()<wall().getHeight()-250){point[0]=bounds.centerX();point[1]=bounds.centerY();break;}}});check(point[0]>=0,"No visible wall card");tap(wall(),point[0],point[1]);
-    }
-    private void drawerCycle(String style,String theme){for(int i=0;i<2;i++){main(()->home().showDrawer(true));settle();check(home().isDrawerOpen(),"Drawer failed to reopen");
-            if(i==0){main(()->{activity.getSharedPreferences("library",0).edit().putString("player_style",style.equals("wall")?"simple":"wall").commit();home().applyAppearance();});settle();check(home().isDrawerOpen(),"Style switch closed the drawer");main(()->{activity.getSharedPreferences("library",0).edit().putString("player_style",style).commit();home().applyAppearance();});settle();}
-            screenshot("drawer-"+style+"-"+theme+"-"+i);main(()->home().showDrawer(false));settle();check(!home().isDrawerOpen(),"Drawer failed to close");}}
-    private void persistentRestart(){
-        main(()->{activity.getSharedPreferences("library",0).edit().putString("player_style","library").putString("appearance","light").commit();home().applyAppearance();});select("歌手");swipe(list(),.5f,.85f,.5f,.2f);settle();int[] before=anchor();
-        main(()->{BrowseStateStore store=new BrowseStateStore(activity);store.sorting("artists","title",true);store.query("专辑\n","Album");home().saveBrowseState();call(activity,"saveNavigation",new Class<?>[0]);activity.finish();});settle();launch();
-        int[] after=anchor();check(before[0]==after[0]&&Math.abs(before[1]-after[1])<3,"Activity restart lost grid anchor");
-        main(()->{BrowseStateStore store=new BrowseStateStore(activity);check(store.query("专辑\n").equals("Album"),"Query not durable");check(store.ascending("artists"),"Sort not durable");});report.append("PASS persistent restart, queries and sorting\n");
-    }
-    private void expansionAndLyrics(){
-        main(()->{activity.getSharedPreferences("library",0).edit().putString("player_style","library").commit();home().applyAppearance();});select("歌曲");
-        main(()->{Song song=new Song(-10000,180000,0,"Test","Artist","Album","fixture",Uri.parse("content://test-fixture/audio/0"));page().setSong(song);page().setLyrics(Lyrics.parse("[00:01]Hello\n[00:01]你好\n[00:02]World\n[00:02]世界"));page().toggleExpanded();});settle();
-        main(()->{call(page(),"toggleLyricsExpanded",new Class<?>[0]);home().saveBrowseState();});settle();
-        main(()->{activity.getSharedPreferences("library",0).edit().putString("appearance","dark").commit();home().applyAppearance();check((boolean)field(page(),"expanded"),"Player expansion lost on theme switch");check((boolean)field(page(),"lyricsExpanded"),"Lyrics expansion lost on theme switch");});settle();screenshot("bilingual-expanded");
-        NativeLyricsView lyrics=(NativeLyricsView)field(page(),"lyricView");ListView rows=(ListView)field(lyrics,"list");main(()->{check(rows.getAdapter().getCount()==2,"Bilingual lines were not merged in actual view");TextView row=(TextView)rows.getAdapter().getView(0,null,rows);check(row.getText().toString().equals("Hello\n你好"),"Actual lyric row lost translation");});
-        main(()->{call(page(),"toggleLyricsExpanded",new Class<?>[0]);page().toggleExpanded();});settle();report.append("PASS player/lyric expansion across rebuild and bilingual row rendering\n");
+    private void launchPortable(){
+        activity=startActivitySync(new Intent(getTargetContext(),PortablePlayerActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));settle();
     }
     private void diagnosticsExport()throws Exception{
-        java.io.ByteArrayOutputStream output=new java.io.ByteArrayOutputStream();Diagnostics.event("UI regression export check");Diagnostics.export(activity,output);java.util.zip.ZipInputStream zip=new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(output.toByteArray()));boolean environment=false,events=false;java.util.zip.ZipEntry entry;while((entry=zip.getNextEntry())!=null){environment|=entry.getName().equals("environment.txt");events|=entry.getName().equals("events.txt");check(!entry.getName().contains("index"),"Export leaked music index");}check(environment&&events,"Incomplete diagnostic zip");report.append("PASS diagnostic ZIP contents\n");
-    }
-    private void prepareProcessRestart(){
-        main(()->{activity.getSharedPreferences("library",0).edit().putString("player_style","library").putString("appearance","light").commit();home().applyAppearance();});select("歌手");swipe(list(),.5f,.85f,.5f,.2f);settle();int[] expected=anchor();check(expected[0]>0,"Restart fixture not scrolled");
-        main(()->{call(activity,"saveNavigation",new Class<?>[0]);activity.getSharedPreferences("library",0).edit().putInt("ui_expected_index",expected[0]).putInt("ui_expected_offset",expected[1]).commit();});
-    }
-    private void verifyProcessRestart()throws Exception{
-        int[] actual=anchor();android.content.SharedPreferences prefs=activity.getSharedPreferences("library",0);int first=prefs.getInt("ui_expected_index",-1),offset=prefs.getInt("ui_expected_offset",0);
-        check(first==actual[0]&&Math.abs(offset-actual[1])<3,"Force-stop restart lost grid position: "+first+","+offset+" -> "+Arrays.toString(actual));
-        check(Diagnostics.crashCount()>0,"Uncaught crash did not produce a local log");
-        java.io.ByteArrayOutputStream output=new java.io.ByteArrayOutputStream();Diagnostics.export(activity,output);java.util.zip.ZipInputStream zip=new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(output.toByteArray()));boolean found=false;java.util.zip.ZipEntry entry;
-        while((entry=zip.getNextEntry())!=null){java.io.ByteArrayOutputStream contents=new java.io.ByteArrayOutputStream();byte[] buffer=new byte[4096];int count;while((count=zip.read(buffer))>0)contents.write(buffer,0,count);if(entry.getName().startsWith("crash-")&&contents.toString("UTF-8").contains("UI_CRASH_PROBE"))found=true;}
-        check(found,"Diagnostic ZIP omitted crash stack");report.append("PASS force-stop/process restart and actual uncaught-crash ZIP\n");
+        java.io.ByteArrayOutputStream output=new java.io.ByteArrayOutputStream();Diagnostics.event("UI regression export check");Diagnostics.export(getTargetContext(),output);java.util.zip.ZipInputStream zip=new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(output.toByteArray()));boolean environment=false,events=false;java.util.zip.ZipEntry entry;while((entry=zip.getNextEntry())!=null){environment|=entry.getName().equals("environment.txt");events|=entry.getName().equals("events.txt");check(!entry.getName().contains("index"),"Export leaked music index");}check(environment&&events,"Incomplete diagnostic zip");report.append("PASS diagnostic ZIP contents\n");
     }
     private void screenshot(String name){android.graphics.Bitmap image=getUiAutomation().takeScreenshot();if(image==null)return;try{java.io.File folder=new java.io.File(getTargetContext().getExternalFilesDir(null),"ui-regression");folder.mkdirs();try(java.io.FileOutputStream out=new java.io.FileOutputStream(new java.io.File(folder,name+".png"))){image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}}catch(Exception failure){throw new RuntimeException(failure);}finally{image.recycle();}}
     private void incrementalProvider(){

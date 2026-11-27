@@ -907,3 +907,21 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
 private extension String {
     func ifEmpty(_ fallback: String) -> String { isEmpty ? fallback : self }
 }
+
+struct SongRowRenderKey: Equatable, Sendable {
+    let id: UUID
+    let revision: Int
+    let title: String
+    let artist: String
+    let album: String
+    let duration: TimeInterval
+    let artworkKey: String?
+    let artworkIdentity: ObjectIdentifier?
+    let columns: MusicListColumns?
+    let selected: Bool
+    let multiSelecting: Bool
+    let playing: Bool
+    let isPlaying: Bool
+    let collectionsRevision: Int
+    let destination: LibraryDestination
+}

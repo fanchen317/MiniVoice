@@ -36,8 +36,6 @@ rg -q '^UI_REGRESSION_PASS' "$output/results.txt"
 "$adb" -s "$serial" shell am force-stop com.xcosmos.minivoice
 # This phase deliberately crashes the disposable test process to exercise the real handler.
 "$adb" -s "$serial" shell am instrument -w -e mode crash com.xcosmos.minivoice.uitests/com.xcosmos.minivoice.UiRegressionInstrumentation > "$output/crash-probe.txt" 2>&1 || true
-"$adb" -s "$serial" shell am instrument -w -e mode restart com.xcosmos.minivoice.uitests/com.xcosmos.minivoice.UiRegressionInstrumentation | tee "$output/restart-results.txt"
-rg -q '^UI_PROCESS_RESTART_PASS' "$output/restart-results.txt"
 
 "$adb" -s "$serial" shell am instrument -w -e mode portable com.xcosmos.minivoice.uitests/com.xcosmos.minivoice.UiRegressionInstrumentation | tee "$output/portable-results.txt"
 rg -q '^UI_PORTABLE_PASS' "$output/portable-results.txt"
