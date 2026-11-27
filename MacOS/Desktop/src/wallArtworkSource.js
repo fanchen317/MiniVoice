@@ -19,7 +19,7 @@ export async function loadWallWallpaper(originalURL,previewURL,makeImage=()=>new
 
 // A stalled decode or background detector must not make the expand control
 // unresponsive. Only return an image once it has decoded successfully.
-export async function waitWallWallpaper(imagePromise,analysisPromise,{timeoutMs=250}={}){
+export async function waitWallWallpaper(imagePromise,analysisPromise,{timeoutMs=900}={}){
  let image=null,timer;
  const loaded=Promise.resolve(imagePromise).then(value=>{image=value;},()=>{});
  const analyzed=Promise.resolve(analysisPromise).catch(()=>{});

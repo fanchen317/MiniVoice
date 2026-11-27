@@ -18,8 +18,9 @@
 .style-wall .mv-drawer{background:linear-gradient(135deg,#ffffff20,transparent 70%),var(--glass);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5)}
 .mv-cover-wall{position:absolute;inset:0;overflow:clip;touch-action:none;user-select:none;min-height:0;background:#0e1915}
 .mv-wall-plane{position:absolute;inset:0;pointer-events:none}
-.mv-wall-card{contain:layout paint style;position:absolute;display:block;padding:0;margin:0;border:0;border-radius:0;overflow:hidden;background:#223b30;color:#fff;text-align:left;touch-action:none;pointer-events:auto;box-shadow:none;transition:none}
-.mv-wall-card img,.mv-wall-card>.mv-art-fallback,.mv-wall-placeholder{display:block;width:100%;height:100%;object-fit:cover;pointer-events:none;border-radius:0}
+.mv-wall-card{contain:layout paint style;position:absolute;display:block;padding:0;margin:0;border:0;border-radius:0;overflow:hidden;background:#0e1915;color:#fff;text-align:left;touch-action:none;pointer-events:auto;box-shadow:none;transition:none}
+.mv-wall-card img{display:block;width:calc(100% + 2px);height:calc(100% + 2px);margin:-1px;object-fit:cover;pointer-events:none;border-radius:0}
+.mv-wall-card>.mv-art-fallback,.mv-wall-placeholder{display:block;width:100%;height:100%;object-fit:cover;pointer-events:none;border-radius:0}
 .mv-wall-placeholder{display:grid;place-items:center;font-size:60px;background:linear-gradient(135deg,#305d49,#4a415f)}
 .mv-wall-card.active{outline:2px solid #37d4a0;outline-offset:-2px}
 .mv-wall-caption{position:absolute;bottom:0;left:0;right:0;padding:24px 10px 9px;background:linear-gradient(transparent,#000b);pointer-events:none}
@@ -63,7 +64,9 @@
 .mv-wall-focus-content{z-index:2}
 .wp-player .mv-button,.wp-dock-controls .mv-button{backdrop-filter:none;-webkit-backdrop-filter:none}
 .wp-player .mv-icon,.wp-dock-controls .mv-icon{width:25px;height:25px}
-.wp-controls{display:grid;grid-template-columns:repeat(4,44px) minmax(44px,1fr);gap:0}
+.wp-controls{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:center;justify-items:center;gap:0}
+.wp-controls>.mv-button{width:min(44px,100%);min-width:0;max-width:44px}
+.wp-controls>.mv-button:first-child{justify-self:start}
 .wp-controls>.mv-button:last-child{margin-left:0;justify-self:end}
 .wp-player.is-compact .wp-controls{grid-template-columns:repeat(4,1fr)}
 .wp-player.is-compact .wp-controls>[data-wall-transport=play]{grid-column:2;justify-self:center}

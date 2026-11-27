@@ -27,7 +27,7 @@ const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, on
   useLayoutEffect(()=>{panAnchor.current=null;},[framingKey,framingMode,savedAnchor]);
   const element=useRef(),previous=useRef(),animation=useRef(),artwork=useRef(),artworkAnimation=useRef(),blurAnimation=useRef(),artworkTransition=useRef(null),settleFrame=useRef(0),latest=useRef(null),previousAnalysis=useRef(0),pendingFocusTransition=useRef(false);
   latest.current={tile,track,expanded,displayScale,framingMode,savedAnchor};
-  const [analysisRevision,setAnalysisRevision]=useState(0),[sharpSource,setSharpSource]=useState('');
+  const [analysisRevision,setAnalysisRevision]=useState(0),[sharpSource,setSharpSource]=useState(''),[animating,setAnimating]=useState(false);
   function targetViewport(){
     const state=latest.current,node=element.current,surface=node?.closest('.wall-surface');
     const target=artworkViewport({width:surface?.clientWidth||state.tile.width,height:surface?.clientHeight||state.tile.height});
@@ -44,7 +44,7 @@ const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, on
     if(!image?.naturalWidth||!image.naturalHeight)return;
     const source=image.currentSrc||image.src;if(source)setSharpSource(previous=>previous===source?previous:source);
     const oldTransform=animateFocus?getComputedStyle(image).transform:null;
-    const state=latest.current,focal=state.expanded&&state.framingMode!=='smart'?setArtworkAnchor(image,state.framingMode==='manual'?(panAnchor.current||state.savedAnchor||{x:.5,y:.5}):{x:.5,y:.5}):stableArtworkFocus(image,{key:artworkURL(state.track,false),viewport:targetViewport(),refreshSubjects:state.expanded,coordinateSpace:imageCoordinateSpace(image),useSubjects:true},cropDecisions.current),transition=artworkTransition.current,parent=animation.current;
+    const state=latest.current,focal=state.expanded&&state.framingMode!=='smart'?setArtworkAnchor(image,state.framingMode==='manual'?(panAnchor.current||state.savedAnchor||{x:.5,y:.5}):{x:.5,y:.5}):stableArtworkFocus(image,{key:artworkURL(state.track,false),viewport:targetViewport(),refreshSubjects:false,coordinateSpace:imageCoordinateSpace(image),useSubjects:true},cropDecisions.current),transition=artworkTransition.current,parent=animation.current;
     const running=transition&&parent?.playState==='running',motion=running?posterArtworkMotion(transition.from,state.tile,image.naturalWidth/image.naturalHeight,transition.progressAt,transition.samples,focal,transition.fromFocal):posterArtworkMotion(state.tile,state.tile,image.naturalWidth/image.naturalHeight,p=>p,2,focal);
     artworkAnimation.current?.cancel();blurAnimation.current?.cancel();artworkAnimation.current=null;blurAnimation.current=null;
     // The browser can expose a newly decoded source before dispatching its
@@ -63,7 +63,7 @@ const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, on
     }
   }
   useArtworkPan(element,{enabled:focused&&expanded&&!transitioning&&framingMode==='manual',identity:framingKey,presentation:'desktop',getAnchor:()=>panAnchor.current||savedAnchor||{x:.5,y:.5},getGeometry:()=>{const image=artwork.current?.querySelector('img.cover'),target=targetViewport();return image?.naturalWidth?coverGeometry(image.naturalWidth,image.naturalHeight,target.width,target.height):null;},onPreview:value=>{panAnchor.current=value;presentArtwork();},onCommit:value=>onArtworkAnchorCommit?.(framingKey,value)});
-  function settleArtwork(){cancelAnimationFrame(settleFrame.current);settleFrame.current=requestAnimationFrame(()=>{settleFrame.current=0;const animateFocus=pendingFocusTransition.current;pendingFocusTransition.current=false;presentArtwork(undefined,{animateFocus});});}
+  function settleArtwork(){cancelAnimationFrame(settleFrame.current);settleFrame.current=requestAnimationFrame(()=>{settleFrame.current=0;pendingFocusTransition.current=false;presentArtwork();});}
   useLayoutEffect(()=>{
     if(!preparedImage||!artwork.current)return;
     preparedImage.className='cover cover-wall';preparedImage.alt='';preparedImage.draggable=false;
@@ -76,24 +76,25 @@ const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, on
     const node=element.current,matrix=new DOMMatrix(getComputedStyle(node).transform),image=artwork.current?.querySelector('img.cover');
     const fromFocal={x:Number(image?.dataset.focalX??.5),y:Number(image?.dataset.focalY??.5)};
     const changed=before&&Math.abs(before.x-tile.x)+Math.abs(before.y-tile.y)+Math.abs(before.width-tile.width)+Math.abs(before.height-tile.height)>=.01;
-    if(!changed&&!reduceMotion){if(analysisChanged&&animation.current?.playState==='running')pendingFocusTransition.current=true;else presentArtwork(undefined,{animateFocus:analysisChanged});return;}
+    if(!changed&&!reduceMotion){if(!analysisChanged||!expanded)presentArtwork();return;}
     const from=before&&(animation.current?{x:matrix.e,y:matrix.f,width:before.width*matrix.a,height:before.height*matrix.d}:before);
     animation.current?.cancel();artworkAnimation.current?.cancel();blurAnimation.current?.cancel();animation.current=null;artworkTransition.current=null;
-    if(!before||reduceMotion){presentArtwork();return;}
+    if(!before||reduceMotion){setAnimating(false);presentArtwork();return;}
     node.style.willChange='transform';
+    setAnimating(true);
     const duration=transitioning?600:520,progressAt=p=>transitioning?focusProgress(p):reflowProgress(p*520),samples=transitioning?61:53;
     // Parent geometry and image counter-scaling share the same sampled clock.
     // Independent easing/interpolation can momentarily stretch the pixels.
     const frames=Array.from({length:samples},(_,i)=>{const offset=i/(samples-1),p=progressAt(offset);return {offset,transform:`translate3d(${from.x+(tile.x-from.x)*p}px,${from.y+(tile.y-from.y)*p}px,0) scale(${(from.width+(tile.width-from.width)*p)/tile.width},${(from.height+(tile.height-from.height)*p)/tile.height})`};});
     const current=node.animate(frames,{duration,easing:'linear'});
     animation.current=current;artworkTransition.current={from,duration,progressAt,samples,fromFocal};presentArtwork();
-    current.finished.catch(()=>{}).finally(()=>{if(animation.current===current){animation.current=null;artworkTransition.current=null;node.style.willChange='';settleArtwork();}});
+    current.finished.catch(()=>{}).finally(()=>{if(animation.current===current){animation.current=null;artworkTransition.current=null;node.style.willChange='';presentArtwork();setAnimating(false);}});
   },[tile.x,tile.y,tile.width,tile.height,reduceMotion,expanded,analysisRevision,framingMode,savedAnchor]);
   useEffect(()=>()=>{cancelAnimationFrame(settleFrame.current);animation.current?.cancel();artworkAnimation.current?.cancel();blurAnimation.current?.cancel();},[]);
   return <ArtworkModeScope as="article" ref={element} className={`wall-poster ${focused?'focused':''} ${playing?'playing':''}`}
     style={{'--artwork-cover':`url("${artworkURL(track,expanded&&focused)}")`,'--caption-inset':`${Math.min(14,Math.max(8,tile.width*.06))}px`,'--poster-title':`${Math.min(30,Math.max(18,tile.width*.105))}px`,'--poster-subtitle':`${Math.min(13,Math.max(10,tile.width*.045))}px`,width:tile.width,height:tile.height,transform:`translate3d(${tile.x}px,${tile.y}px,0)`}}
     inert={!visible} onFocusCapture={event=>{const rect=event.target.getBoundingClientRect();if(rect.right<0||rect.left>innerWidth||rect.bottom<0||rect.top>innerHeight)onReveal();}} onClick={event=>onFocus(tile,track,event)} onContextMenu={event=>grouped?onGroupMenu(event):onMenu(event,track)} tabIndex={visible?0:-1} data-track-id={track.id} role="button" aria-label={grouped?`打开 ${track.title}`:`聚焦 ${track.title}，双击播放`} onKeyDown={event=>{if(event.key==='Enter'&&event.target===event.currentTarget)onFocus(tile,track,event);}}>
-    <div className="poster-face"><div className="poster-artwork" ref={artwork} onLoadCapture={event=>{const image=event.target;if(image.matches('.mv-artwork-blur')){copyArtworkPresentation(artwork.current?.querySelector('img.cover'),image);return;}if(image.matches('img.cover'))presentArtwork(image);}}>{!preparedImage&&<Cover track={track} detail={focused} presentation="wall" hold={transitioning} source={focused?wallOriginalArtwork(track,artworkURL(track,true)):undefined} fallbackSource={focused?artworkURL(track,false):undefined}/>}{expanded&&focused&&sharpSource&&<ArtworkBlur src={sharpSource}/>}</div><div className="poster-shade"/>{!focused&&<><span className="poster-number">{String(tile.index+1).padStart(3,'0')}</span><div className="poster-caption"><h2>{track.title}</h2><p>{track.artist}</p></div></>}
+    <div className="poster-face"><div className="poster-artwork" ref={artwork} onLoadCapture={event=>{const image=event.target;if(image.matches('.mv-artwork-blur')){copyArtworkPresentation(artwork.current?.querySelector('img.cover'),image);return;}if(image.matches('img.cover'))presentArtwork(image);}}>{!preparedImage&&<Cover track={track} detail={focused} presentation="wall" hold={transitioning||animating} source={focused?wallOriginalArtwork(track,artworkURL(track,true)):undefined} fallbackSource={focused?artworkURL(track,false):undefined}/>}{expanded&&focused&&sharpSource&&<ArtworkBlur src={sharpSource}/>}</div><div className="poster-shade"/>{!focused&&<><span className="poster-number">{String(tile.index+1).padStart(3,'0')}</span><div className="poster-caption"><h2>{track.title}</h2><p>{track.artist}</p></div></>}
     {focused&&<WallCardPlayer size={tile} track={track} playing={playing} onPlay={onPlay} onExpand={onExpand} expanded={expanded}/>}</div>
   </ArtworkModeScope>;
 });
@@ -229,15 +230,20 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID,locate
     const d = drag.current; if (!d) return;
     const dx = event.clientX-d.x,dy = event.clientY-d.y,dt = event.timeStamp-d.time;
     if (!d.moved && Math.hypot(dx,dy)>6) { d.moved = true;clickSequence.current.reset(); surface.current.setPointerCapture(event.pointerId); }
-    if (dt>0) { d.vx = (event.clientX-d.lastX)/dt*1000; d.vy = (event.clientY-d.lastY)/dt*1000; }
-    d.lastX=event.clientX; d.lastY=event.clientY; d.time=event.timeStamp;
+    const stepX = event.clientX-d.lastX, stepY = event.clientY-d.lastY;
+    if (dt>0 && Math.hypot(stepX,stepY)>.5) {
+      const ivx = stepX/dt*1000, ivy = stepY/dt*1000;
+      const blend = dt < 60 && (d.vx || d.vy) ? .65 : 1;
+      d.vx = d.vx*(1-blend) + ivx*blend; d.vy = d.vy*(1-blend) + ivy*blend;
+      d.lastX=event.clientX; d.lastY=event.clientY; d.time=event.timeStamp;
+    }
     if (d.moved) { camera.current.x=d.start.x+dx; camera.current.y=d.start.y+dy; apply(); }
   }
   function up(event) {
     const d = drag.current; drag.current=null; if (!d) return;
     if (surface.current.hasPointerCapture(event.pointerId)) surface.current.releasePointerCapture(event.pointerId);
     suppressClick.current = d.moved;
-    if (!d.moved || live.current.reduceMotion || event.timeStamp-d.time>80) return;
+    if (!d.moved || live.current.reduceMotion || event.timeStamp-d.time>120) return;
     const speed=Math.hypot(d.vx,d.vy); if(speed<40)return;
     const start={ ...camera.current }, began=performance.now();
     function tick(now) {
@@ -282,6 +288,15 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID,locate
     if(live.current.immersive)prepareWallpaper(track).then(reveal).catch(()=>{});else reveal();
     return()=>{active=false;};
   },[playingID,grouped]);
+  useEffect(()=>{
+    if(!immersive||grouped||!focus?.track||tracks.length<2)return;
+    const index=tracks.findIndex(t=>t.id===focus.track.id);
+    if(index<0)return;
+    const next=tracks[(index+1)%tracks.length];
+    if(!next||next.id===focus.track.id)return;
+    const target=artworkViewport(viewport.current),candidate=desktopArtworkCandidate(next,artworkURL(next,true));
+    if(candidate?.source)warmArtworkSubjects(artworkURL(next,false),()=>analyzeArtworkSubjects(candidate.source,{identity:candidate.identity,priority:'background'}),target,{fixedQuality:true});
+  },[immersive,grouped,focus?.track.id,tracks]);
   useEffect(()=>{onFocusChange?.(grouped?null:focus?.track||null);},[focus,grouped,onFocusChange]);
   function playPoster(id){command('play',{id,ids:tracks.map(track=>track.id),preservePosition:true});}
   function continuedClick(event){
