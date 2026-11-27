@@ -16,6 +16,14 @@ test('body-only portrait preserves the body when it fits',()=>{
  const p=compositionCrop([body],1,.4),left=p.x*.6;
  assert.ok(left<=body.x&&left+.4>=body.x+body.width);
 });
+test('non-human COCO object becomes primary when no person is detected, but yields to faces',()=>{
+ const cat={x:.72,y:.2,width:.2,height:.3,object:1,confidence:.7};
+ assert.equal(compositionContent([cat]).kind,'object');
+ const p=compositionCrop([cat],1,.4),left=p.x*.6;
+ assert.ok(left<=cat.x+1e-8&&left+.4>=cat.x+cat.width-1e-8);
+ const withFace=compositionContent([face(.1),cat]);
+ assert.equal(withFace.kind,'portrait');assert.equal(withFace.primary.length,1);assert.equal(withFace.primary[0].face,true);
+});
 test('mixed face and body detections retain people without a detected face',()=>{
  const regions=[face(.1),{x:.65,y:.1,width:.2,height:.8,person:true}];
  const content=compositionContent(regions);
@@ -68,6 +76,14 @@ test('when the detected figure cannot fit, framing still protects the face',()=>
  const p=compositionCrop([face,body],1,.4),left=p.x*.6;
  assert.ok(left<=face.x-face.width*.18+1e-8);
  assert.ok(left+.4>=face.x+face.width*1.18-1e-8);
+});
+test('close-up face whose padded margin exceeds viewport still protects its core face',()=>{
+ const face={x:.25,y:.15,width:.35,height:.38,face:true,confidence:.95};
+ const energy=new Float32Array(96*96).fill(1);
+ for(let y=70;y<96;y++)for(let x=0;x<96;x++)energy[y*96+x]=1000;
+ const p=compositionCrop([face],1,2,{energy,width:96,height:96}),top=p.y*.5;
+ assert.ok(top<=face.y+1e-8,'close-up face top must not be clipped');
+ assert.ok(top+.5>=face.y+face.height-1e-8,'close-up face bottom must not be clipped');
 });
 
 test('a fully fitting group of faces and bodies is retained together',()=>{

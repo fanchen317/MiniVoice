@@ -17,6 +17,8 @@ test('manual drag tracks cover overflow, locks orientation axis and never divide
  const landscape=coverGeometry(1000,1000,800,400);assert.deepEqual(dragArtworkAnchor({x:.2,y:.5},300,-100,landscape),{x:.2,y:.75});
  assert.deepEqual(dragArtworkAnchor({x:.5,y:.5},99999,99999,coverGeometry(400,800,400,800)),{x:.5,y:.5});
  assert.deepEqual(dragArtworkAnchor({x:.5,y:.5},99999,0,portrait),{x:0,y:.5});
+ const panoramicLandscape=coverGeometry(2100,900,1600,900);assert.deepEqual(dragArtworkAnchor({x:.5,y:.5},100,200,panoramicLandscape),{x:.3,y:.5});
+ const tallPortrait=coverGeometry(400,1200,400,800);assert.deepEqual(dragArtworkAnchor({x:.5,y:.5},200,100,tallPortrait),{x:.5,y:.25});
 });
 test('expanded smart can refresh after late analysis without breaking stable card crops',async()=>{
  const key='test://full-screen-refresh',image={naturalWidth:1000,naturalHeight:1000,dataset:{},style:{},closest:()=>null},decisions=new Map();
@@ -28,6 +30,10 @@ test('expanded smart can refresh after late analysis without breaking stable car
 test('unavailable native response is not cached as successful empty detection',async()=>{
  let calls=0;const read=async()=>{calls++;return calls===1?{}:[];};
  await warmArtworkSubjects('test://unavailable-analysis',read);await warmArtworkSubjects('test://unavailable-analysis',read);await warmArtworkSubjects('test://unavailable-analysis',read);assert.equal(calls,2);
+ let degradedCalls=0;
+ await warmArtworkSubjects('test://degraded-analysis',async()=>{degradedCalls++;const list=[];list.cacheable=false;return list;},{width:1000,height:1000},{fixedQuality:true});
+ await warmArtworkSubjects('test://degraded-analysis',async()=>{degradedCalls++;return [{x:.2,y:.2,width:.2,height:.2,face:1}];},{width:1000,height:1000},{fixedQuality:true});
+ assert.equal(degradedCalls,2);
 });
 test('queued artwork commits merge the latest persisted state across songs',async()=>{
  const {createWorkspaceController}=await import('../src/state.js');let stored={version:1,pages:{}},writes=[];

@@ -20,22 +20,36 @@ export function artworkPersonInput(pixels,width,height){
  return {data,ratio,width,height};
 }
 function iou(a,b){const w=Math.max(0,Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x)),h=Math.max(0,Math.min(a.y+a.height,b.y+b.height)-Math.max(a.y,b.y)),intersection=w*h;return intersection/(a.width*a.height+b.width*b.height-intersection||1);}
-export function decodeArtworkPeople(output,width,height,ratio,{threshold=.3,nms=.45,limit=8}={}){
+export function decodeArtworkObjects(output,width,height,ratio,{threshold=.3,objectThreshold=.42,nms=.45,limit=8}={}){
  const data=output?.data;if(!data||data.length!==COUNT*CHANNELS||!(width>0&&height>0&&ratio>0))throw Error('Invalid YOLOX outputs');
- const boxes=[];let index=0;
+ const people=[],objects=[];let index=0;
  for(const stride of [8,16,32])for(let row=0;row<SIZE/stride;row++)for(let col=0;col<SIZE/stride;col++,index++){
-  const p=index*CHANNELS,confidence=data[p+4]*data[p+5];if(!Number.isFinite(confidence)||confidence<threshold)continue;
+  const p=index*CHANNELS,obj=data[p+4];if(!Number.isFinite(obj)||obj<=0)continue;
+  const personConf=obj*data[p+5];
+  let bestObj=0;for(let c=6;c<CHANNELS;c++){const s=data[p+c];if(s>bestObj)bestObj=s;}
+  const objConf=obj*bestObj;
+  const isPerson=Number.isFinite(personConf)&&personConf>=threshold;
+  const isObject=!isPerson&&Number.isFinite(objConf)&&objConf>=objectThreshold;
+  if(!isPerson&&!isObject)continue;
   const cx=(data[p]+col)*stride/ratio,cy=(data[p+1]+row)*stride/ratio,w=Math.exp(data[p+2])*stride/ratio,h=Math.exp(data[p+3])*stride/ratio;
   if(![cx,cy,w,h].every(Number.isFinite))continue;
   const left=clamp((cx-w/2)/width,0,1),top=clamp((cy-h/2)/height,0,1),right=clamp((cx+w/2)/width,0,1),bottom=clamp((cy+h/2)/height,0,1);
-  if(right>left&&bottom>top)boxes.push({x:left,y:top,width:right-left,height:bottom-top,person:1,confidence:clamp(confidence,0,1)});
+  if(right>left&&bottom>top){
+   if(isPerson)people.push({x:left,y:top,width:right-left,height:bottom-top,person:1,confidence:clamp(personConf,0,1)});
+   else objects.push({x:left,y:top,width:right-left,height:bottom-top,object:1,confidence:clamp(objConf,0,1)});
+  }
  }
- boxes.sort((a,b)=>b.confidence-a.confidence);const kept=[];
- for(const box of boxes){if(!kept.some(other=>iou(box,other)>nms))kept.push(box);if(kept.length>=limit)break;}
- return kept;
+ const keep=list=>{list.sort((a,b)=>b.confidence-a.confidence);const out=[];for(const box of list){if(!out.some(other=>iou(box,other)>nms))out.push(box);if(out.length>=limit)break;}return out;};
+ return {people:keep(people),objects:keep(objects)};
 }
-export async function detectArtworkPeople({ort,session,pixels,width,height}){
+export function decodeArtworkPeople(output,width,height,ratio,options){
+ return decodeArtworkObjects(output,width,height,ratio,options).people;
+}
+export async function detectArtworkObjects({ort,session,pixels,width,height}){
  const {data,ratio}=artworkPersonInput(pixels,width,height);
  const outputs=await session.run({[session.inputNames[0]]:new ort.Tensor('float32',data,[1,3,SIZE,SIZE])});
- return decodeArtworkPeople(outputs[session.outputNames[0]],width,height,ratio);
+ return decodeArtworkObjects(outputs[session.outputNames[0]],width,height,ratio);
+}
+export async function detectArtworkPeople(params){
+ return (await detectArtworkObjects(params)).people;
 }

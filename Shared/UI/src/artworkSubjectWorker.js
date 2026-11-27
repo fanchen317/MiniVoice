@@ -3,7 +3,7 @@
 import * as ort from 'onnxruntime-web/wasm';
 import {detectArtworkFaces} from './components/artworkFaceDetector.js';
 import {detectArtworkText} from './components/artworkTextDetector.js';
-import {detectArtworkPeople} from './components/artworkPersonDetector.js';
+import {detectArtworkObjects} from './components/artworkPersonDetector.js';
 import {dedupeArtworkFaces,rescueArtworkFaces} from './components/artworkFaceRescue.js';
 import {artworkRetinaCandidates,detectArtworkRetinaFaces} from './components/artworkRetinaFace.js';
 
@@ -20,7 +20,7 @@ function retina(){
 }
 async function runtime(){
  if(!runtimePromise)runtimePromise=(async()=>{
-  ort.env.wasm.numThreads=1;
+  ort.env.wasm.numThreads=globalThis.crossOriginIsolated?Math.min(4,globalThis.navigator?.hardwareConcurrency||2):1;
   ort.env.wasm.wasmPaths={mjs:wasmModuleURL,wasm:wasmURL};
   const response=await fetch(wasmURL);if(!response.ok)throw Error('Artwork runtime unavailable');
   ort.env.wasm.wasmBinary=await response.arrayBuffer();
@@ -35,7 +35,7 @@ self.onmessage=async event=>{
  try{
   const pixels=new Uint8ClampedArray(buffer),{face,text,person}=await runtime();
   let faces=await detectArtworkFaces({ort,session:face,pixels,width,height});
-  const people=await detectArtworkPeople({ort,session:person,pixels,width,height});
+  const {people,objects}=await detectArtworkObjects({ort,session:person,pixels,width,height});
   faces=await rescueArtworkFaces({faces,people,pixels,width,height,detect:(data,w,h)=>detectArtworkFaces({ort,session:face,pixels:data,width:w,height:h})});
   let cacheable=true;
   const candidates=artworkRetinaCandidates(faces,people);
@@ -46,7 +46,10 @@ self.onmessage=async event=>{
    }
    catch{cacheable=false;}
   }
-  const texts=await detectArtworkText({ort,session:text,rgba:pixels,width,height});
-  self.postMessage({id,regions:[...faces,...people,...texts],cacheable});
+  // Skip the heavy 4.7MB PPOCR text pass when a dominant close-up face or
+  // multi-person group already fully determines the single-axis crop.
+  const skipText=faces.length>=3||faces.some(f=>f.confidence>=.85&&f.width*f.height>=.08);
+  const texts=skipText?[]:await detectArtworkText({ort,session:text,rgba:pixels,width,height});
+  self.postMessage({id,regions:[...faces,...people,...objects,...texts],cacheable});
  }catch(error){self.postMessage({id,error:String(error?.message||error)});}
 };

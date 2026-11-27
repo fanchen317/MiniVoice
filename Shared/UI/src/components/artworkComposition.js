@@ -14,14 +14,14 @@ export function compositionViewport(viewport,viewportAspect){
 function subjectBoxes(regions){
  const boxes=(Array.isArray(regions)?regions:[]).filter(box=>box&&[box.x,box.y,box.width,box.height].every(Number.isFinite)&&box.width>0&&box.height>0).slice(0,48).map(region=>{
   const core={x:clamp(region.x),y:clamp(region.y),right:clamp(region.x+region.width),bottom:clamp(region.y+region.height)};
-  const face=region.face===1||region.face===true,text=region.text===1||region.text===true,person=region.person===1||region.person===true;
+  const face=region.face===1||region.face===true,text=region.text===1||region.text===true,person=region.person===1||region.person===true,object=region.object===1||region.object===true;
   const confidence=clamp(Number.isFinite(region.confidence)?region.confidence:.8,.1,1);
   const padded={x:clamp(core.x-(face?region.width*.18:text?.012:region.width*.035)),y:clamp(core.y-(face?region.height*.65:text?.012:region.height*.035)),right:clamp(core.right+(face?region.width*.18:text?.012:region.width*.035)),bottom:clamp(core.bottom+(face?region.height*.2:text?.012:region.height*.035))};
-  return {core,padded,face,text,person,confidence,weight:(face?5:person?2.2:text?1.4:1.8)*confidence*Math.max(.35,Math.sqrt(area(core)))};
+  return {core,padded,face,text,person,object,confidence,weight:(face?5:person?2.2:object?1.8:text?1.4:1.8)*confidence*Math.max(.35,Math.sqrt(area(core)))};
  }).filter(box=>area(box.core)>0).sort((a,b)=>b.confidence-a.confidence||area(b.core)-area(a.core));
  // Deduplicate in two dimensions: two band members at different heights must
  // remain distinct even when they share the same x interval.
- return boxes.filter((box,index)=>!boxes.some((other,j)=>j<index&&other.face===box.face&&other.text===box.text&&other.person===box.person&&area(overlap(other.core,box.core))/(area(other.core)+area(box.core)-area(overlap(other.core,box.core)))>.82));
+ return boxes.filter((box,index)=>!boxes.some((other,j)=>j<index&&other.face===box.face&&other.text===box.text&&other.person===box.person&&other.object===box.object&&area(overlap(other.core,box.core))/(area(other.core)+area(box.core)-area(overlap(other.core,box.core)))>.82));
 }
 
 function energyProfile(energy,width,height,horizontal){
@@ -67,7 +67,8 @@ export function compositionContent(regions){
  // title next to a thin vertical credit). Avoid ending up with no title at all.
  if(!titles.length&&text.length)titles.push(text.reduce((largest,box)=>area(box.core)>area(largest.core)?box:largest));
  const primaryPeople=[...faces,...bodies];
- return {kind:count>2?'group':count===2?'pair':count===1?'portrait':text.length?'typography':'scenery-or-abstract',count,primary:primaryPeople.length?primaryPeople:titles,titles,boxes};
+ const objects=boxes.filter(b=>b.object&&b.confidence>=.42);
+ return {kind:count>2?'group':count===2?'pair':count===1?'portrait':objects.length?'object':text.length?'typography':'scenery-or-abstract',count,primary:primaryPeople.length?primaryPeople:objects.length?objects:titles,titles,boxes};
 }
 
 /** Cover geometry has one travelling axis; all scoring uses full 2D subject boxes. */
@@ -105,11 +106,15 @@ export function compositionCrop(regions,imageAspect,viewportAspect,{energy,width
  const completePeople=[...primary,...enclosingBodies,...(visualCue&&content.kind==='typography'?[visualCue]:[])];
  const completeStart=Math.min(...completePeople.map(box=>low(enclosingBodies.includes(box)?box.core:box.padded))),completeEnd=Math.max(...completePeople.map(box=>high(enclosingBodies.includes(box)?box.core:box.padded)));
  const completeFits=completePeople.length>0&&completeEnd-completeStart<=extent+1e-9;
- const groupStart=completeFits?completeStart:Math.min(...primary.map(box=>low(box.padded))),groupEnd=completeFits?completeEnd:Math.max(...primary.map(box=>high(box.padded)));
- const protectGroup=primary.length>0&&groupEnd-groupStart<=extent+1e-9;
+ const paddedStart=Math.min(...primary.map(box=>low(box.padded))),paddedEnd=Math.max(...primary.map(box=>high(box.padded)));
+ const paddedFits=primary.length>0&&paddedEnd-paddedStart<=extent+1e-9;
  // Wallpaper framing centres the subject, not the original canvas. Face
  // centres outrank body centres; padded boxes only enforce headroom.
  const coreStart=Math.min(...primary.map(box=>low(box.core))),coreEnd=Math.max(...primary.map(box=>high(box.core)));
+ const coreFits=primary.length>0&&coreEnd-coreStart<=extent+1e-9;
+ const groupStart=completeFits?completeStart:paddedFits?paddedStart:coreStart;
+ const groupEnd=completeFits?completeEnd:paddedFits?paddedEnd:coreEnd;
+ const protectGroup=primary.length>0&&(completeFits||paddedFits||coreFits);
  const subjectCentre=(coreStart+coreEnd)/2;
  const centredStart=primary.length?clamp(subjectCentre-extent/2,0,travel):travel/2;
  const candidates=new Set([travel/2,centredStart]);

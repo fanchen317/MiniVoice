@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {visualArtworkSubject,artworkFocus} from '../src/components/artworkFocus.js';
+import {visualArtworkSubject,framedArtworkContent,artworkFocus} from '../src/components/artworkFocus.js';
 const size=96;
 function picture(){const data=new Uint8ClampedArray(size*size*4);for(let i=0;i<data.length;i+=4){data[i]=data[i+1]=data[i+2]=235;data[i+3]=255;}return data;}
 function block(data,x0,y0,x1,y1,color=[30,70,130]){for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){let i=(y*size+x)*4;for(let c=0;c<3;c++)data[i+c]=color[c];}}
@@ -27,6 +27,27 @@ test('a single silhouette on a smooth gradient remains whole',()=>{
 test('a smooth gradient does not merge two separate silhouettes',()=>{
  const data=picture();for(let y=0;y<size;y++)for(let x=0;x<size;x++){const i=(y*size+x)*4;data[i]=160+x*.7;data[i+1]=170+y*.6;data[i+2]=160+(x+y)*.3;}
  block(data,8,15,24,75,[20,20,20]);block(data,66,15,82,75,[20,20,20]);assert.equal(visualArtworkSubject(data,size,size),null);
+});
+test('multi-stroke graphic with tiny internal gaps and wide banner graphics are recognized',()=>{
+ const graphic=picture();
+ block(graphic,12,20,26,70,[30,50,120]);block(graphic,28,20,42,70,[30,50,120]);
+ const box=visualArtworkSubject(graphic,size,size);
+ assert.deepEqual(box,{x:12/size,y:20/size,width:30/size,height:50/size});
+ const banner=picture();
+ block(banner,2,10,94,48,[40,80,140]);
+ const bannerBox=visualArtworkSubject(banner,size,size);
+ assert.deepEqual(bannerBox,{x:2/size,y:10/size,width:92/size,height:38/size});
+ const crop=artworkFocus(banner,size,size,{imageAspect:1,viewportAspect:2}),top=crop.y*.5;
+ assert.ok(top<=bannerBox.y+1e-8&&top+.5>=bannerBox.y+bannerBox.height-1e-8);
+});
+test('framed or letterboxed covers detect inner photo area and ignore empty margins',()=>{
+ const letterbox=picture();
+ for(let y=24;y<size;y++)for(let x=0;x<size;x++){const i=(y*size+x)*4;letterbox[i]=(x*3+y)%255;letterbox[i+1]=(y*5)%255;letterbox[i+2]=120;}
+ const inner=framedArtworkContent(letterbox,size,size);
+ assert.deepEqual(inner,{x:0,y:24/size,width:1,height:72/size});
+ const fullBleed=new Uint8ClampedArray(size*size*4);
+ for(let y=0;y<size;y++)for(let x=0;x<size;x++){const i=(y*size+x)*4;fullBleed[i]=(x*7)%255;fullBleed[i+1]=(y*7)%255;fullBleed[i+2]=90;fullBleed[i+3]=255;}
+ assert.equal(framedArtworkContent(fullBleed,size,size),null);
 });
 test('visual cue never displaces a detected person or text',()=>{
  const data=picture();block(data,7,18,30,80);

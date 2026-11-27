@@ -12,6 +12,6 @@ export function coverGeometry(imageWidth,imageHeight,width,height){
  return {overflowX:Math.max(0,imageWidth*scale-width),overflowY:Math.max(0,imageHeight*scale-height),portrait:height>=width};
 }
 export function dragArtworkAnchor(anchor,dx,dy,geometry){
- const start=normalizeArtworkAnchor(anchor),{portrait,overflowX,overflowY}=geometry;
- return normalizeArtworkAnchor({x:portrait&&overflowX>.5?start.x-dx/overflowX:start.x,y:!portrait&&overflowY>.5?start.y-dy/overflowY:start.y});
+ const start=normalizeArtworkAnchor(anchor),{overflowX,overflowY}=geometry;
+ return normalizeArtworkAnchor({x:overflowX>.5?start.x-dx/overflowX:start.x,y:overflowY>.5?start.y-dy/overflowY:start.y});
 }
