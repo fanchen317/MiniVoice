@@ -2006,3 +2006,16 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
 - **Mac 端非聚焦卡片底部 1px 亮线修复**（如录屏红框中《寻》底边）：
   - 放大红框确认该 1px 亮线随专辑封面原色变化，系 `.wall-poster` 坐标/宽高为浮点小数且常驻独立合成层导致图片与遮罩底边相差 1 个物理像素；现对非展开态卡片执行边缘一致的整数像素对齐（`px/py/pw/ph`），并将 `.poster-shade` 扩至 `inset: -4px`。
 - 已通过 `check-ui-standards.mjs`、`MacOS/Desktop` 71/75 单元测试、`MacOS/Desktop` 构建与 `git diff --check`；待部署后 Mac 实机回验。
+
+## 2026-11-27 Mac 端点击聚焦过程“一闪一闪”逐帧排查与全面修复
+
+- **录屏 30fps 逐帧定位到的 4 类闪烁根因与修复**：
+  1. **边缘卡片半途黑洞蹦出**（如录屏中点击《不流泪的机场》时左上角《燕归巢》《英雄》前 150ms 全黑后突然蹦出）：`MacOS/Desktop/src/Wall.jsx` 原先使用未考虑重排推挤的 `visibleTiles` 并在平移中才按阈值挂载；现改用 `visibleReflowTiles`（`overscan = 480`、阈值 `160px`），且在点击聚焦触发 `travel()` 首帧一次性预挂起点相机与终点相机的并集卡片，整个 420ms 镜头平移期间零卡片中途挂载或黑洞弹出。
+  2. **聚焦卡片动画中途变灰/丢图闪烁**（如录屏中点击《865 不将就》时封面消失 200ms 后重现）：`Cover`（`MacOS/Desktop/src/components.jsx`）在 `presentation="wall"` 下改为双层叠加（底层 `cover-base` 常驻不改 `src`，上层 `cover-hd` 延迟至 520ms 聚焦动画结束后再解码叠放），`presentArtwork` 同步驱动全部图层，永不在 WAAPI 动画运行中原地替换单张 `<img>` 的 `src`。同时恢复 `waitWallWallpaper` 的 `280ms` 超时上限（`MacOS/Desktop/src/wallArtworkSource.js`），确保慢图不阻塞展开按钮响应。
+  3. **整墙白色轮廓线随点击“灭—亮”频闪**：移除 `.is-reflowing` 对聚焦/悬浮白框的隐藏规则，改为仅在镜头主动平移（`.wall-surface.is-panning`）期间抑制路过鼠标下方的非聚焦卡片 `:hover` 白框，消除每次点击全墙白框齐灭齐亮及路过卡片连环闪白框（`MacOS/Desktop/src/liquidGlass.css`）。
+  4. **动画终点与整数对齐坐标不一致跳动**：`Poster` 顶部统一对非展开态 `tile` 做一次边缘一致的整数像素对齐并贯穿 FLIP 关键帧与静态样式，保证动画末帧与落位坐标零误差。
+- **验证通过**：
+  - `node Scripts/checks/check-ui-standards.mjs`（152 源文件）通过；
+  - `Shared/UI` 221/221 单元测试、`MacOS/Desktop` 71/75 单元测试通过；
+  - Electron 实页测试 `MacOS/Desktop/test/wallArtworkLifecycle.cjs`（`PASS deferred original decode, full-surface target context, resize, sharp/blur alignment`）通过；
+  - `npm --prefix MacOS/Desktop run build` 与 `git diff --check` 通过；待部署安装后 Mac 实机连续点击回验。
