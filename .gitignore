@@ -1,4 +1,5 @@
 .DS_Store
+xcuserdata/
 .build/
 # Only the repository-root build output; Scripts/build/ holds tracked scripts.
 /build/

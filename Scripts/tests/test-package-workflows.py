@@ -20,6 +20,9 @@ class Workflows(unittest.TestCase):
    self.assertEqual(run('--platforms','unknown').returncode,2)
    bindir=root/'bin';bindir.mkdir();(bindir/'uname').write_text('#!/bin/sh\necho Darwin\n');(bindir/'uname').chmod(0o755)
    (root/'Scripts/build/install-mac.sh').write_text('printf "%s\\n" "$*" > "$(dirname "$0")/../../install-call"\n')
-   before=(root/'calls').read_text();result=subprocess.run(['bash',str(root/'Scripts/deploy.sh'),'--no-launch'],capture_output=True,text=True,errors="replace",env={**os.environ,'PATH':str(bindir)+os.pathsep+os.environ['PATH']})
+   before=(root/'calls').read_text();deploy_env={**os.environ,'PATH':str(bindir)+os.pathsep+os.environ['PATH']}
+   result=subprocess.run(['bash',str(root/'Scripts/deploy.sh'),'--no-launch'],capture_output=True,text=True,errors="replace",env=deploy_env)
+   self.assertEqual(result.returncode,0,result.stderr);self.assertEqual((root/'calls').read_text(),before);self.assertEqual((root/'install-call').read_text().strip(),'--no-launch')
+   result=subprocess.run(['bash',str(root/'Scripts/deploy.sh'),'--skip-build','--no-launch'],capture_output=True,text=True,errors="replace",env=deploy_env)
    self.assertEqual(result.returncode,0,result.stderr);self.assertEqual((root/'calls').read_text(),before);self.assertEqual((root/'install-call').read_text().strip(),'--skip-build --no-launch')
 if __name__=='__main__':unittest.main()
