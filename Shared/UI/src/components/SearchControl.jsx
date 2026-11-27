@@ -14,7 +14,7 @@ export default function SearchControl({open,onOpenChange,value,onValueChange,wal
   if(!toolbar?.closest('[data-presentation=mobile]'))return;
   const actions=[...toolbar.children].filter(node=>node!==search&&node.matches('.mv-button,.mv-back'));
   const measure=()=>{
-   const box=toolbar.getBoundingClientRect(),visualWidth=Math.min(toolbar.clientWidth,innerWidth>innerHeight?440:toolbar.clientWidth),left=box.right-visualWidth;
+   const box=toolbar.getBoundingClientRect(),visualWidth=Math.min(toolbar.clientWidth,440),left=box.right-visualWidth;
    const coverage=actions.map(action=>{const rect=action.getBoundingClientRect();return open&&left<rect.right&&box.right>rect.left;});
    const sample=`${toolbar.clientWidth}px`,target=`${visualWidth/1.16}px`;
    if(search.style.getPropertyValue('--search-expanded-width')!==sample)search.style.setProperty('--search-expanded-width',sample);
