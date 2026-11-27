@@ -22,27 +22,39 @@ import { displayLine, wallCardSizing } from './kinetic';
 import { artwork, command, seconds, useClock, usePlayback, useCatalog } from './store';
 
 export const Cover = memo(function Cover({track,detail=false,presentation=detail?'artwork':'list',source,fallbackSource,hold=false}){
-  const requested=source??artwork(track,detail,presentation),base=fallbackSource||artwork(track,false,presentation)||requested,identity=`${track?.artworkKey||''}:${track?.artworkRevision??0}`;
-  const [decoded,setDecoded]=useState(()=>({identity,url:presentation==='wall'?base:requested,highRes:Boolean(source)&&presentation!=='wall'}));
-  const retained=useRef(null);
+  const requested=source??artwork(track,detail,presentation),base=fallbackSource||artwork(track,false,presentation)||requested,artKey=track?.artworkKey||'',identity=`${artKey}:${track?.artworkRevision??0}`;
+  const [decoded,setDecoded]=useState(()=>({identity,artKey,url:presentation==='wall'?base:requested,highRes:Boolean(source)&&presentation!=='wall'}));
+  const [shownBase,setShownBase]=useState(()=>({artKey,url:base}));
+  const retained=useRef(null),retainedBase=useRef(null);
+  useEffect(()=>{
+    let active=true;
+    if(!base){setShownBase({artKey,url:''});return;}
+    if(shownBase.artKey!==artKey){setShownBase({artKey,url:base});return;}
+    if(shownBase.url===base)return;
+    const image=new Image();image.src=base;
+    image.decode().then(()=>{if(active){retainedBase.current=image;setShownBase({artKey,url:base});}}).catch(()=>{if(active)setShownBase({artKey,url:base});});
+    return()=>{active=false;};
+  },[base,artKey]);
   useEffect(()=>{
     let active=true;
     if(hold||!requested)return;
     if(decoded.identity===identity&&(decoded.url===requested||(presentation==='wall'&&decoded.highRes&&!source)))return;
     const image=new Image();image.src=requested;
-    image.decode().then(()=>{if(active){retained.current=image;setDecoded({identity,url:requested,highRes:Boolean(source)});}}).catch(()=>{});
+    image.decode().then(()=>{if(active){retained.current=image;setDecoded({identity,artKey,url:requested,highRes:Boolean(source)});}}).catch(()=>{});
     return()=>{active=false;};
-  },[requested,identity,hold,presentation,source]);
-  const [failed,setFailed]=useState(false),url=decoded.identity===identity?decoded.url:(presentation==='wall'?base:requested);
-  useEffect(()=>setFailed(false),[url,base]);
-  const onImageError=()=>{if(fallbackSource&&url!==fallbackSource){setDecoded({identity,url:fallbackSource,highRes:false});setFailed(false);}else setFailed(true);};
-  if((!url&&!base)||failed)return <div className={`cover cover-empty cover-${presentation}`}><Icon name={presentation==='artwork'?'artwork-music':'music'}/></div>;
+  },[requested,identity,artKey,hold,presentation,source]);
+  const [failed,setFailed]=useState(false);
+  const stableBase=shownBase.artKey===artKey&&shownBase.url?shownBase.url:base;
+  const url=(decoded.identity===identity||(artKey&&decoded.artKey===artKey))?decoded.url:(presentation==='wall'?stableBase:requested);
+  useEffect(()=>setFailed(false),[url,stableBase]);
+  const onImageError=()=>{if(fallbackSource&&url!==fallbackSource){setDecoded({identity,artKey,url:fallbackSource,highRes:false});setFailed(false);}else setFailed(true);};
+  if((!url&&!stableBase)||failed)return <div className={`cover cover-empty cover-${presentation}`}><Icon name={presentation==='artwork'?'artwork-music':'music'}/></div>;
   if(presentation==='artwork')return <div className="cover artwork-fit"><img className="artwork-blur" src={url} alt="" decoding="async" draggable="false"/><img className="artwork-foreground" src={url} alt="" decoding="async" draggable="false" onError={onImageError}/></div>;
   if(presentation==='wall'){
-    const upgraded=decoded.identity===identity&&decoded.highRes&&url&&url!==base;
+    const upgraded=(decoded.identity===identity||(artKey&&decoded.artKey===artKey))&&decoded.highRes&&url&&url!==stableBase;
     return <>
-      {upgraded&&<img key={`hd:${url}`} className="cover cover-wall cover-hd" src={url} alt="" decoding="sync" draggable="false" style={{zIndex:1}} onError={onImageError}/>}
-      {base&&<img key={`base:${base}`} className="cover cover-wall cover-base" src={base} alt="" decoding="sync" draggable="false" style={{zIndex:0}} onError={()=>{if(!upgraded)setFailed(true);}}/>}
+      {upgraded&&<img key="hd" className="cover cover-wall cover-hd" src={url} alt="" decoding="sync" draggable="false" style={{zIndex:1}} onError={onImageError}/>}
+      {stableBase&&<img key="base" className="cover cover-wall cover-base" src={stableBase} alt="" decoding="sync" draggable="false" style={{zIndex:0}} onError={()=>{if(!upgraded)setFailed(true);}}/>}
     </>;
   }
   return <img className={`cover cover-${presentation}`} src={url} alt="" decoding="async" draggable="false" onError={onImageError}/>;

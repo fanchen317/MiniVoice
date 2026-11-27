@@ -112,6 +112,11 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private var tracksByPath: [String: Track] = [:]
     private(set) var tracksRevision = 0
     @Published private(set) var browseArtworkRevision = 0
+    private var trackArtworkRevisions: [String: Int] = [:]
+    func artworkRevision(for key: String?) -> Int {
+        guard let key, !key.isEmpty else { return browseArtworkRevision }
+        return max(browseArtworkRevision, trackArtworkRevisions[key] ?? 0)
+    }
     @Published var selectedID: Track.ID?
     /// The audio currently loaded in AVAudioPlayer. This deliberately differs from
     /// selectedID while the user browses other songs during playback.
@@ -804,11 +809,13 @@ final class MusicLibrary: NSObject, ObservableObject, AVAudioPlayerDelegate {
             if let failure = outcome.1 { errorMessage = failure }
             else if let saved = outcome.0,
                     let index = tracks.firstIndex(where: { $0.id == track.id }) {
-                if let key = saved.artworkKey {
+                let previousKey = tracks[index].artworkKey
+                if let key = saved.artworkKey,
+                   track.artworkWasEdited || key != previousKey || !PreparedBrowseArtwork.shared.contains(key) {
                     let prepared = await BrowseArtworkLoader.shared.prepare([(key: key, source: track.url)])
                     guard !Task.isCancelled, tracksByID[track.id] != nil else { return }
                     PreparedBrowseArtwork.shared.merge(prepared)
-                    browseArtworkRevision += 1
+                    trackArtworkRevisions[key] = max(browseArtworkRevision, trackArtworkRevisions[key] ?? 0) + 1
                 }
                 if var light = saved.track(root: root) {
                     light.id = track.id

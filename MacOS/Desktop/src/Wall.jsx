@@ -240,8 +240,10 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID,locate
   }, [scene]);
   useEffect(() => {
     if (!locateToken||grouped||handledLocation.current===locateToken) return;
+    const targetID=locateID||selectedID;
+    if (!locateAnimated&&focus?.track.id===targetID) { handledLocation.current=locateToken; return; }
     const side=Math.max(260,Math.min(preferredSide,viewport.current.width-leadingInset-40,viewport.current.height-150));
-    const tile=nearestRenderedInstance(scene,tracks.findIndex(t=>t.id===(locateID||selectedID)),camera.current,viewport.current,cell=>reflowFrame(cell,focus?.tile,{width:side,height:Math.max(320,side)}));if(tile){handledLocation.current=locateToken;prepareFocus(tile);setFocus({tile,track:tracks[tile.index]});center(tile,locateAnimated&&!live.current.immersive);}
+    const tile=nearestRenderedInstance(scene,tracks.findIndex(t=>t.id===targetID),camera.current,viewport.current,cell=>reflowFrame(cell,focus?.tile,{width:side,height:Math.max(320,side)}));if(tile){handledLocation.current=locateToken;prepareFocus(tile);setFocus({tile,track:tracks[tile.index]});center(tile,locateAnimated&&!live.current.immersive);}
   }, [locateToken,locateID,selectedID,grouped,sequence]);
   useEffect(() => {
     const node = surface.current;

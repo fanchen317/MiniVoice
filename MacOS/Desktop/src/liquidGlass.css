@@ -57,11 +57,13 @@ html,body,#root{width:100%;height:100%;overflow:hidden}
 /* Hovering a focused player must not fade its two native readability gradients. */
 .wall-poster.focused>.poster-face>.poster-shade{opacity:1}
 
-/* Playback contour fades in smoothly once when the current card changes. */
+/* Playback contour fades in smoothly on non-focused cards; focused cards transition color without flashing off. */
 @keyframes wall-playing-enter{from{opacity:0}to{opacity:1}}
-.wall-poster.playing>.poster-face::after{animation:wall-playing-enter .24s ease-out}
-@media(prefers-reduced-motion:reduce){.wall-poster.playing>.poster-face::after{animation:none}}
-.reduce-motion .wall-poster.playing>.poster-face::after{animation:none}
+.wall-poster.playing:not(.focused)>.poster-face::after{animation:wall-playing-enter .24s ease-out}
+.wall-poster.focused>.poster-face::after{transition:border-color .22s ease,box-shadow .22s ease}
+@media(prefers-reduced-motion:reduce){.wall-poster.playing:not(.focused)>.poster-face::after{animation:none}.wall-poster.focused>.poster-face::after{transition:none}}
+.reduce-motion .wall-poster.playing:not(.focused)>.poster-face::after{animation:none}
+.reduce-motion .wall-poster.focused>.poster-face::after{transition:none}
 
 /* A single contour owns the edge. The legacy article border otherwise
    flashes underneath the transformed face when focus reflow starts. */

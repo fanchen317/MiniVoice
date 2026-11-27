@@ -127,7 +127,7 @@ final class DesktopEngine {
     private func row(_ track: Track) -> [String: Any] {
         ["id": track.id.uuidString, "path": track.url.path, "title": track.title, "artist": track.artist,
          "album": track.album, "duration": track.duration.isFinite ? track.duration : 0,
-         "artworkKey": track.artworkKey ?? "", "artworkRevision": library.browseArtworkRevision,
+         "artworkKey": track.artworkKey ?? "", "artworkRevision": library.artworkRevision(for: track.artworkKey),
          "favorite": collections.isFavorite(track.url.path)]
     }
     private func detail(_ track: Track?) -> Any {
@@ -216,7 +216,7 @@ final class DesktopEngine {
         switch action {
         case "sharedCore": return try SharedEngine.execute(payload)
         case "portableSnapshot":
-            return ["songs": library.tracks.map { item in ["id": item.id.uuidString, "title": item.title, "artist": item.artist, "album": item.album, "duration": Int(item.duration*1000), "artwork": item.artworkKey.map { "minivoice-art://cover/\($0)?v=\(library.browseArtworkRevision)" } ?? ""] as [String: Any] },
+            return ["songs": library.tracks.map { item in ["id": item.id.uuidString, "title": item.title, "artist": item.artist, "album": item.album, "duration": Int(item.duration*1000), "artwork": item.artworkKey.map { "minivoice-art://cover/\($0)?v=\(library.artworkRevision(for: $0))" } ?? ""] as [String: Any] },
                     "favorites": library.tracks.filter { collections.isFavorite($0.url.path) }.map { $0.id.uuidString },
                     "recent": library.recentPaths.compactMap { path in library.tracks.first { $0.url.path == path }?.id.uuidString },
                     "queue": library.playbackIDs.map(\.uuidString), "mode": library.playbackMode.rawValue,

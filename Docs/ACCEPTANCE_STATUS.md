@@ -2033,3 +2033,13 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
   2. **歌词行在 `y=0` 堆叠一帧再炸开**（`Shared/UI/src/components/ScrollingLyrics.jsx`、`Shared/UI/src/components/foundation.css`）：新建歌词行在首次 `place()` 前已带有 `transition: transform .48s`，导致刚加载完成时所有行从 `y=0` 重叠散开；现仅在首次落位后下一帧才标记 `data-placed="true"` 启用平滑位移动画，全平台消除首次堆叠闪烁。
   3. **点播瞬间闪现旧歌时间与误报“暂无歌词”**（`MacOS/Desktop/src/components.jsx`、`MacOS/Desktop/src/WallLyrics.jsx`）：切歌 `state.preparing` 期间进度显示 `00:00` 而非上一首残留时间；`track.lyricsLoading || state.preparing` 期间隐藏“暂无歌词”占位避免与实际歌词交替闪烁。
 - 已通过 `check-ui-standards.mjs`、`Shared/UI` 221/221 单元测试、`MacOS/Desktop` 71/75 单元测试、双端构建与 `git diff --check`。
+
+## 2026-11-27 Mac 端点击播放全屏整墙黑屏闪一下全面排查与根治
+
+- 30fps 逐帧复核 `iShot_2026-11-27_16.17.30.mp4` 发现点击播放（如《爱如潮水》《燕归巢》）加载歌词/缓存落盘瞬间存在整墙约 60 张封面同帧全黑 1 帧的严重闪烁，全面检索后定位并修复 5 处根因：
+  1. **全局 `browseArtworkRevision` 误连坐全库刷新**（`MacOS/Sources/MiniVoice/Models.swift`、`DesktopEngine.swift`）：`updateCachedTrack` 此前无论封面是否变动都无条件递增全局 `browseArtworkRevision`，导致点播加载详情/自动补齐歌词写回时全库 1000+ 首歌曲的 `minivoice-art://...?v=` 集体失效重拉。现改为仅在封面被编辑、key 变化或未预热时按单曲 `artworkKey` 递增局部版本 `trackArtworkRevisions`，其余歌曲 URL 保持不变。
+  2. **`Cover` 用 URL 做 React `key` 导致整墙 `<img>` 卸载重建黑屏**（`MacOS/Desktop/src/components.jsx`）：`cover-base`/`cover-hd` 改为固定 `key="base"`/`key="hd"`，同 `artworkKey` 版本更新先通过 `Image.decode()` 解码完成再无缝替换 `src`，彻底杜绝图片节点销毁变黑。
+  3. **首次点播取消正在进行的聚焦动画**（`MacOS/Desktop/src/Wall.jsx`）：首个播放曲目触发 `App` 初始 `locateToken`（`animated: false`）时，若当前已聚焦该曲目则直接标记已处理，不再调用 `center(tile, false)` 打断平移动画。
+  4. **音乐墙模式卸载隐藏的全屏模糊 `<Backdrop>`**（`MacOS/Desktop/src/App.jsx`）：音乐墙为不透明黑底画布，切歌时不再在底层重复解码并合成全屏模糊背景。
+  5. **聚焦卡片点播瞬间边框与遮罩跳变**（`MacOS/Desktop/src/liquidGlass.css`、`mainParity.css`）：聚焦卡片进入播放态时轮廓从白框平滑过渡为薄荷绿框（不再先灭后亮），遮罩加深改为伪元素 `opacity` 平滑淡入，移除残留 `filter: brightness(.88)` 并恢复 `.poster-shade` `inset: -4px`。
+- 已通过 `check-ui-standards.mjs`、`MacOS/Desktop` 71/75 单元测试、Electron 实页测试 `wallArtworkLifecycle.cjs` 与桌面构建；待 Mac 部署完成后实机回验。
