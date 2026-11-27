@@ -2019,3 +2019,9 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
   - `Shared/UI` 221/221 单元测试、`MacOS/Desktop` 71/75 单元测试通过；
   - Electron 实页测试 `MacOS/Desktop/test/wallArtworkLifecycle.cjs`（`PASS deferred original decode, full-surface target context, resize, sharp/blur alignment`）通过；
   - `npm --prefix MacOS/Desktop run build` 与 `git diff --check` 通过；待部署安装后 Mac 实机连续点击回验。
+
+## 2026-11-27 Mac 端点击播放瞬间闪屏修复
+
+- 移除 `MacOS/Desktop/src/mainParity.css` 中 `.wall-surface.has-playing-track` 对非播放卡片瞬间施加的 `filter: brightness(.88)`（原实现无过渡且会同帧给全墙约 59 张卡片重建 GPU 滤镜层），改为对 `.poster-shade` 平滑加深底色（`background-color: #00000063`，`transition: background-color .28s ease`）。
+- 将 `MacOS/Desktop/src/liquidGlass.css` 中播放态绿色轮廓入场动画由二次回闪的 `mv-current-enter` 改为单次柔和淡入 `wall-playing-enter`（`0 → 1`，`240ms ease-out`）。
+- 已通过 `check-ui-standards.mjs`、`MacOS/Desktop` 71/75 单元测试、桌面构建与 `git diff --check`，并部署到 `/Applications/MiniVoice.app`；实机观感待回验。
