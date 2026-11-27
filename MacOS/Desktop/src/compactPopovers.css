@@ -16,9 +16,10 @@ body:has(.app.style-wall) :is(.background-tasks-panel,.playback-mode-popover,.wa
 .background-tasks-panel header h3{font-size:13px;line-height:20px}
 .background-tasks-panel header button{font-size:12px}
 .background-tasks-panel>p{margin:0;font-size:12px;line-height:20px}
-.background-tasks-scroll{max-height:min(300px,calc(100dvh - 100px))}
+.background-tasks-scroll{max-height:min(300px,calc(100dvh - 100px));overflow-x:hidden;overflow-y:auto}
 .task-panel-actions{gap:6px}
 .task-row{padding:8px 0;gap:6px}
+.task-row>.spinner{margin:2px;flex-shrink:0}
 .task-row>.glyph{width:18px;height:18px}
 .task-row strong{font-size:12px;line-height:18px}
 .task-row p{font-size:12px;line-height:1.45;margin-top:2px}
