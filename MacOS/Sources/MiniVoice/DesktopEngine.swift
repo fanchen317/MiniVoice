@@ -12,6 +12,7 @@ final class DesktopEngine {
     private let library: MusicLibrary
     private let collections: LibraryCollections
     private let volume = SystemVolume()
+    private let mediaControls: SystemMediaControls
     private let lyricsSync = LyricsSyncCoordinator()
     private let songIndex = SongListIndex()
     private lazy var panels = DesktopPanels(library: library) { [weak self] action in
@@ -52,6 +53,7 @@ final class DesktopEngine {
         }
         library = MusicLibrary(defaults: self.defaults, scanOnLaunch: false)
         collections = LibraryCollections(defaults: self.defaults)
+        mediaControls = SystemMediaControls(library: library)
         volume.connect(library: library)
         // Electron owns desktop lyrics for production and development alike.
     }
@@ -72,6 +74,7 @@ final class DesktopEngine {
         timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                self.mediaControls.sync()
                 self.send(["event": "clock", "data": ["time": self.library.playbackTime,
                     "playing": self.library.isPlaying, "duration": self.library.playingTrack?.duration ?? 0]])
             }
@@ -89,6 +92,7 @@ final class DesktopEngine {
         if ProcessInfo.processInfo.environment["MINIVOICE_ENGINE_TEST_DOMAIN"] == nil {
             _ = panels
         }
+        mediaControls.start(registerCommands: ProcessInfo.processInfo.environment["MINIVOICE_ENGINE_TEST_DOMAIN"] == nil)
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
             .sink { [weak self] _ in Task { @MainActor in self?.scheduleState() } }.store(in: &observations)
         publishState()
@@ -151,6 +155,7 @@ final class DesktopEngine {
         return result
     }
     private func publishState() {
+        mediaControls.sync(force: true)
         let style = defaults.string(forKey: PlayerInterfaceStyle.preferenceKey) ?? "simple"
         if lastInterfaceStyle != nil, lastInterfaceStyle != style { send(["event": "style", "data": style]) }
         lastInterfaceStyle = style
