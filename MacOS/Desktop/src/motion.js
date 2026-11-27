@@ -31,12 +31,16 @@ export function browseGridMetrics(panelWidth,artist){
 // intrinsic aspect ratio and continue to fill the animated clipping rectangle.
 export function posterArtworkMotion(from,to,ratio,progressAt,samples=53,focus={x:.5,y:.5},fromFocus=focus){
   ratio=Number.isFinite(ratio)&&ratio>0?ratio:1;
-  const width=Math.max(to.width+4,(to.height+4)*ratio),height=width/ratio;
+  const bleed=2;
+  const width=Math.max(to.width+bleed*2,(to.height+bleed*2)*ratio),height=width/ratio;
   const frames=Array.from({length:samples},(_,index)=>{
     const offset=index/(samples-1),p=progressAt(offset),sx=(from.width+(to.width-from.width)*p)/to.width,sy=(from.height+(to.height-from.height)*p)/to.height;
-    const fill=Math.max((to.width*sx+4)/width,(to.height*sy+4)/height);
+    const bx=bleed/sx,by=bleed/sy;
+    const fill=Math.max((to.width*sx+bleed*2)/width,(to.height*sy+bleed*2)/height);
     const ax=fill/sx,ay=fill/sy,fx=fromFocus.x+(focus.x-fromFocus.x)*p,fy=fromFocus.y+(focus.y-fromFocus.y)*p;
-    return {offset,transform:`translate(${fx*(to.width-width*ax)}px,${fy*(to.height-height*ay)}px) scale(${ax},${ay})`};
+    const tx=-bx-fx*Math.max(0,width*ax-(to.width+bx*2));
+    const ty=-by-fy*Math.max(0,height*ay-(to.height+by*2));
+    return {offset,transform:`translate(${tx}px,${ty}px) scale(${ax},${ay})`};
   });
   return {width,height,frames};
 }

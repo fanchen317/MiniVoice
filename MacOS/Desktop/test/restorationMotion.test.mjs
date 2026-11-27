@@ -61,13 +61,17 @@ test('browse grids keep native compact rows and fit every card inside the panel'
 
 test('poster artwork fills intermediate bounds without stretching its intrinsic aspect ratio',async()=>{
   const {posterArtworkMotion}=await import('../src/motion.js');
-  for(const ratio of [.6,1,1.8])for(const [from,to] of [[{width:120,height:400},{width:480,height:480}],[{width:480,height:480},{width:1280,height:820}],[{width:1280,height:820},{width:200,height:420}]]){
-    const motion=posterArtworkMotion(from,to,ratio,p=>p);
+  for(const ratio of [.6,1,1.8])for(const [from,to] of [[{width:120,height:400},{width:480,height:480}],[{width:480,height:480},{width:1280,height:820}],[{width:1280,height:820},{width:200,height:420}]])for(const focus of [{x:0,y:0},{x:.5,y:.5},{x:1,y:1}]){
+    const motion=posterArtworkMotion(from,to,ratio,p=>p,53,focus,focus);
     for(const frame of motion.frames){
+      const [tx,ty]=frame.transform.match(/translate\(([^,]+)px,([^)]+)px\)/).slice(1).map(Number);
       const [x,y]=frame.transform.match(/scale\(([^,]+),([^\)]+)\)/).slice(1).map(Number),p=frame.offset;
-      const w=from.width+(to.width-from.width)*p,h=from.height+(to.height-from.height)*p,inkWidth=motion.width*x*w/to.width,inkHeight=motion.height*y*h/to.height;
+      const w=from.width+(to.width-from.width)*p,h=from.height+(to.height-from.height)*p,sx=w/to.width,sy=h/to.height;
+      const inkWidth=motion.width*x*sx,inkHeight=motion.height*y*sy;
       assert.ok(Math.abs(inkWidth/inkHeight-ratio)<1e-9);
-      assert.ok(inkWidth>=w-1e-9&&inkHeight>=h-1e-9);
+      assert.ok(inkWidth>=w+4-1e-9&&inkHeight>=h+4-1e-9);
+      assert.ok(tx*sx<=-2+1e-9&&ty*sy<=-2+1e-9,'left/top bleed missing');
+      assert.ok((tx+motion.width*x)*sx>=w+2-1e-9&&(ty+motion.height*y)*sy>=h+2-1e-9,'right/bottom bleed missing');
     }
   }
 });

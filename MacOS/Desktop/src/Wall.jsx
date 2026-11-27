@@ -27,7 +27,7 @@ const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, on
   useLayoutEffect(()=>{panAnchor.current=null;},[framingKey,framingMode,savedAnchor]);
   const element=useRef(),previous=useRef(),animation=useRef(),artwork=useRef(),artworkAnimation=useRef(),blurAnimation=useRef(),artworkTransition=useRef(null),settleFrame=useRef(0),latest=useRef(null),previousAnalysis=useRef(0),pendingFocusTransition=useRef(false);
   latest.current={tile,track,expanded,displayScale,framingMode,savedAnchor};
-  const [analysisRevision,setAnalysisRevision]=useState(0),[sharpSource,setSharpSource]=useState(''),[animating,setAnimating]=useState(false);
+  const [analysisRevision,setAnalysisRevision]=useState(0),[sharpSource,setSharpSource]=useState('');
   function targetViewport(){
     const state=latest.current,node=element.current,surface=node?.closest('.wall-surface');
     const target=artworkViewport({width:surface?.clientWidth||state.tile.width,height:surface?.clientHeight||state.tile.height});
@@ -40,12 +40,18 @@ const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, on
     if(focused&&surface){const viewport=artworkViewport({width:surface.clientWidth,height:surface.clientHeight});warmArtworkSubjects(artworkURL(track,false),()=>{const candidate=desktopArtworkCandidate(track,artworkURL(track,true));return analyzeArtworkSubjects(candidate?.source||artworkURL(track,true),{identity:candidate?.identity});},viewport,{fixedQuality:true}).then(()=>{if(active)setAnalysisRevision(value=>value+1);});}
     return()=>{active=false;};
   },[focused,expanded,track.id,track.artworkRevision,tile.width,tile.height,displayScale]);
-  function presentArtwork(image=artwork.current?.querySelector('img.cover'),{animateFocus=false}={}){
+  function presentArtwork(image=artwork.current?.querySelector('img.cover'),{animateFocus=false,preserveFocal=false}={}){
     if(!image?.naturalWidth||!image.naturalHeight)return;
     const source=image.currentSrc||image.src;if(source)setSharpSource(previous=>previous===source?previous:source);
     const oldTransform=animateFocus?getComputedStyle(image).transform:null;
-    const state=latest.current,focal=state.expanded&&state.framingMode!=='smart'?setArtworkAnchor(image,state.framingMode==='manual'?(panAnchor.current||state.savedAnchor||{x:.5,y:.5}):{x:.5,y:.5}):stableArtworkFocus(image,{key:artworkURL(state.track,false),viewport:targetViewport(),refreshSubjects:false,coordinateSpace:imageCoordinateSpace(image),useSubjects:true},cropDecisions.current),transition=artworkTransition.current,parent=animation.current;
-    const running=transition&&parent?.playState==='running',motion=running?posterArtworkMotion(transition.from,state.tile,image.naturalWidth/image.naturalHeight,transition.progressAt,transition.samples,focal,transition.fromFocal):posterArtworkMotion(state.tile,state.tile,image.naturalWidth/image.naturalHeight,p=>p,2,focal);
+    const state=latest.current,transition=artworkTransition.current,parent=animation.current;
+    const running=transition&&parent?.playState==='running';
+    const hasSettledFocal=preserveFocal&&!running&&!state.expanded&&image.dataset.focalX!==undefined&&image.dataset.focalY!==undefined;
+    const viewport=state.expanded?targetViewport():artworkViewport({width:state.tile.width,height:state.tile.height});
+    const focal=hasSettledFocal
+      ?{x:Number(image.dataset.focalX),y:Number(image.dataset.focalY)}
+      :state.expanded&&state.framingMode!=='smart'?setArtworkAnchor(image,state.framingMode==='manual'?(panAnchor.current||state.savedAnchor||{x:.5,y:.5}):{x:.5,y:.5}):stableArtworkFocus(image,{key:artworkURL(state.track,false),viewport,refreshSubjects:false,coordinateSpace:imageCoordinateSpace(image),useSubjects:true},cropDecisions.current);
+    const motion=running?posterArtworkMotion(transition.from,state.tile,image.naturalWidth/image.naturalHeight,transition.progressAt,transition.samples,focal,transition.fromFocal):posterArtworkMotion(state.tile,state.tile,image.naturalWidth/image.naturalHeight,p=>p,2,focal);
     artworkAnimation.current?.cancel();blurAnimation.current?.cancel();artworkAnimation.current=null;blurAnimation.current=null;
     // The browser can expose a newly decoded source before dispatching its
     // load event. Keep height intrinsic so that interim frame cannot stretch
@@ -76,25 +82,24 @@ const Poster = memo(function Poster({ tile, track, onFocus, focused, playing, on
     const node=element.current,matrix=new DOMMatrix(getComputedStyle(node).transform),image=artwork.current?.querySelector('img.cover');
     const fromFocal={x:Number(image?.dataset.focalX??.5),y:Number(image?.dataset.focalY??.5)};
     const changed=before&&Math.abs(before.x-tile.x)+Math.abs(before.y-tile.y)+Math.abs(before.width-tile.width)+Math.abs(before.height-tile.height)>=.01;
-    if(!changed&&!reduceMotion){if(!analysisChanged||!expanded)presentArtwork();return;}
+    if(!changed&&!reduceMotion){if(!analysisChanged)presentArtwork();return;}
     const from=before&&(animation.current?{x:matrix.e,y:matrix.f,width:before.width*matrix.a,height:before.height*matrix.d}:before);
     animation.current?.cancel();artworkAnimation.current?.cancel();blurAnimation.current?.cancel();animation.current=null;artworkTransition.current=null;
-    if(!before||reduceMotion){setAnimating(false);presentArtwork();return;}
+    if(!before||reduceMotion){presentArtwork();return;}
     node.style.willChange='transform';
-    setAnimating(true);
     const duration=transitioning?600:520,progressAt=p=>transitioning?focusProgress(p):reflowProgress(p*520),samples=transitioning?61:53;
     // Parent geometry and image counter-scaling share the same sampled clock.
     // Independent easing/interpolation can momentarily stretch the pixels.
     const frames=Array.from({length:samples},(_,i)=>{const offset=i/(samples-1),p=progressAt(offset);return {offset,transform:`translate3d(${from.x+(tile.x-from.x)*p}px,${from.y+(tile.y-from.y)*p}px,0) scale(${(from.width+(tile.width-from.width)*p)/tile.width},${(from.height+(tile.height-from.height)*p)/tile.height})`};});
     const current=node.animate(frames,{duration,easing:'linear'});
     animation.current=current;artworkTransition.current={from,duration,progressAt,samples,fromFocal};presentArtwork();
-    current.finished.catch(()=>{}).finally(()=>{if(animation.current===current){animation.current=null;artworkTransition.current=null;node.style.willChange='';presentArtwork();setAnimating(false);}});
+    current.finished.catch(()=>{}).finally(()=>{if(animation.current===current){animation.current=null;artworkTransition.current=null;node.style.willChange='';presentArtwork();}});
   },[tile.x,tile.y,tile.width,tile.height,reduceMotion,expanded,analysisRevision,framingMode,savedAnchor]);
   useEffect(()=>()=>{cancelAnimationFrame(settleFrame.current);animation.current?.cancel();artworkAnimation.current?.cancel();blurAnimation.current?.cancel();},[]);
   return <ArtworkModeScope as="article" ref={element} className={`wall-poster ${focused?'focused':''} ${playing?'playing':''}`}
     style={{'--artwork-cover':`url("${artworkURL(track,expanded&&focused)}")`,'--caption-inset':`${Math.min(14,Math.max(8,tile.width*.06))}px`,'--poster-title':`${Math.min(30,Math.max(18,tile.width*.105))}px`,'--poster-subtitle':`${Math.min(13,Math.max(10,tile.width*.045))}px`,width:tile.width,height:tile.height,transform:`translate3d(${tile.x}px,${tile.y}px,0)`}}
     inert={!visible} onFocusCapture={event=>{const rect=event.target.getBoundingClientRect();if(rect.right<0||rect.left>innerWidth||rect.bottom<0||rect.top>innerHeight)onReveal();}} onClick={event=>onFocus(tile,track,event)} onContextMenu={event=>grouped?onGroupMenu(event):onMenu(event,track)} tabIndex={visible?0:-1} data-track-id={track.id} role="button" aria-label={grouped?`打开 ${track.title}`:`聚焦 ${track.title}，双击播放`} onKeyDown={event=>{if(event.key==='Enter'&&event.target===event.currentTarget)onFocus(tile,track,event);}}>
-    <div className="poster-face"><div className="poster-artwork" ref={artwork} onLoadCapture={event=>{const image=event.target;if(image.matches('.mv-artwork-blur')){copyArtworkPresentation(artwork.current?.querySelector('img.cover'),image);return;}if(image.matches('img.cover'))presentArtwork(image);}}>{!preparedImage&&<Cover track={track} detail={focused} presentation="wall" hold={transitioning||animating} source={focused?wallOriginalArtwork(track,artworkURL(track,true)):undefined} fallbackSource={focused?artworkURL(track,false):undefined}/>}{expanded&&focused&&sharpSource&&<ArtworkBlur src={sharpSource}/>}</div><div className="poster-shade"/>{!focused&&<><span className="poster-number">{String(tile.index+1).padStart(3,'0')}</span><div className="poster-caption"><h2>{track.title}</h2><p>{track.artist}</p></div></>}
+    <div className="poster-face"><div className="poster-artwork" ref={artwork} onLoadCapture={event=>{const image=event.target;if(image.matches('.mv-artwork-blur')){copyArtworkPresentation(artwork.current?.querySelector('img.cover'),image);return;}if(image.matches('img.cover'))presentArtwork(image,{preserveFocal:true});}}>{!preparedImage&&<Cover track={track} detail={focused} presentation="wall" hold={transitioning} source={focused?wallOriginalArtwork(track,artworkURL(track,true)):undefined} fallbackSource={focused?artworkURL(track,false):undefined}/>}{expanded&&focused&&sharpSource&&<ArtworkBlur src={sharpSource}/>}</div><div className="poster-shade"/>{!focused&&<><span className="poster-number">{String(tile.index+1).padStart(3,'0')}</span><div className="poster-caption"><h2>{track.title}</h2><p>{track.artist}</p></div></>}
     {focused&&<WallCardPlayer size={tile} track={track} playing={playing} onPlay={onPlay} onExpand={onExpand} expanded={expanded}/>}</div>
   </ArtworkModeScope>;
 });
@@ -120,7 +125,7 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID,locate
       if(borderScale.current!==c.scale){borderScale.current=c.scale;plane.current.style.setProperty('--wall-camera-scale',String(c.scale));}
     }
     const mounted = mountedAt.current;
-    if (force || Math.abs(c.x-mounted.x) > 180 || Math.abs(c.y-mounted.y) > 180 || c.scale !== mounted.scale) {
+    if (force || Math.abs(c.x-mounted.x) > 260 || Math.abs(c.y-mounted.y) > 260 || c.scale !== mounted.scale) {
       mountedAt.current = { ...c }; setTiles(visibleTiles(live.current.scene, c, viewport.current));
     }
   }
@@ -202,10 +207,10 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID,locate
       const multiplier = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.current.height : 1;
       const dx = (event.shiftKey && !event.deltaX ? event.deltaY : event.deltaX)*multiplier;
       const dy = (event.shiftKey && !event.deltaX ? 0 : event.deltaY)*multiplier;
-      const source = wheelSource.current;
-      if (event.timeStamp-source.time > 120) source.precise = false;
+      const source = wheelSource.current, dt = event.timeStamp - source.time;
+      if (dt > 120) source.precise = false;
       source.time = event.timeStamp;
-      source.precise ||= !event.deltaMode && ((event.deltaX && event.deltaY) || Math.max(Math.abs(dx),Math.abs(dy)) < 50);
+      source.precise ||= !event.deltaMode && ((event.deltaX && event.deltaY) || (dt < 28 && Math.max(Math.abs(dx),Math.abs(dy)) < 40));
       if (source.precise || live.current.reduceMotion) { stop(); c.x -= dx; c.y -= dy; apply(); return; }
       if (gesture.current !== 'wheel') { stop(); gesture.current = 'wheel'; }
       pendingWheel.current.x -= dx; pendingWheel.current.y -= dy;
@@ -224,34 +229,39 @@ export function Wall({ tracks, playingID, onMenu, locateToken, selectedID,locate
   }, []);
   function down(event) {
     if(immersive||event.button!==0||event.target.closest('input,[role=slider],.wall-tools-popover')||(event.target.closest('button')&&!event.target.closest('.wall-card-content')))return;
-    stop(); drag.current = { pointer:event.pointerId, x:event.clientX, y:event.clientY, lastX:event.clientX, lastY:event.clientY, time:event.timeStamp, vx:0,vy:0, start:{ ...camera.current }, moved:false };
+    stop(); drag.current = { pointer:event.pointerId, x:event.clientX, y:event.clientY, start:{ ...camera.current }, moved:false, samples:[{ x:event.clientX, y:event.clientY, t:event.timeStamp }] };
   }
   function move(event) {
     const d = drag.current; if (!d) return;
-    const dx = event.clientX-d.x,dy = event.clientY-d.y,dt = event.timeStamp-d.time;
+    const dx = event.clientX-d.x,dy = event.clientY-d.y;
     if (!d.moved && Math.hypot(dx,dy)>6) { d.moved = true;clickSequence.current.reset(); surface.current.setPointerCapture(event.pointerId); }
-    const stepX = event.clientX-d.lastX, stepY = event.clientY-d.lastY;
-    if (dt>0 && Math.hypot(stepX,stepY)>.5) {
-      const ivx = stepX/dt*1000, ivy = stepY/dt*1000;
-      const blend = dt < 60 && (d.vx || d.vy) ? .65 : 1;
-      d.vx = d.vx*(1-blend) + ivx*blend; d.vy = d.vy*(1-blend) + ivy*blend;
-      d.lastX=event.clientX; d.lastY=event.clientY; d.time=event.timeStamp;
-    }
+    const now = event.timeStamp;
+    d.samples.push({ x:event.clientX, y:event.clientY, t:now });
+    while (d.samples.length > 2 && now - d.samples[0].t > 90) d.samples.shift();
     if (d.moved) { camera.current.x=d.start.x+dx; camera.current.y=d.start.y+dy; apply(); }
   }
   function up(event) {
     const d = drag.current; drag.current=null; if (!d) return;
     if (surface.current.hasPointerCapture(event.pointerId)) surface.current.releasePointerCapture(event.pointerId);
     suppressClick.current = d.moved;
-    if (!d.moved || live.current.reduceMotion || event.timeStamp-d.time>120) return;
-    const speed=Math.hypot(d.vx,d.vy); if(speed<40)return;
-    const start={ ...camera.current }, began=performance.now();
-    function tick(now) {
-      const distance=releaseDistance(speed,now-began);
-      camera.current.x=start.x+distance*d.vx/speed; camera.current.y=start.y+distance*d.vy/speed; apply();
-      if(Math.min(speed,4000)*.3-distance>.5)animation.current=requestAnimationFrame(tick); else animation.current=0;
+    if (!d.moved || live.current.reduceMotion) return;
+    const now = event.timeStamp, recent = d.samples.filter(sample => now - sample.t <= 110);
+    if (recent.length < 2) return;
+    const first = recent[0], last = recent[recent.length - 1];
+    if (now - last.t > 90) return;
+    const span = Math.max(12, last.t - first.t);
+    const vx = (last.x - first.x) / span * 1000, vy = (last.y - first.y) / span * 1000;
+    const rawSpeed = Math.hypot(vx, vy); if (rawSpeed < 40) return;
+    const speed = Math.min(4500, rawSpeed), tau = 380, target = speed * tau / 1000;
+    const ux = vx / rawSpeed, uy = vy / rawSpeed;
+    const start = { ...camera.current }, began = performance.now();
+    function tick(t) {
+      const remaining = target * Math.exp(-Math.max(0, t - began) / tau);
+      const distance = remaining < .5 ? target : target - remaining;
+      camera.current.x = start.x + distance * ux; camera.current.y = start.y + distance * uy; apply();
+      if (remaining >= .5) animation.current = requestAnimationFrame(tick); else animation.current = 0;
     }
-    animation.current=requestAnimationFrame(tick);
+    animation.current = requestAnimationFrame(tick);
   }
   function zoomTo(requested,animate=true){
     stop();const c=camera.current,target=Math.min(1.2,Math.max(.6,requested)),start=c.scale,anchor={x:(viewport.current.width+inset.current)/2,y:viewport.current.height/2},world={x:(anchor.x-c.x)/start,y:(anchor.y-c.y)/start},began=performance.now();
