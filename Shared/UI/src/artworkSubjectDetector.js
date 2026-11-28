@@ -9,8 +9,10 @@ const enqueue=createLatestFirstQueue();
 const worker=createArtworkWorkerClient(()=>new Worker(new URL('./artworkSubjectWorker.js',import.meta.url),{type:'module'}));
 function readPixels(source){
  return new Promise((resolve,reject)=>{
-  const image=new Image();image.crossOrigin='anonymous';image.onload=()=>{
-   try{const scale=Math.min(1,1024/Math.max(image.naturalWidth,image.naturalHeight)),width=Math.max(1,Math.round(image.naturalWidth*scale)),height=Math.max(1,Math.round(image.naturalHeight*scale));
+  const image=new Image();image.crossOrigin='anonymous';image.onload=async()=>{
+   try{
+    if(typeof image.decode==='function')await image.decode().catch(()=>{});
+    const scale=Math.min(1,1024/Math.max(image.naturalWidth,image.naturalHeight)),width=Math.max(1,Math.round(image.naturalWidth*scale)),height=Math.max(1,Math.round(image.naturalHeight*scale));
     const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;const context=canvas.getContext('2d',{willReadFrequently:true});
     if(!context)throw Error('Artwork canvas unavailable');context.drawImage(image,0,0,width,height);resolve({pixels:context.getImageData(0,0,width,height).data,width,height});
    }catch(error){reject(error);}

@@ -2044,10 +2044,13 @@ iOS 的 Wall 现使用 nativeScrolling 配置：单个 WKWebView 内的 overflow
   5. **聚焦卡片点播瞬间边框与遮罩跳变**（`MacOS/Desktop/src/liquidGlass.css`、`mainParity.css`）：聚焦卡片进入播放态时轮廓从白框平滑过渡为薄荷绿框（不再先灭后亮），遮罩加深改为伪元素 `opacity` 平滑淡入，移除残留 `filter: brightness(.88)` 并恢复 `.poster-shade` `inset: -4px`。
 - 已通过 `check-ui-standards.mjs`、`MacOS/Desktop` 71/75 单元测试、Electron 实页测试 `wallArtworkLifecycle.cjs` 与桌面构建；待 Mac 部署完成后实机回验。
 
-## 2026-11-27 Android / 移动端音乐墙滑动流畅度与自然衰减修复
+## 2026-11-27 Android / iOS 移动端音乐墙与列表滑动全链路流畅度与自然衰减修复
 
-- 排查定位 Android 音乐墙拖动/惯性卡顿与自然衰减偏短的三处根因并在 [Wall.jsx](file:///Users/fanchen/Documents/Codex/MiniVoice/Shared/UI/src/Wall.jsx) 修复：
-  1. **每帧宽高抖动导致全屏卡片重排重绘**：`2427d9b` 对非 `nativeScrolling` 路径启用 `rasterRect` 的 `round(x+w) - round(x)` 计算后，拖动/惯性每移动亚像素都会使所有可见卡片的 `width`/`height` 在 `±1/dpr` 间抖动，每帧触发数十张卡片重排与 GPU 纹理重光栅化。现改为独立对齐 `round(width*d)/d` 与 `round(height*d)/d`（拖动期间宽高恒定不变，仅走 `translate3d` 合成），且初始挂载样式同步使用 `rasterRect` + `translate3d`。
-  2. **触控抬手速度采样易被末帧抖动拉低、衰减曲线过短且初速不连续**：将单事件 EMA 速度采样改为 `100ms` 滑动采样窗口（忽略抬手前微小抖动），惯性衰减由 `tau=280ms / target=speed*0.30` 改为速度连续的自然指数衰减 `tau=380ms / target=speed*0.38`（上限 `4800px/s`）。
-  3. **降低快速滑动中途 React 重挂频率**：`WALL_OVERSCAN` 提至 `420`，相机重挂阈值由 `140px` 提至 `200px`（保持 `220px` 预挂余量不变，减少约 30% 滑行中途重渲染）。
-- 自动化验证通过后待用户 Android 真机实测手感。
+- 深度对比历史提交与主线程开销，定位并消除导致 iOS / Android 双端滑动不如之前顺畅的 6 处根因：
+  1. **恢复双端亚像素级连续平移（消除减速收尾阶梯顿挫）**（[Wall.jsx](file:///Users/fanchen/Documents/Codex/MiniVoice/Shared/UI/src/Wall.jsx)）：此前 `2427d9b` 对投影路径（`nativeScrolling=false`）将 `x/y` 强制做物理像素四舍五入，破坏了移动端 GPU 双线性亚像素插值，导致慢滑与自然衰减尾部出现逐像素阶梯跳动；现恢复 `x/y` 浮点连续平移，仅将 `width/height` 独立对齐物理像素以彻底杜绝每帧宽高抖动重排。
+  2. **消除跟手与惯性每帧延迟 1 个 VSync 的嵌套 RAF**（[Wall.jsx](file:///Users/fanchen/Documents/Codex/MiniVoice/Shared/UI/src/Wall.jsx)）：原 `pointermove` 与惯性/聚焦/展开的 `requestAnimationFrame` 循环内部调用 `schedulePaint()` 会再排入下一帧 RAF；现改为当前帧直通 `flushPaint()`，零额外帧延迟。
+  3. **抽离 `memo(WallPoster)` 并推迟高速滑行期后台预取**（[Wall.jsx](file:///Users/fanchen/Documents/Codex/MiniVoice/Shared/UI/src/Wall.jsx)）：相机跨越 `200px` 补挂边缘新卡时不再重建并协调已挂载的 ~55 张卡片 VDOM，移除常态每卡每帧 `--wall-camera-scale` 读写，并将后台预取 `warmWallArtwork` 推迟至松手停稳或停顿间隙执行。
+  4. **移除 iOS 全墙 60 张普通卡片的离屏遮罩缓冲**（[wall.css](file:///Users/fanchen/Documents/Codex/MiniVoice/Shared/UI/src/wall.css)）：将 `-webkit-mask-image` 限定在唯一的 `.mv-wall-focused>.mv-wall-press-surface`，释放 WKWebView 约 60 个 `CALayer` 离屏遮罩通道。
+  5. **阻断滑动/惯性期间后台识图 `1024×1024` 主线程 `getImageData` 抢占**（[useArtworkIndexing.js](file:///Users/fanchen/Documents/Codex/MiniVoice/Shared/UI/src/useArtworkIndexing.js)、[artworkSubjectDetector.js](file:///Users/fanchen/Documents/Codex/MiniVoice/Shared/UI/src/artworkSubjectDetector.js)）：`useArtworkIndexing` 原仅监听 `touchstart/pointerdown` 未监听持续移动与惯性，滑行超过 2 秒即在主线程解码并同步读取 4MB 像素阻塞帧率；现补充节流的 `pointermove/touchmove/scroll/minivoice-activity` 活动续期（空闲阈值提至 `3.5s`），且 `readPixels` 先异步 `image.decode()`。
+  6. **原生级甩动速度窗口与 `UIScrollView` 同阶阻尼（`tau=480ms`）+ 列表按行节流渲染**（[Wall.jsx](file:///Users/fanchen/Documents/Codex/MiniVoice/Shared/UI/src/Wall.jsx)、[PortablePlayer.jsx](file:///Users/fanchen/Documents/Codex/MiniVoice/Shared/UI/src/PortablePlayer.jsx)）：采用 `38–85ms` 抬手末段加速窗口（剔除 `<20ms` 抬手微停顿）、`tau=480ms`（对齐 iOS `0.998/ms` 自然衰减率）滑行至 `<0.1px` 无感停稳；同时 `SongList` 改为跨 `0.75` 行高再触发 React `setTop`，消除列表逐像素重渲染。
+- 已通过组件边界检查、Shared/UI 全部单测与共享前端构建；待 Android / iOS 真机回验滑动手感。

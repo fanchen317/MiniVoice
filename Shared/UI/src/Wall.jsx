@@ -12,7 +12,7 @@ import {waitForArtworkPreparation} from './artworkHandoff.js';
 import {wallArtworkPlan,anticipatedWallCamera} from './wallArtworkPlan.js';
 import {useActivationFeedback,emitActivationFeedback} from './components/FeedbackContext.jsx';
 import ActionButton from './components/ActionButton.jsx';
-import React,{forwardRef,useEffect,useLayoutEffect,useImperativeHandle,useMemo,useRef,useState} from 'react';
+import React,{forwardRef,memo,useCallback,useEffect,useLayoutEffect,useImperativeHandle,useMemo,useRef,useState} from 'react';
 import Artwork from './Artwork.jsx';
 import {createScene,visibleReflowTiles,nearestInstance,nearestRenderedInstance,playingInstance,reflowFrame,focusProgress,releaseDistance} from './wallGeometry.js';
 import {mobileWallViewport,mixRect} from './wallLayout.js';
@@ -70,6 +70,12 @@ function FocusArtwork({src,preview,shouldDefer,smoothUpgrade=false,target,expand
   else if(source===preview&&node.isConnected&&!expanded){setShown(previous=>previous||source);}
  }}/>)}{expanded&&(!missing||shown)&&<ArtworkBlur className="mv-wall-focused-art" src={shown||preview||src} onLoad={event=>{const source=event.currentTarget.getAttribute('src');if(source===shown&&(source===src||source===preview))latestTarget.current.plan(event.currentTarget,source);}}/>} </div>;
 }
+const WallPoster=memo(function WallPoster({cell,song,active,underlay,settled,nativeScrolling,registerNode,actions}){
+ const cellRef=useRef(cell);cellRef.current=cell;
+ const bindRef=useCallback(node=>registerNode(cellRef.current,node),[registerNode]);
+ const art=song.artworkWall||song.artwork;
+ return <ActionButton type="button" feedback="none" haptic={false} ref={bindRef} className={`mv-wall-card ${active?'active':''} ${underlay?'is-focus-underlay':''} ${settled?'is-focus-settled':''}`} aria-hidden={underlay||undefined} data-wall-id={song.id} data-wall-cell={cell.id} style={{left:0,top:0}} onContextMenu={event=>actions.current.context(event,song)} onClick={event=>{if(nativeScrolling||event.detail===0)actions.current.activate(cell,event);}}><div className="mv-wall-press-surface"><span className="mv-wall-press-outline" aria-hidden="true"/>{art?<Artwork src={art} draggable={false}/>:<span className="mv-wall-placeholder">♫</span>}<div className="mv-wall-caption"><strong>{song.title}</strong><small>{song.artist||`${song.count} 首歌曲`}</small></div></div></ActionButton>;
+});
 /** A full-surface wall. Camera, focus reflow and expansion have distinct ownership. */
 export default forwardRef(function Wall({animateViewportFocus=false,nativeScrolling=false,items,current,playingId=current,playing=false,page,onCamera,onScale,onSelect,onDoubleSelect,onContext,onAnalyzeArtwork,artworkAnalysisFixedQuality=false,artworkFraming,onArtworkAnchorCommit,focused,expanded=false,blocked=false,recessed=false,focusContent,location=0,locationId=null,loading=false,grouped=false},api){
  const activateFeedback=useActivationFeedback();
@@ -84,7 +90,8 @@ export default forwardRef(function Wall({animateViewportFocus=false,nativeScroll
  const live=useRef(cameraSnapshot),latest=useRef({}),motion=useRef(0),focusMotion=useRef(0),focusCamera=useRef(false),expandMotion=useRef(0),saveTimer=useRef(null),hold=useRef(null),pointers=useRef(new Map()),gesture=useRef(null),lastTap=useRef(null),opened=useRef(0),transition=useRef(null),focusSide=useRef(320),restored=useRef(false),handledLocation=useRef(null),oldViewport=useRef(null);
  const plane=useRef(null),focusedNode=useRef(null),posterNodes=useRef(new Map()),paintFrame=useRef(0),mountedCamera=useRef(cameraSnapshot),progressValue=useRef(1),expansionValue=useRef(expanded?1:0),renderedCells=useRef([]),paintedScale=useRef(null),pendingMount=useRef(false),suppressedClick=useRef(null);
  const artworkHandoff=useRef(0),expansionPreparation=useRef(0);
- const artworkPreloader=useRef(null),artworkWindow=useRef(0),previousArtworkCamera=useRef(null);
+ const artworkPreloader=useRef(null),artworkWindow=useRef(0),previousArtworkCamera=useRef(null),warmTimer=useRef(0),lastActivityAt=useRef(0);
+ function pingActivity(){const now=performance.now();if(now-lastActivityAt.current>=240){lastActivityAt.current=now;window.dispatchEvent(new Event('minivoice-activity'));}}
  function getArtworkPreloader(){return artworkPreloader.current||(artworkPreloader.current=createArtworkPreloader());}
  useEffect(()=>{const visibility=()=>{if(document.hidden){artworkWindow.current++;artworkPreloader.current?.dispose();artworkPreloader.current=null;}else warmWallArtwork();};document.addEventListener('visibilitychange',visibility);return()=>{document.removeEventListener('visibilitychange',visibility);artworkWindow.current++;artworkPreloader.current?.dispose();artworkPreloader.current=null;};},[]);
  const depth=useRef(1),depthMotion=useRef(0),paintedPosters=useRef(null),paintedFocus=useRef(null);
@@ -95,7 +102,12 @@ export default forwardRef(function Wall({animateViewportFocus=false,nativeScroll
  function displayCamera(){const c=live.current,v=latest.current.viewport||viewport,s=depth.current;return {scale:c.scale*s,x:v.width/2+(c.x-v.width/2)*s,y:v.height/2+(c.y-v.height/2)*s};}
  const camera=displayCamera();
  latest.current={playingId,blocked,items,scene,viewport,focus,progress:progressValue.current,focused,expanded,expansion:expansionValue.current,current,onCamera,onScale,onSelect,onDoubleSelect,onContext,onAnalyzeArtwork};
- function rasterRect(r){const d=devicePixelRatio||1;return {x:Math.round(r.x*d)/d,y:Math.round(r.y*d)/d,width:Math.max(1/d,Math.round(r.width*d)/d),height:Math.max(1/d,Math.round(r.height*d)/d)};}
+ function rasterRect(r){
+  const d=devicePixelRatio||1;
+  if(!nativeScrolling)return {x:r.x,y:r.y,width:Math.max(1/d,Math.round(r.width*d)/d),height:Math.max(1/d,Math.round(r.height*d)/d)};
+  const x=Math.round(r.x*d)/d,y=Math.round(r.y*d)/d;
+  return {x,y,width:Math.max(1/d,Math.round((r.x+r.width)*d)/d-x),height:Math.max(1/d,Math.round((r.y+r.height)*d)/d-y)};
+ }
  function paint(){
   if(!view.current||!plane.current)return;
   const state=latest.current,c=displayCamera();
@@ -123,10 +135,12 @@ export default forwardRef(function Wall({animateViewportFocus=false,nativeScroll
   if((!state.expanded||state.expansion===0)&&(!gpuPan||paintedPosters.current!==base)){for(const cell of renderedCells.current){const node=posterNodes.current.get(cell.id);if(!node)continue;const r=rasterRect(projectWallFrame(frameFor(cell),projection,planeGuard));let target=nativePinching.current&&nativePinchBoxes.current.get(cell.id)|| (nativeScrolling&&state.progress<1?projectWallFrame(frameFor(cell,true),projection,planeGuard):r);
    if(nativeScrolling&&depth.current!==1&&state.progress>=1)target={width:r.width/depth.current,height:r.height/depth.current};
 
-   const transform=nativeScrolling&&(nativePinching.current||state.progress<1||depth.current!==1)?`translate3d(${r.x}px,${r.y}px,0) scale(${r.width/target.width},${r.height/target.height})`:`translate3d(${r.x}px,${r.y}px,0)`;
+   const scaled=nativeScrolling&&(nativePinching.current||state.progress<1||depth.current!==1);
+   const transform=scaled?`translate3d(${r.x}px,${r.y}px,0) scale(${r.width/target.width},${r.height/target.height})`:`translate3d(${r.x}px,${r.y}px,0)`;
    // Frozen pinch boxes already scale their descendants through transform.
    // Compensate the inherited font scale so text is scaled exactly once.
-   writeVariable(node,'--wall-camera-scale',String(c.scale*target.width/r.width));
+   if(scaled)writeVariable(node,'--wall-camera-scale',String(c.scale*target.width/r.width));
+   else if(node.style.getPropertyValue('--wall-camera-scale'))node.style.removeProperty('--wall-camera-scale');
    writeStyle(node,'transformOrigin','0 0');writeStyle(node,'willChange','auto');if(node.style.transform!==transform)node.style.transform=transform;const width=`${target.width}px`,height=`${target.height}px`;if(node.style.width!==width)node.style.width=width;if(node.style.height!==height)node.style.height=height;}paintedPosters.current=gpuPan?base:null;}
   const cell=state.focus||(state.progress<1?transition.current?.previous:null),node=focusedNode.current;
   if(gpuPan&&paintedFocus.current?.base===base&&paintedFocus.current?.cell===cell&&paintedFocus.current?.node===node)return;
@@ -139,13 +153,13 @@ export default forwardRef(function Wall({animateViewportFocus=false,nativeScroll
  function schedulePaint(){if(paintFrame.current)return;paintFrame.current=requestAnimationFrame(flushPaint);}
 
  useLayoutEffect(()=>{paintedPosters.current=null;paintedFocus.current=null;paint();},[cameraSnapshot,viewport,focus,progress,expansion,items,playingId]);
- useEffect(()=>()=>cancelAnimationFrame(paintFrame.current),[]);
+ useEffect(()=>()=>{clearTimeout(warmTimer.current);cancelAnimationFrame(paintFrame.current);},[]);
 
  function stop(){expansionPreparation.current++;focusCamera.current=false;cancelAnimationFrame(motion.current);motion.current=0;clearTimeout(saveTimer.current);}
 
  function save(commit=true){if(commit!==false)update({...live.current},true);const state=latest.current,cell=state.focus;state.onCamera?.({...live.current,focus:cell?{songId:state.items[cell.index]?.id,column:cell.column,row:cell.row}:null});}
  function scheduleSave(){clearTimeout(saveTimer.current);saveTimer.current=setTimeout(save,180);}
- function update(next,force=false,fromScroll=false){if(nativeScrolling&&!fromScroll&&(next.x!==live.current.x||next.y!==live.current.y||next.scale!==live.current.scale)){if(nativePinching.current&&view.current){nativeOrigin.current={x:next.x+view.current.scrollLeft,y:next.y+view.current.scrollTop,scale:next.scale};nativeWrite.current=false;}else nativeWrite.current=true;}live.current=next;schedulePaint();const previous=mountedCamera.current;if(force||Math.abs(next.x-previous.x)>200||Math.abs(next.y-previous.y)>200||Math.abs(next.scale-previous.scale)>(nativeScrolling?.001:.06)){if(force){pendingMount.current=false;mountedCamera.current={...next};setCamera({...next});latest.current.onScale?.(next.scale);}else pendingMount.current=true;}}
+ function update(next,force=false,fromScroll=false,immediate=false){if(nativeScrolling&&!fromScroll&&(next.x!==live.current.x||next.y!==live.current.y||next.scale!==live.current.scale)){if(nativePinching.current&&view.current){nativeOrigin.current={x:next.x+view.current.scrollLeft,y:next.y+view.current.scrollTop,scale:next.scale};nativeWrite.current=false;}else nativeWrite.current=true;}live.current=next;const previous=mountedCamera.current;if(force||Math.abs(next.x-previous.x)>200||Math.abs(next.y-previous.y)>200||Math.abs(next.scale-previous.scale)>(nativeScrolling?.001:.06)){if(force){pendingMount.current=false;mountedCamera.current={...next};setCamera({...next});latest.current.onScale?.(next.scale);if(immediate){cancelAnimationFrame(paintFrame.current);paintFrame.current=0;}else schedulePaint();return;}pendingMount.current=true;}if(immediate)flushPaint();else schedulePaint();}
  function frameFor(cell,final=false){const state=latest.current,tween=transition.current,side=Math.max(Math.min(focusSide.current,state.viewport.side/Math.max(1,live.current.scale)),Math.min(120,state.viewport.side)/live.current.scale),target=targetFrame(cell,state.focus,side,tween);if(final||!tween||state.progress>=1)return target;const from=tween.frames.get(cell.id)||reflowFrame(cell,tween.layout?.focus,tween.layout?.size||{width:side,height:side});return mixRect(from,target,state.progress);}
  // Reflow targets stay fixed during a click transition; only interpolation changes.
  // Invalidate on focus/size changes so interrupted gestures use the latest geometry.
@@ -165,17 +179,21 @@ export default forwardRef(function Wall({animateViewportFocus=false,nativeScroll
   // queued work; foreground focus/expansion can jump ahead of this queue.
   getArtworkPreloader().prefetch(sources,()=>revision===artworkWindow.current&&Boolean(view.current)&&!document.hidden);
  }
- useEffect(()=>{warmWallArtwork();},[cameraSnapshot,viewport,items,focus,expanded]);
+ useEffect(()=>{
+  clearTimeout(warmTimer.current);
+  if(pointers.current.size>0||motion.current!==0||focusMotion.current!==0){warmTimer.current=setTimeout(warmWallArtwork,140);return()=>clearTimeout(warmTimer.current);}
+  warmWallArtwork();
+ },[cameraSnapshot,viewport,items,focus,expanded]);
  function transitionCells(){return [...new Map([...renderedCells.current,...visibleScene(WALL_OVERSCAN)].map(cell=>[cell.id,cell])).values()];}
  function captureFrames(){const state=latest.current,cells=transitionCells();if(state.focus&&!cells.some(cell=>cell.id===state.focus.id))cells.push(state.focus);return new Map(cells.map(cell=>[cell.id,frameFor(cell)]));}
  function focusCell(cell,{animate=true,move=true}={}){
   if(!cell)return;stop();cancelAnimationFrame(focusMotion.current);focusCamera.current=move;const state=latest.current,old=live.current,cells=transitionCells(),frames=captureFrames();transition.current={cells,frames,previous:state.focus,layout:{focus:state.focus,size:focusSize()}};focusSide.current=state.viewport.side;setFocus(cell);latest.current.focus=cell;progressValue.current=0;setProgress(0);latest.current.progress=0;
   const target={...old,x:state.viewport.x-(cell.x+cell.width/2)*old.scale,y:state.viewport.y-(cell.y+cell.height/2)*old.scale},start=performance.now(),duration=animate&&!reduced()?520:0;
-  const tick=now=>{const t=duration&&!reduced()?Math.min(1,(now-start)/duration):1,e=focusProgress(t);latest.current.progress=e;progressValue.current=e;schedulePaint();if(move&&focusCamera.current)update({...old,x:old.x+(target.x-old.x)*e,y:old.y+(target.y-old.y)*e});if(nativeScrolling)flushPaint();if(t<1)focusMotion.current=requestAnimationFrame(tick);else{focusMotion.current=0;focusCamera.current=false;progressValue.current=1;setProgress(1);update({...live.current},true);transition.current=null;save();}};
+  const tick=now=>{const t=duration&&!reduced()?Math.min(1,(now-start)/duration):1,e=focusProgress(t);latest.current.progress=e;progressValue.current=e;if(move&&focusCamera.current)update({...old,x:old.x+(target.x-old.x)*e,y:old.y+(target.y-old.y)*e},false,false,true);else flushPaint();if(t<1)focusMotion.current=requestAnimationFrame(tick);else{focusMotion.current=0;focusCamera.current=false;progressValue.current=1;setProgress(1);update({...live.current},true);transition.current=null;save();}};
   tick(start);
  }
  useEffect(()=>{const song=focus&&items[focus.index],target=artworkViewport({width:viewport.width,height:viewport.height});if(song&&onAnalyzeArtwork&&viewport.width>1&&viewport.height>1){warmArtworkSubjects(song.artworkWall||song.artwork,context=>latest.current.onAnalyzeArtwork(song.id,context),target,{fixedQuality:artworkAnalysisFixedQuality});if(expanded&&!grouped&&items.length>1){const next=items[(focus.index+1)%items.length];if(next&&next.id!==song.id)warmArtworkSubjects(next.artworkWall||next.artwork,context=>latest.current.onAnalyzeArtwork(next.id,context),target,{fixedQuality:artworkAnalysisFixedQuality});}}},[focus?.id,expanded,grouped,items,viewport.width,viewport.height,artworkAnalysisFixedQuality]);
- function clearFocus(){artworkHandoff.current++;const state=latest.current;if(!state.focus)return;stop();cancelAnimationFrame(focusMotion.current);transition.current={cells:transitionCells(),frames:captureFrames(),previous:state.focus,layout:{focus:state.focus,size:focusSize()}};setFocus(null);latest.current.focus=null;progressValue.current=0;setProgress(0);latest.current.progress=0;const start=performance.now();const tick=now=>{const t=reduced()?1:Math.min(1,(now-start)/300),e=focusProgress(t);latest.current.progress=e;progressValue.current=e;schedulePaint();if(t<1)focusMotion.current=requestAnimationFrame(tick);else{focusMotion.current=0;focusCamera.current=false;progressValue.current=1;setProgress(1);update({...live.current},true);transition.current=null;save();}};tick(start);}
+ function clearFocus(){artworkHandoff.current++;const state=latest.current;if(!state.focus)return;stop();cancelAnimationFrame(focusMotion.current);transition.current={cells:transitionCells(),frames:captureFrames(),previous:state.focus,layout:{focus:state.focus,size:focusSize()}};setFocus(null);latest.current.focus=null;progressValue.current=0;setProgress(0);latest.current.progress=0;const start=performance.now();const tick=now=>{const t=reduced()?1:Math.min(1,(now-start)/300),e=focusProgress(t);latest.current.progress=e;progressValue.current=e;flushPaint();if(t<1)focusMotion.current=requestAnimationFrame(tick);else{focusMotion.current=0;focusCamera.current=false;progressValue.current=1;setProgress(1);update({...live.current},true);transition.current=null;save();}};tick(start);}
  function zoomAt(value,x,y){artworkHandoff.current++;stop();const old=live.current,scale=clampZoom(value);latest.current.onScale?.(scale);update({scale,x:x-(x-old.x)*scale/old.scale,y:y-(y-old.y)*scale/old.scale});scheduleSave();}
  function revealCurrent(animate=true,allowRestore=false,prepared=false){const state=latest.current,index=state.items.findIndex(item=>item.id===state.current);if(index<0||!state.viewport.width)return false;let preserve=false,cell=state.focus&&state.items[state.focus.index]?.id===state.current?state.focus:null;
   if(cell){const rect=frameFor(cell),camera=live.current;if(rect.x*camera.scale+camera.x>state.viewport.width||(rect.x+rect.width)*camera.scale+camera.x<0||rect.y*camera.scale+camera.y>state.viewport.height||(rect.y+rect.height)*camera.scale+camera.y<0)cell=null;}
@@ -235,7 +253,7 @@ export default forwardRef(function Wall({animateViewportFocus=false,nativeScroll
  // Consume a request only after its song and viewport are ready. Playback
  // navigation can deliver the token before focus/items in a later render.
  useEffect(()=>{if(location&&focused&&!expanded&&expansion===0&&(!locationId||current===locationId)&&handledLocation.current!==location&&revealCurrent(true))handledLocation.current=location;},[location,locationId,focused,expanded,expansion,current,items,viewport.width,viewport.height]);
- useLayoutEffect(()=>{cancelAnimationFrame(expandMotion.current);if(!nativeScrolling&&!expanded&&expansionValue.current>0&&latest.current.focus)focusCell(latest.current.focus,{animate:false});const start=performance.now(),from=latest.current.expansion,to=expanded?1:0;const tick=now=>{const t=reduced()?1:Math.min(1,(now-start)/WALL_EXPANSION_MS),next=from+(to-from)*focusProgress(t);latest.current.expansion=next;expansionValue.current=next;schedulePaint();if(t===1){expandMotion.current=0;setExpansion(next);}if(t<1)expandMotion.current=requestAnimationFrame(tick);};tick(start);return()=>cancelAnimationFrame(expandMotion.current);},[expanded]);
+ useLayoutEffect(()=>{cancelAnimationFrame(expandMotion.current);if(!nativeScrolling&&!expanded&&expansionValue.current>0&&latest.current.focus)focusCell(latest.current.focus,{animate:false});const start=performance.now(),from=latest.current.expansion,to=expanded?1:0;const tick=now=>{const t=reduced()?1:Math.min(1,(now-start)/WALL_EXPANSION_MS),next=from+(to-from)*focusProgress(t);latest.current.expansion=next;expansionValue.current=next;flushPaint();if(t===1){expandMotion.current=0;setExpansion(next);}if(t<1)expandMotion.current=requestAnimationFrame(tick);};tick(start);return()=>cancelAnimationFrame(expandMotion.current);},[expanded]);
  useEffect(()=>{const element=view.current,wheel=event=>{if(latest.current.expansion>0||event.target.closest('.mv-wall-focused'))return;event.preventDefault();const rect=element.getBoundingClientRect();if(event.ctrlKey||event.metaKey)zoomAt(live.current.scale*Math.exp(-event.deltaY*.003),event.clientX-rect.left,event.clientY-rect.top);else{stop();update({...live.current,x:live.current.x-event.deltaX,y:live.current.y-event.deltaY});scheduleSave();}};element.addEventListener('wheel',wheel,{passive:false});return()=>element.removeEventListener('wheel',wheel);},[]);
  useEffect(()=>{
   if(!nativeScrolling)return;const node=view.current;let pinch=null;
@@ -268,28 +286,33 @@ export default forwardRef(function Wall({animateViewportFocus=false,nativeScroll
 
  function down(event){artworkHandoff.current++;if(event.button!==0||latest.current.blocked||expanded||expansion>0||event.target.closest('[role=slider]'))return;stop();suppressedClick.current=null;clearTimeout(hold.current);const control=event.target.closest('.mv-wall-focused button');if(!control&&event.isTrusted)event.currentTarget.setPointerCapture(event.pointerId);pointers.current.set(event.pointerId,{x:event.clientX,y:event.clientY});const points=[...pointers.current.values()],tile=event.target.closest('[data-wall-cell]'),id=tile?.dataset.wallCell;
   if(points.length===2){gesture.current={moved:true,pinched:true,pinch:{camera:live.current,distance:Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y),x:(points[0].x+points[1].x)/2,y:(points[0].y+points[1].y)/2}};lastTap.current=null;return;}
-  gesture.current={x:event.clientX,y:event.clientY,time:event.timeStamp,samples:[{x:event.clientX,y:event.clientY,t:event.timeStamp}],moved:false,cell:id,item:tile?.dataset.wallId,control:Boolean(control)};if(onContext&&tile&&!control)hold.current=setTimeout(()=>{const g=gesture.current;if(!g||g.moved)return;g.moved=true;opened.current=Date.now();lastTap.current=null;const item=latest.current.items.find(item=>item.id===g.item);if(item)latest.current.onContext?.(item);},500);
+  const now=performance.now();
+  gesture.current={x:event.clientX,y:event.clientY,time:now,samples:[{x:event.clientX,y:event.clientY,t:now}],moved:false,cell:id,item:tile?.dataset.wallId,control:Boolean(control)};if(onContext&&tile&&!control)hold.current=setTimeout(()=>{const g=gesture.current;if(!g||g.moved)return;g.moved=true;opened.current=Date.now();lastTap.current=null;const item=latest.current.items.find(item=>item.id===g.item);if(item)latest.current.onContext?.(item);},500);
  }
  function move(event){if(!pointers.current.has(event.pointerId))return;const before=pointers.current.get(event.pointerId);pointers.current.set(event.pointerId,{x:event.clientX,y:event.clientY});const points=[...pointers.current.values()],g=gesture.current;if(!g)return;
-  if(points.length===2&&g.pinch){clearTimeout(hold.current);const p=g.pinch,rect=view.current.getBoundingClientRect(),scale=clampZoom(p.camera.scale*Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y)/Math.max(1,p.distance)),x=(points[0].x+points[1].x)/2-rect.left,y=(points[0].y+points[1].y)/2-rect.top;update({scale,x:x-(p.x-rect.left-p.camera.x)*scale/p.camera.scale,y:y-(p.y-rect.top-p.camera.y)*scale/p.camera.scale});return;}
+  if(points.length===2&&g.pinch){clearTimeout(hold.current);pingActivity();const p=g.pinch,rect=view.current.getBoundingClientRect(),scale=clampZoom(p.camera.scale*Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y)/Math.max(1,p.distance)),x=(points[0].x+points[1].x)/2-rect.left,y=(points[0].y+points[1].y)/2-rect.top;update({scale,x:x-(p.x-rect.left-p.camera.x)*scale/p.camera.scale,y:y-(p.y-rect.top-p.camera.y)*scale/p.camera.scale},false,false,true);return;}
   if(Math.hypot(event.clientX-g.x,event.clientY-g.y)>8){g.moved=true;clearTimeout(hold.current);lastTap.current=null;if(event.isTrusted&&(event.pointerType==='mouse'||!g.control))view.current?.setPointerCapture(event.pointerId);if(view.current){view.current.dataset.dragging='true';view.current.dataset.mvDragging='true';}}
-  const now=event.timeStamp;g.samples.push({x:event.clientX,y:event.clientY,t:now});while(g.samples.length>2&&now-g.samples[0].t>100)g.samples.shift();g.time=now;
-  if(g.moved){const stepX=event.clientX-before.x,stepY=event.clientY-before.y;update({...live.current,x:live.current.x+stepX,y:live.current.y+stepY});}
+  const now=performance.now();g.samples.push({x:event.clientX,y:event.clientY,t:now});while(g.samples.length>2&&now-g.samples[0].t>85)g.samples.shift();g.time=now;
+  if(g.moved){pingActivity();const stepX=event.clientX-before.x,stepY=event.clientY-before.y;update({...live.current,x:live.current.x+stepX,y:live.current.y+stepY},false,false,true);}
  }
  function activate(cell,event){if(!cell)return;if(event?.isTrusted)emitActivationFeedback(activateFeedback);restored.current=true;const item=items[cell.index];if(grouped){onSelect(item,event);return;}if(latest.current.focus?.id!==cell.id)focusCell(cell);const now=performance.now(),double=lastTap.current?.id===cell.id&&now-lastTap.current.time<320;lastTap.current={id:cell.id,songId:item.id,x:event?.clientX,y:event?.clientY,time:now};if(!nativeScrolling&&double&&onDoubleSelect)onDoubleSelect(item,event);else onSelect(item,event);}
  function up(event){clearTimeout(hold.current);if(!pointers.current.has(event.pointerId))return;pointers.current.delete(event.pointerId);if(view.current?.hasPointerCapture(event.pointerId))view.current.releasePointerCapture(event.pointerId);const g=gesture.current;if(!g)return;
-  if(pointers.current.size){const point=[...pointers.current.values()][0];gesture.current={...g,x:point.x,y:point.y,time:event.timeStamp,samples:[{x:point.x,y:point.y,t:event.timeStamp}],moved:true,pinched:true,pinch:null};return;}
-  if(g.moved){suppressedClick.current={until:performance.now()+700};}if(view.current){delete view.current.dataset.dragging;delete view.current.dataset.mvDragging;}
+  const now=performance.now();
+  if(pointers.current.size){const point=[...pointers.current.values()][0];gesture.current={...g,x:point.x,y:point.y,time:now,samples:[{x:point.x,y:point.y,t:now}],moved:true,pinched:true,pinch:null};return;}
+  if(g.moved){suppressedClick.current={until:now+700};}if(view.current){delete view.current.dataset.dragging;delete view.current.dataset.mvDragging;}
   if(!g.moved&&g.cell&&!g.control){const cell=rendered.find(cell=>cell.id===g.cell);activate(cell,event);}else if(g.control&&!g.moved){gesture.current=null;return;}else if(!reduced()&&!g.pinched){
-   const now=event.timeStamp,recent=(g.samples||[]).filter(sample=>now-sample.t<=110);
-   const first=recent[0],last=recent[recent.length-1];
-   const span=recent.length>=2?Math.max(12,last.t-first.t):0;
+   const recent=(g.samples||[]).filter(sample=>now-sample.t<=95);
+   let last=recent[recent.length-1];
+   if(recent.length>=3&&now-last.t<=20&&Math.hypot(last.x-recent[recent.length-2].x,last.y-recent[recent.length-2].y)<1)last=recent[recent.length-2];
+   let first=recent[0];
+   for(let i=recent.length-2;i>=0;i--){first=recent[i];if(last.t-first.t>=38)break;}
+   const span=recent.length>=2&&last!==first?Math.max(10,last.t-first.t):0;
    const vx=span?(last.x-first.x)/span*1000:0,vy=span?(last.y-first.y)/span*1000:0,rawSpeed=Math.hypot(vx,vy);
-   if(span&&now-last.t<=90&&rawSpeed>=40){
-    const speed=Math.min(4800,rawSpeed),tau=380,target=speed*tau/1000,ux=vx/rawSpeed,uy=vy/rawSpeed,old=live.current,start=performance.now();
-    const tick=t=>{if(reduced()){motion.current=0;save();return;}const remaining=target*Math.exp(-Math.max(0,t-start)/tau),distance=remaining<.5?target:target-remaining;update({...old,x:old.x+distance*ux,y:old.y+distance*uy});if(remaining>=.5)motion.current=requestAnimationFrame(tick);else{motion.current=0;save();}};
+   if(span&&now-last.t<=85&&rawSpeed>=40){
+    const speed=Math.min(5200,rawSpeed),tau=480,target=speed*tau/1000,ux=vx/rawSpeed,uy=vy/rawSpeed,old=live.current,start=performance.now();
+    const tick=t=>{if(reduced()){motion.current=0;save();return;}pingActivity();const remaining=target*Math.exp(-Math.max(0,t-start)/tau),distance=remaining<.1?target:target-remaining;update({...old,x:old.x+distance*ux,y:old.y+distance*uy},false,false,true);if(remaining>=.1)motion.current=requestAnimationFrame(tick);else{motion.current=0;warmWallArtwork();save();}};
     motion.current=requestAnimationFrame(tick);
-   }else save();
+   }else{warmWallArtwork();save();}
   }else save();gesture.current=null;
  }
  const candidateFocus=focus||(progressValue.current<1?transition.current?.previous:null);
@@ -307,11 +330,23 @@ export default forwardRef(function Wall({animateViewportFocus=false,nativeScroll
  const focusRect=displayFocus?frameFor(displayFocus):null,normal=focusRect?projectWallFrame(focusRect,renderProjection,planeGuard):null;
  const finalFrame=displayFocus?frameFor(displayFocus,true):null,finalSize=nativeScrolling?mixRect({x:0,y:0,width:(finalFrame?.width||0)*camera.scale,height:(finalFrame?.height||0)*camera.scale},{x:0,y:0,width:viewport.width,height:viewport.height},expansionValue.current):expanded?{width:viewport.width,height:viewport.height}:{width:(finalFrame?.width||0)*camera.scale,height:(finalFrame?.height||0)*camera.scale};
  const rect=normal?rasterRect(mixRect(normal,{x:nativeScrolling?(view.current?.scrollLeft??NATIVE_SCROLL_ANCHOR):planeGuard,y:nativeScrolling?(view.current?.scrollTop??NATIVE_SCROLL_ANCHOR):planeGuard,width:viewport.width,height:viewport.height},expansion)):null,item=displayFocus?items[displayFocus.index]:null;
- const posterActions=useRef(null);posterActions.current={activate,onContext};
+ const posterActions=useRef(null);
+ posterActions.current={
+  activate,
+  context:(event,song)=>{event.preventDefault();clearTimeout(hold.current);if(gesture.current)gesture.current.moved=true;if(Date.now()-opened.current>250){opened.current=Date.now();onContext?.(song);}},
+  place:(cell)=>{const c=displayCamera(),cam=nativeScrolling&&depth.current===1&&nativeOrigin.current?{...nativeOrigin.current,scale:c.scale}:nativeScrolling?{...c,x:c.x+(view.current?.scrollLeft??NATIVE_SCROLL_ANCHOR),y:c.y+(view.current?.scrollTop??NATIVE_SCROLL_ANCHOR)}:c;return rasterRect(projectWallFrame(frameFor(cell),cam,planeGuard));}
+ };
+ const registerPoster=useCallback((cell,node)=>{
+  if(!node){posterNodes.current.delete(cell.id);return;}
+  posterNodes.current.set(cell.id,node);
+  const frame=posterActions.current.place(cell);
+  writeStyle(node,'transformOrigin','0 0');writeStyle(node,'willChange','auto');
+  writeStyle(node,'transform',`translate3d(${frame.x}px,${frame.y}px,0)`);
+  writeStyle(node,'width',`${frame.width}px`);writeStyle(node,'height',`${frame.height}px`);
+ },[]);
  const playingIndex=grouped?-1:items.findIndex(song=>song.id===playingId);
  const playingCell=playingInstance(scene,playingIndex,camera,{width:viewport.x*2,height:viewport.y*2},displayFocus);
- const posterCamera=nativeScrolling&&depth.current===1&&nativeOrigin.current?{...nativeOrigin.current,scale:camera.scale}:nativeScrolling?{...camera,x:camera.x+(view.current?.scrollLeft??NATIVE_SCROLL_ANCHOR),y:camera.y+(view.current?.scrollTop??NATIVE_SCROLL_ANCHOR)}:camera;
- const posters=useMemo(()=>rendered.map(cell=>{const song=items[cell.index],frame=rasterRect(projectWallFrame(frameFor(cell),posterCamera,planeGuard));return <ActionButton type="button" feedback="none" haptic={false} ref={node=>{if(node)posterNodes.current.set(cell.id,node);else posterNodes.current.delete(cell.id);}} className={`mv-wall-card ${cell.id===playingCell?.id?'active':''} ${cell.id===displayFocus?.id?'is-focus-underlay':''} ${cell.id===displayFocus?.id&&progress>=1?'is-focus-settled':''}`} aria-hidden={cell.id===displayFocus?.id||undefined} key={cell.id} data-wall-id={song.id} data-wall-cell={cell.id} style={{left:0,top:0,transform:`translate3d(${frame.x}px,${frame.y}px,0)`,width:frame.width,height:frame.height}} onContextMenu={event=>{event.preventDefault();clearTimeout(hold.current);if(gesture.current)gesture.current.moved=true;if(Date.now()-opened.current>250){opened.current=Date.now();posterActions.current.onContext?.(song);}}} onClick={event=>{if(nativeScrolling||event.detail===0)posterActions.current.activate(cell,event);}}><div className="mv-wall-press-surface"><span className="mv-wall-press-outline" aria-hidden="true"/>{(song.artworkWall||song.artwork)?<Artwork src={song.artworkWall||song.artwork} draggable={false}/>:<span className="mv-wall-placeholder">♫</span>}<div className="mv-wall-caption"><strong>{song.title}</strong><small>{song.artist||`${song.count} 首歌曲`}</small></div></div></ActionButton>;}),[rendered,items,playingId,displayFocus,cameraSnapshot,viewport,progress,expansion]);
+ const posters=rendered.map(cell=><WallPoster key={cell.id} cell={cell} song={items[cell.index]} active={cell.id===playingCell?.id} underlay={cell.id===displayFocus?.id} settled={cell.id===displayFocus?.id&&progress>=1} nativeScrolling={nativeScrolling} registerNode={registerPoster} actions={posterActions}/>);
  return <div ref={view} className={`mv-cover-wall ${playing?'is-playing':''} ${expanded||expansion>0?'is-expanding':''}`} aria-label="音乐墙" data-mv-component="wall" data-wall-renderer={nativeScrolling?'native-scroll-single-surface':'projected-single-surface'} data-wall-scale={camera.scale} data-wall-blocked={blocked||undefined} onClickCapture={nativeClick} onTouchStartCapture={event=>{startTouchPress(event);nativeTapStart(event);}} onTouchMoveCapture={event=>{moveTouchPress(event);nativeTapMove(event);}} onTouchEndCapture={event=>{clearTouchPress();nativeTapEnd(event);}} onTouchCancelCapture={()=>{clearTouchPress();suppressedClick.current={until:performance.now()+700};nativeTap.current=null;lastTap.current=null;}} onPointerDown={nativeScrolling?undefined:down} onPointerMove={nativeScrolling?undefined:move} onPointerUp={nativeScrolling?undefined:up} onPointerCancel={cancelGesture} onLostPointerCapture={event=>{if(event.target===event.currentTarget&&pointers.current.has(event.pointerId))cancelGesture();}}>
   <div ref={plane} className="mv-wall-plane" data-native-scroll={nativeScrolling||undefined} data-camera={JSON.stringify(camera)} style={{'--wall-camera-scale':camera.scale,...(nativeScrolling?{width:NATIVE_SCROLL_EXTENT,height:NATIVE_SCROLL_EXTENT}:{} )}}>{posters}
   {rect&&item&&<ArtworkModeScope as="section" ref={focusedNode} className={`mv-wall-focused ${expanded?'is-expanded':''} ${item.id===playingId?'is-current':'is-preview'}`} onClick={event=>{if(nativeScrolling&&!event.target.closest('button,[role=slider]'))activate(displayFocus,event);}} aria-label="音乐墙播放卡片" data-wall-id={item.id} data-wall-cell={displayFocus.id} style={{left:0,top:0,transform:`translate3d(${rect.x}px,${rect.y}px,0)`,width:rect.width,height:rect.height,opacity:1,'--wall-surface-opacity':focus?progress:1-progress,'--wall-cover':item.artwork?`url("${item.artwork}")`:'none'}}><div className="mv-wall-press-surface"><FocusArtwork analysisFixedQuality={artworkAnalysisFixedQuality} framing={artworkFraming} framingKey={artworkFramingKey(item)} blocked={blocked||expansion<1} onAnchorCommit={onArtworkAnchorCommit} key={item.id} analyze={onAnalyzeArtwork?context=>onAnalyzeArtwork(item.id,context):undefined} smoothUpgrade={nativeScrolling} expanded={expanded} target={artworkViewport({width:viewport.width,height:viewport.height})} preview={item.artworkWall||item.artwork} src={item.artworkDetail||item.artworkCard||item.artwork} shouldDefer={()=>nativeMoving.current||pointers.current.size>0||(progressValue.current<1||expansionValue.current>0&&expansionValue.current<1)||motion.current!==0}/><span className={item.id===playingId?"mv-wall-current-outline":"mv-wall-focus-outline"} aria-hidden="true"/><div className="mv-wall-focus-content" style={{width:finalSize.width,height:finalSize.height,opacity:focus?Math.min(1,progress*2):1-progress}}>{focusContent(item,{width:finalSize.width,height:finalSize.height,compact:false,keepControls:true})}</div></div></ArtworkModeScope>}
